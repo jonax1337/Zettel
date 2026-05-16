@@ -1,20 +1,42 @@
+<div align="center">
+
 # Zettel
 
-[![Release](https://img.shields.io/github/v/release/jonax1337/zettel?label=release&logo=github&color=blue)](https://github.com/jonax1337/zettel/releases)
-[![Build](https://img.shields.io/github/actions/workflow/status/jonax1337/zettel/build.yml?branch=main&logo=github)](https://github.com/jonax1337/zettel/actions/workflows/build.yml)
-[![License](https://img.shields.io/github/license/jonax1337/zettel?color=blue)](./LICENSE)
-[![Made with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24C8DB?logo=tauri&logoColor=white)](https://tauri.app)
+**Offline-first Rechnungen für deutsche Freelancer und Kleinunternehmer.**
+ZUGFeRD- / Factur-X-konforme PDF/A-3 mit eingebettetem EN-16931-XML — lokal, ohne Cloud, ohne Abo.
 
-Offline-first Rechnungs-Generator für deutsche Freelancer und Kleinunternehmer.
-Erzeugt **ZUGFeRD / Factur-X**-konforme PDF/A-3-Rechnungen mit eingebettetem EN-16931-XML — lokal, ohne Cloud, ohne Abo.
+[![Release](https://img.shields.io/github/v/release/jonax1337/zettel?logo=github&color=blue)](https://github.com/jonax1337/zettel/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/jonax1337/zettel/build.yml?branch=main&logo=githubactions&logoColor=white)](https://github.com/jonax1337/zettel/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/github/license/jonax1337/zettel?color=blue)](./LICENSE)
+[![Built with Tauri](https://img.shields.io/badge/built_with-Tauri_2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app)
+[![Made for Solo-Selbstständige](https://img.shields.io/badge/made_for-Solo--Selbstständige-fbbf24)](https://github.com/jonax1337/zettel)
 
-<!-- TODO: Screenshot oder GIF -->
+[Releases](https://github.com/jonax1337/zettel/releases)&nbsp;&nbsp;•&nbsp;&nbsp;
+[Discussions](https://github.com/jonax1337/zettel/discussions)&nbsp;&nbsp;•&nbsp;&nbsp;
+[Plan](./PLAN.md)&nbsp;&nbsp;•&nbsp;&nbsp;
+[Contributing](./CONTRIBUTING.md)
 
-## Installation
+</div>
 
-Installer für Windows, macOS und Linux liegen unter [Releases](https://github.com/jonax1337/zettel/releases).
+<br />
 
-Auf Linux und macOS braucht WeasyPrint Pango/Cairo aus dem System:
+<!-- TODO: Screenshot oder Demo-GIF -->
+
+Ich bin Solo-Selbstständiger und hatte keine Lust auf weitere 20–30 € pro Monat für SaaS-Buchhaltung, nur um ein paar Rechnungen pro Quartal zu schreiben. Zettel ist das, was dabei rausgekommen ist: ein kleines Desktop-Tool, das **lokal** läuft, die deutsche E-Rechnungs-Norm **EN 16931** korrekt umsetzt und den **Kleinunternehmer-Modus (§ 19 UStG)** als First-Class-Feature behandelt — nicht als Häkchen, das man hinter einem Premium-Tarif suchen muss.
+
+Stand 0.1: fünf von fünf manuell erzeugten Test-Rechnungen sind grün bei [erechnungs-validator.de](https://erechnungs-validator.de). Reicht für mich, reicht hoffentlich auch für dich.
+
+## Install
+
+Installer für Windows, macOS und Linux gibt's unter [Releases](https://github.com/jonax1337/zettel/releases).
+
+| Plattform | Format | Hinweis |
+|---|---|---|
+| Windows 10/11 | `.msi`, `.exe` (NSIS) | Erster Start: SmartScreen → *Weitere Informationen → Trotzdem ausführen* |
+| macOS 13+ | `.dmg` (Apple Silicon + Intel) | Nicht notarisiert — Rechtsklick → *Öffnen* beim ersten Start |
+| Linux | `.deb` (Ubuntu 22.04+) | Pango/Cairo nötig (s. u.) |
+
+Auf Linux und macOS braucht WeasyPrint Pango, Cairo und gdk-pixbuf aus dem System:
 
 ```bash
 # Ubuntu / Debian
@@ -24,29 +46,24 @@ sudo apt install libpango1.0-0 libcairo2 libgdk-pixbuf2.0-0
 brew install pango cairo gdk-pixbuf
 ```
 
-Windows zeigt beim ersten Start eine SmartScreen-Warnung (kein Code-Signing) — *Weitere Informationen → Trotzdem ausführen*. macOS-Binaries sind nicht notarisiert.
+## Quickstart
 
-## Nutzung
-
-1. In den Einstellungen Firmendaten und Steuernummer eintragen
-2. Kunden anlegen
-3. Rechnung erstellen, Positionen eintragen, speichern
-4. *PDF erzeugen* → liegt in `~/Documents/Zettel/Rechnungen/`
+1. **Einstellungen** öffnen, Firmendaten und Steuernummer eintragen
+2. **Kunde** anlegen
+3. **Neue Rechnung** → Kunde wählen → Positionen eintragen → speichern
+4. **PDF erzeugen** → liegt unter `~/Documents/Zettel/Rechnungen/RE-2026-0001.pdf`
 
 ## Was drin ist
 
-- Kunden- und Rechnungsverwaltung (lokal, SQLite)
-- PDF/A-3 mit eingebettetem Factur-X-XML (Profil EN 16931)
-- Kleinunternehmer-Modus nach § 19 UStG
-- Mehrere USt-Sätze pro Rechnung (0 %, 7 %, 19 %)
-- Status-Workflow: Entwurf → Versandt → Bezahlt → Storniert
-- Konfigurierbare Nummernkreise, Logo-Upload
-
-Validiert mit 5 von 5 Test-Rechnungen gegen [erechnungs-validator.de](https://erechnungs-validator.de).
+Kunden- und Rechnungsverwaltung lokal in SQLite. PDF/A-3-Rechnungen mit eingebettetem Factur-X-XML im Profil **EN 16931**. Kleinunternehmer-Modus inklusive korrektem `CategoryCode E` und BR-CO-26-konformem `BT-29`-Fallback, wenn keine USt-IdNr. vorhanden ist. Mehrere USt-Sätze pro Rechnung (0 %, 7 %, 19 %). Status-Workflow Entwurf → Versandt → Bezahlt → Storniert. Konfigurierbare Nummernkreise, Logo-Upload, Customer-Snapshot pro Rechnung.
 
 ## Was nicht drin ist
 
-Keine Buchhaltung (EÜR, BWA, Bilanz), kein Banking, kein Cloud-Sync, keine Mobile-App, kein Reverse-Charge in 0.1. Eingangsrechnungen einlesen ist für v0.3 vorgesehen. Vollständige Non-Goals stehen in [`PLAN.md`](./PLAN.md).
+Keine vollständige Buchhaltung, kein Banking, kein Cloud-Sync, keine Mobile-App. Reverse-Charge und intra-EU-B2B sind für v0.2 geplant, Eingangsrechnungen einlesen für v0.3. Die vollständigen Non-Goals stehen in [`PLAN.md`](./PLAN.md#3-non-goals-explizit-ausgeschlossen) — bitte vor einem Feature-Request kurz reinschauen.
+
+## Stack
+
+Tauri 2 + Svelte 5 (Runes) + TypeScript strict + Tailwind v4. UI als shadcn-Style-Layer über Bits-UI-Primitives unter `src/lib/ui/`. Persistenz über `tauri-plugin-sql` direkt auf SQLite. PDF und ZUGFeRD-XML rendert ein Python-Sidecar (WeasyPrint, factur-x, Jinja2), gebundelt per PyInstaller und als Tauri-Resource ausgeliefert. Architektur, Datenmodell und Sidecar-Protokoll: [`PLAN.md`](./PLAN.md) und [`CLAUDE.md`](./CLAUDE.md).
 
 ## Entwicklung
 
@@ -62,14 +79,12 @@ cd sidecar && python build.py && cd ..
 pnpm tauri:build
 ```
 
-Stack: Tauri 2, Svelte 5 mit Runes, TypeScript, Tailwind v4, Bits UI mit shadcn-Style-Wrappern unter `src/lib/ui/`. Persistenz über `tauri-plugin-sql` (SQLite). PDF und ZUGFeRD-XML werden in einem Python-Sidecar (WeasyPrint + factur-x + Jinja2) erzeugt und per PyInstaller mitgebundelt.
-
-Architektur und Datenmodell: [`PLAN.md`](./PLAN.md) · Setup für Contributor: [`CONTRIBUTING.md`](./CONTRIBUTING.md) · Konventionen: [`CLAUDE.md`](./CLAUDE.md).
+Contributor-Setup, Konventionen und Bauanleitung pro Plattform: [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## Disclaimer
 
-Zettel ist keine Rechts- oder Steuerberatung und gibt keine Garantie auf rechtliche Korrektheit der erzeugten Rechnungen. Nutzung auf eigene Verantwortung. Die ersten Rechnungen vor dem Versand vom Steuerberater prüfen lassen.
+Zettel ist keine Rechts- oder Steuerberatung und gibt keinerlei Garantie auf rechtliche Korrektheit der erzeugten Rechnungen. Nutzung auf eigene Verantwortung. Die ersten Rechnungen vor dem Versand vom Steuerberater prüfen lassen.
 
 ## Lizenz
 
-[MIT](./LICENSE) — Jonas Laux & Contributors.
+[MIT](./LICENSE) — © Jonas Laux & Contributors · [laux.digital](https://laux.digital)
