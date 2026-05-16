@@ -125,6 +125,8 @@ type Booking = {
   amountCents: number;
   debit: number;
   credit: number;
+  /** "S" = standard Forderung. "H" flips the booking direction for credit notes. */
+  sollHaben: "S" | "H";
   buSchluessel: string;
   belegdatum: Date;
   belegfeld1: string;
@@ -169,6 +171,7 @@ function bookingsForInvoice(input: DatevInvoiceInput, accounts: DatevAccountMap)
   }
 
   const dueDate = new Date(invoice.issueDate * 1000);
+  const isCn = invoice.isCreditNote;
   const out: Booking[] = [];
   const sortedRates = [...groups.keys()].sort((a, b) => a - b);
   for (const rate of sortedRates) {
@@ -178,10 +181,11 @@ function bookingsForInvoice(input: DatevInvoiceInput, accounts: DatevAccountMap)
       amountCents: gross,
       debit: accounts.debitor,
       credit: revenueAccountFor(rate, isKu, isRc, accounts),
+      sollHaben: isCn ? "H" : "S",
       buSchluessel: "",
       belegdatum: dueDate,
       belegfeld1: invoice.number,
-      buchungstext: truncate(`Rechnung ${customerName}`, 60),
+      buchungstext: truncate(`${isCn ? "Storno" : "Rechnung"} ${customerName}`, 60),
       euVatId: isRc ? customerVatId : null,
       euLand: isRc && customerVatId ? customerVatId.slice(0, 2) : null,
     });
@@ -279,7 +283,7 @@ function buildHeaderLine(opts: DatevExportOpts, now: Date): string {
 function rowFor(b: Booking): string {
   const fields: string[] = new Array(COLUMN_HEADERS.length).fill("");
   fields[0] = centsToDatev(b.amountCents);
-  fields[1] = quote("S");
+  fields[1] = quote(b.sollHaben);
   fields[2] = quote("EUR");
   fields[6] = String(b.debit);
   fields[7] = String(b.credit);

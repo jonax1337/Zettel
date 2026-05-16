@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <title>Rechnung {{ invoice.number }}</title>
+  <title>{% if invoice.isCreditNote %}Stornorechnung{% else %}Rechnung{% endif %} {{ invoice.number }}</title>
 </head>
 <body>
 
@@ -13,10 +13,16 @@
       {% if company.ownerName %}<div class="brand-owner">{{ company.ownerName }}</div>{% endif %}
     </div>
     <div class="title-block">
-      <div class="doctype">Rechnung</div>
+      <div class="doctype">{% if invoice.isCreditNote %}Stornorechnung{% else %}Rechnung{% endif %}</div>
       <div class="docnumber">{{ invoice.number }}</div>
     </div>
   </header>
+
+  {% if invoice.isCreditNote and invoice.correctsInvoice %}
+  <section class="callout">
+    Storno zur Rechnung {{ invoice.correctsInvoice.number }} vom {{ invoice.correctsInvoice.issueDate | date_unix }}.
+  </section>
+  {% endif %}
 
   <section class="parties">
     <div class="addressee">
@@ -47,10 +53,12 @@
         <span class="meta-value">{{ invoice.deliveryDate | date_unix }}</span>
       </div>
       {% endif %}
+      {% if not invoice.isCreditNote %}
       <div class="meta-row">
         <span class="meta-label">Fällig am</span>
         <span class="meta-value">{{ invoice.dueDate | date_unix }}</span>
       </div>
+      {% endif %}
       {% if customer.vatId %}
       <div class="meta-row">
         <span class="meta-label">USt-IdNr. Kunde</span>
@@ -81,7 +89,7 @@
           <td class="col-unit">{{ it.unit }}</td>
           <td class="col-price">{{ it.unitPrice | eur }}</td>
           {% if not invoice.isKleinunternehmer and not invoice.isReverseCharge %}<td class="col-vat">{{ it.vatRate }}</td>{% endif %}
-          <td class="col-total">{{ it.lineTotal | eur }}</td>
+          <td class="col-total">{{ (it.lineTotal * -1 if invoice.isCreditNote else it.lineTotal) | eur }}</td>
         </tr>
       {% endfor %}
     </tbody>
@@ -116,7 +124,12 @@
     </p>
   {% endif %}
 
-  {% if invoice.paymentTerms %}
+  {% if invoice.isCreditNote %}
+    <section class="block">
+      <div class="block-title">Erstattung</div>
+      <p>Der Betrag wird auf Ihr Konto erstattet.</p>
+    </section>
+  {% elif invoice.paymentTerms %}
     <section class="block">
       <div class="block-title">Zahlungsbedingungen</div>
       <p>{{ invoice.paymentTerms }}</p>

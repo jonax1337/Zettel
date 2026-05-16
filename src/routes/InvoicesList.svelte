@@ -25,6 +25,7 @@
   let year = $state<string>("all");
   let customerId = $state<string>("all");
   let search = $state("");
+  let onlyCreditNotes = $state(false);
 
   async function reload() {
     loading = true;
@@ -35,7 +36,8 @@
         customerId: customerId === "all" ? "all" : Number.parseInt(customerId, 10),
         search,
       };
-      invoices = await listInvoices(filter);
+      const all = await listInvoices(filter);
+      invoices = onlyCreditNotes ? all.filter((i) => i.isCreditNote) : all;
       error = null;
     } catch (e) {
       error = String(e);
@@ -54,6 +56,7 @@
     void year;
     void customerId;
     void search;
+    void onlyCreditNotes;
     reload();
   });
 
@@ -111,7 +114,7 @@
   </Button>
 </header>
 
-<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
+<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
   <div class="flex flex-col gap-1.5">
     <Label class="text-xs text-muted-foreground">Status</Label>
     <Select bind:value={status} items={statusItems} />
@@ -132,6 +135,15 @@
     </div>
   </div>
 </div>
+
+<label class="inline-flex items-center gap-2 mb-5 text-sm text-muted-foreground cursor-pointer select-none">
+  <input
+    type="checkbox"
+    bind:checked={onlyCreditNotes}
+    class="size-4 rounded border-input accent-primary"
+  />
+  Nur Stornorechnungen
+</label>
 
 {#if error}
   <p class="text-sm text-destructive">Fehler: {error}</p>
@@ -162,14 +174,23 @@
             class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
             onclick={() => push(`/invoices/${inv.id}`)}
           >
-            <td class="px-4 py-3 font-mono text-xs">{inv.number}</td>
+            <td class="px-4 py-3 font-mono text-xs">
+              <span class="inline-flex items-center gap-1.5">
+                {inv.number}
+                {#if inv.isCreditNote}
+                  <Badge variant="destructive" class="text-[10px] px-1.5 py-0">Storno</Badge>
+                {/if}
+              </span>
+            </td>
             <td class="px-4 py-3 text-muted-foreground">{formatDate(inv.issueDate)}</td>
             <td class="px-4 py-3">{inv.customerName}</td>
             <td class="px-4 py-3 text-right font-mono">{centsToEur(inv.total)}</td>
             <td class="px-4 py-3">
               <Badge variant={statusVariant[inv.status]}>{statusLabel[inv.status]}</Badge>
             </td>
-            <td class="px-4 py-3 text-muted-foreground text-xs">{formatDate(inv.dueDate)}</td>
+            <td class="px-4 py-3 text-muted-foreground text-xs">
+              {inv.isCreditNote ? "—" : formatDate(inv.dueDate)}
+            </td>
           </tr>
         {/each}
       </tbody>

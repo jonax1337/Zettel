@@ -92,6 +92,10 @@ export const invoices = sqliteTable("invoices", {
   notes: text("notes"),
   paymentTerms: text("payment_terms"),
   pdfPath: text("pdf_path"),
+  isCreditNote: integer("is_credit_note", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  correctsInvoiceId: integer("corrects_invoice_id"),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),

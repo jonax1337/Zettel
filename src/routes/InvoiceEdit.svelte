@@ -28,7 +28,7 @@
     Select,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2 } from "@lucide/svelte";
+  import { ArrowLeft, Plus, Trash2, AlertTriangle } from "@lucide/svelte";
   import { isPopupWindow, emitSavedAndClose } from "$lib/window";
   import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -55,6 +55,8 @@
   let notes = $state("");
   let paymentTerms = $state("");
   let isReverseCharge = $state(false);
+  let isCreditNote = $state(false);
+  let correctsInvoiceId = $state<number | null>(null);
   let items = $state<Array<InvoiceItemInput & { priceText: string }>>([
     { description: "", quantity: 1, unit: "Stk", unitPrice: 0, vatRate: 0, priceText: "" },
   ]);
@@ -142,6 +144,8 @@
           notes = res.invoice.notes ?? "";
           paymentTerms = res.invoice.paymentTerms ?? "";
           isReverseCharge = res.invoice.isReverseCharge;
+          isCreditNote = res.invoice.isCreditNote;
+          correctsInvoiceId = res.invoice.correctsInvoiceId;
           items = res.items.map((it) => ({
             description: it.description,
             quantity: it.quantity,
@@ -266,7 +270,13 @@
       <ArrowLeft class="size-4" /> Rechnungen
     </a>
     <h1 class="text-3xl font-semibold tracking-tight mt-2">
-      {mode === "new" ? "Neue Rechnung" : "Rechnung bearbeiten"}
+      {#if isCreditNote}
+        Stornorechnung bearbeiten
+      {:else if mode === "new"}
+        Neue Rechnung
+      {:else}
+        Rechnung bearbeiten
+      {/if}
     </h1>
   </header>
 {/if}
@@ -274,6 +284,22 @@
 {#if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else}
+  {#if isCreditNote}
+    <Card class="border-amber-500/40 bg-amber-500/10 dark:bg-amber-500/5 mb-4">
+      <CardContent>
+        <div class="flex items-start gap-3">
+          <AlertTriangle class="size-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+          <div class="flex-1 text-sm">
+            <div class="font-medium text-amber-700 dark:text-amber-400">Stornorechnung</div>
+            <div class="mt-0.5 text-muted-foreground">
+              Mengen anpassen für Teilstorno. Positionen entfernen für Teilrückerstattung.
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  {/if}
+
   <form onsubmit={onSubmit} class="space-y-6">
     <Card>
       <CardContent>
@@ -284,21 +310,29 @@
               bind:value={customerIdStr}
               items={customerItems}
               placeholder="— bitte wählen —"
+              disabled={isCreditNote}
             />
+            {#if isCreditNote}
+              <p class="text-xs text-muted-foreground">
+                Kunde ist an die Originalrechnung gebunden und kann nicht geändert werden.
+              </p>
+            {/if}
           </div>
           <div class="flex flex-col gap-1.5">
-            <Label>Rechnungsdatum</Label>
+            <Label>{isCreditNote ? "Stornodatum" : "Rechnungsdatum"}</Label>
             <Input type="date" bind:value={issueDateIso} required />
           </div>
-          <div class="flex flex-col gap-1.5">
-            <Label>Fällig am</Label>
-            <Input type="date" bind:value={dueDateIso} required />
-          </div>
+          {#if !isCreditNote}
+            <div class="flex flex-col gap-1.5">
+              <Label>Fällig am</Label>
+              <Input type="date" bind:value={dueDateIso} required />
+            </div>
+          {/if}
           <div class="flex flex-col gap-1.5 col-span-2">
             <Label>Liefer-/Leistungsdatum</Label>
             <Input type="date" bind:value={deliveryDateIso} />
           </div>
-          {#if settings && !settings.isKleinunternehmer}
+          {#if settings && !settings.isKleinunternehmer && !isCreditNote}
             <div class="col-span-2 flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
               <input
                 id="reverse-charge"
@@ -440,10 +474,12 @@
 
     <Card>
       <CardContent class="space-y-4">
-        <div class="flex flex-col gap-1.5">
-          <Label>Zahlungsbedingungen</Label>
-          <Textarea rows={2} bind:value={paymentTerms} />
-        </div>
+        {#if !isCreditNote}
+          <div class="flex flex-col gap-1.5">
+            <Label>Zahlungsbedingungen</Label>
+            <Textarea rows={2} bind:value={paymentTerms} />
+          </div>
+        {/if}
         <div class="flex flex-col gap-1.5">
           <Label>Notizen / Fußtext</Label>
           <Textarea rows={3} bind:value={notes} />

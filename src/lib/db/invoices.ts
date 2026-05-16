@@ -27,6 +27,8 @@ type InvoiceRow = {
   notes: string | null;
   payment_terms: string | null;
   pdf_path: string | null;
+  is_credit_note: number | null;
+  corrects_invoice_id: number | null;
   created_at: number;
   updated_at: number;
   sent_at: number | null;
@@ -63,6 +65,8 @@ function mapInvoice(r: InvoiceRow): Invoice {
     notes: r.notes,
     paymentTerms: r.payment_terms,
     pdfPath: r.pdf_path,
+    isCreditNote: r.is_credit_note === 1,
+    correctsInvoiceId: r.corrects_invoice_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     sentAt: r.sent_at,
@@ -102,6 +106,8 @@ export type InvoiceFormInput = {
   notes: string | null;
   paymentTerms: string | null;
   isReverseCharge: boolean;
+  isCreditNote?: boolean;
+  correctsInvoiceId?: number | null;
   items: InvoiceItemInput[];
 };
 
@@ -272,12 +278,13 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
   });
   const { number } = await nextInvoiceNumber();
 
+  const sign = input.isCreditNote ? -1 : 1;
   const res = await execute(
     `INSERT INTO invoices
       (number, customer_id, customer_snapshot, issue_date, delivery_date, due_date,
        status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
-       notes, payment_terms)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`,
+       notes, payment_terms, is_credit_note, corrects_invoice_id)
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.customerId,
@@ -285,13 +292,15 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
       input.issueDate,
       input.deliveryDate,
       input.dueDate,
-      totals.subtotal,
-      totals.vatAmount,
-      totals.total,
+      totals.subtotal * sign,
+      totals.vatAmount * sign,
+      totals.total * sign,
       settings.isKleinunternehmer ? 1 : 0,
       input.isReverseCharge ? 1 : 0,
       input.notes,
       input.paymentTerms,
+      input.isCreditNote ? 1 : 0,
+      input.correctsInvoiceId ?? null,
     ],
   );
   const id = Number(res.lastInsertId ?? 0);
@@ -312,6 +321,7 @@ export async function updateInvoice(
     isKleinunternehmer: existing.invoice.isKleinunternehmer,
     isReverseCharge: input.isReverseCharge,
   });
+  const sign = existing.invoice.isCreditNote ? -1 : 1;
 
   // If customer changed, refresh snapshot.
   let snapshotJson = existing.invoice.customerSnapshot;
@@ -333,9 +343,9 @@ export async function updateInvoice(
       input.issueDate,
       input.deliveryDate,
       input.dueDate,
-      totals.subtotal,
-      totals.vatAmount,
-      totals.total,
+      totals.subtotal * sign,
+      totals.vatAmount * sign,
+      totals.total * sign,
       input.isReverseCharge ? 1 : 0,
       input.notes,
       input.paymentTerms,
@@ -352,6 +362,58 @@ export async function deleteInvoice(id: number): Promise<void> {
     throw new Error("Nur Entwürfe oder stornierte Rechnungen können gelöscht werden.");
   }
   await execute("DELETE FROM invoices WHERE id = ?", [id]);
+}
+
+// --- Credit notes ---
+
+export async function findCreditNoteFor(invoiceId: number): Promise<Invoice | null> {
+  const rows = await select<InvoiceRow>(
+    "SELECT * FROM invoices WHERE corrects_invoice_id = ? ORDER BY id ASC LIMIT 1",
+    [invoiceId],
+  );
+  return rows.length ? mapInvoice(rows[0]) : null;
+}
+
+/**
+ * Creates a draft credit note (Stornorechnung) from an existing sent/paid invoice.
+ * Items are mirrored verbatim — user can edit quantities/positions in the draft to
+ * model partial refunds before sending. Totals are stored negative.
+ */
+export async function createCreditNoteFromInvoice(originalId: number): Promise<number> {
+  const data = await getInvoice(originalId);
+  if (!data) throw new Error(`Rechnung ${originalId} nicht gefunden.`);
+  const { invoice, items } = data;
+  if (invoice.isCreditNote) {
+    throw new Error("Für eine Stornorechnung kann keine weitere Stornorechnung erstellt werden.");
+  }
+  if (invoice.status !== "sent" && invoice.status !== "paid") {
+    throw new Error("Nur versendete oder bezahlte Rechnungen können storniert werden.");
+  }
+  const existing = await findCreditNoteFor(originalId);
+  if (existing) {
+    throw new Error(`Es existiert bereits eine Stornorechnung (${existing.number}).`);
+  }
+
+  const issueDate = Math.floor(Date.now() / 1000);
+  const input: InvoiceFormInput = {
+    customerId: invoice.customerId,
+    issueDate,
+    deliveryDate: invoice.deliveryDate,
+    dueDate: issueDate,
+    notes: `Storno zur Rechnung ${invoice.number}`,
+    paymentTerms: null,
+    isReverseCharge: invoice.isReverseCharge,
+    isCreditNote: true,
+    correctsInvoiceId: originalId,
+    items: items.map((it) => ({
+      description: it.description,
+      quantity: it.quantity,
+      unit: it.unit,
+      unitPrice: it.unitPrice,
+      vatRate: it.vatRate,
+    })),
+  };
+  return createInvoice(input);
 }
 
 // --- Status transitions ---
