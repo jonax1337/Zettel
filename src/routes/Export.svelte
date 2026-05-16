@@ -47,7 +47,10 @@
 
   async function onExport() {
     if (!includeInvoices && !includeExpenses) {
-      toast.error("Nichts ausgewählt", "Mindestens „Rechnungen" oder „Eingangsrechnungen" aktivieren.");
+      toast.error(
+        "Nichts ausgewählt",
+        'Mindestens „Rechnungen" oder „Eingangsrechnungen" aktivieren.',
+      );
       return;
     }
     busy = true;
