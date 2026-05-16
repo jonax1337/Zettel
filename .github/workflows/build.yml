@@ -100,7 +100,12 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
+      - name: Build Tauri app (Linux — .deb only)
+        if: matrix.os == 'ubuntu-22.04'
+        run: pnpm tauri build --target ${{ matrix.rust-target }} --bundles deb
+
       - name: Build Tauri app
+        if: matrix.os != 'ubuntu-22.04'
         run: pnpm tauri build --target ${{ matrix.rust-target }}
 
       # ---------- Upload ----------
