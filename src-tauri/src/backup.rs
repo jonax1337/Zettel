@@ -232,8 +232,10 @@ pub async fn stage_restore(
             let parsed: BackupManifest =
                 serde_json::from_str(&content).map_err(|e| format!("invalid manifest: {}", e))?;
             // Schemata neuer als die App selbst => Restore ablehnen.
-            // (4 = aktueller Schema-Stand zur Zeit dieses PRs.)
-            const CURRENT_SCHEMA: u32 = 4;
+            // Muss mit dem Wert in `Settings.svelte`:CURRENT_DB_SCHEMA_VERSION
+            // sowie dem höchsten registrierten Migrations-`version` in `lib.rs`
+            // synchron bleiben. Bei neuer Migration: hier hochzählen.
+            const CURRENT_SCHEMA: u32 = 9;
             if parsed.db_schema_version > CURRENT_SCHEMA {
                 return Err(format!(
                     "Backup-Schema {} ist neuer als die App-Version (Schema {}). Bitte App aktualisieren.",
