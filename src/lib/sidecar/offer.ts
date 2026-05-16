@@ -71,6 +71,9 @@ function buildPayload(opts: {
       vatId: customer.vatId,
     },
     outputPath,
+    settings: {
+      pdf_theme: company.pdfTheme ?? "classic",
+    },
   };
 }
 
