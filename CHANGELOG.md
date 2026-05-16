@@ -23,7 +23,7 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 - Schema-Migrations 0003 (`is_reverse_charge`) und 0004 (`recurring_invoices` + `recurring_invoice_items`).
 
 ### Known limitations
-- Cross-Platform-Build (macOS/Linux) noch nicht gegen einen echten Validator getestet
+- macOS Intel (x86_64) Build wurde aus der Matrix entfernt — GitHub-Free-Tier-Runner für `macos-13` haben Queue-Zeiten von 1h+. macOS Apple Silicon (arm64) wird gebaut und deckt die meisten Nutzer ab. Intel-Build kommt zurück, sobald Capacity oder ein Use-Case da ist.
 - Manuelle Validierung der neuen Features (Reverse-Charge, BASIC/EXTENDED) gegen `erechnungs-validator.de` steht aus
 - Keine Verschlüsselung für Backup-ZIPs
 

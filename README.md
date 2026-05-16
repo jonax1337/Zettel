@@ -47,7 +47,7 @@ Installer für Windows, macOS und Linux gibt's unter [Releases](https://github.c
 | Plattform | Format | Hinweis |
 |---|---|---|
 | Windows 10/11 | `.msi`, `.exe` (NSIS) | Erster Start: SmartScreen → *Weitere Informationen → Trotzdem ausführen* |
-| macOS 13+ | `.dmg` (Apple Silicon + Intel) | Nicht notarisiert — Rechtsklick → *Öffnen* beim ersten Start |
+| macOS 14+ | `.dmg` (Apple Silicon) | Nicht notarisiert — Rechtsklick → *Öffnen* beim ersten Start. Intel-Build vorübergehend ausgesetzt (CI-Capacity). |
 | Linux | `.deb` (Ubuntu 22.04+) | Pango/Cairo nötig (s. u.) |
 
 Auf Linux und macOS braucht WeasyPrint Pango, Cairo und gdk-pixbuf aus dem System:

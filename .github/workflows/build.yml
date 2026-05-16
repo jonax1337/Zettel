@@ -33,9 +33,11 @@ jobs:
           - os: macos-14
             rust-target: aarch64-apple-darwin
             artifact-name: zettel-macos-arm64
-          - os: macos-13
-            rust-target: x86_64-apple-darwin
-            artifact-name: zettel-macos-x86_64
+          # macOS Intel (macos-13) bewusst deaktiviert: GitHub-Actions-Free-Tier
+          # liefert Intel-Runner derzeit nur mit 1h+ Queue-Zeit. Apple-Silicon
+          # deckt 2025+ den Großteil der Zielgruppe. Wieder reinholen via
+          # workflow_dispatch oder neue Matrix-Zeile, sobald das Capacity-Thema
+          # entspannt ist (oder ein User explizit Intel braucht).
           - os: ubuntu-22.04
             rust-target: x86_64-unknown-linux-gnu
             artifact-name: zettel-linux-x86_64
