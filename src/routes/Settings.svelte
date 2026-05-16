@@ -21,7 +21,7 @@
   import { Image, X, Download, Upload } from "@lucide/svelte";
 
   // aktueller DB-Schema-Stand (siehe src-tauri/src/lib.rs Migrations-Vektor)
-  const CURRENT_DB_SCHEMA_VERSION = 4;
+  const CURRENT_DB_SCHEMA_VERSION = 6;
 
   let s = $state<Settings | null>(null);
   let loading = $state(true);
@@ -282,6 +282,31 @@
           <div class="flex flex-col gap-1.5 col-span-2">
             <Label>Standard-Zahlungsfrist (Tage)</Label>
             <Input type="number" min="0" bind:value={s.defaultPaymentTermsDays} />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Angebote</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="flex flex-col gap-1.5">
+            <Label>Nummern-Format</Label>
+            <Input bind:value={s.offerNumberFormat} />
+            <span class="text-xs text-muted-foreground">
+              Platzhalter: {"{YYYY}"}, {"{NNNN}"}
+            </span>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label>Aktueller Zähler</Label>
+            <Input type="number" min="0" bind:value={s.offerNumberCounter} />
+          </div>
+          <div class="flex flex-col gap-1.5 col-span-2">
+            <Label>Standard-Gültigkeit (Tage)</Label>
+            <Input type="number" min="1" bind:value={s.defaultOfferValidityDays} />
           </div>
         </div>
       </CardContent>
