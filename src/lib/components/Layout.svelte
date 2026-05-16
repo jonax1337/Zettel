@@ -7,6 +7,7 @@
     FileText,
     FileSignature,
     FileInput,
+    FileWarning,
     Repeat,
     Download,
     BarChart3,
@@ -52,6 +53,7 @@
       items: [
         { href: "/offers", label: "Angebote", icon: FileSignature },
         { href: "/invoices", label: "Rechnungen", icon: FileText },
+        { href: "/reminders", label: "Mahnungen", icon: FileWarning },
         { href: "/recurring", label: "Vorlagen", icon: Repeat },
       ],
     },

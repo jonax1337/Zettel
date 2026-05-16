@@ -59,7 +59,7 @@ def _add_gtk_dll_path() -> None:
 
 _add_gtk_dll_path()
 
-from invoice.pdf import render_invoice_pdf, render_offer_pdf  # noqa: E402
+from invoice.pdf import render_invoice_pdf, render_offer_pdf, render_reminder_pdf  # noqa: E402
 from invoice.extract import extract_from_pdf  # noqa: E402
 
 
@@ -116,6 +116,22 @@ def handle(req: dict) -> dict:
                 str(e),
                 traceback.format_exc(),
             )
+
+    if command == "generate_reminder":
+        try:
+            output_path = render_reminder_pdf(payload)
+            return {
+                "success": True,
+                "pdfPath": str(output_path),
+                "validationWarnings": [],
+                "validationErrors": [],
+            }
+        except FileNotFoundError as e:
+            return _err("TEMPLATE_NOT_FOUND", str(e))
+        except KeyError as e:
+            return _err("MISSING_FIELD", f"Missing required payload field: {e}")
+        except Exception as e:
+            return _err("RENDER_FAILED", str(e), traceback.format_exc())
 
     if command == "extract_zugferd":
         try:

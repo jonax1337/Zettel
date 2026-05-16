@@ -111,6 +111,44 @@ def _render_offer_html_pdf(payload: dict[str, Any]) -> bytes:
     return buf.getvalue()
 
 
+def _render_reminder_html_pdf(payload: dict[str, Any]) -> bytes:
+    """Render the reminder PDF as PDF/A-3b. No ZUGFeRD XML — a reminder is not an e-invoice."""
+    env = build_env()
+    template = env.get_template("reminder.html.j2")
+    company = dict(payload["company"])
+    company["logoDataUri"] = _logo_data_uri(company.get("logoPath"))
+    settings = payload.get("settings") or {"pdf_theme": "classic"}
+    html_str = template.render(
+        reminder=payload["reminder"],
+        invoice=payload["invoice"],
+        company=company,
+        customer=payload["customer"],
+        settings=settings,
+    )
+    css_path = Path(template.environment.loader.searchpath[0]) / "invoice.css"
+    stylesheets = [CSS(filename=str(css_path))] if css_path.exists() else []
+
+    buf = io.BytesIO()
+    HTML(string=html_str, base_url=str(css_path.parent)).write_pdf(
+        target=buf,
+        stylesheets=stylesheets,
+        pdf_variant="pdf/a-3b",
+    )
+    return buf.getvalue()
+
+
+def render_reminder_pdf(payload: dict[str, Any]) -> Path:
+    """
+    Render a payment reminder (Zahlungserinnerung/Mahnung) to PDF/A-3b.
+    No embedded ZUGFeRD XML — reminders aren't e-invoices per EN16931.
+    """
+    output_path = Path(payload["outputPath"]).expanduser().resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    pdf_bytes = _render_reminder_html_pdf(payload)
+    output_path.write_bytes(pdf_bytes)
+    return output_path
+
+
 def render_offer_pdf(payload: dict[str, Any]) -> Path:
     """
     Render an offer (Angebot) to a PDF/A-3b — no ZUGFeRD XML embedded.

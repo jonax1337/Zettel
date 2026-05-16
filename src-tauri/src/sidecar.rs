@@ -161,3 +161,12 @@ pub async fn extract_zugferd(app: AppHandle, pdf_path: String) -> Result<Value, 
     });
     run_sidecar(&app, &request)
 }
+
+#[tauri::command]
+pub async fn generate_reminder(app: AppHandle, payload: Value) -> Result<Value, String> {
+    let request = serde_json::json!({
+        "command": "generate_reminder",
+        "payload": payload,
+    });
+    run_sidecar(&app, &request)
+}
