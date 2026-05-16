@@ -35,3 +35,6 @@ drizzle/.cache/
 
 # Local worktrees (do not commit)
 zettel-wt-*/
+
+# Claude Code runtime state
+.claude/
