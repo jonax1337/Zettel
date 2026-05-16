@@ -1,24 +1,24 @@
 <script lang="ts">
   import { link, push } from "svelte-spa-router";
   import {
-    cancelInvoice,
-    createCreditNoteFromInvoice,
-    deleteInvoice,
-    findCreditNoteFor,
-    getInvoice,
-    markPaid,
+    convertToInvoice,
+    deleteOffer,
+    getOffer,
+    markAccepted,
+    markRejected,
     markSent,
     reopenDraft,
-  } from "$lib/db/invoices";
+  } from "$lib/db/offers";
+  import { getInvoice } from "$lib/db/invoices";
   import type {
     CustomerSnapshot,
-    Invoice,
-    InvoiceItem,
-    InvoiceStatus,
+    Offer,
+    OfferItem,
+    OfferStatus,
   } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
-  import { generateInvoicePdf } from "$lib/sidecar/invoice";
+  import { generateOfferPdf } from "$lib/sidecar/offer";
   import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
   import {
     Button,
@@ -39,33 +39,33 @@
     Pencil,
     Send,
     CheckCircle2,
+    XCircle,
     Undo2,
-    Ban,
     Trash2,
     MoreHorizontal,
     AlertTriangle,
+    FileSignature,
   } from "@lucide/svelte";
+
   type Props = { params?: { id?: string } };
   let { params }: Props = $props();
 
-  let invoice = $state<Invoice | null>(null);
-  let items = $state<InvoiceItem[]>([]);
-  let originalInvoice = $state<Invoice | null>(null);
-  let cancelledByCreditNote = $state<Invoice | null>(null);
+  let offer = $state<Offer | null>(null);
+  let items = $state<OfferItem[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let busy = $state(false);
   let generating = $state(false);
+  let converting = $state(false);
   let lastPdfPath = $state<string | null>(null);
   let pdfError = $state<string | null>(null);
   let confirmDeleteOpen = $state(false);
-  let confirmCreditNoteOpen = $state(false);
-  let creatingCreditNote = $state(false);
+  let convertedInvoiceNumber = $state<string | null>(null);
 
   const customer = $derived.by(() => {
-    if (!invoice) return null;
+    if (!offer) return null;
     try {
-      return JSON.parse(invoice.customerSnapshot) as CustomerSnapshot;
+      return JSON.parse(offer.customerSnapshot) as CustomerSnapshot;
     } catch {
       return null;
     }
@@ -77,25 +77,23 @@
     if (Number.isNaN(numId)) return;
     loading = true;
     try {
-      const res = await getInvoice(numId);
+      const res = await getOffer(numId);
       if (!res) {
-        error = "Rechnung nicht gefunden.";
+        error = "Angebot nicht gefunden.";
         return;
       }
-      invoice = res.invoice;
+      offer = res.offer;
       items = res.items;
-      lastPdfPath = res.invoice.pdfPath;
-
-      const [origRes, cnRes] = await Promise.all([
-        res.invoice.correctsInvoiceId
-          ? getInvoice(res.invoice.correctsInvoiceId)
-          : Promise.resolve(null),
-        res.invoice.isCreditNote
-          ? Promise.resolve(null)
-          : findCreditNoteFor(res.invoice.id),
-      ]);
-      originalInvoice = origRes?.invoice ?? null;
-      cancelledByCreditNote = cnRes;
+      lastPdfPath = res.offer.pdfPath;
+      convertedInvoiceNumber = null;
+      if (res.offer.convertedInvoiceId) {
+        try {
+          const inv = await getInvoice(res.offer.convertedInvoiceId);
+          convertedInvoiceNumber = inv?.invoice.number ?? null;
+        } catch {
+          convertedInvoiceNumber = null;
+        }
+      }
     } catch (e) {
       error = String(e);
     } finally {
@@ -124,38 +122,22 @@
   }
 
   async function performDelete() {
-    if (!invoice) return;
+    if (!offer) return;
     try {
-      await deleteInvoice(invoice.id);
-      toast.success("Rechnung gelöscht");
-      push("/invoices");
+      await deleteOffer(offer.id);
+      toast.success("Angebot gelöscht");
+      push("/offers");
     } catch (e) {
       toast.error("Löschen fehlgeschlagen", String(e));
     }
   }
 
-  async function performCreateCreditNote() {
-    if (!invoice) return;
-    creatingCreditNote = true;
-    try {
-      const newId = await createCreditNoteFromInvoice(invoice.id);
-      const res = await getInvoice(newId);
-      const newNumber = res?.invoice.number ?? `#${newId}`;
-      toast.success(`Stornorechnung ${newNumber} als Entwurf erstellt`);
-      push(`/invoices/${newId}/edit`);
-    } catch (e) {
-      toast.error("Stornorechnung fehlgeschlagen", String(e));
-    } finally {
-      creatingCreditNote = false;
-    }
-  }
-
   async function onGeneratePdf() {
-    if (!invoice) return;
+    if (!offer) return;
     generating = true;
     pdfError = null;
     try {
-      const res = await generateInvoicePdf(invoice.id);
+      const res = await generateOfferPdf(offer.id);
       if (res.success) {
         lastPdfPath = res.pdfPath;
         toast.success("PDF erstellt");
@@ -192,107 +174,76 @@
     }
   }
 
-  const statusLabel: Record<InvoiceStatus, string> = {
+  async function onConvert() {
+    if (!offer) return;
+    converting = true;
+    try {
+      const newId = await convertToInvoice(offer.id);
+      const inv = await getInvoice(newId);
+      const number = inv?.invoice.number ?? `#${newId}`;
+      toast.success(`Rechnung ${number} erstellt — bitte Daten prüfen`);
+      push(`/invoices/${newId}/edit`);
+    } catch (e) {
+      toast.error("Umwandlung fehlgeschlagen", String(e));
+    } finally {
+      converting = false;
+    }
+  }
+
+  const statusLabel: Record<OfferStatus, string> = {
     draft: "Entwurf",
     sent: "Versendet",
-    paid: "Bezahlt",
-    cancelled: "Storniert",
+    accepted: "Angenommen",
+    rejected: "Abgelehnt",
+    expired: "Abgelaufen",
   };
 
-  const statusVariant: Record<InvoiceStatus, "secondary" | "warning" | "success" | "outline"> = {
+  const statusVariant: Record<
+    OfferStatus,
+    "secondary" | "warning" | "success" | "destructive" | "outline"
+  > = {
     draft: "secondary",
     sent: "warning",
-    paid: "success",
-    cancelled: "outline",
+    accepted: "success",
+    rejected: "destructive",
+    expired: "outline",
   };
-
-  const canCreateCreditNote = $derived(
-    !!invoice &&
-      !invoice.isCreditNote &&
-      (invoice.status === "sent" || invoice.status === "paid") &&
-      !cancelledByCreditNote,
-  );
 </script>
 
 <header class="mb-6">
   <a
-    href="/invoices"
+    href="/offers"
     use:link
     class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
   >
-    <ArrowLeft class="size-4" /> Rechnungen
+    <ArrowLeft class="size-4" /> Angebote
   </a>
 </header>
 
 {#if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if error && !invoice}
+{:else if error && !offer}
   <p class="text-sm text-destructive">{error}</p>
-{:else if invoice && customer}
-  {#if invoice.isCreditNote}
-    <Card class="border-amber-500/40 bg-amber-500/10 dark:bg-amber-500/5 mb-4">
-      <CardContent>
-        <div class="flex items-start gap-3">
-          <AlertTriangle class="size-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
-          <div class="flex-1 text-sm">
-            <div class="font-medium text-amber-700 dark:text-amber-400">Stornorechnung</div>
-            <div class="mt-0.5 text-muted-foreground">
-              Storniert die Rechnung
-              {#if originalInvoice}
-                <a
-                  href={`/invoices/${originalInvoice.id}`}
-                  use:link
-                  class="font-mono font-medium text-foreground hover:underline"
-                >{originalInvoice.number}</a>
-                vom {formatDate(originalInvoice.issueDate)}
-              {:else if invoice.correctsInvoiceId}
-                <span class="font-mono">#{invoice.correctsInvoiceId}</span>
-              {/if}.
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  {/if}
-
-  {#if cancelledByCreditNote}
-    <Card class="border-amber-500/40 bg-amber-500/10 dark:bg-amber-500/5 mb-4">
-      <CardContent>
-        <div class="flex items-start gap-3">
-          <AlertTriangle class="size-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
-          <div class="flex-1 text-sm">
-            <div class="font-medium text-amber-700 dark:text-amber-400">Storniert</div>
-            <div class="mt-0.5 text-muted-foreground">
-              Wurde storniert durch
-              <a
-                href={`/invoices/${cancelledByCreditNote.id}`}
-                use:link
-                class="font-mono font-medium text-foreground hover:underline"
-              >{cancelledByCreditNote.number}</a>.
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  {/if}
-
+{:else if offer && customer}
   <div class="flex items-start justify-between gap-4 mb-6">
     <div>
       <div class="flex items-center gap-3">
-        <h1 class="text-3xl font-semibold tracking-tight font-mono">
-          {invoice.isCreditNote ? "Storno " : ""}{invoice.number}
-        </h1>
-        <Badge variant={statusVariant[invoice.status]}>{statusLabel[invoice.status]}</Badge>
-        {#if invoice.isCreditNote}
-          <Badge variant="destructive">Stornorechnung</Badge>
-        {/if}
+        <h1 class="text-3xl font-semibold tracking-tight font-mono">{offer.number}</h1>
+        <Badge variant={statusVariant[offer.status]}>{statusLabel[offer.status]}</Badge>
       </div>
       <p class="text-sm text-muted-foreground mt-1.5">
-        {customer.name} · {formatDate(invoice.issueDate)}
+        {customer.name} · {formatDate(offer.issueDate)}
       </p>
     </div>
     <div class="flex flex-wrap gap-2">
-      <Button disabled={generating} onclick={onGeneratePdf}>
+      {#if offer.status === "accepted" && !offer.convertedInvoiceId}
+        <Button disabled={converting} onclick={onConvert}>
+          <FileSignature />
+          {converting ? "Erzeuge…" : "In Rechnung umwandeln"}
+        </Button>
+      {/if}
+
+      <Button disabled={generating} onclick={onGeneratePdf} variant={offer.status === "accepted" && !offer.convertedInvoiceId ? "outline" : "default"}>
         <FileDown />
         {generating ? "Erzeuge…" : lastPdfPath ? "PDF neu erzeugen" : "PDF erzeugen"}
       </Button>
@@ -307,34 +258,27 @@
         </Button>
       {/if}
 
-      {#if invoice.status === "draft"}
+      {#if offer.status === "draft"}
         <Button
           variant="outline"
-          onclick={() => push(`/invoices/${invoice!.id}/edit`)}
+          onclick={() => push(`/offers/${offer!.id}/edit`)}
         >
           <Pencil />
           Bearbeiten
         </Button>
-        <Button disabled={busy} onclick={() => action("Als versendet markiert", () => markSent(invoice!.id))}>
+        <Button disabled={busy} onclick={() => action("Als versendet markiert", () => markSent(offer!.id))}>
           <Send />
           Versenden
         </Button>
       {/if}
-      {#if invoice.status === "sent"}
-        <Button disabled={busy} onclick={() => action("Als bezahlt markiert", () => markPaid(invoice!.id))}>
+      {#if offer.status === "sent"}
+        <Button disabled={busy} onclick={() => action("Als angenommen markiert", () => markAccepted(offer!.id))}>
           <CheckCircle2 />
-          Bezahlt
+          Angenommen
         </Button>
-      {/if}
-
-      {#if canCreateCreditNote}
-        <Button
-          variant="outline"
-          disabled={creatingCreditNote}
-          onclick={() => (confirmCreditNoteOpen = true)}
-        >
-          <Ban />
-          Stornorechnung erstellen
+        <Button variant="outline" disabled={busy} onclick={() => action("Als abgelehnt markiert", () => markRejected(offer!.id))}>
+          <XCircle />
+          Abgelehnt
         </Button>
       {/if}
 
@@ -349,17 +293,12 @@
           </button>
         {/snippet}
 
-        {#if invoice.status === "sent"}
-          <DropdownItem onSelect={() => action("Zurück zu Entwurf", () => reopenDraft(invoice!.id))}>
+        {#if offer.status === "sent" || offer.status === "rejected" || offer.status === "expired"}
+          <DropdownItem onSelect={() => action("Zurück zu Entwurf", () => reopenDraft(offer!.id))}>
             <Undo2 /> Zurück zu Entwurf
           </DropdownItem>
         {/if}
-        {#if invoice.status !== "cancelled" && invoice.status !== "paid"}
-          <DropdownItem onSelect={() => action("Storniert", () => cancelInvoice(invoice!.id))}>
-            <Ban /> Stornieren
-          </DropdownItem>
-        {/if}
-        {#if invoice.status === "draft" || invoice.status === "cancelled"}
+        {#if offer.status === "draft" || offer.status === "rejected" || offer.status === "expired"}
           <DropdownSeparator />
           <DropdownItem destructive onSelect={() => (confirmDeleteOpen = true)}>
             <Trash2 /> Löschen
@@ -368,6 +307,26 @@
       </DropdownMenu>
     </div>
   </div>
+
+  {#if offer.status === "accepted" && offer.convertedInvoiceId}
+    <Card class="border-success/40 bg-success/5 mb-4">
+      <CardContent>
+        <div class="flex items-center gap-3 text-sm">
+          <CheckCircle2 class="size-5 text-success shrink-0" />
+          <div class="flex-1">
+            Umgewandelt in Rechnung
+            <a
+              href={`/invoices/${offer.convertedInvoiceId}`}
+              use:link
+              class="font-mono font-medium text-foreground hover:underline"
+            >
+              {convertedInvoiceNumber ?? `#${offer.convertedInvoiceId}`}
+            </a>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  {/if}
 
   {#if pdfError}
     <Card class="border-destructive/40 bg-destructive/5 mb-4">
@@ -414,28 +373,35 @@
           Eckdaten
         </h2>
         <dl class="text-sm grid grid-cols-2 gap-y-1.5">
-          <dt class="text-muted-foreground">{invoice.isCreditNote ? "Stornodatum" : "Rechnungsdatum"}</dt>
-          <dd>{formatDate(invoice.issueDate)}</dd>
-          {#if !invoice.isCreditNote}
-            <dt class="text-muted-foreground">Fällig am</dt>
-            <dd>{formatDate(invoice.dueDate)}</dd>
-          {/if}
-          {#if invoice.deliveryDate}
-            <dt class="text-muted-foreground">Lieferdatum</dt>
-            <dd>{formatDate(invoice.deliveryDate)}</dd>
-          {/if}
-          {#if invoice.sentAt}
+          <dt class="text-muted-foreground">Angebotsdatum</dt>
+          <dd>{formatDate(offer.issueDate)}</dd>
+          <dt class="text-muted-foreground">Gültig bis</dt>
+          <dd>{formatDate(offer.validUntil)}</dd>
+          {#if offer.sentAt}
             <dt class="text-muted-foreground">Versendet</dt>
-            <dd>{formatDate(invoice.sentAt)}</dd>
+            <dd>{formatDate(offer.sentAt)}</dd>
           {/if}
-          {#if invoice.paidAt}
-            <dt class="text-muted-foreground">Bezahlt</dt>
-            <dd>{formatDate(invoice.paidAt)}</dd>
+          {#if offer.acceptedAt}
+            <dt class="text-muted-foreground">Angenommen</dt>
+            <dd>{formatDate(offer.acceptedAt)}</dd>
+          {/if}
+          {#if offer.rejectedAt}
+            <dt class="text-muted-foreground">Abgelehnt</dt>
+            <dd>{formatDate(offer.rejectedAt)}</dd>
           {/if}
         </dl>
       </CardContent>
     </Card>
   </div>
+
+  {#if offer.introText}
+    <section class="mb-4">
+      <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-1">
+        Einleitung
+      </h3>
+      <p class="text-sm whitespace-pre-line">{offer.introText}</p>
+    </section>
+  {/if}
 
   <Card class="overflow-hidden mb-6">
     <table class="w-full text-sm">
@@ -446,7 +412,7 @@
           <th class="px-4 py-3 font-medium text-right w-20">Menge</th>
           <th class="px-4 py-3 font-medium w-20">Einheit</th>
           <th class="px-4 py-3 font-medium text-right w-28">Preis</th>
-          {#if !invoice.isKleinunternehmer}
+          {#if !offer.isKleinunternehmer}
             <th class="px-4 py-3 font-medium text-right w-16">USt%</th>
           {/if}
           <th class="px-4 py-3 font-medium text-right w-28">Summe</th>
@@ -460,7 +426,7 @@
             <td class="px-4 py-3 text-right">{it.quantity}</td>
             <td class="px-4 py-3">{it.unit}</td>
             <td class="px-4 py-3 text-right font-mono">{centsToEur(it.unitPrice)}</td>
-            {#if !invoice.isKleinunternehmer}
+            {#if !offer.isKleinunternehmer}
               <td class="px-4 py-3 text-right">{it.vatRate}</td>
             {/if}
             <td class="px-4 py-3 text-right font-mono">{centsToEur(it.lineTotal)}</td>
@@ -469,62 +435,42 @@
       </tbody>
       <tfoot class="bg-muted/40">
         <tr class="border-t border-border">
-          <td colspan={invoice.isKleinunternehmer ? 5 : 6} class="px-4 py-2 text-right text-muted-foreground">
+          <td colspan={offer.isKleinunternehmer ? 5 : 6} class="px-4 py-2 text-right text-muted-foreground">
             Zwischensumme
           </td>
-          <td class="px-4 py-2 text-right font-mono">{centsToEur(invoice.subtotal)}</td>
+          <td class="px-4 py-2 text-right font-mono">{centsToEur(offer.subtotal)}</td>
         </tr>
-        {#if !invoice.isKleinunternehmer}
+        {#if !offer.isKleinunternehmer}
           <tr>
             <td colspan="6" class="px-4 py-2 text-right text-muted-foreground">USt</td>
-            <td class="px-4 py-2 text-right font-mono">{centsToEur(invoice.vatAmount)}</td>
+            <td class="px-4 py-2 text-right font-mono">{centsToEur(offer.vatAmount)}</td>
           </tr>
         {/if}
         <tr class="border-t border-border">
-          <td colspan={invoice.isKleinunternehmer ? 5 : 6} class="px-4 py-3 text-right font-semibold">
+          <td colspan={offer.isKleinunternehmer ? 5 : 6} class="px-4 py-3 text-right font-semibold">
             Gesamtbetrag
           </td>
-          <td class="px-4 py-3 text-right font-mono font-semibold">{centsToEur(invoice.total)}</td>
+          <td class="px-4 py-3 text-right font-mono font-semibold">{centsToEur(offer.total)}</td>
         </tr>
       </tfoot>
     </table>
   </Card>
 
-  {#if invoice.paymentTerms && !invoice.isCreditNote}
-    <section class="mb-4">
-      <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-1">
-        Zahlungsbedingungen
-      </h3>
-      <p class="text-sm whitespace-pre-line">{invoice.paymentTerms}</p>
-    </section>
-  {/if}
-
-  {#if invoice.notes}
+  {#if offer.notes}
     <section class="mb-4">
       <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-1">
         Notizen
       </h3>
-      <p class="text-sm whitespace-pre-line">{invoice.notes}</p>
+      <p class="text-sm whitespace-pre-line">{offer.notes}</p>
     </section>
   {/if}
 
   <ConfirmDialog
     bind:open={confirmDeleteOpen}
-    title="Rechnung löschen?"
-    description={invoice ? `${invoice.number} wird unwiderruflich entfernt.` : ""}
+    title="Angebot löschen?"
+    description={offer ? `${offer.number} wird unwiderruflich entfernt.` : ""}
     confirmLabel="Löschen"
     destructive
     onConfirm={performDelete}
-  />
-
-  <ConfirmDialog
-    bind:open={confirmCreditNoteOpen}
-    title="Stornorechnung erstellen?"
-    description={invoice
-      ? `Erstellt einen Entwurf, der ${invoice.number} vollständig storniert. Mengen lassen sich anschließend für Teilstornos anpassen.`
-      : ""}
-    confirmLabel="Erstellen"
-    destructive
-    onConfirm={performCreateCreditNote}
   />
 {/if}

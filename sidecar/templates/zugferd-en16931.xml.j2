@@ -18,7 +18,7 @@
 
   <rsm:ExchangedDocument>
     <ram:ID>{{ invoice.number }}</ram:ID>
-    <ram:TypeCode>380</ram:TypeCode>
+    <ram:TypeCode>{% if invoice.isCreditNote %}381{% else %}380{% endif %}</ram:TypeCode>
     <ram:IssueDateTime>
       <udt:DateTimeString format="102">{{ invoice.issueDate | date_xml }}</udt:DateTimeString>
     </ram:IssueDateTime>
@@ -73,7 +73,7 @@
           {% endif %}
         </ram:ApplicableTradeTax>
         <ram:SpecifiedTradeSettlementLineMonetarySummation>
-          <ram:LineTotalAmount>{{ it.lineTotal | cents_xml }}</ram:LineTotalAmount>
+          <ram:LineTotalAmount>{{ (it.lineTotal * -1 if invoice.isCreditNote else it.lineTotal) | cents_xml }}</ram:LineTotalAmount>
         </ram:SpecifiedTradeSettlementLineMonetarySummation>
       </ram:SpecifiedLineTradeSettlement>
     </ram:IncludedSupplyChainTradeLineItem>
@@ -133,6 +133,14 @@
 
     <ram:ApplicableHeaderTradeSettlement>
       <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
+      {% if invoice.isCreditNote and invoice.correctsInvoice %}
+      <ram:InvoiceReferencedDocument>
+        <ram:IssuerAssignedID>{{ invoice.correctsInvoice.number }}</ram:IssuerAssignedID>
+        <ram:FormattedIssueDateTime>
+          <qdt:DateTimeString format="102">{{ invoice.correctsInvoice.issueDate | date_xml }}</qdt:DateTimeString>
+        </ram:FormattedIssueDateTime>
+      </ram:InvoiceReferencedDocument>
+      {% endif %}
       {% if company.bankIban %}
       <ram:SpecifiedTradeSettlementPaymentMeans>
         <ram:TypeCode>58</ram:TypeCode>
@@ -171,7 +179,7 @@
       </ram:ApplicableTradeTax>
       {% endfor %}
 
-      {% if invoice.paymentTerms or invoice.dueDate %}
+      {% if not invoice.isCreditNote and (invoice.paymentTerms or invoice.dueDate) %}
       <ram:SpecifiedTradePaymentTerms>
         {% if invoice.paymentTerms %}
         <ram:Description>{{ invoice.paymentTerms }}</ram:Description>

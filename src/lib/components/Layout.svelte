@@ -4,6 +4,7 @@
     LayoutDashboard,
     Users,
     FileText,
+    FileSignature,
     Repeat,
     Download,
     Settings as SettingsIcon,
@@ -14,13 +15,12 @@
   import { Toaster, DropdownMenu, DropdownItem, Titlebar } from "$lib/ui";
   import { theme, type ThemeMode } from "$lib/theme.svelte";
   import { cn } from "$lib/utils";
-  import { isPopupWindow } from "$lib/window";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
+  import { version as appVersion } from "../../../package.json";
 
   let { children } = $props();
 
-  const popup = isPopupWindow();
   let windowTitle = $state("Zettel");
 
   onMount(() => {
@@ -32,6 +32,7 @@
   const nav = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/customers", label: "Kunden", icon: Users },
+    { href: "/offers", label: "Angebote", icon: FileSignature },
     { href: "/invoices", label: "Rechnungen", icon: FileText },
     { href: "/recurring", label: "Vorlagen", icon: Repeat },
     { href: "/export", label: "Export", icon: Download },
@@ -57,15 +58,8 @@
 <div class="flex flex-col h-full bg-background text-foreground">
   <Titlebar title={windowTitle} />
 
-  {#if popup}
-    <main class="flex-1 overflow-auto">
-      <div class="px-6 py-6">
-        {@render children?.()}
-      </div>
-    </main>
-  {:else}
-    <div class="flex flex-1 min-h-0">
-      <aside class="w-60 shrink-0 border-r bg-card/50 flex flex-col">
+  <div class="flex flex-1 min-h-0">
+    <aside class="w-60 shrink-0 border-r bg-card/50 flex flex-col">
         <nav class="flex-1 p-2 flex flex-col gap-0.5 pt-4">
           {#each nav as item}
             {@const active = isActive(item.href)}
@@ -87,7 +81,7 @@
 
         <div class="p-2 border-t flex items-center justify-between">
           <span class="px-2 text-[10px] text-muted-foreground">
-            v0.1.0 · MIT
+            v{appVersion} · MIT
           </span>
           <DropdownMenu align="end" side="top">
             {#snippet trigger()}
@@ -124,13 +118,12 @@
         </div>
       </aside>
 
-      <main class="flex-1 overflow-auto">
-        <div class="mx-auto max-w-6xl px-8 py-8">
-          {@render children?.()}
-        </div>
-      </main>
-    </div>
-  {/if}
+    <main class="flex-1 overflow-auto">
+      <div class="mx-auto max-w-6xl px-8 py-8">
+        {@render children?.()}
+      </div>
+    </main>
+  </div>
 </div>
 
 <Toaster />

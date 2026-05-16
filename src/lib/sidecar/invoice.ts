@@ -34,8 +34,9 @@ function buildPayload(opts: {
   customer: CustomerSnapshot;
   company: Settings;
   outputPath: string;
+  correctsInvoice?: { number: string; issueDate: number } | null;
 }) {
-  const { invoice, items, customer, company, outputPath } = opts;
+  const { invoice, items, customer, company, outputPath, correctsInvoice } = opts;
   return {
     invoice: {
       number: invoice.number,
@@ -47,6 +48,8 @@ function buildPayload(opts: {
       total: invoice.total,
       isKleinunternehmer: invoice.isKleinunternehmer,
       isReverseCharge: invoice.isReverseCharge,
+      isCreditNote: invoice.isCreditNote,
+      correctsInvoice: correctsInvoice ?? null,
       notes: invoice.notes,
       paymentTerms: invoice.paymentTerms,
     },
@@ -103,12 +106,20 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
     throw new Error("Customer snapshot is corrupt — cannot render PDF.");
   }
   const outputPath = await buildOutputPath(data.invoice);
+  let correctsInvoice: { number: string; issueDate: number } | null = null;
+  if (data.invoice.isCreditNote && data.invoice.correctsInvoiceId) {
+    const orig = await getInvoice(data.invoice.correctsInvoiceId);
+    if (orig) {
+      correctsInvoice = { number: orig.invoice.number, issueDate: orig.invoice.issueDate };
+    }
+  }
   const payload = buildPayload({
     invoice: data.invoice,
     items: data.items,
     customer,
     company,
     outputPath,
+    correctsInvoice,
   });
 
   const response = (await invoke<SidecarResponse>("generate_invoice", { payload })) as SidecarResponse;

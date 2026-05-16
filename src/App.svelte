@@ -8,6 +8,9 @@
   import InvoicesList from "./routes/InvoicesList.svelte";
   import InvoiceEdit from "./routes/InvoiceEdit.svelte";
   import InvoiceDetail from "./routes/InvoiceDetail.svelte";
+  import OffersList from "./routes/OffersList.svelte";
+  import OfferEdit from "./routes/OfferEdit.svelte";
+  import OfferDetail from "./routes/OfferDetail.svelte";
   import RecurringList from "./routes/RecurringList.svelte";
   import RecurringEdit from "./routes/RecurringEdit.svelte";
   import Settings from "./routes/Settings.svelte";
@@ -37,6 +40,16 @@
       props: { mode: "edit" },
     }),
     "/invoices/:id": InvoiceDetail,
+    "/offers": OffersList,
+    "/offers/new": wrap({
+      component: OfferEdit as unknown as never,
+      props: { mode: "new" },
+    }),
+    "/offers/:id/edit": wrap({
+      component: OfferEdit as unknown as never,
+      props: { mode: "edit" },
+    }),
+    "/offers/:id": OfferDetail,
     "/recurring": RecurringList,
     "/recurring/new": wrap({
       component: RecurringEdit as unknown as never,

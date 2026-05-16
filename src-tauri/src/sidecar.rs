@@ -139,6 +139,15 @@ pub async fn generate_invoice(app: AppHandle, payload: Value) -> Result<Value, S
 }
 
 #[tauri::command]
+pub async fn generate_offer(app: AppHandle, payload: Value) -> Result<Value, String> {
+    let request = serde_json::json!({
+        "command": "generate_offer",
+        "payload": payload,
+    });
+    run_sidecar(&app, &request)
+}
+
+#[tauri::command]
 pub async fn ping_sidecar(app: AppHandle) -> Result<Value, String> {
     let request = serde_json::json!({ "command": "ping" });
     run_sidecar(&app, &request)

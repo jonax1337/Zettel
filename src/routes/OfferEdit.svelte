@@ -4,12 +4,12 @@
   import {
     computeLineTotal,
     computeTotals,
-    createInvoice,
-    getInvoice,
-    updateInvoice,
-    type InvoiceFormInput,
-    type InvoiceItemInput,
-  } from "$lib/db/invoices";
+    createOffer,
+    getOffer,
+    updateOffer,
+    type OfferFormInput,
+    type OfferItemInput,
+  } from "$lib/db/offers";
   import type { Customer, Settings } from "$lib/db/schema";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
   import {
@@ -28,7 +28,7 @@
     Select,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2, AlertTriangle } from "@lucide/svelte";
+  import { ArrowLeft, Plus, Trash2 } from "@lucide/svelte";
 
   type Props = {
     mode: "new" | "edit";
@@ -44,17 +44,15 @@
 
   let saving = $state(false);
   let error = $state<string | null>(null);
+  let readOnly = $state(false);
 
   let customerIdStr = $state<string>("");
   let issueDateIso = $state(toIsoDate(nowUnix()));
-  let deliveryDateIso = $state("");
-  let dueDateIso = $state(toIsoDate(addDaysUnix(nowUnix(), 14)));
+  let validUntilIso = $state("");
   let notes = $state("");
-  let paymentTerms = $state("");
+  let introText = $state("");
   let isReverseCharge = $state(false);
-  let isCreditNote = $state(false);
-  let correctsInvoiceId = $state<number | null>(null);
-  let items = $state<Array<InvoiceItemInput & { priceText: string }>>([
+  let items = $state<Array<OfferItemInput & { priceText: string }>>([
     { description: "", quantity: 1, unit: "Stk", unitPrice: 0, vatRate: 0, priceText: "" },
   ]);
 
@@ -62,9 +60,6 @@
     customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
   );
 
-  // Reverse-Charge nur erlaubt, wenn weder Firma noch Rechnung Kleinunternehmer
-  // sind und beide Parteien eine USt-IdNr. haben. Wir prüfen das EU-Länder-Kriterium
-  // bewusst nicht automatisch — der User trägt die Verantwortung.
   const canReverseCharge = $derived(
     !!settings &&
       !settings.isKleinunternehmer &&
@@ -109,7 +104,7 @@
         settings = s;
         customers = cs;
         if (mode === "new") {
-          paymentTerms = `Zahlbar innerhalb von ${s.defaultPaymentTermsDays} Tagen ohne Abzug.`;
+          validUntilIso = toIsoDate(addDaysUnix(nowUnix(), s.defaultOfferValidityDays));
           for (const it of items) it.vatRate = s.isKleinunternehmer ? 0 : 19;
           items = [...items];
         }
@@ -117,32 +112,38 @@
       .catch((e) => (error = String(e)));
   });
 
+  // Keep validUntil in sync with issueDate while creating (offset = defaultValidityDays).
+  $effect(() => {
+    if (mode !== "new" || !settings) return;
+    try {
+      const issue = fromIsoDate(issueDateIso);
+      validUntilIso = toIsoDate(addDaysUnix(issue, settings.defaultOfferValidityDays));
+    } catch {
+      // ignore
+    }
+  });
+
   $effect(() => {
     if (mode === "edit" && params?.id) {
       const numId = Number.parseInt(params.id, 10);
       if (Number.isNaN(numId)) return;
       id = numId;
-      getInvoice(numId)
+      getOffer(numId)
         .then((res) => {
           if (!res) {
-            error = "Rechnung nicht gefunden.";
+            error = "Angebot nicht gefunden.";
             return;
           }
-          if (res.invoice.status !== "draft") {
+          if (res.offer.status !== "draft") {
+            readOnly = true;
             error = "Nur Entwürfe können bearbeitet werden.";
-            return;
           }
-          customerIdStr = String(res.invoice.customerId);
-          issueDateIso = toIsoDate(res.invoice.issueDate);
-          deliveryDateIso = res.invoice.deliveryDate
-            ? toIsoDate(res.invoice.deliveryDate)
-            : "";
-          dueDateIso = toIsoDate(res.invoice.dueDate);
-          notes = res.invoice.notes ?? "";
-          paymentTerms = res.invoice.paymentTerms ?? "";
-          isReverseCharge = res.invoice.isReverseCharge;
-          isCreditNote = res.invoice.isCreditNote;
-          correctsInvoiceId = res.invoice.correctsInvoiceId;
+          customerIdStr = String(res.offer.customerId);
+          issueDateIso = toIsoDate(res.offer.issueDate);
+          validUntilIso = toIsoDate(res.offer.validUntil);
+          notes = res.offer.notes ?? "";
+          introText = res.offer.introText ?? "";
+          isReverseCharge = res.offer.isReverseCharge;
           items = res.items.map((it) => ({
             description: it.description,
             quantity: it.quantity,
@@ -165,7 +166,7 @@
         quantity: 1,
         unit: "Stk",
         unitPrice: 0,
-        vatRate: settings?.isKleinunternehmer ? 0 : 19,
+        vatRate: isReverseCharge ? 0 : settings?.isKleinunternehmer ? 0 : 19,
         priceText: "",
       },
     ];
@@ -196,40 +197,53 @@
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
+    if (readOnly) return;
     const customerId = customerIdStr ? Number.parseInt(customerIdStr, 10) : null;
     if (customerId === null || Number.isNaN(customerId)) {
       error = "Bitte einen Kunden auswählen.";
       return;
     }
-    if (items.length === 0) {
-      error = "Mindestens eine Position erforderlich.";
+    const validItems = items.filter(
+      (it) => it.description.trim() !== "" && it.unitPrice > 0,
+    );
+    if (validItems.length === 0) {
+      error = "Mindestens eine Position mit Beschreibung und Preis erforderlich.";
       return;
+    }
+    if (isReverseCharge) {
+      if (!settings?.vatId) {
+        error = "Reverse-Charge: eigene USt-IdNr. fehlt.";
+        return;
+      }
+      if (!selectedCustomer?.vatId) {
+        error = "Reverse-Charge: Kunde hat keine USt-IdNr. hinterlegt.";
+        return;
+      }
     }
     saving = true;
     error = null;
     try {
-      const input: InvoiceFormInput = {
+      const input: OfferFormInput = {
         customerId,
         issueDate: fromIsoDate(issueDateIso),
-        deliveryDate: deliveryDateIso ? fromIsoDate(deliveryDateIso) : null,
-        dueDate: fromIsoDate(dueDateIso),
+        validUntil: fromIsoDate(validUntilIso),
         notes: notes.trim() || null,
-        paymentTerms: paymentTerms.trim() || null,
+        introText: introText.trim() || null,
         isReverseCharge,
         items: items.map(({ priceText: _p, ...rest }) => rest),
       };
       let savedId: number;
       if (mode === "new") {
-        savedId = await createInvoice(input);
-        toast.success("Rechnung erstellt");
+        savedId = await createOffer(input);
+        toast.success("Angebot erstellt");
       } else if (id !== null) {
-        await updateInvoice(id, input);
+        await updateOffer(id, input);
         toast.success("Änderungen gespeichert");
         savedId = id;
       } else {
         throw new Error("Keine ID");
       }
-      push(`/invoices/${savedId}`);
+      push(`/offers/${savedId}`);
     } catch (err) {
       error = String(err);
       toast.error("Speichern fehlgeschlagen", String(err));
@@ -239,7 +253,11 @@
   }
 
   function onCancel() {
-    push("/invoices");
+    if (mode === "edit" && id !== null) {
+      push(`/offers/${id}`);
+    } else {
+      push("/offers");
+    }
   }
 
   const vatItems = [
@@ -251,38 +269,26 @@
 
 <header class="mb-6">
   <a
-    href="/invoices"
+    href="/offers"
     use:link
     class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
   >
-    <ArrowLeft class="size-4" /> Rechnungen
+    <ArrowLeft class="size-4" /> Angebote
   </a>
   <h1 class="text-3xl font-semibold tracking-tight mt-2">
-    {#if isCreditNote}
-      Stornorechnung bearbeiten
-    {:else if mode === "new"}
-      Neue Rechnung
-    {:else}
-      Rechnung bearbeiten
-    {/if}
+    {mode === "new" ? "Neues Angebot" : "Angebot bearbeiten"}
   </h1>
 </header>
 
 {#if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else}
-  {#if isCreditNote}
-    <Card class="border-amber-500/40 bg-amber-500/10 dark:bg-amber-500/5 mb-4">
+  {#if readOnly}
+    <Card class="border-warning/40 bg-warning/5 mb-4">
       <CardContent>
-        <div class="flex items-start gap-3">
-          <AlertTriangle class="size-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
-          <div class="flex-1 text-sm">
-            <div class="font-medium text-amber-700 dark:text-amber-400">Stornorechnung</div>
-            <div class="mt-0.5 text-muted-foreground">
-              Mengen anpassen für Teilstorno. Positionen entfernen für Teilrückerstattung.
-            </div>
-          </div>
-        </div>
+        <p class="text-sm">
+          Dieses Angebot ist kein Entwurf mehr und kann nicht bearbeitet werden.
+        </p>
       </CardContent>
     </Card>
   {/if}
@@ -290,62 +296,57 @@
   <form onsubmit={onSubmit} class="space-y-6">
     <Card>
       <CardContent>
-        <section class="grid grid-cols-2 gap-4">
-          <div class="col-span-2 flex flex-col gap-1.5">
-            <Label>Kunde <span class="text-destructive">*</span></Label>
-            <Select
-              bind:value={customerIdStr}
-              items={customerItems}
-              placeholder="— bitte wählen —"
-              disabled={isCreditNote}
-            />
-            {#if isCreditNote}
-              <p class="text-xs text-muted-foreground">
-                Kunde ist an die Originalrechnung gebunden und kann nicht geändert werden.
-              </p>
-            {/if}
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <Label>{isCreditNote ? "Stornodatum" : "Rechnungsdatum"}</Label>
-            <Input type="date" bind:value={issueDateIso} required />
-          </div>
-          {#if !isCreditNote}
-            <div class="flex flex-col gap-1.5">
-              <Label>Fällig am</Label>
-              <Input type="date" bind:value={dueDateIso} required />
-            </div>
-          {/if}
-          <div class="flex flex-col gap-1.5 col-span-2">
-            <Label>Liefer-/Leistungsdatum</Label>
-            <Input type="date" bind:value={deliveryDateIso} />
-          </div>
-          {#if settings && !settings.isKleinunternehmer && !isCreditNote}
-            <div class="col-span-2 flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
-              <input
-                id="reverse-charge"
-                type="checkbox"
-                bind:checked={isReverseCharge}
-                disabled={!canReverseCharge}
-                class="mt-0.5 size-4 rounded border-input accent-primary disabled:opacity-40"
+        <fieldset disabled={readOnly} class="contents">
+          <section class="grid grid-cols-2 gap-4">
+            <div class="col-span-2 flex flex-col gap-1.5">
+              <Label>Kunde <span class="text-destructive">*</span></Label>
+              <Select
+                bind:value={customerIdStr}
+                items={customerItems}
+                placeholder="— bitte wählen —"
+                disabled={readOnly}
               />
-              <div class="flex-1 text-sm">
-                <label for="reverse-charge" class="font-medium cursor-pointer">
-                  Reverse-Charge (intra-EU B2B)
-                </label>
-                <p class="text-xs text-muted-foreground mt-0.5">
-                  Steuerschuldnerschaft des Leistungsempfängers. Setzt alle Positionen
-                  auf 0&nbsp;% USt und schreibt den Hinweis auf die Rechnung. Verantwortung
-                  für das EU-B2B-Kriterium liegt beim Nutzer.
-                </p>
-                {#if !canReverseCharge && reverseChargeBlockedReason}
-                  <p class="text-xs text-amber-600 dark:text-amber-500 mt-1">
-                    {reverseChargeBlockedReason}
-                  </p>
-                {/if}
-              </div>
             </div>
-          {/if}
-        </section>
+            <div class="flex flex-col gap-1.5">
+              <Label>Angebotsdatum</Label>
+              <Input type="date" bind:value={issueDateIso} required disabled={readOnly} />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <Label>Gültig bis</Label>
+              <Input type="date" bind:value={validUntilIso} required disabled={readOnly} />
+            </div>
+            {#if settings && !settings.isKleinunternehmer}
+              <div class="col-span-2 flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
+                <input
+                  id="reverse-charge"
+                  type="checkbox"
+                  bind:checked={isReverseCharge}
+                  disabled={!canReverseCharge || readOnly}
+                  class="mt-0.5 size-4 rounded border-input accent-primary disabled:opacity-40"
+                />
+                <div class="flex-1 text-sm">
+                  <label for="reverse-charge" class="font-medium cursor-pointer">
+                    Reverse-Charge (intra-EU B2B)
+                  </label>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    Steuerschuldnerschaft des Leistungsempfängers. Setzt alle Positionen
+                    auf 0&nbsp;% USt und schreibt den Hinweis auf das Angebot. Verantwortung
+                    für das EU-B2B-Kriterium liegt beim Nutzer.
+                  </p>
+                  {#if !canReverseCharge && reverseChargeBlockedReason}
+                    <p class="text-xs text-amber-600 dark:text-amber-500 mt-1">
+                      {reverseChargeBlockedReason}
+                    </p>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+            <div class="col-span-2 flex flex-col gap-1.5">
+              <Label>Einleitungstext (optional)</Label>
+              <Textarea rows={3} bind:value={introText} disabled={readOnly} placeholder="Erscheint oberhalb der Positionen auf dem PDF." />
+            </div>
+          </section>
+        </fieldset>
       </CardContent>
     </Card>
 
@@ -354,7 +355,7 @@
         <h2 class="text-sm font-semibold uppercase text-muted-foreground tracking-wider">
           Positionen
         </h2>
-        <Button type="button" size="sm" variant="outline" onclick={addItem}>
+        <Button type="button" size="sm" variant="outline" onclick={addItem} disabled={readOnly}>
           <Plus />
           Position
         </Button>
@@ -380,7 +381,7 @@
               <tr class="border-t">
                 <td class="px-3 py-2 text-xs text-muted-foreground">{idx + 1}</td>
                 <td class="px-2 py-1.5">
-                  <Input bind:value={it.description} required />
+                  <Input bind:value={it.description} required disabled={readOnly} />
                 </td>
                 <td class="px-2 py-1.5">
                   <Input
@@ -388,10 +389,11 @@
                     step="0.01"
                     min="0"
                     bind:value={it.quantity}
+                    disabled={readOnly}
                   />
                 </td>
                 <td class="px-2 py-1.5">
-                  <Input bind:value={it.unit} />
+                  <Input bind:value={it.unit} disabled={readOnly} />
                 </td>
                 <td class="px-2 py-1.5">
                   <Input
@@ -399,6 +401,7 @@
                     onblur={() => onPriceBlur(idx)}
                     placeholder="0,00"
                     class="text-right"
+                    disabled={readOnly}
                   />
                 </td>
                 {#if !vatExempt}
@@ -412,6 +415,7 @@
                         }
                       }
                       items={vatItems}
+                      disabled={readOnly}
                     />
                   </td>
                 {/if}
@@ -422,7 +426,7 @@
                   <button
                     type="button"
                     onclick={() => removeItem(idx)}
-                    disabled={items.length === 1}
+                    disabled={items.length === 1 || readOnly}
                     class="inline-flex items-center justify-center size-8 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30 disabled:pointer-events-none transition-colors"
                     title="Position entfernen"
                   >
@@ -461,21 +465,15 @@
 
     <Card>
       <CardContent class="space-y-4">
-        {#if !isCreditNote}
-          <div class="flex flex-col gap-1.5">
-            <Label>Zahlungsbedingungen</Label>
-            <Textarea rows={2} bind:value={paymentTerms} />
-          </div>
-        {/if}
         <div class="flex flex-col gap-1.5">
-          <Label>Notizen / Fußtext</Label>
-          <Textarea rows={3} bind:value={notes} />
+          <Label>Notizen (intern)</Label>
+          <Textarea rows={3} bind:value={notes} disabled={readOnly} />
         </div>
       </CardContent>
     </Card>
 
     <div class="flex items-center gap-3">
-      <Button type="submit" disabled={saving}>
+      <Button type="submit" disabled={saving || readOnly}>
         {saving ? "Speichere…" : mode === "new" ? "Anlegen" : "Speichern"}
       </Button>
       <Button type="button" onclick={onCancel} variant="ghost">Abbrechen</Button>

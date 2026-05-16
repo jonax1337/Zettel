@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <title>{% if invoice.isCreditNote %}Stornorechnung{% else %}Rechnung{% endif %} {{ invoice.number }}</title>
+  <title>Angebot {{ offer.number }}</title>
 </head>
 <body>
 
@@ -13,16 +13,10 @@
       {% if company.ownerName %}<div class="brand-owner">{{ company.ownerName }}</div>{% endif %}
     </div>
     <div class="title-block">
-      <div class="doctype">{% if invoice.isCreditNote %}Stornorechnung{% else %}Rechnung{% endif %}</div>
-      <div class="docnumber">{{ invoice.number }}</div>
+      <div class="doctype">Angebot</div>
+      <div class="docnumber">{{ offer.number }}</div>
     </div>
   </header>
-
-  {% if invoice.isCreditNote and invoice.correctsInvoice %}
-  <section class="callout">
-    Storno zur Rechnung {{ invoice.correctsInvoice.number }} vom {{ invoice.correctsInvoice.issueDate | date_unix }}.
-  </section>
-  {% endif %}
 
   <section class="parties">
     <div class="addressee">
@@ -40,25 +34,17 @@
 
     <div class="meta">
       <div class="meta-row">
-        <span class="meta-label">Rechnungsnr.</span>
-        <span class="meta-value">{{ invoice.number }}</span>
+        <span class="meta-label">Angebotsnr.</span>
+        <span class="meta-value">{{ offer.number }}</span>
       </div>
       <div class="meta-row">
-        <span class="meta-label">Rechnungsdatum</span>
-        <span class="meta-value">{{ invoice.issueDate | date_unix }}</span>
+        <span class="meta-label">Datum</span>
+        <span class="meta-value">{{ offer.issueDate | date_unix }}</span>
       </div>
-      {% if invoice.deliveryDate %}
       <div class="meta-row">
-        <span class="meta-label">Leistungsdatum</span>
-        <span class="meta-value">{{ invoice.deliveryDate | date_unix }}</span>
+        <span class="meta-label">Gültig bis</span>
+        <span class="meta-value">{{ offer.validUntil | date_unix }}</span>
       </div>
-      {% endif %}
-      {% if not invoice.isCreditNote %}
-      <div class="meta-row">
-        <span class="meta-label">Fällig am</span>
-        <span class="meta-value">{{ invoice.dueDate | date_unix }}</span>
-      </div>
-      {% endif %}
       {% if customer.vatId %}
       <div class="meta-row">
         <span class="meta-label">USt-IdNr. Kunde</span>
@@ -68,6 +54,12 @@
     </div>
   </section>
 
+  {% if offer.introText %}
+    <section class="block">
+      <div class="notes">{{ offer.introText | replace('\n', '<br>') | safe }}</div>
+    </section>
+  {% endif %}
+
   <table class="items">
     <thead>
       <tr>
@@ -76,7 +68,7 @@
         <th class="col-qty">Menge</th>
         <th class="col-unit">Einheit</th>
         <th class="col-price">Einzelpreis</th>
-        {% if not invoice.isKleinunternehmer and not invoice.isReverseCharge %}<th class="col-vat">USt %</th>{% endif %}
+        {% if not offer.isKleinunternehmer and not offer.isReverseCharge %}<th class="col-vat">USt %</th>{% endif %}
         <th class="col-total">Gesamt</th>
       </tr>
     </thead>
@@ -88,8 +80,8 @@
           <td class="col-qty">{{ it.quantity | qty }}</td>
           <td class="col-unit">{{ it.unit }}</td>
           <td class="col-price">{{ it.unitPrice | eur }}</td>
-          {% if not invoice.isKleinunternehmer and not invoice.isReverseCharge %}<td class="col-vat">{{ it.vatRate }}</td>{% endif %}
-          <td class="col-total">{{ (it.lineTotal * -1 if invoice.isCreditNote else it.lineTotal) | eur }}</td>
+          {% if not offer.isKleinunternehmer and not offer.isReverseCharge %}<td class="col-vat">{{ it.vatRate }}</td>{% endif %}
+          <td class="col-total">{{ it.lineTotal | eur }}</td>
         </tr>
       {% endfor %}
     </tbody>
@@ -99,47 +91,40 @@
     <table class="totals">
       <tr>
         <th>Zwischensumme</th>
-        <td>{{ invoice.subtotal | eur }}</td>
+        <td>{{ offer.subtotal | eur }}</td>
       </tr>
-      {% if not invoice.isKleinunternehmer and not invoice.isReverseCharge %}
+      {% if not offer.isKleinunternehmer and not offer.isReverseCharge %}
         <tr>
           <th>Umsatzsteuer</th>
-          <td>{{ invoice.vatAmount | eur }}</td>
+          <td>{{ offer.vatAmount | eur }}</td>
         </tr>
       {% endif %}
       <tr class="grand">
         <th>Gesamtbetrag</th>
-        <td>{{ invoice.total | eur }}</td>
+        <td>{{ offer.total | eur }}</td>
       </tr>
     </table>
   </section>
 
-  {% if invoice.isKleinunternehmer and company.kleinunternehmerNote %}
+  {% if offer.isKleinunternehmer and company.kleinunternehmerNote %}
     <p class="callout">{{ company.kleinunternehmerNote }}</p>
   {% endif %}
 
-  {% if invoice.isReverseCharge %}
+  {% if offer.isReverseCharge %}
     <p class="callout">
-      Steuerschuldnerschaft des Leistungsempfängers / Reverse charge — VAT to be paid by the recipient.
+      Bei Auftragsannahme wird die Rechnung mit dem Hinweis "Steuerschuldnerschaft des Leistungsempfängers" ausgestellt (Reverse Charge).
     </p>
   {% endif %}
 
-  {% if invoice.isCreditNote %}
-    <section class="block">
-      <div class="block-title">Erstattung</div>
-      <p>Der Betrag wird auf Ihr Konto erstattet.</p>
-    </section>
-  {% elif invoice.paymentTerms %}
-    <section class="block">
-      <div class="block-title">Zahlungsbedingungen</div>
-      <p>{{ invoice.paymentTerms }}</p>
-    </section>
-  {% endif %}
+  <p class="callout">
+    Dieses Angebot ist freibleibend und unverbindlich. Gültig bis {{ offer.validUntil | date_unix }}.
+    Bei Annahme erstellen wir eine entsprechende Rechnung.
+  </p>
 
-  {% if invoice.notes %}
+  {% if offer.notes %}
     <section class="block">
       <div class="block-title">Hinweise</div>
-      <div class="notes">{{ invoice.notes | replace('\n', '<br>') | safe }}</div>
+      <div class="notes">{{ offer.notes | replace('\n', '<br>') | safe }}</div>
     </section>
   {% endif %}
 
@@ -160,12 +145,6 @@
       <div class="col-title">Steuer</div>
       {% if company.taxNumber %}<div>St-Nr. {{ company.taxNumber }}</div>{% endif %}
       {% if company.vatId %}<div>USt-IdNr. {{ company.vatId }}</div>{% endif %}
-    </div>
-    <div class="col">
-      <div class="col-title">Bankverbindung</div>
-      {% if company.bankName %}<div>{{ company.bankName }}</div>{% endif %}
-      {% if company.bankIban %}<div class="iban">{{ company.bankIban }}</div>{% endif %}
-      {% if company.bankBic %}<div>{{ company.bankBic }}</div>{% endif %}
     </div>
   </footer>
 

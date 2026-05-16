@@ -1,12 +1,13 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
   import {
-    getInvoiceYears,
-    listInvoices,
-    type InvoiceFilter,
-    type InvoiceListRow,
-  } from "$lib/db/invoices";
-  import type { InvoiceStatus } from "$lib/db/schema";
+    expireDueOffers,
+    getOfferYears,
+    listOffers,
+    type OfferFilter,
+    type OfferListRow,
+  } from "$lib/db/offers";
+  import type { OfferStatus } from "$lib/db/schema";
   import { listCustomers } from "$lib/db/queries";
   import type { Customer } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
@@ -14,7 +15,7 @@
   import { Button, Card, Input, Select, Badge, Label } from "$lib/ui";
   import { Plus, Search } from "@lucide/svelte";
 
-  let invoices = $state<InvoiceListRow[]>([]);
+  let offers = $state<OfferListRow[]>([]);
   let customers = $state<Customer[]>([]);
   let years = $state<number[]>([]);
   let loading = $state(true);
@@ -24,19 +25,17 @@
   let year = $state<string>("all");
   let customerId = $state<string>("all");
   let search = $state("");
-  let onlyCreditNotes = $state(false);
 
   async function reload() {
     loading = true;
     try {
-      const filter: InvoiceFilter = {
-        status: (status === "all" ? "all" : status) as InvoiceStatus | "all",
+      const filter: OfferFilter = {
+        status: (status === "all" ? "all" : status) as OfferStatus | "all",
         year: year === "all" ? "all" : Number.parseInt(year, 10),
         customerId: customerId === "all" ? "all" : Number.parseInt(customerId, 10),
         search,
       };
-      const all = await listInvoices(filter);
-      invoices = onlyCreditNotes ? all.filter((i) => i.isCreditNote) : all;
+      offers = await listOffers(filter);
       error = null;
     } catch (e) {
       error = String(e);
@@ -46,8 +45,13 @@
   }
 
   $effect(() => {
-    listCustomers().then((c) => (customers = c));
-    getInvoiceYears().then((y) => (years = y));
+    expireDueOffers()
+      .catch(() => {})
+      .finally(() => {
+        listCustomers().then((c) => (customers = c));
+        getOfferYears().then((y) => (years = y));
+        reload();
+      });
   });
 
   $effect(() => {
@@ -55,34 +59,35 @@
     void year;
     void customerId;
     void search;
-    void onlyCreditNotes;
     reload();
   });
 
-  function newInvoice() {
-    push("/invoices/new");
-  }
-
-  const statusLabel: Record<InvoiceStatus, string> = {
+  const statusLabel: Record<OfferStatus, string> = {
     draft: "Entwurf",
     sent: "Versendet",
-    paid: "Bezahlt",
-    cancelled: "Storniert",
+    accepted: "Angenommen",
+    rejected: "Abgelehnt",
+    expired: "Abgelaufen",
   };
 
-  const statusVariant: Record<InvoiceStatus, "secondary" | "warning" | "success" | "outline"> = {
+  const statusVariant: Record<
+    OfferStatus,
+    "secondary" | "warning" | "success" | "destructive" | "outline"
+  > = {
     draft: "secondary",
     sent: "warning",
-    paid: "success",
-    cancelled: "outline",
+    accepted: "success",
+    rejected: "destructive",
+    expired: "outline",
   };
 
   const statusItems = $derived([
     { value: "all", label: "Alle Status" },
     { value: "draft", label: "Entwurf" },
     { value: "sent", label: "Versendet" },
-    { value: "paid", label: "Bezahlt" },
-    { value: "cancelled", label: "Storniert" },
+    { value: "accepted", label: "Angenommen" },
+    { value: "rejected", label: "Abgelehnt" },
+    { value: "expired", label: "Abgelaufen" },
   ]);
 
   const yearItems = $derived([
@@ -98,18 +103,18 @@
 
 <header class="mb-6 flex items-end justify-between gap-4">
   <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Rechnungen</h1>
+    <h1 class="text-3xl font-semibold tracking-tight">Angebote</h1>
     <p class="text-sm text-muted-foreground mt-1">
-      {invoices.length} {invoices.length === 1 ? "Rechnung" : "Rechnungen"}
+      {offers.length} {offers.length === 1 ? "Angebot" : "Angebote"}
     </p>
   </div>
-  <Button onclick={newInvoice}>
+  <Button onclick={() => push("/offers/new")}>
     <Plus />
-    Neue Rechnung
+    Neues Angebot
   </Button>
 </header>
 
-<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
   <div class="flex flex-col gap-1.5">
     <Label class="text-xs text-muted-foreground">Status</Label>
     <Select bind:value={status} items={statusItems} />
@@ -131,23 +136,14 @@
   </div>
 </div>
 
-<label class="inline-flex items-center gap-2 mb-5 text-sm text-muted-foreground cursor-pointer select-none">
-  <input
-    type="checkbox"
-    bind:checked={onlyCreditNotes}
-    class="size-4 rounded border-input accent-primary"
-  />
-  Nur Stornorechnungen
-</label>
-
 {#if error}
   <p class="text-sm text-destructive">Fehler: {error}</p>
 {:else if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if invoices.length === 0}
+{:else if offers.length === 0}
   <Card>
     <div class="py-12 text-center text-sm text-muted-foreground">
-      Keine Rechnungen gefunden.
+      Keine Angebote gefunden.
     </div>
   </Card>
 {:else}
@@ -160,32 +156,23 @@
           <th class="px-4 py-3 font-medium">Kunde</th>
           <th class="px-4 py-3 font-medium text-right">Betrag</th>
           <th class="px-4 py-3 font-medium">Status</th>
-          <th class="px-4 py-3 font-medium">Fällig</th>
+          <th class="px-4 py-3 font-medium">Gültig bis</th>
         </tr>
       </thead>
       <tbody>
-        {#each invoices as inv (inv.id)}
+        {#each offers as off (off.id)}
           <tr
             class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
-            onclick={() => push(`/invoices/${inv.id}`)}
+            onclick={() => push(`/offers/${off.id}`)}
           >
-            <td class="px-4 py-3 font-mono text-xs">
-              <span class="inline-flex items-center gap-1.5">
-                {inv.number}
-                {#if inv.isCreditNote}
-                  <Badge variant="destructive" class="text-[10px] px-1.5 py-0">Storno</Badge>
-                {/if}
-              </span>
-            </td>
-            <td class="px-4 py-3 text-muted-foreground">{formatDate(inv.issueDate)}</td>
-            <td class="px-4 py-3">{inv.customerName}</td>
-            <td class="px-4 py-3 text-right font-mono">{centsToEur(inv.total)}</td>
+            <td class="px-4 py-3 font-mono text-xs">{off.number}</td>
+            <td class="px-4 py-3 text-muted-foreground">{formatDate(off.issueDate)}</td>
+            <td class="px-4 py-3">{off.customerName}</td>
+            <td class="px-4 py-3 text-right font-mono">{centsToEur(off.total)}</td>
             <td class="px-4 py-3">
-              <Badge variant={statusVariant[inv.status]}>{statusLabel[inv.status]}</Badge>
+              <Badge variant={statusVariant[off.status]}>{statusLabel[off.status]}</Badge>
             </td>
-            <td class="px-4 py-3 text-muted-foreground text-xs">
-              {inv.isCreditNote ? "—" : formatDate(inv.dueDate)}
-            </td>
+            <td class="px-4 py-3 text-muted-foreground text-xs">{formatDate(off.validUntil)}</td>
           </tr>
         {/each}
       </tbody>

@@ -51,12 +51,12 @@ def _unece_unit(unit: str | None) -> str:
     return UNECE_UNITS.get(unit.strip(), "C62")
 
 
-def _vat_groups(items: list[dict[str, Any]], is_klein: bool) -> list[dict[str, Any]]:
+def _vat_groups(items: list[dict[str, Any]], is_klein: bool, sign: int = 1) -> list[dict[str, Any]]:
     """Sum line totals and tax per (rate, category) group, sorted by rate asc."""
     groups: "OrderedDict[float, dict[str, Any]]" = OrderedDict()
     for it in items:
         rate = 0 if is_klein else float(it.get("vatRate") or 0)
-        line = int(it.get("lineTotal") or 0)
+        line = int(it.get("lineTotal") or 0) * sign
         tax = 0 if is_klein else round(line * rate / 100)
         if rate not in groups:
             groups[rate] = {"rate": rate, "basis": 0, "tax": 0}
@@ -96,6 +96,7 @@ def render_zugferd_xml(payload: dict[str, Any]) -> str:
     company = payload["company"]
     customer = payload["customer"]
     is_klein = bool(invoice.get("isKleinunternehmer"))
+    sign = -1 if invoice.get("isCreditNote") else 1
     profile = (payload.get("profile") or "en16931").lower()
     guideline_urn = _PROFILE_URNS.get(profile, _PROFILE_URNS["en16931"])
 
@@ -104,6 +105,6 @@ def render_zugferd_xml(payload: dict[str, Any]) -> str:
         items=items,
         company=company,
         customer=customer,
-        vat_groups=_vat_groups(items, is_klein),
+        vat_groups=_vat_groups(items, is_klein, sign),
         guideline_urn=guideline_urn,
     )

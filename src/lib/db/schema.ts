@@ -29,6 +29,13 @@ export const settings = sqliteTable("settings", {
     .notNull()
     .default("RE-{YYYY}-{NNNN}"),
   invoiceNumberCounter: integer("invoice_number_counter").notNull().default(0),
+  offerNumberFormat: text("offer_number_format")
+    .notNull()
+    .default("AN-{YYYY}-{NNNN}"),
+  offerNumberCounter: integer("offer_number_counter").notNull().default(0),
+  defaultOfferValidityDays: integer("default_offer_validity_days")
+    .notNull()
+    .default(30),
   defaultPaymentTermsDays: integer("default_payment_terms_days")
     .notNull()
     .default(14),
@@ -92,6 +99,10 @@ export const invoices = sqliteTable("invoices", {
   notes: text("notes"),
   paymentTerms: text("payment_terms"),
   pdfPath: text("pdf_path"),
+  isCreditNote: integer("is_credit_note", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  correctsInvoiceId: integer("corrects_invoice_id"),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),
@@ -154,6 +165,54 @@ export type InvoiceStatus = Invoice["status"];
 export type RecurringInvoice = typeof recurringInvoices.$inferSelect;
 export type RecurringInvoiceItem = typeof recurringInvoiceItems.$inferSelect;
 export type RecurringInterval = RecurringInvoice["interval"];
+
+export const offers = sqliteTable("offers", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  number: text("number").notNull().unique(),
+  customerId: integer("customer_id").notNull(),
+  customerSnapshot: text("customer_snapshot").notNull().default("{}"),
+  issueDate: integer("issue_date").notNull(),
+  validUntil: integer("valid_until").notNull(),
+  status: text("status", {
+    enum: ["draft", "sent", "accepted", "rejected", "expired"],
+  })
+    .notNull()
+    .default("draft"),
+  subtotal: integer("subtotal").notNull().default(0),
+  vatAmount: integer("vat_amount").notNull().default(0),
+  total: integer("total").notNull().default(0),
+  isKleinunternehmer: integer("is_kleinunternehmer", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  isReverseCharge: integer("is_reverse_charge", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  notes: text("notes"),
+  introText: text("intro_text"),
+  pdfPath: text("pdf_path"),
+  convertedInvoiceId: integer("converted_invoice_id"),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+  sentAt: integer("sent_at"),
+  acceptedAt: integer("accepted_at"),
+  rejectedAt: integer("rejected_at"),
+});
+
+export const offerItems = sqliteTable("offer_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  offerId: integer("offer_id").notNull(),
+  position: integer("position").notNull(),
+  description: text("description").notNull().default(""),
+  quantity: real("quantity").notNull().default(1),
+  unit: text("unit").notNull().default("Stk"),
+  unitPrice: integer("unit_price").notNull().default(0),
+  vatRate: integer("vat_rate").notNull().default(0),
+  lineTotal: integer("line_total").notNull().default(0),
+});
+
+export type Offer = typeof offers.$inferSelect;
+export type OfferItem = typeof offerItems.$inferSelect;
+export type OfferStatus = Offer["status"];
 
 export type CustomerSnapshot = {
   customerNumber: string;
