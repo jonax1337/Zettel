@@ -6,6 +6,25 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-17
+
+> **Mahnwesen + OCR-Light.** v0.6 schließt zwei der offensichtlichsten Lücken im Workflow: überfällige Rechnungen können jetzt sauber gemahnt werden, und Eingangsrechnungen ohne ZUGFeRD-XML werden per Text-Heuristik vorbefüllt statt komplett manuell.
+
+### Added
+- **Mahnungen als first-class Dokumente** (`/reminders`). Neue Tabelle `reminders` mit eigenem Nummernkreis `MA-YYYY-NNNN`, 3-stufiges Level-Modell (Zahlungserinnerung / Mahnung / Letzte Mahnung), Snapshot der Original-Rechnung pro Mahnung. Eigene PDF-Vorlage `reminder.html.j2` (PDF/A-3b, bewusst ohne ZUGFeRD-XML — eine Mahnung ist keine E-Rechnung im Sinne EN16931). Aufschlüsselung Rechnungsbetrag + Mahngebühr + Verzugszinsen = neuer Gesamtbetrag. (#44, PR #45)
+- **Überfällige-Rechnungen-Widget** auf `/reminders` mit Tage-Überfälligkeit, bestehenden Mahnstufen und Direkt-Button für die nächste Stufe. Auch `InvoiceDetail.svelte` zeigt einen kontextsensitiven Mahn-Button für `sent`-Rechnungen mit überschrittenem `dueDate`, der die nächste plausible Stufe vorschlägt.
+- **Default-Mahntexte** in Settings (`reminder_text_l1/l2/l3`) als deutsche Standardformulierungen — pro Mahnung im Editor noch frei änderbar. Tage-bis-Fälligkeit und Gebühren-Defaults pro Stufe konfigurierbar (Standard: 14 / 14 / 14 Tage, 0 / 5 / 10 EUR).
+- **OCR-Light** für Eingangsrechnungen ohne ZUGFeRD-Anhang (`/expenses` Drop-Zone). Neuer Sidecar-Command `extract_text_pdf` (pypdf liest Text-Schicht, Regex-Pattern extrahieren Rechnungsnummer / Datum / Total / Vendor-Name / USt-IdNr.). Vendor-Match per USt-IdNr. (zuverlässig) oder Name-Substring (heuristisch). Bei zwei Stufen (ZUGFeRD scheitert → Text-Heuristik) bekommt der User einen deutlichen „bitte alle Werte prüfen"-Toast. Tesseract/Image-OCR bleibt **explizit ausgeschlossen** — reine Scans sind weiterhin manuell. (#43, PR #46)
+
+### Fixed
+- **`CURRENT_SCHEMA` in `backup.rs` stand seit v0.5 auf 9, obwohl `PRAGMA user_version` bereits 10 war.** Latente Bug, der v0.5-Backups beim Restore mit „Schema neuer als App-Version" abgelehnt hätte (analog v0.4.0-Bug, siehe Changelog). Mit v0.6 auf 11 gezogen, Frontend-Mirror in `Settings.svelte:CURRENT_DB_SCHEMA_VERSION` ebenfalls.
+
+### Migration
+- `0010_reminders.sql` — `user_version = 11`. Erstellt `reminders` und fügt 13 Settings-Spalten für Mahnungs-Defaults hinzu. Idempotent (`CREATE TABLE IF NOT EXISTS`, alle `ALTER TABLE … ADD COLUMN` haben Defaults).
+
+### Notes
+- **Bewusst NICHT in v0.6:** dediziertes Mahnwesen-Settings-UI (Defaults reichen für MVP, Mahntexte werden im Editor pro Mahnung angepasst), automatischer Mahn-Versand per Mail/SMTP, Hintergrund-Scheduler, gerichtliches Mahnverfahren / Inkasso, Tesseract-OCR für gescannte PDFs.
+
 ## [0.5.0] — 2026-05-16
 
 > **Buchhaltungs-Light.** Zettel deckte bisher nur Ausgangsbelege ab — v0.5 macht den Gegenpol auf. Eingangsrechnungen mit ZUGFeRD-Drag-&-Drop, Lieferantenverwaltung, DATEV-Export inklusive Aufwände + Stornos, und ein UStVA-Vorbereitungs-Report. Damit ist der vollständige Steuerberater-Übergabe-Workflow abgebildet.
