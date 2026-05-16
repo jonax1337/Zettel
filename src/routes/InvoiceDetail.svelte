@@ -45,7 +45,10 @@
     MoreHorizontal,
     AlertTriangle,
     Repeat,
+    FileWarning,
   } from "@lucide/svelte";
+  import { listRemindersForInvoice } from "$lib/db/reminders";
+  import type { ReminderLevel } from "$lib/db/schema";
   type Props = { params?: { id?: string } };
   let { params }: Props = $props();
 
@@ -213,6 +216,42 @@
       (invoice.status === "sent" || invoice.status === "paid") &&
       !cancelledByCreditNote,
   );
+
+  let existingReminderLevels = $state<ReminderLevel[]>([]);
+  $effect(() => {
+    if (invoice && !invoice.isCreditNote) {
+      listRemindersForInvoice(invoice.id)
+        .then((list) => {
+          existingReminderLevels = list
+            .map((r) => r.level)
+            .filter((l): l is ReminderLevel => l === 1 || l === 2 || l === 3);
+        })
+        .catch(() => {
+          existingReminderLevels = [];
+        });
+    } else {
+      existingReminderLevels = [];
+    }
+  });
+
+  const isOverdue = $derived(
+    !!invoice &&
+      !invoice.isCreditNote &&
+      invoice.status === "sent" &&
+      invoice.dueDate * 1000 < Date.now(),
+  );
+
+  const nextReminderLevel = $derived<ReminderLevel>(
+    existingReminderLevels.includes(2)
+      ? 3
+      : existingReminderLevels.includes(1)
+        ? 2
+        : 1,
+  );
+
+  const canCreateReminder = $derived(
+    isOverdue && !existingReminderLevels.includes(3),
+  );
 </script>
 
 <header class="mb-6">
@@ -325,6 +364,20 @@
         <Button disabled={busy} onclick={() => action("Als bezahlt markiert", () => markPaid(invoice!.id))}>
           <CheckCircle2 />
           Bezahlt
+        </Button>
+      {/if}
+
+      {#if canCreateReminder}
+        <Button
+          variant="outline"
+          onclick={() => push(`/reminders/new/${invoice!.id}/${nextReminderLevel}`)}
+        >
+          <FileWarning />
+          {nextReminderLevel === 1
+            ? "Erinnerung erstellen"
+            : nextReminderLevel === 2
+              ? "Mahnung erstellen"
+              : "Letzte Mahnung erstellen"}
         </Button>
       {/if}
 

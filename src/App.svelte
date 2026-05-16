@@ -17,6 +17,8 @@
   import VendorEdit from "./routes/VendorEdit.svelte";
   import ExpensesList from "./routes/ExpensesList.svelte";
   import ExpenseEdit from "./routes/ExpenseEdit.svelte";
+  import RemindersList from "./routes/RemindersList.svelte";
+  import ReminderEdit from "./routes/ReminderEdit.svelte";
   import UstvaReport from "./routes/UstvaReport.svelte";
   import Settings from "./routes/Settings.svelte";
   import Export from "./routes/Export.svelte";
@@ -105,6 +107,19 @@
     }),
     "/expenses/:id": wrap({
       component: ExpenseEdit as unknown as never,
+      props: { mode: "edit" },
+    }),
+    "/reminders": RemindersList,
+    "/reminders/new/:invoiceId/:level": wrap({
+      component: ReminderEdit as unknown as never,
+      props: { mode: "new" },
+    }),
+    "/reminders/new/:invoiceId": wrap({
+      component: ReminderEdit as unknown as never,
+      props: { mode: "new" },
+    }),
+    "/reminders/:id": wrap({
+      component: ReminderEdit as unknown as never,
       props: { mode: "edit" },
     }),
     "/reports/ustva": UstvaReport,

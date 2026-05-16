@@ -47,6 +47,19 @@ export const settings = sqliteTable("settings", {
     .notNull()
     .default("EX-{YYYY}-{NNNN}"),
   expenseNumberCounter: integer("expense_number_counter").notNull().default(0),
+  reminderNumberFormat: text("reminder_number_format")
+    .notNull()
+    .default("MA-{YYYY}-{NNNN}"),
+  reminderNumberCounter: integer("reminder_number_counter").notNull().default(0),
+  reminderDaysL1: integer("reminder_days_l1").notNull().default(14),
+  reminderDaysL2: integer("reminder_days_l2").notNull().default(14),
+  reminderDaysL3: integer("reminder_days_l3").notNull().default(14),
+  reminderFeeL1Cents: integer("reminder_fee_l1_cents").notNull().default(0),
+  reminderFeeL2Cents: integer("reminder_fee_l2_cents").notNull().default(500),
+  reminderFeeL3Cents: integer("reminder_fee_l3_cents").notNull().default(1000),
+  reminderTextL1: text("reminder_text_l1").notNull().default(""),
+  reminderTextL2: text("reminder_text_l2").notNull().default(""),
+  reminderTextL3: text("reminder_text_l3").notNull().default(""),
   logoPath: text("logo_path"),
   zugferdProfile: text("zugferd_profile", {
     enum: ["basic", "en16931", "extended"],
@@ -309,6 +322,44 @@ export type ExpenseInsert = typeof expenses.$inferInsert;
 export type ExpenseItem = typeof expenseItems.$inferSelect;
 export type ExpenseItemInsert = typeof expenseItems.$inferInsert;
 export type ExpenseStatus = Expense["status"];
+
+export const reminders = sqliteTable("reminders", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  number: text("number").notNull().unique(),
+  invoiceId: integer("invoice_id").notNull(),
+  invoiceSnapshot: text("invoice_snapshot").notNull().default("{}"),
+  level: integer("level").notNull().default(1),
+  issueDate: integer("issue_date").notNull(),
+  dueDate: integer("due_date").notNull(),
+  feeCents: integer("fee_cents").notNull().default(0),
+  interestCents: integer("interest_cents").notNull().default(0),
+  originalTotalCents: integer("original_total_cents").notNull().default(0),
+  totalDueCents: integer("total_due_cents").notNull().default(0),
+  status: text("status", { enum: ["draft", "sent"] }).notNull().default("draft"),
+  bodyText: text("body_text").notNull().default(""),
+  pdfPath: text("pdf_path"),
+  notes: text("notes"),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+  sentAt: integer("sent_at"),
+});
+
+export type Reminder = typeof reminders.$inferSelect;
+export type ReminderInsert = typeof reminders.$inferInsert;
+export type ReminderStatus = Reminder["status"];
+export type ReminderLevel = 1 | 2 | 3;
+
+export type ReminderInvoiceSnapshot = {
+  invoiceNumber: string;
+  invoiceIssueDate: number;
+  invoiceDueDate: number;
+  customerName: string;
+  customerStreet: string;
+  customerPostalCode: string;
+  customerCity: string;
+  customerCountry: string;
+  customerContactPerson: string | null;
+};
 
 export type VendorSnapshot = {
   vendorNumber: string;

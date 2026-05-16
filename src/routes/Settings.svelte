@@ -23,7 +23,7 @@
   import { checkForUpdate } from "$lib/updater";
 
   // aktueller DB-Schema-Stand (siehe src-tauri/src/lib.rs Migrations-Vektor)
-  const CURRENT_DB_SCHEMA_VERSION = 9;
+  const CURRENT_DB_SCHEMA_VERSION = 11;
 
   let s = $state<Settings | null>(null);
   let loading = $state(true);
