@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+  font-family:
+    system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+  font-size: 14px;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  background: white;
+  color: #111;
+}
+
+@media (prefers-color-scheme: dark) {
+  html,
+  body,
+  #app {
+    background: #1a1a1a;
+    color: #eee;
+  }
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Reset for form controls — keep the rest minimal so Bits UI defaults shine. */
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}

@@ -1,0 +1,67 @@
+{
+  "command": "generate_invoice",
+  "payload": {
+    "invoice": {
+      "number": "RE-2026-TEST-02",
+      "issueDate": 1747353600,
+      "deliveryDate": null,
+      "dueDate": 1748563200,
+      "subtotal": 25000,
+      "vatAmount": 4150,
+      "total": 29150,
+      "isKleinunternehmer": false,
+      "notes": "Buch + Beratung — gemischte Steuersätze.",
+      "paymentTerms": "Zahlbar innerhalb von 14 Tagen ohne Abzug."
+    },
+    "items": [
+      {
+        "position": 1,
+        "description": "Fachbuch \"Praxis ZUGFeRD\"",
+        "quantity": 1,
+        "unit": "Stk",
+        "unitPrice": 5000,
+        "vatRate": 7,
+        "lineTotal": 5000
+      },
+      {
+        "position": 2,
+        "description": "Beratungsstunde",
+        "quantity": 2,
+        "unit": "h",
+        "unitPrice": 10000,
+        "vatRate": 19,
+        "lineTotal": 20000
+      }
+    ],
+    "company": {
+      "companyName": "Laux Digital GmbH",
+      "ownerName": "Jonas Laux",
+      "street": "Musterstr. 1",
+      "postalCode": "10115",
+      "city": "Berlin",
+      "country": "DE",
+      "taxNumber": "12/345/67890",
+      "vatId": "DE123456789",
+      "email": "hi@laux.digital",
+      "phone": null,
+      "website": "laux.digital",
+      "bankName": "Sparkasse",
+      "bankIban": "DE89370400440532013000",
+      "bankBic": "COBADEFFXXX",
+      "isKleinunternehmer": false,
+      "kleinunternehmerNote": "",
+      "logoPath": null
+    },
+    "customer": {
+      "name": "Buchhandlung Beispiel",
+      "contactPerson": null,
+      "street": "Marktplatz 3",
+      "postalCode": "50667",
+      "city": "Köln",
+      "country": "DE",
+      "vatId": null
+    },
+    "outputPath": "test-payloads/out-02-mixed-vat.pdf",
+    "profile": "en16931"
+  }
+}

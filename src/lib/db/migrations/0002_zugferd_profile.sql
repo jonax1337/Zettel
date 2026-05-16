@@ -1,0 +1,1 @@
+ALTER TABLE settings ADD COLUMN zugferd_profile TEXT NOT NULL DEFAULT 'en16931';

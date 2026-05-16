@@ -1,0 +1,173 @@
+{#- Factur-X EN 16931 (Comfort) profile XML.
+    Mirrors the layout used by ferd-net.de reference samples; rendered values
+    must remain stringified for cents (".XX") and ISO dates (YYYYMMDD).
+-#}
+<?xml version="1.0" encoding="UTF-8"?>
+<rsm:CrossIndustryInvoice
+  xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
+  xmlns:qdt="urn:un:unece:uncefact:data:standard:QualifiedDataType:100"
+  xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100">
+
+  <rsm:ExchangedDocumentContext>
+    <ram:GuidelineSpecifiedDocumentContextParameter>
+      <ram:ID>urn:cen.eu:en16931:2017</ram:ID>
+    </ram:GuidelineSpecifiedDocumentContextParameter>
+  </rsm:ExchangedDocumentContext>
+
+  <rsm:ExchangedDocument>
+    <ram:ID>{{ invoice.number }}</ram:ID>
+    <ram:TypeCode>380</ram:TypeCode>
+    <ram:IssueDateTime>
+      <udt:DateTimeString format="102">{{ invoice.issueDate | date_xml }}</udt:DateTimeString>
+    </ram:IssueDateTime>
+    {% if invoice.notes %}
+    <ram:IncludedNote>
+      <ram:Content>{{ invoice.notes }}</ram:Content>
+    </ram:IncludedNote>
+    {% endif %}
+    {% if invoice.isKleinunternehmer and company.kleinunternehmerNote %}
+    <ram:IncludedNote>
+      <ram:Content>{{ company.kleinunternehmerNote }}</ram:Content>
+      <ram:SubjectCode>AAI</ram:SubjectCode>
+    </ram:IncludedNote>
+    {% endif %}
+  </rsm:ExchangedDocument>
+
+  <rsm:SupplyChainTradeTransaction>
+    {% for it in items %}
+    <ram:IncludedSupplyChainTradeLineItem>
+      <ram:AssociatedDocumentLineDocument>
+        <ram:LineID>{{ it.position }}</ram:LineID>
+      </ram:AssociatedDocumentLineDocument>
+      <ram:SpecifiedTradeProduct>
+        <ram:Name>{{ it.description }}</ram:Name>
+      </ram:SpecifiedTradeProduct>
+      <ram:SpecifiedLineTradeAgreement>
+        <ram:NetPriceProductTradePrice>
+          <ram:ChargeAmount>{{ it.unitPrice | cents_xml }}</ram:ChargeAmount>
+        </ram:NetPriceProductTradePrice>
+      </ram:SpecifiedLineTradeAgreement>
+      <ram:SpecifiedLineTradeDelivery>
+        <ram:BilledQuantity unitCode="{{ it.unit | unece_unit }}">{{ it.quantity | qty_xml }}</ram:BilledQuantity>
+      </ram:SpecifiedLineTradeDelivery>
+      <ram:SpecifiedLineTradeSettlement>
+        <ram:ApplicableTradeTax>
+          <ram:TypeCode>VAT</ram:TypeCode>
+          <ram:CategoryCode>{{ "E" if invoice.isKleinunternehmer else "S" }}</ram:CategoryCode>
+          <ram:RateApplicablePercent>{{ 0 if invoice.isKleinunternehmer else it.vatRate }}</ram:RateApplicablePercent>
+        </ram:ApplicableTradeTax>
+        <ram:SpecifiedTradeSettlementLineMonetarySummation>
+          <ram:LineTotalAmount>{{ it.lineTotal | cents_xml }}</ram:LineTotalAmount>
+        </ram:SpecifiedTradeSettlementLineMonetarySummation>
+      </ram:SpecifiedLineTradeSettlement>
+    </ram:IncludedSupplyChainTradeLineItem>
+    {% endfor %}
+
+    <ram:ApplicableHeaderTradeAgreement>
+      <ram:SellerTradeParty>
+        {# BR-CO-26: at least one of BT-29 (ID), BT-30 (legal reg), BT-31 (VAT)
+           must be present. Kleinunternehmer typically have only a Steuernummer
+           (BT-32, schemeID=FC) — emit it as BT-29 too so the rule is satisfied. #}
+        {% if not company.vatId and company.taxNumber %}
+        <ram:ID>{{ company.taxNumber }}</ram:ID>
+        {% endif %}
+        <ram:Name>{{ company.companyName }}</ram:Name>
+        <ram:PostalTradeAddress>
+          <ram:PostcodeCode>{{ company.postalCode }}</ram:PostcodeCode>
+          <ram:LineOne>{{ company.street }}</ram:LineOne>
+          <ram:CityName>{{ company.city }}</ram:CityName>
+          <ram:CountryID>{{ company.country or "DE" }}</ram:CountryID>
+        </ram:PostalTradeAddress>
+        {% if company.vatId %}
+        <ram:SpecifiedTaxRegistration>
+          <ram:ID schemeID="VA">{{ company.vatId }}</ram:ID>
+        </ram:SpecifiedTaxRegistration>
+        {% endif %}
+        {% if company.taxNumber %}
+        <ram:SpecifiedTaxRegistration>
+          <ram:ID schemeID="FC">{{ company.taxNumber }}</ram:ID>
+        </ram:SpecifiedTaxRegistration>
+        {% endif %}
+      </ram:SellerTradeParty>
+      <ram:BuyerTradeParty>
+        <ram:Name>{{ customer.name }}</ram:Name>
+        <ram:PostalTradeAddress>
+          <ram:PostcodeCode>{{ customer.postalCode }}</ram:PostcodeCode>
+          <ram:LineOne>{{ customer.street }}</ram:LineOne>
+          <ram:CityName>{{ customer.city }}</ram:CityName>
+          <ram:CountryID>{{ customer.country or "DE" }}</ram:CountryID>
+        </ram:PostalTradeAddress>
+        {% if customer.vatId %}
+        <ram:SpecifiedTaxRegistration>
+          <ram:ID schemeID="VA">{{ customer.vatId }}</ram:ID>
+        </ram:SpecifiedTaxRegistration>
+        {% endif %}
+      </ram:BuyerTradeParty>
+    </ram:ApplicableHeaderTradeAgreement>
+
+    <ram:ApplicableHeaderTradeDelivery>
+      {% if invoice.deliveryDate %}
+      <ram:ActualDeliverySupplyChainEvent>
+        <ram:OccurrenceDateTime>
+          <udt:DateTimeString format="102">{{ invoice.deliveryDate | date_xml }}</udt:DateTimeString>
+        </ram:OccurrenceDateTime>
+      </ram:ActualDeliverySupplyChainEvent>
+      {% endif %}
+    </ram:ApplicableHeaderTradeDelivery>
+
+    <ram:ApplicableHeaderTradeSettlement>
+      <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
+      {% if company.bankIban %}
+      <ram:SpecifiedTradeSettlementPaymentMeans>
+        <ram:TypeCode>58</ram:TypeCode>
+        <ram:PayeePartyCreditorFinancialAccount>
+          <ram:IBANID>{{ company.bankIban | replace(" ", "") }}</ram:IBANID>
+        </ram:PayeePartyCreditorFinancialAccount>
+        {% if company.bankBic %}
+        <ram:PayeeSpecifiedCreditorFinancialInstitution>
+          <ram:BICID>{{ company.bankBic }}</ram:BICID>
+        </ram:PayeeSpecifiedCreditorFinancialInstitution>
+        {% endif %}
+      </ram:SpecifiedTradeSettlementPaymentMeans>
+      {% endif %}
+
+      {% set vat_groups = vat_groups %}
+      {% for grp in vat_groups %}
+      <ram:ApplicableTradeTax>
+        <ram:CalculatedAmount>{{ grp.tax | cents_xml }}</ram:CalculatedAmount>
+        <ram:TypeCode>VAT</ram:TypeCode>
+        {% if invoice.isKleinunternehmer %}
+        <ram:ExemptionReason>{{ company.kleinunternehmerNote or "Kleinunternehmer gemäß § 19 UStG" }}</ram:ExemptionReason>
+        {% endif %}
+        <ram:BasisAmount>{{ grp.basis | cents_xml }}</ram:BasisAmount>
+        <ram:CategoryCode>{{ "E" if invoice.isKleinunternehmer else "S" }}</ram:CategoryCode>
+        <ram:RateApplicablePercent>{{ grp.rate }}</ram:RateApplicablePercent>
+      </ram:ApplicableTradeTax>
+      {% endfor %}
+
+      {% if invoice.paymentTerms or invoice.dueDate %}
+      <ram:SpecifiedTradePaymentTerms>
+        {% if invoice.paymentTerms %}
+        <ram:Description>{{ invoice.paymentTerms }}</ram:Description>
+        {% endif %}
+        {% if invoice.dueDate %}
+        <ram:DueDateDateTime>
+          <udt:DateTimeString format="102">{{ invoice.dueDate | date_xml }}</udt:DateTimeString>
+        </ram:DueDateDateTime>
+        {% endif %}
+      </ram:SpecifiedTradePaymentTerms>
+      {% endif %}
+
+      <ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+        <ram:LineTotalAmount>{{ invoice.subtotal | cents_xml }}</ram:LineTotalAmount>
+        <ram:TaxBasisTotalAmount>{{ invoice.subtotal | cents_xml }}</ram:TaxBasisTotalAmount>
+        <ram:TaxTotalAmount currencyID="EUR">{{ invoice.vatAmount | cents_xml }}</ram:TaxTotalAmount>
+        <ram:GrandTotalAmount>{{ invoice.total | cents_xml }}</ram:GrandTotalAmount>
+        <ram:DuePayableAmount>{{ invoice.total | cents_xml }}</ram:DuePayableAmount>
+      </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+    </ram:ApplicableHeaderTradeSettlement>
+
+  </rsm:SupplyChainTradeTransaction>
+</rsm:CrossIndustryInvoice>

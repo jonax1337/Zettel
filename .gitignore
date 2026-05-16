@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+src-tauri/target/
+src-tauri/gen/
+
+# Sidecar artifacts
+src-tauri/binaries/
+sidecar/dist/
+sidecar/build/
+sidecar/__pycache__/
+sidecar/**/__pycache__/
+sidecar/.venv/
+sidecar/test-output.pdf
+sidecar/test-payloads/out-*.pdf
+build.log
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.log
+
+# Env
+.env
+.env.local
+
+# Drizzle
+drizzle/.cache/

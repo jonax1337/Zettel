@@ -1,0 +1,54 @@
+{
+  "command": "generate_invoice",
+  "payload": {
+    "invoice": {
+      "number": "RE-2026-TEST-03",
+      "issueDate": 1747353600,
+      "deliveryDate": 1747353600,
+      "dueDate": 1748563200,
+      "subtotal": 178500,
+      "vatAmount": 33915,
+      "total": 212415,
+      "isKleinunternehmer": false,
+      "notes": "Projektabrechnung Q2.",
+      "paymentTerms": "Zahlbar innerhalb von 30 Tagen, 2% Skonto bei Zahlung binnen 7 Tagen."
+    },
+    "items": [
+      { "position": 1, "description": "Konzeption & Architektur", "quantity": 8, "unit": "h", "unitPrice": 12000, "vatRate": 19, "lineTotal": 96000 },
+      { "position": 2, "description": "Frontend-Implementierung", "quantity": 5, "unit": "h", "unitPrice": 10000, "vatRate": 19, "lineTotal": 50000 },
+      { "position": 3, "description": "Code-Review & QA", "quantity": 2.5, "unit": "h", "unitPrice": 8000, "vatRate": 19, "lineTotal": 20000 },
+      { "position": 4, "description": "Deployment-Setup", "quantity": 1, "unit": "Pauschal", "unitPrice": 7500, "vatRate": 19, "lineTotal": 7500 },
+      { "position": 5, "description": "Domain-Gebühr (Auslage)", "quantity": 1, "unit": "Stk", "unitPrice": 5000, "vatRate": 19, "lineTotal": 5000 }
+    ],
+    "company": {
+      "companyName": "Laux Digital GmbH",
+      "ownerName": "Jonas Laux",
+      "street": "Musterstr. 1",
+      "postalCode": "10115",
+      "city": "Berlin",
+      "country": "DE",
+      "taxNumber": "12/345/67890",
+      "vatId": "DE123456789",
+      "email": "hi@laux.digital",
+      "phone": "+49 30 1234567",
+      "website": "laux.digital",
+      "bankName": "Sparkasse",
+      "bankIban": "DE89370400440532013000",
+      "bankBic": "COBADEFFXXX",
+      "isKleinunternehmer": false,
+      "kleinunternehmerNote": "",
+      "logoPath": null
+    },
+    "customer": {
+      "name": "Großkunde AG",
+      "contactPerson": "Herr Dr. Meyer",
+      "street": "Industriestraße 99",
+      "postalCode": "20095",
+      "city": "Hamburg",
+      "country": "DE",
+      "vatId": "DE555555555"
+    },
+    "outputPath": "test-payloads/out-03-five-positions.pdf",
+    "profile": "en16931"
+  }
+}

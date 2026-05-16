@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>Rechnung {{ invoice.number }}</title>
+</head>
+<body>
+
+  <header class="masthead">
+    <div class="brand">
+      {% if company.logoDataUri %}<img class="brand-logo" src="{{ company.logoDataUri }}" alt="" />{% endif %}
+      <div class="brand-name">{{ company.companyName }}</div>
+      {% if company.ownerName %}<div class="brand-owner">{{ company.ownerName }}</div>{% endif %}
+    </div>
+    <div class="title-block">
+      <div class="doctype">Rechnung</div>
+      <div class="docnumber">{{ invoice.number }}</div>
+    </div>
+  </header>
+
+  <section class="parties">
+    <div class="addressee">
+      <div class="sender-line">
+        {{ company.companyName }}
+        {%- if company.street %} · {{ company.street }}{% endif %}
+        {%- if company.postalCode %} · {{ company.postalCode }} {{ company.city }}{% endif %}
+      </div>
+      <div class="addressee-name">{{ customer.name }}</div>
+      {% if customer.contactPerson %}<div>z. Hd. {{ customer.contactPerson }}</div>{% endif %}
+      <div>{{ customer.street }}</div>
+      <div>{{ customer.postalCode }} {{ customer.city }}</div>
+      {% if customer.country and customer.country != "DE" %}<div>{{ customer.country }}</div>{% endif %}
+    </div>
+
+    <div class="meta">
+      <div class="meta-row">
+        <span class="meta-label">Rechnungsnr.</span>
+        <span class="meta-value">{{ invoice.number }}</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Rechnungsdatum</span>
+        <span class="meta-value">{{ invoice.issueDate | date_unix }}</span>
+      </div>
+      {% if invoice.deliveryDate %}
+      <div class="meta-row">
+        <span class="meta-label">Leistungsdatum</span>
+        <span class="meta-value">{{ invoice.deliveryDate | date_unix }}</span>
+      </div>
+      {% endif %}
+      <div class="meta-row">
+        <span class="meta-label">Fällig am</span>
+        <span class="meta-value">{{ invoice.dueDate | date_unix }}</span>
+      </div>
+      {% if customer.vatId %}
+      <div class="meta-row">
+        <span class="meta-label">USt-IdNr. Kunde</span>
+        <span class="meta-value">{{ customer.vatId }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <table class="items">
+    <thead>
+      <tr>
+        <th class="col-pos">Pos.</th>
+        <th class="col-desc">Beschreibung</th>
+        <th class="col-qty">Menge</th>
+        <th class="col-unit">Einheit</th>
+        <th class="col-price">Einzelpreis</th>
+        {% if not invoice.isKleinunternehmer %}<th class="col-vat">USt %</th>{% endif %}
+        <th class="col-total">Gesamt</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in items %}
+        <tr>
+          <td class="col-pos">{{ it.position }}</td>
+          <td class="col-desc">{{ it.description }}</td>
+          <td class="col-qty">{{ it.quantity | qty }}</td>
+          <td class="col-unit">{{ it.unit }}</td>
+          <td class="col-price">{{ it.unitPrice | eur }}</td>
+          {% if not invoice.isKleinunternehmer %}<td class="col-vat">{{ it.vatRate }}</td>{% endif %}
+          <td class="col-total">{{ it.lineTotal | eur }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <section class="totals-wrap">
+    <table class="totals">
+      <tr>
+        <th>Zwischensumme</th>
+        <td>{{ invoice.subtotal | eur }}</td>
+      </tr>
+      {% if not invoice.isKleinunternehmer %}
+        <tr>
+          <th>Umsatzsteuer</th>
+          <td>{{ invoice.vatAmount | eur }}</td>
+        </tr>
+      {% endif %}
+      <tr class="grand">
+        <th>Gesamtbetrag</th>
+        <td>{{ invoice.total | eur }}</td>
+      </tr>
+    </table>
+  </section>
+
+  {% if invoice.isKleinunternehmer and company.kleinunternehmerNote %}
+    <p class="callout">{{ company.kleinunternehmerNote }}</p>
+  {% endif %}
+
+  {% if invoice.paymentTerms %}
+    <section class="block">
+      <div class="block-title">Zahlungsbedingungen</div>
+      <p>{{ invoice.paymentTerms }}</p>
+    </section>
+  {% endif %}
+
+  {% if invoice.notes %}
+    <section class="block">
+      <div class="block-title">Hinweise</div>
+      <div class="notes">{{ invoice.notes | replace('\n', '<br>') | safe }}</div>
+    </section>
+  {% endif %}
+
+  <footer class="doc-footer">
+    <div class="col">
+      <div class="col-title">{{ company.companyName }}</div>
+      {% if company.ownerName %}<div>{{ company.ownerName }}</div>{% endif %}
+      <div>{{ company.street }}</div>
+      <div>{{ company.postalCode }} {{ company.city }}</div>
+    </div>
+    <div class="col">
+      <div class="col-title">Kontakt</div>
+      {% if company.email %}<div>{{ company.email }}</div>{% endif %}
+      {% if company.phone %}<div>{{ company.phone }}</div>{% endif %}
+      {% if company.website %}<div>{{ company.website }}</div>{% endif %}
+    </div>
+    <div class="col">
+      <div class="col-title">Steuer</div>
+      {% if company.taxNumber %}<div>St-Nr. {{ company.taxNumber }}</div>{% endif %}
+      {% if company.vatId %}<div>USt-IdNr. {{ company.vatId }}</div>{% endif %}
+    </div>
+    <div class="col">
+      <div class="col-title">Bankverbindung</div>
+      {% if company.bankName %}<div>{{ company.bankName }}</div>{% endif %}
+      {% if company.bankIban %}<div class="iban">{{ company.bankIban }}</div>{% endif %}
+      {% if company.bankBic %}<div>{{ company.bankBic }}</div>{% endif %}
+    </div>
+  </footer>
+
+</body>
+</html>

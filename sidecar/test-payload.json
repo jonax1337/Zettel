@@ -1,0 +1,66 @@
+{
+  "command": "generate_invoice",
+  "payload": {
+    "invoice": {
+      "number": "RE-2026-TEST",
+      "issueDate": 1747353600,
+      "deliveryDate": null,
+      "dueDate": 1748563200,
+      "subtotal": 50000,
+      "vatAmount": 0,
+      "total": 50000,
+      "isKleinunternehmer": true,
+      "notes": "Vielen Dank für Ihren Auftrag.",
+      "paymentTerms": "Zahlbar innerhalb von 14 Tagen ohne Abzug."
+    },
+    "items": [
+      {
+        "position": 1,
+        "description": "Beratungsleistung",
+        "quantity": 5,
+        "unit": "h",
+        "unitPrice": 8000,
+        "vatRate": 0,
+        "lineTotal": 40000
+      },
+      {
+        "position": 2,
+        "description": "Einrichtung Server",
+        "quantity": 1,
+        "unit": "Pauschal",
+        "unitPrice": 10000,
+        "vatRate": 0,
+        "lineTotal": 10000
+      }
+    ],
+    "company": {
+      "companyName": "Laux Digital",
+      "ownerName": "Jonas Laux",
+      "street": "Musterstr. 1",
+      "postalCode": "10115",
+      "city": "Berlin",
+      "country": "DE",
+      "taxNumber": "12/345/67890",
+      "vatId": null,
+      "email": "hi@laux.digital",
+      "phone": null,
+      "website": "laux.digital",
+      "bankName": "Sparkasse",
+      "bankIban": "DE00 0000 0000 0000 0000 00",
+      "bankBic": "ABCDEFGH",
+      "isKleinunternehmer": true,
+      "kleinunternehmerNote": "Gemäß § 19 UStG enthält die Rechnung keinen Umsatzsteuerausweis.",
+      "logoPath": null
+    },
+    "customer": {
+      "name": "Acme GmbH",
+      "contactPerson": "Frau Schmidt",
+      "street": "Beispielweg 42",
+      "postalCode": "80331",
+      "city": "München",
+      "country": "DE",
+      "vatId": "DE123456789"
+    },
+    "outputPath": "test-output.pdf"
+  }
+}

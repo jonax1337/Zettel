@@ -1,0 +1,50 @@
+{
+  "command": "generate_invoice",
+  "payload": {
+    "invoice": {
+      "number": "RE-2026-TEST-04",
+      "issueDate": 1747353600,
+      "deliveryDate": null,
+      "dueDate": 1748563200,
+      "subtotal": 35000,
+      "vatAmount": 0,
+      "total": 35000,
+      "isKleinunternehmer": true,
+      "notes": "Kleinunternehmer mit USt-IdNr — Edge-Case.",
+      "paymentTerms": "Zahlbar innerhalb von 14 Tagen ohne Abzug."
+    },
+    "items": [
+      { "position": 1, "description": "Webdesign", "quantity": 3.5, "unit": "h", "unitPrice": 10000, "vatRate": 0, "lineTotal": 35000 }
+    ],
+    "company": {
+      "companyName": "Laux Digital",
+      "ownerName": "Jonas Laux",
+      "street": "Musterstr. 1",
+      "postalCode": "10115",
+      "city": "Berlin",
+      "country": "DE",
+      "taxNumber": "12/345/67890",
+      "vatId": "DE123456789",
+      "email": "hi@laux.digital",
+      "phone": null,
+      "website": "laux.digital",
+      "bankName": "Sparkasse",
+      "bankIban": "DE89370400440532013000",
+      "bankBic": "COBADEFFXXX",
+      "isKleinunternehmer": true,
+      "kleinunternehmerNote": "Gemäß § 19 UStG enthält die Rechnung keinen Umsatzsteuerausweis.",
+      "logoPath": null
+    },
+    "customer": {
+      "name": "Privatperson Müller",
+      "contactPerson": null,
+      "street": "Hauptstraße 7",
+      "postalCode": "70173",
+      "city": "Stuttgart",
+      "country": "DE",
+      "vatId": null
+    },
+    "outputPath": "test-payloads/out-04-ku-with-vatid.pdf",
+    "profile": "en16931"
+  }
+}

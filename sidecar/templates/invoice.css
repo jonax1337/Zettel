@@ -1,0 +1,272 @@
+/* ============================================================
+   Zettel — Rechnungs-Template
+   Aesthetic: minimal, monochrome, generous whitespace, one
+   subtle slate accent. Print-optimized, A4.
+   ============================================================ */
+
+@page {
+  size: A4;
+  margin: 20mm 18mm 28mm 18mm;
+  @bottom-right {
+    content: "Seite " counter(page) " von " counter(pages);
+    font-family: "Helvetica", "Arial", sans-serif;
+    font-size: 8pt;
+    color: #9a9a9a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: "Helvetica", "Arial", sans-serif;
+  font-size: 10pt;
+  color: #1f2933;
+  line-height: 1.45;
+  margin: 0;
+  -webkit-print-color-adjust: exact;
+}
+
+/* ----- Top: brand + title block ----- */
+
+.masthead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 0.6pt solid #1f2933;
+  padding-bottom: 6mm;
+  margin-bottom: 10mm;
+}
+
+.brand .brand-logo {
+  max-height: 22mm;
+  max-width: 60mm;
+  margin-bottom: 4mm;
+  object-fit: contain;
+}
+
+.brand .brand-name {
+  font-size: 13pt;
+  font-weight: 700;
+  letter-spacing: 0.2pt;
+}
+
+.brand .brand-owner {
+  font-size: 9pt;
+  color: #66707b;
+  margin-top: 0.5mm;
+}
+
+.title-block {
+  text-align: right;
+}
+
+.title-block .doctype {
+  font-size: 22pt;
+  font-weight: 300;
+  letter-spacing: 1.5pt;
+  text-transform: uppercase;
+  color: #1f2933;
+  line-height: 1;
+}
+
+.title-block .docnumber {
+  font-size: 10pt;
+  font-family: "Courier New", monospace;
+  color: #66707b;
+  margin-top: 2mm;
+}
+
+/* ----- Addressee + meta box ----- */
+
+.parties {
+  display: flex;
+  gap: 12mm;
+  align-items: flex-start;
+  margin-bottom: 12mm;
+}
+
+.addressee {
+  flex: 1;
+  font-size: 10pt;
+}
+
+.addressee .sender-line {
+  font-size: 7.5pt;
+  color: #8a929c;
+  border-bottom: 0.3pt solid #d8dde2;
+  padding-bottom: 1.5mm;
+  margin-bottom: 4mm;
+}
+
+.addressee .addressee-name {
+  font-weight: 600;
+  margin-top: 2mm;
+}
+
+.meta {
+  width: 75mm;
+  font-size: 9pt;
+  background: #f7f8f9;
+  border: 0.3pt solid #e6e9ec;
+  border-radius: 1.5mm;
+  padding: 3.5mm 4mm;
+}
+
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 4mm;
+  padding: 0.8mm 0;
+}
+
+.meta-row + .meta-row {
+  border-top: 0.2pt solid #e6e9ec;
+}
+
+.meta-label {
+  color: #66707b;
+}
+
+.meta-value {
+  font-weight: 500;
+  text-align: right;
+}
+
+/* ----- Items table ----- */
+
+table.items {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 6mm;
+}
+
+table.items thead th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 8.5pt;
+  text-transform: uppercase;
+  letter-spacing: 0.4pt;
+  color: #66707b;
+  padding: 2.5mm 2.5mm;
+  border-bottom: 0.6pt solid #1f2933;
+}
+
+table.items tbody td {
+  padding: 2.5mm 2.5mm;
+  border-bottom: 0.2pt solid #eaedf0;
+  vertical-align: top;
+  font-size: 10pt;
+}
+
+table.items tbody tr:last-child td {
+  border-bottom: 0.4pt solid #1f2933;
+}
+
+.col-pos    { width: 9mm;  text-align: right; color: #8a929c; }
+.col-desc   { }
+.col-qty    { width: 14mm; text-align: right; font-variant-numeric: tabular-nums; }
+.col-unit   { width: 16mm; }
+.col-price  { width: 24mm; text-align: right; font-variant-numeric: tabular-nums; }
+.col-vat    { width: 14mm; text-align: right; font-variant-numeric: tabular-nums; }
+.col-total  { width: 26mm; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
+
+/* ----- Totals ----- */
+
+.totals-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10mm;
+}
+
+table.totals {
+  width: 80mm;
+  border-collapse: collapse;
+}
+
+table.totals th {
+  text-align: left;
+  font-weight: 400;
+  color: #66707b;
+  padding: 1.5mm 4mm 1.5mm 0;
+}
+
+table.totals td {
+  text-align: right;
+  padding: 1.5mm 0;
+  font-variant-numeric: tabular-nums;
+}
+
+table.totals tr.grand th,
+table.totals tr.grand td {
+  border-top: 0.6pt solid #1f2933;
+  font-weight: 700;
+  font-size: 12pt;
+  color: #1f2933;
+  padding-top: 2.5mm;
+}
+
+/* ----- Callout (Kleinunternehmer-Hinweis) ----- */
+
+.callout {
+  margin: 6mm 0;
+  padding: 3.5mm 4.5mm;
+  background: #f7f8f9;
+  border-left: 1mm solid #66707b;
+  border-radius: 0 1.5mm 1.5mm 0;
+  font-size: 9.5pt;
+  color: #1f2933;
+}
+
+/* ----- Generic content blocks ----- */
+
+.block {
+  margin: 6mm 0;
+  font-size: 9.5pt;
+}
+
+.block-title {
+  font-size: 8.5pt;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4pt;
+  color: #66707b;
+  margin-bottom: 1.5mm;
+}
+
+.block p {
+  margin: 0;
+}
+
+.notes {
+  font-size: 9.5pt;
+}
+
+/* ----- Footer (every page bottom) ----- */
+
+.doc-footer {
+  display: flex;
+  gap: 6mm;
+  justify-content: space-between;
+  font-size: 7.5pt;
+  color: #66707b;
+  border-top: 0.3pt solid #e6e9ec;
+  padding-top: 3mm;
+  margin-top: 14mm;
+}
+
+.doc-footer .col {
+  flex: 1;
+}
+
+.doc-footer .col-title {
+  font-weight: 600;
+  color: #1f2933;
+  margin-bottom: 1mm;
+  font-size: 7.5pt;
+  letter-spacing: 0.2pt;
+}
+
+.doc-footer .iban {
+  font-family: "Courier New", monospace;
+  letter-spacing: 0.2pt;
+}
