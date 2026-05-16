@@ -1,10 +1,14 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod backup;
 mod fs_export;
 mod sidecar;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Apply any pending restore BEFORE the SQL plugin opens the DB.
+    backup::apply_pending_restore_blocking();
+
     let migrations = vec![
         Migration {
             version: 1,
@@ -46,6 +50,9 @@ pub fn run() {
             sidecar::generate_invoice,
             sidecar::ping_sidecar,
             fs_export::save_text_file,
+            backup::snapshot_db_path,
+            backup::bundle_backup,
+            backup::stage_restore,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
