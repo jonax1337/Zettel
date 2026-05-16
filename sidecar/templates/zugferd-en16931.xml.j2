@@ -133,14 +133,6 @@
 
     <ram:ApplicableHeaderTradeSettlement>
       <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
-      {% if invoice.isCreditNote and invoice.correctsInvoice %}
-      <ram:InvoiceReferencedDocument>
-        <ram:IssuerAssignedID>{{ invoice.correctsInvoice.number }}</ram:IssuerAssignedID>
-        <ram:FormattedIssueDateTime>
-          <qdt:DateTimeString format="102">{{ invoice.correctsInvoice.issueDate | date_xml }}</qdt:DateTimeString>
-        </ram:FormattedIssueDateTime>
-      </ram:InvoiceReferencedDocument>
-      {% endif %}
       {% if company.bankIban %}
       <ram:SpecifiedTradeSettlementPaymentMeans>
         <ram:TypeCode>58</ram:TypeCode>
@@ -199,6 +191,14 @@
         <ram:GrandTotalAmount>{{ invoice.total | cents_xml }}</ram:GrandTotalAmount>
         <ram:DuePayableAmount>{{ invoice.total | cents_xml }}</ram:DuePayableAmount>
       </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+      {% if invoice.isCreditNote and invoice.correctsInvoice %}
+      <ram:InvoiceReferencedDocument>
+        <ram:IssuerAssignedID>{{ invoice.correctsInvoice.number }}</ram:IssuerAssignedID>
+        <ram:FormattedIssueDateTime>
+          <qdt:DateTimeString format="102">{{ invoice.correctsInvoice.issueDate | date_xml }}</qdt:DateTimeString>
+        </ram:FormattedIssueDateTime>
+      </ram:InvoiceReferencedDocument>
+      {% endif %}
     </ram:ApplicableHeaderTradeSettlement>
 
   </rsm:SupplyChainTradeTransaction>
