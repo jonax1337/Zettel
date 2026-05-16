@@ -96,6 +96,7 @@ pub fn run() {
             sidecar::generate_offer,
             sidecar::ping_sidecar,
             sidecar::extract_zugferd,
+            sidecar::extract_text_pdf,
             sidecar::generate_reminder,
             fs_export::save_text_file,
             fs_export::import_expense_pdf,

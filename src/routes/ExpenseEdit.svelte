@@ -20,8 +20,10 @@
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import {
     extractZugferd,
+    extractTextPdf,
     importExpensePdf,
     type ExtractedInvoice,
+    type ExtractedText,
   } from "$lib/sidecar/extract";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -260,6 +262,47 @@
     }
   }
 
+  function matchVendorByName(name: string | null): Vendor | null {
+    if (!name) return null;
+    const sn = name.toLowerCase().trim();
+    return (
+      vendors.find((v) => v.name.toLowerCase().trim() === sn) ??
+      vendors.find((v) => v.name.toLowerCase().includes(sn) || sn.includes(v.name.toLowerCase())) ??
+      null
+    );
+  }
+
+  function matchVendorByVatId(vatId: string | null): Vendor | null {
+    if (!vatId) return null;
+    const norm = vatId.replace(/\s+/g, "").toUpperCase();
+    return (
+      vendors.find(
+        (v) => v.vatId && v.vatId.replace(/\s+/g, "").toUpperCase() === norm,
+      ) ?? null
+    );
+  }
+
+  function applyTextExtract(data: ExtractedText, matched: Vendor | null) {
+    if (matched) vendorIdStr = String(matched.id);
+    if (data.invoiceNumber) vendorNumber = data.invoiceNumber;
+    if (data.issueDate) issueDateIso = toIsoDate(data.issueDate);
+    if (data.dueDate) dueDateIso = toIsoDate(data.dueDate);
+    if (data.totalCents && data.totalCents > 0 && items.length === 1 && items[0].unitPrice === 0) {
+      items[0].description = data.invoiceNumber
+        ? `Eingangsrechnung ${data.invoiceNumber}`
+        : "Eingangsrechnung (heuristisch)";
+      items[0].quantity = 1;
+      items[0].unit = "Pauschal";
+      items[0].vatRate = reverseCharge ? 0 : 19;
+      const net = reverseCharge
+        ? data.totalCents
+        : Math.round(data.totalCents / (1 + items[0].vatRate / 100));
+      items[0].unitPrice = net;
+      items[0].priceText = (net / 100).toFixed(2).replace(".", ",");
+      items = [...items];
+    }
+  }
+
   async function handleImport(srcPath: string) {
     if (importing) return;
     importing = true;
@@ -268,6 +311,7 @@
       const result = await extractZugferd(srcPath);
       let matched: Vendor | null = null;
       let foundXml = false;
+      let textHeuristicUsed = false;
       if (result.success && result.found) {
         foundXml = true;
         zugferdExtracted = true;
@@ -275,6 +319,16 @@
         applyExtract(result.data, matched);
       } else if (result.success === false) {
         toast.error("ZUGFeRD-Extract fehlgeschlagen", result.error.message);
+      } else {
+        // No ZUGFeRD attachment — fall back to text-layer heuristic.
+        const textResult = await extractTextPdf(srcPath);
+        if (textResult.success && textResult.found) {
+          textHeuristicUsed = true;
+          matched =
+            matchVendorByVatId(textResult.data.vendorVatId) ??
+            matchVendorByName(textResult.data.vendorName);
+          applyTextExtract(textResult.data, matched);
+        }
       }
       const dest = await importExpensePdf(srcPath, vendorSlug(matched));
       pdfPath = dest;
@@ -290,10 +344,18 @@
           );
           importedNote = `PDF abgelegt unter ${dest}. Lieferant fehlt.`;
         }
+      } else if (textHeuristicUsed) {
+        toast.warning(
+          "Keine ZUGFeRD-XML — Text-Heuristik genutzt",
+          matched
+            ? `Lieferant „${matched.name}" via Text-Match zugeordnet. Bitte alle Felder prüfen.`
+            : "Felder bestmöglich vorbefüllt — bitte alle Werte prüfen.",
+        );
+        importedNote = `PDF abgelegt unter ${dest}. Heuristisch vorbefüllt — Werte prüfen!`;
       } else {
         toast.warning(
-          "Keine ZUGFeRD-XML in der PDF",
-          "Bitte manuell erfassen. Die PDF wurde trotzdem abgelegt.",
+          "Kein extrahierbarer Inhalt in der PDF",
+          "Weder ZUGFeRD-XML noch Text-Layer gefunden — bitte manuell erfassen.",
         );
         importedNote = `PDF abgelegt unter ${dest}`;
       }

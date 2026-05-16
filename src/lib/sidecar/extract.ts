@@ -63,6 +63,25 @@ export async function extractZugferd(pdfPath: string): Promise<ExtractResult> {
   return (await invoke("extract_zugferd", { pdfPath })) as ExtractResult;
 }
 
+export type ExtractedText = {
+  invoiceNumber: string | null;
+  issueDate: number | null;
+  dueDate: number | null;
+  totalCents: number | null;
+  currency: string;
+  vendorName: string | null;
+  vendorVatId: string | null;
+};
+
+export type ExtractTextResult =
+  | { success: true; found: true; textLength: number; data: ExtractedText }
+  | { success: true; found: false; textLength: number }
+  | { success: false; error: { code: string; message: string; details: string } };
+
+export async function extractTextPdf(pdfPath: string): Promise<ExtractTextResult> {
+  return (await invoke("extract_text_pdf", { pdfPath })) as ExtractTextResult;
+}
+
 export async function importExpensePdf(
   srcPath: string,
   vendorSlug?: string | null,
