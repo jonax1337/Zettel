@@ -3,8 +3,10 @@
   import {
     LayoutDashboard,
     Users,
+    Truck,
     FileText,
     FileSignature,
+    FileInput,
     Repeat,
     Download,
     Settings as SettingsIcon,
@@ -32,8 +34,10 @@
   const nav = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/customers", label: "Kunden", icon: Users },
+    { href: "/vendors", label: "Lieferanten", icon: Truck },
     { href: "/offers", label: "Angebote", icon: FileSignature },
     { href: "/invoices", label: "Rechnungen", icon: FileText },
+    { href: "/expenses", label: "Eingangsrechnungen", icon: FileInput },
     { href: "/recurring", label: "Vorlagen", icon: Repeat },
     { href: "/export", label: "Export", icon: Download },
     { href: "/settings", label: "Einstellungen", icon: SettingsIcon },

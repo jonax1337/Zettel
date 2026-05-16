@@ -65,6 +65,12 @@ pub fn run() {
             sql: include_str!("../../src/lib/db/migrations/0008_reverse_charge_type.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 10,
+            description: "expenses",
+            sql: include_str!("../../src/lib/db/migrations/0009_expenses.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
