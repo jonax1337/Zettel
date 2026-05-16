@@ -18,6 +18,7 @@
   import { isPopupWindow } from "$lib/window";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
+  import { version as appVersion } from "../../../package.json";
 
   let { children } = $props();
 
@@ -89,7 +90,7 @@
 
         <div class="p-2 border-t flex items-center justify-between">
           <span class="px-2 text-[10px] text-muted-foreground">
-            v0.1.0 · MIT
+            v{appVersion} · MIT
           </span>
           <DropdownMenu align="end" side="top">
             {#snippet trigger()}
