@@ -34,6 +34,12 @@ pub fn run() {
             sql: include_str!("../../src/lib/db/migrations/0003_reverse_charge.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "recurring_invoices",
+            sql: include_str!("../../src/lib/db/migrations/0004_recurring_invoices.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

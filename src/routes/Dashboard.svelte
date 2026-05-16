@@ -23,8 +23,16 @@
     Plus,
     UserPlus,
     Trophy,
+    Repeat,
+    FileText,
   } from "@lucide/svelte";
   import { openCustomerForm, openInvoiceForm } from "$lib/window";
+  import {
+    dueRecurring,
+    generateInvoiceFromRecurring,
+    type RecurringListRow,
+  } from "$lib/db/recurring";
+  import { toast } from "$lib/ui";
 
   let customerCount = $state(0);
   let stats = $state({
@@ -37,22 +45,35 @@
   let recent = $state<InvoiceListRow[]>([]);
   let revenue = $state<MonthlyRevenuePoint[]>([]);
   let top = $state<TopCustomer[]>([]);
+  let due = $state<RecurringListRow[]>([]);
   let loading = $state(true);
 
   async function reload() {
-    const [cs, s, r, rev, tc] = await Promise.all([
+    const [cs, s, r, rev, tc, dr] = await Promise.all([
       listCustomers(),
       dashboardStats(),
       recentInvoices(10),
       monthlyRevenue(12),
       topCustomers(5, 12),
+      dueRecurring(),
     ]);
     customerCount = cs.length;
     stats = s;
     recent = r;
     revenue = rev;
     top = tc;
+    due = dr;
     loading = false;
+  }
+
+  async function onGenerateDue(id: number) {
+    try {
+      const invoiceId = await generateInvoiceFromRecurring(id);
+      toast.success("Rechnung erzeugt");
+      push(`/invoices/${invoiceId}`);
+    } catch (e) {
+      toast.error("Erzeugen fehlgeschlagen", String(e));
+    }
   }
 
   $effect(() => {
@@ -218,6 +239,39 @@
     </CardContent>
   </Card>
 </div>
+
+{#if !loading && due.length > 0}
+  <section class="mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-sm font-semibold uppercase text-muted-foreground tracking-wider flex items-center gap-2">
+        <Repeat class="size-4" />
+        Fällige Vorlagen
+      </h2>
+      <span class="text-xs text-muted-foreground">{due.length} fällig</span>
+    </div>
+    <Card class="overflow-hidden py-0">
+      <table class="w-full text-sm">
+        <tbody>
+          {#each due as tmpl (tmpl.id)}
+            <tr class="border-t first:border-t-0">
+              <td class="px-4 py-3 font-medium">{tmpl.name}</td>
+              <td class="px-4 py-3 text-muted-foreground">{tmpl.customerName}</td>
+              <td class="px-4 py-3 text-amber-600 dark:text-amber-500 tabular-nums">
+                fällig {formatDate(tmpl.nextDueDate)}
+              </td>
+              <td class="px-4 py-3 text-right">
+                <Button size="sm" onclick={() => onGenerateDue(tmpl.id)}>
+                  <FileText class="size-3.5" />
+                  Jetzt erzeugen
+                </Button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </Card>
+  </section>
+{/if}
 
 <section>
   <h2 class="text-sm font-semibold uppercase text-muted-foreground tracking-wider mb-3">
