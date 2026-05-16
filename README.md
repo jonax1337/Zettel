@@ -5,15 +5,29 @@
 **Offline-first Rechnungen für deutsche Freelancer und Kleinunternehmer.**
 ZUGFeRD- / Factur-X-konforme PDF/A-3 mit eingebettetem EN-16931-XML — lokal, ohne Cloud, ohne Abo.
 
-[![Release](https://img.shields.io/github/v/release/jonax1337/zettel?logo=github&color=blue)](https://github.com/jonax1337/zettel/releases)
-[![Build](https://img.shields.io/github/actions/workflow/status/jonax1337/zettel/build.yml?branch=main&logo=githubactions&logoColor=white)](https://github.com/jonax1337/zettel/actions/workflows/build.yml)
-[![License: MIT](https://img.shields.io/github/license/jonax1337/zettel?color=blue)](./LICENSE)
-[![Built with Tauri](https://img.shields.io/badge/built_with-Tauri_2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app)
-[![Made for Solo-Selbstständige](https://img.shields.io/badge/made_for-Solo--Selbstständige-fbbf24)](https://github.com/jonax1337/zettel)
+[![Release](https://img.shields.io/github/v/release/jonax1337/zettel?style=for-the-badge&logo=github&color=4f46e5)](https://github.com/jonax1337/zettel/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/jonax1337/zettel/build.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/jonax1337/zettel/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/github/license/jonax1337/zettel?style=for-the-badge&color=4f46e5)](./LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/jonax1337/zettel/total?style=for-the-badge&logo=github&color=4f46e5)](https://github.com/jonax1337/zettel/releases)
+[![Stars](https://img.shields.io/github/stars/jonax1337/zettel?style=for-the-badge&logo=github&color=4f46e5)](https://github.com/jonax1337/zettel/stargazers)
+
+[![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/jonax1337/zettel/releases)
+[![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/jonax1337/zettel/releases)
+[![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/jonax1337/zettel/releases)
+[![ZUGFeRD](https://img.shields.io/badge/ZUGFeRD-EN%2016931-10b981?style=for-the-badge)](https://www.ferd-net.de/)
+[![Made in Germany](https://img.shields.io/badge/Made%20in-Germany-000000?style=for-the-badge&labelColor=DD0000)](https://laux.digital)
+
+[![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?style=for-the-badge&logo=tauri&logoColor=white)](https://tauri.app)
+[![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Tailwind](https://img.shields.io/badge/Tailwind-v4-38BDF8?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![SQLite](https://img.shields.io/badge/SQLite-local-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org)
 
 [Releases](https://github.com/jonax1337/zettel/releases)&nbsp;&nbsp;•&nbsp;&nbsp;
 [Discussions](https://github.com/jonax1337/zettel/discussions)&nbsp;&nbsp;•&nbsp;&nbsp;
 [Plan](./PLAN.md)&nbsp;&nbsp;•&nbsp;&nbsp;
+[Changelog](./CHANGELOG.md)&nbsp;&nbsp;•&nbsp;&nbsp;
 [Contributing](./CONTRIBUTING.md)
 
 </div>
