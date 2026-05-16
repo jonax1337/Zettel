@@ -6,6 +6,32 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-16
+
+### Added
+- **PDF-Themes.** Drei wählbare Designs (Klassisch, Modern, Minimal), umgesetzt über CSS-Variablen in einer einzigen `invoice.html.j2` — keine Template-Duplikation. Auswahl in den Einstellungen. ZUGFeRD-XML bleibt unberührt. (#18, PR #25)
+- **Reverse-Charge Drittland.** Neuer Wert `reverse_charge_type = 'third_country'` zusätzlich zu `'intra_eu'`. ZUGFeRD/Factur-X weist `CategoryCode G` + `ExemptionReason "Export outside EU"` aus; Buyer-USt-IdNr. ist für Drittland-Ausfuhrlieferungen optional. UI wird Select statt Boolean. (#19, PR #27)
+- **Optionale Backup-Verschlüsselung.** Passwort beim Backup → AES-256-GCM um den ZIP-Stream, Key via Argon2id. Magic-Header `ZETTEL-ENC-1` erkennt verschlüsselte Backups beim Restore automatisch; alte unverschlüsselte Backups bleiben restorebar. Kein gespeichertes Master-Passwort. (#20, PR #28)
+- **Granularer Restore.** Drei unabhängige Checkboxen (Kunden, Rechnungen+PDFs, Einstellungen). Voll-Restore unverändert. Teil-Restore läuft via `ATTACH DATABASE` + selektivem `INSERT` nach App-Start, kein Neustart nötig. PDFs werden nur kopiert wenn der Rechnungs-Bereich gewählt ist. (#21, PR #26)
+- **„Als Vorlage speichern" in Rechnungs-Detail.** Erzeugt aus einer Rechnung eine wiederkehrende Vorlage mit vorausgefülltem Kunde, Positionen, Reverse-Charge-Flag und Zahlungsfrist. User setzt nur noch Intervall + Erst-Fälligkeit. (#22, PR #23)
+
+### Fixed
+- **Storno-XML Schema-Reihenfolge.** `InvoiceReferencedDocument` lag im CII-Schema an falscher Position (vor statt nach `SpecifiedTradeSettlementHeaderMonetarySummation`). Audit + Korrektur, Report unter `docs/v0.3.1-storno-validation.md`. (#17, PR #24)
+- **Backup-Restore lehnte v0.4-Backups ab.** `CURRENT_SCHEMA`-Konstante in `backup.rs` war seit v0.2 nicht mehr mitgewachsen; der Manifest-Check hätte jedes v0.4-Backup mit „Schema neuer als App-Version" abgelehnt. Auf 9 angehoben.
+- **Settings-Schema-Mirror.** `CURRENT_DB_SCHEMA_VERSION` im Frontend wurde mit Migration 0008 nicht mitgezogen — auf 9 korrigiert.
+
+### Internal
+- Schema-Migrationen 0007 (`settings.pdf_theme`, DB-Version 8) und 0008 (`invoices.reverse_charge_type`, DB-Version 9).
+- Neues Rust-Modul `crypto.rs` (AES-256-GCM + Argon2id).
+- Neuer Tauri-Command `apply_pending_partial_restore` mit `rusqlite` + `ATTACH DATABASE` für selektive Wiederherstellung.
+- `bundle_backup` packt jetzt auch Angebote-PDFs in den ZIP (war seit v0.3 ein stiller Gap).
+- QA-Report unter `docs/v0.4-qa-report.md`.
+
+### Known limitations
+- Themes greifen nur für Rechnungen, nicht für Angebote (Follow-up).
+- Drittland-Rechnungen + Themes-Rendering sollten stichprobenartig gegen `erechnungs-validator.de` validiert werden vor dem Release-Tag.
+- Encrypted-Backup-Roundtrip einmal manuell durchspielen vor dem Tag.
+
 ## [0.3.0] — 2026-05-16
 
 ### Added
