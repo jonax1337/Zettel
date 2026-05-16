@@ -38,3 +38,5 @@ zettel-wt-*/
 
 # Claude Code runtime state
 .claude/
+test-output.pdf
+test-output*.pdf
