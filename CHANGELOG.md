@@ -8,28 +8,27 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [0.4.2] — 2026-05-16
 
+> **Hinweis:** v0.4.1 wurde nicht ausgeliefert — der CI-Build schlug fehl, weil `pnpm-lock.yaml` nicht aktualisiert war. v0.4.2 bündelt die Auto-Update-Implementierung und die Angebote-Verbesserungen mit dem Lockfile-Fix.
+
 ### Added
+- **Auto-Update.** Tauri-Updater-Integration mit Ed25519-signierten Releases gegen einen statischen `latest.json`-Feed bei GitHub Releases. Beim App-Start (10 Sek nach Mount) prüft die App still auf neue Versionen; bei Verfügbarkeit erscheint ein Toast „Update v0.x.x verfügbar — Installieren". In den Einstellungen gibt es zusätzlich einen „Nach Updates suchen"-Button und die Anzeige der installierten Version. Plattformübergreifend (Windows NSIS, macOS, Linux AppImage). (#30, PR #33)
 - **PDF-Themes auch für Angebote.** Das in v0.4 eingeführte `settings.pdf_theme` wirkt jetzt auch auf Angebot-PDFs. Kein separates Theme-Setting; gleicher Wert für Rechnungen und Angebote. (#31, PR #35)
 - **Angebot-PDFs sind PDF/A-3b.** Angebote werden jetzt PDF/A-3-konform gerendert (XMP, sRGB-OutputIntent, eingebettete Schriften), passend zum Archivierungs-Charakter. Keine ZUGFeRD-XML-Einbettung — Angebote sind keine E-Rechnungen. (#32, PR #36)
 
-### Internal
-- WeasyPrint 65.1's nativer `pdf_variant="pdf/a-3b"` deckt PDF/A-3b vollständig ab — keine neue Python-Dep (pikepdf wurde nicht benötigt).
-- `offer.html.j2` bekommt die Theme-Body-Klasse, `pdf.py` reicht `settings` in den Jinja-Context, `src/lib/sidecar/offer.ts` ergänzt `pdf_theme` im Payload — pure Vererbung über die geteilte `invoice.css`, kein CSS-Duplikat.
-
-## [0.4.1] — 2026-05-16
-
-### Added
-- **Auto-Update.** Tauri-Updater-Integration mit Ed25519-signierten Releases gegen einen statischen `latest.json` Feed bei GitHub Releases. Beim App-Start (10 Sek nach Mount) prüft die App still auf neue Versionen; bei Verfügbarkeit erscheint ein Toast „Update v0.x.x verfügbar — Installieren". In den Einstellungen gibt es zusätzlich einen „Nach Updates suchen"-Button und die Anzeige der installierten Version. Plattformübergreifend (Windows NSIS, macOS, Linux AppImage). (#30, PR #33)
+### Fixed
+- **CI baute keine Artefakte mehr.** Der Auto-Update-PR hatte die neuen Tauri-Plugin-Deps in `package.json` aufgenommen, `pnpm-lock.yaml` aber nicht regeneriert. `pnpm install --frozen-lockfile` (CI-Default) brach ab; v0.4.1 und ein erster v0.4.2-Tag wurden ohne Release-Artefakte gepublisht. Lockfile regeneriert, alte Tags entfernt, v0.4.2 frisch getagged.
 
 ### Internal
 - Neue Tauri-Plugins `tauri-plugin-updater` und `tauri-plugin-process` (für `relaunch()`).
 - Neues Frontend-Modul `src/lib/updater.ts`, kapselt `check()` / `downloadAndInstall()` / `relaunch()` mit Tauri-Guard.
 - `Toaster` um optionale Action erweitert (Label + onClick), damit der Update-Toast einen klickbaren Installieren-Button hat.
 - CI signiert Build-Artefakte mit `TAURI_SIGNING_PRIVATE_KEY` und uploadet `.sig`-Dateien + ein generiertes `latest.json` an den Release.
-- Setup-Doku unter `docs/auto-update-setup.md`.
+- WeasyPrint 65.1's nativer `pdf_variant="pdf/a-3b"` deckt PDF/A-3b vollständig ab — keine neue Python-Dep (pikepdf wurde nicht benötigt).
+- `offer.html.j2` bekommt die Theme-Body-Klasse, `pdf.py` reicht `settings` in den Jinja-Context, `src/lib/sidecar/offer.ts` ergänzt `pdf_theme` im Payload — pure Vererbung über die geteilte `invoice.css`, kein CSS-Duplikat.
+- Setup-Doku für Maintainer: `docs/auto-update-setup.md`.
 
 ### Notes
-- Bestehende v0.4.0-Installationen erhalten dieses Update **nicht** automatisch — Auto-Update beginnt erst ab v0.4.1 → v0.4.2. v0.4.0-User müssen einmalig manuell upgraden.
+- Bestehende v0.4.0-Installationen erhalten dieses Update **nicht** automatisch — Auto-Update beginnt erst ab v0.4.2 → v0.4.3. v0.4.0-User müssen einmalig manuell upgraden.
 
 ## [0.4.0] — 2026-05-16
 
