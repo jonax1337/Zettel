@@ -101,6 +101,11 @@ export const invoices = sqliteTable("invoices", {
   isReverseCharge: integer("is_reverse_charge", { mode: "boolean" })
     .notNull()
     .default(false),
+  reverseChargeType: text("reverse_charge_type", {
+    enum: ["none", "intra_eu", "third_country"],
+  })
+    .notNull()
+    .default("none"),
   notes: text("notes"),
   paymentTerms: text("payment_terms"),
   pdfPath: text("pdf_path"),

@@ -24,6 +24,7 @@ type InvoiceRow = {
   total: number;
   is_kleinunternehmer: number;
   is_reverse_charge: number;
+  reverse_charge_type: string | null;
   notes: string | null;
   payment_terms: string | null;
   pdf_path: string | null;
@@ -61,7 +62,8 @@ function mapInvoice(r: InvoiceRow): Invoice {
     vatAmount: r.vat_amount,
     total: r.total,
     isKleinunternehmer: r.is_kleinunternehmer === 1,
-    isReverseCharge: r.is_reverse_charge === 1,
+    isReverseCharge: (r.reverse_charge_type ?? "none") !== "none",
+    reverseChargeType: ((r.reverse_charge_type ?? "none") as Invoice["reverseChargeType"]),
     notes: r.notes,
     paymentTerms: r.payment_terms,
     pdfPath: r.pdf_path,
@@ -98,6 +100,8 @@ export type InvoiceItemInput = {
   vatRate: number; // percent
 };
 
+export type ReverseChargeType = "none" | "intra_eu" | "third_country";
+
 export type InvoiceFormInput = {
   customerId: number;
   issueDate: number;
@@ -105,7 +109,7 @@ export type InvoiceFormInput = {
   dueDate: number;
   notes: string | null;
   paymentTerms: string | null;
-  isReverseCharge: boolean;
+  reverseChargeType: ReverseChargeType;
   isCreditNote?: boolean;
   correctsInvoiceId?: number | null;
   items: InvoiceItemInput[];
@@ -272,9 +276,10 @@ async function writeItems(
 export async function createInvoice(input: InvoiceFormInput): Promise<number> {
   const settings = await loadSettings();
   const snapshot = await buildCustomerSnapshot(input.customerId);
+  const isReverseCharge = input.reverseChargeType !== "none";
   const totals = computeTotals(input.items, {
     isKleinunternehmer: settings.isKleinunternehmer,
-    isReverseCharge: input.isReverseCharge,
+    isReverseCharge,
   });
   const { number } = await nextInvoiceNumber();
 
@@ -283,8 +288,8 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
     `INSERT INTO invoices
       (number, customer_id, customer_snapshot, issue_date, delivery_date, due_date,
        status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
-       notes, payment_terms, is_credit_note, corrects_invoice_id)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       reverse_charge_type, notes, payment_terms, is_credit_note, corrects_invoice_id)
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.customerId,
@@ -296,7 +301,8 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
       totals.vatAmount * sign,
       totals.total * sign,
       settings.isKleinunternehmer ? 1 : 0,
-      input.isReverseCharge ? 1 : 0,
+      isReverseCharge ? 1 : 0,
+      input.reverseChargeType,
       input.notes,
       input.paymentTerms,
       input.isCreditNote ? 1 : 0,
@@ -317,9 +323,10 @@ export async function updateInvoice(
   if (existing.invoice.status !== "draft") {
     throw new Error("Nur Entwürfe können bearbeitet werden.");
   }
+  const isReverseCharge = input.reverseChargeType !== "none";
   const totals = computeTotals(input.items, {
     isKleinunternehmer: existing.invoice.isKleinunternehmer,
-    isReverseCharge: input.isReverseCharge,
+    isReverseCharge,
   });
   const sign = existing.invoice.isCreditNote ? -1 : 1;
 
@@ -334,7 +341,7 @@ export async function updateInvoice(
       customer_id = ?, customer_snapshot = ?,
       issue_date = ?, delivery_date = ?, due_date = ?,
       subtotal = ?, vat_amount = ?, total = ?,
-      is_reverse_charge = ?,
+      is_reverse_charge = ?, reverse_charge_type = ?,
       notes = ?, payment_terms = ?, updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -346,7 +353,8 @@ export async function updateInvoice(
       totals.subtotal * sign,
       totals.vatAmount * sign,
       totals.total * sign,
-      input.isReverseCharge ? 1 : 0,
+      isReverseCharge ? 1 : 0,
+      input.reverseChargeType,
       input.notes,
       input.paymentTerms,
       id,
@@ -402,7 +410,7 @@ export async function createCreditNoteFromInvoice(originalId: number): Promise<n
     dueDate: issueDate,
     notes: `Storno zur Rechnung ${invoice.number}`,
     paymentTerms: null,
-    isReverseCharge: invoice.isReverseCharge,
+    reverseChargeType: invoice.reverseChargeType,
     isCreditNote: true,
     correctsInvoiceId: originalId,
     items: items.map((it) => ({
