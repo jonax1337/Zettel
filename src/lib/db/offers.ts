@@ -422,7 +422,7 @@ export async function convertToInvoice(
     dueDate,
     notes: data.offer.notes,
     paymentTerms: null,
-    isReverseCharge: data.offer.isReverseCharge,
+    reverseChargeType: data.offer.isReverseCharge ? "intra_eu" : "none",
     items: data.items.map((it) => ({
       description: it.description,
       quantity: it.quantity,

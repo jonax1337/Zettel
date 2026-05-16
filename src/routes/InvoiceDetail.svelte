@@ -44,6 +44,7 @@
     Trash2,
     MoreHorizontal,
     AlertTriangle,
+    Repeat,
   } from "@lucide/svelte";
   type Props = { params?: { id?: string } };
   let { params }: Props = $props();
@@ -349,6 +350,11 @@
           </button>
         {/snippet}
 
+        {#if !invoice.isCreditNote}
+          <DropdownItem onSelect={() => push(`/recurring/new?fromInvoice=${invoice!.id}`)}>
+            <Repeat /> Als Vorlage speichern
+          </DropdownItem>
+        {/if}
         {#if invoice.status === "sent"}
           <DropdownItem onSelect={() => action("Zurück zu Entwurf", () => reopenDraft(invoice!.id))}>
             <Undo2 /> Zurück zu Entwurf

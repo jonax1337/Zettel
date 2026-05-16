@@ -32,3 +32,6 @@ build.log
 
 # Drizzle
 drizzle/.cache/
+
+# Local worktrees (do not commit)
+zettel-wt-*/

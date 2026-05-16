@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>{% if invoice.isCreditNote %}Stornorechnung{% else %}Rechnung{% endif %} {{ invoice.number }}</title>
 </head>
-<body>
+<body class="theme-{{ settings.pdf_theme if settings and settings.pdf_theme else 'classic' }}">
 
   <header class="masthead">
     <div class="brand">
@@ -118,9 +118,13 @@
     <p class="callout">{{ company.kleinunternehmerNote }}</p>
   {% endif %}
 
-  {% if invoice.isReverseCharge %}
+  {% if invoice.reverseChargeType == 'intra_eu' %}
     <p class="callout">
       Steuerschuldnerschaft des Leistungsempfängers / Reverse charge — VAT to be paid by the recipient.
+    </p>
+  {% elif invoice.reverseChargeType == 'third_country' %}
+    <p class="callout">
+      Steuerfreie Ausfuhrlieferung / Export outside EU — VAT exempt.
     </p>
   {% endif %}
 

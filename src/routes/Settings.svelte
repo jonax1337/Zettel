@@ -21,7 +21,7 @@
   import { Image, X, Download, Upload } from "@lucide/svelte";
 
   // aktueller DB-Schema-Stand (siehe src-tauri/src/lib.rs Migrations-Vektor)
-  const CURRENT_DB_SCHEMA_VERSION = 7;
+  const CURRENT_DB_SCHEMA_VERSION = 9;
 
   let s = $state<Settings | null>(null);
   let loading = $state(true);
@@ -72,11 +72,31 @@
     { value: "extended", label: "EXTENDED (Factur-X 1.0)" },
   ];
 
+  const themeItems = [
+    { value: "classic", label: "Klassisch" },
+    { value: "modern", label: "Modern" },
+    { value: "minimal", label: "Minimal" },
+  ];
+
   // --- Backup / Restore ---
   let backupBusy = $state(false);
   let restoreBusy = $state(false);
   let confirmRestoreOpen = $state(false);
   let pendingRestoreZip = $state<string | null>(null);
+  let restoreSectionCustomers = $state(true);
+  let restoreSectionInvoices = $state(true);
+  let restoreSectionSettings = $state(true);
+  let backupEncrypt = $state(false);
+  let backupPassword = $state("");
+  let backupPasswordConfirm = $state("");
+  let restorePassword = $state("");
+  let restoreNeedsPassword = $state(false);
+  const restoreIsFull = $derived(
+    restoreSectionCustomers && restoreSectionInvoices && restoreSectionSettings,
+  );
+  const restoreAnySelected = $derived(
+    restoreSectionCustomers || restoreSectionInvoices || restoreSectionSettings,
+  );
 
   function defaultBackupFilename(): string {
     const d = new Date();
@@ -86,6 +106,16 @@
   }
 
   async function onBackup() {
+    if (backupEncrypt) {
+      if (backupPassword.length < 8) {
+        toast.error("Passwort zu kurz", "Mindestens 8 Zeichen.");
+        return;
+      }
+      if (backupPassword !== backupPasswordConfirm) {
+        toast.error("Passwörter stimmen nicht überein");
+        return;
+      }
+    }
     backupBusy = true;
     try {
       const target = await save({
@@ -101,8 +131,11 @@
         targetZip: target,
         invoiceCount: null,
         dbSchemaVersion: CURRENT_DB_SCHEMA_VERSION,
+        password: backupEncrypt ? backupPassword : null,
       });
       toast.success("Backup gespeichert", target);
+      backupPassword = "";
+      backupPasswordConfirm = "";
     } catch (e) {
       toast.error("Backup fehlgeschlagen", String(e));
     } finally {
@@ -117,23 +150,82 @@
     });
     if (typeof picked !== "string") return;
     pendingRestoreZip = picked;
-    confirmRestoreOpen = true;
+    restoreSectionCustomers = true;
+    restoreSectionInvoices = true;
+    restoreSectionSettings = true;
+    restoreNeedsPassword = false;
+    restorePassword = "";
+  }
+
+  async function onRunRestore() {
+    if (!pendingRestoreZip) return;
+    if (!restoreAnySelected) {
+      toast.error("Nichts ausgewählt", "Bitte mindestens einen Bereich wählen.");
+      return;
+    }
+    if (restoreIsFull) {
+      confirmRestoreOpen = true;
+      return;
+    }
+    restoreBusy = true;
+    try {
+      await invoke<string>("stage_restore", {
+        sourceZip: pendingRestoreZip,
+        sections: {
+          customers: restoreSectionCustomers,
+          invoices: restoreSectionInvoices,
+          settings: restoreSectionSettings,
+        },
+        password: restorePassword || null,
+      });
+      await invoke<void>("apply_pending_partial_restore");
+      toast.success(
+        "Wiederherstellung abgeschlossen",
+        "Die ausgewählten Bereiche wurden eingespielt.",
+      );
+      pendingRestoreZip = null;
+      restorePassword = "";
+      restoreNeedsPassword = false;
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes("password_required")) {
+        restoreNeedsPassword = true;
+        toast.error("Passwort erforderlich", "Dieses Backup ist verschlüsselt.");
+      } else {
+        toast.error("Wiederherstellung fehlgeschlagen", msg);
+      }
+    } finally {
+      restoreBusy = false;
+    }
   }
 
   async function onConfirmRestore() {
     if (!pendingRestoreZip) return;
     restoreBusy = true;
     try {
-      await invoke<string>("stage_restore", { sourceZip: pendingRestoreZip });
+      await invoke<string>("stage_restore", {
+        sourceZip: pendingRestoreZip,
+        sections: null,
+        password: restorePassword || null,
+      });
       toast.success(
         "Wiederherstellung vorbereitet",
         "Bitte die App neu starten — das Backup wird beim nächsten Start eingespielt.",
       );
+      pendingRestoreZip = null;
+      restorePassword = "";
+      restoreNeedsPassword = false;
     } catch (e) {
-      toast.error("Wiederherstellung fehlgeschlagen", String(e));
+      const msg = String(e);
+      if (msg.includes("password_required")) {
+        restoreNeedsPassword = true;
+        toast.error("Passwort erforderlich", "Dieses Backup ist verschlüsselt.");
+      } else {
+        toast.error("Wiederherstellung fehlgeschlagen", msg);
+        pendingRestoreZip = null;
+      }
     } finally {
       restoreBusy = false;
-      pendingRestoreZip = null;
     }
   }
 </script>
@@ -354,6 +446,14 @@
               EN 16931 deckt alle B2B-Standardfälle ab und ist als E-Rechnung universell akzeptiert.
             </span>
           </div>
+
+          <div class="flex flex-col gap-1.5">
+            <Label>PDF-Design</Label>
+            <Select bind:value={s.pdfTheme} items={themeItems} />
+            <span class="text-xs text-muted-foreground">
+              Beeinflusst nur die visuelle Darstellung der PDF — das eingebettete ZUGFeRD-XML bleibt unverändert.
+            </span>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -367,6 +467,31 @@
         </CardDescription>
       </CardHeader>
       <CardContent>
+        <div class="mb-4 space-y-3">
+          <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+            <input
+              type="checkbox"
+              bind:checked={backupEncrypt}
+              class="size-4 rounded border-border accent-primary"
+            />
+            Backup verschlüsseln (AES-256-GCM)
+          </label>
+          {#if backupEncrypt}
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div class="flex flex-col gap-1.5">
+                <Label>Passwort</Label>
+                <Input type="password" bind:value={backupPassword} autocomplete="new-password" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <Label>Passwort bestätigen</Label>
+                <Input type="password" bind:value={backupPasswordConfirm} autocomplete="new-password" />
+              </div>
+              <span class="sm:col-span-2 text-xs text-muted-foreground">
+                Mindestens 8 Zeichen. Ohne dieses Passwort lässt sich das Backup nicht wiederherstellen — es wird nirgendwo gespeichert.
+              </span>
+            </div>
+          {/if}
+        </div>
         <div class="flex flex-wrap items-center gap-3">
           <Button type="button" variant="outline" onclick={onBackup} disabled={backupBusy}>
             <Download class="size-4" />
@@ -374,13 +499,85 @@
           </Button>
           <Button type="button" variant="outline" onclick={onPickRestore} disabled={restoreBusy}>
             <Upload class="size-4" />
-            {restoreBusy ? "Stelle wieder her…" : "Backup wiederherstellen…"}
+            Backup auswählen…
           </Button>
         </div>
+
+        {#if pendingRestoreZip}
+          <div class="mt-4 rounded-md border border-border bg-muted/30 p-4 space-y-3">
+            <div class="text-sm">
+              <span class="text-muted-foreground">Quelle:</span>
+              <code class="ml-1 break-all">{pendingRestoreZip}</code>
+            </div>
+            <div class="text-sm font-medium">Welche Bereiche wiederherstellen?</div>
+            <div class="flex flex-col gap-2">
+              <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  bind:checked={restoreSectionCustomers}
+                  class="size-4 rounded border-border accent-primary"
+                />
+                Kunden
+              </label>
+              <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  bind:checked={restoreSectionInvoices}
+                  class="size-4 rounded border-border accent-primary"
+                />
+                Rechnungen + PDFs <span class="text-muted-foreground">(inkl. Angebote, wiederkehrende Rechnungen)</span>
+              </label>
+              <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  bind:checked={restoreSectionSettings}
+                  class="size-4 rounded border-border accent-primary"
+                />
+                Einstellungen
+              </label>
+            </div>
+            {#if restoreNeedsPassword}
+              <div class="flex flex-col gap-1.5">
+                <Label>Passwort des Backups</Label>
+                <Input type="password" bind:value={restorePassword} autocomplete="current-password" />
+                <span class="text-xs text-muted-foreground">
+                  Dieses Backup ist verschlüsselt. Bitte Passwort eingeben und erneut wiederherstellen.
+                </span>
+              </div>
+            {/if}
+            <div class="flex flex-wrap items-center gap-2 pt-1">
+              <Button
+                type="button"
+                onclick={onRunRestore}
+                disabled={restoreBusy || !restoreAnySelected}
+              >
+                {restoreBusy ? "Stelle wieder her…" : "Wiederherstellen"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onclick={() => (pendingRestoreZip = null)}
+                disabled={restoreBusy}
+              >
+                Abbrechen
+              </Button>
+              {#if restoreIsFull}
+                <span class="text-xs text-muted-foreground">
+                  Volle Wiederherstellung — App-Neustart erforderlich.
+                </span>
+              {:else}
+                <span class="text-xs text-muted-foreground">
+                  Teil-Wiederherstellung — wird sofort eingespielt.
+                </span>
+              {/if}
+            </div>
+          </div>
+        {/if}
+
         <p class="text-xs text-muted-foreground mt-3">
-          Eine Wiederherstellung überschreibt die bestehende Datenbank und alle PDFs unter
-          <code>~/Documents/Zettel/Rechnungen/</code>. Die alte DB wird vorsichtshalber als
-          <code>zettel.db.bak</code> aufbewahrt.
+          Bei voller Wiederherstellung wird die gesamte Datenbank ersetzt (alte DB bleibt als
+          <code>zettel.db.bak</code> erhalten); bei Teil-Wiederherstellung werden nur die
+          gewählten Bereiche aus dem Backup übernommen.
         </p>
       </CardContent>
     </Card>

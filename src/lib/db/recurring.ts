@@ -271,7 +271,7 @@ export async function generateInvoiceFromRecurring(
     dueDate,
     notes: tmpl.recurring.notes,
     paymentTerms: tmpl.recurring.paymentTerms,
-    isReverseCharge: tmpl.recurring.isReverseCharge,
+    reverseChargeType: tmpl.recurring.isReverseCharge ? "intra_eu" : "none",
     items: tmpl.items.map((it) => ({
       description: it.description,
       quantity: it.quantity,

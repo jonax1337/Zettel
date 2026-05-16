@@ -8,7 +8,7 @@
     type RecurringFormInput,
     type RecurringItemInput,
   } from "$lib/db/recurring";
-  import { computeLineTotal, computeTotals } from "$lib/db/invoices";
+  import { computeLineTotal, computeTotals, getInvoice } from "$lib/db/invoices";
   import type { Customer, Settings, RecurringInterval } from "$lib/db/schema";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
@@ -27,8 +27,17 @@
   type Props = {
     mode: "new" | "edit";
     params?: { id?: string };
+    querystring?: string;
   };
-  let { mode, params }: Props = $props();
+  let { mode, params, querystring }: Props = $props();
+
+  const fromInvoiceId = $derived.by(() => {
+    if (mode !== "new" || !querystring) return null;
+    const v = new URLSearchParams(querystring).get("fromInvoice");
+    if (!v) return null;
+    const n = Number.parseInt(v, 10);
+    return Number.isFinite(n) ? n : null;
+  });
 
   let customers = $state<Customer[]>([]);
   let settings = $state<Settings | null>(null);
@@ -84,13 +93,37 @@
 
   $effect(() => {
     Promise.all([loadSettings(), listCustomers()])
-      .then(([s, cs]) => {
+      .then(async ([s, cs]) => {
         settings = s;
         customers = cs;
         if (mode === "new") {
           paymentTermsDays = s.defaultPaymentTermsDays;
           for (const it of items) it.vatRate = s.isKleinunternehmer ? 0 : 19;
           items = [...items];
+          if (fromInvoiceId !== null) {
+            const res = await getInvoice(fromInvoiceId);
+            if (res) {
+              customerIdStr = String(res.invoice.customerId);
+              isReverseCharge = res.invoice.isReverseCharge;
+              paymentTerms = res.invoice.paymentTerms ?? "";
+              const days = Math.max(
+                0,
+                Math.round((res.invoice.dueDate - res.invoice.issueDate) / 86400),
+              );
+              paymentTermsDays = days || s.defaultPaymentTermsDays;
+              if (res.items.length > 0) {
+                items = res.items.map((it) => ({
+                  description: it.description,
+                  quantity: it.quantity,
+                  unit: it.unit,
+                  unitPrice: it.unitPrice,
+                  vatRate: it.vatRate,
+                  priceText: (it.unitPrice / 100).toFixed(2).replace(".", ","),
+                }));
+              }
+              startDateIso = "";
+            }
+          }
         }
       })
       .catch((e) => (error = String(e)));

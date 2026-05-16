@@ -48,6 +48,7 @@ function buildPayload(opts: {
       total: invoice.total,
       isKleinunternehmer: invoice.isKleinunternehmer,
       isReverseCharge: invoice.isReverseCharge,
+      reverseChargeType: invoice.reverseChargeType,
       isCreditNote: invoice.isCreditNote,
       correctsInvoice: correctsInvoice ?? null,
       notes: invoice.notes,
@@ -92,6 +93,9 @@ function buildPayload(opts: {
     },
     outputPath,
     profile: company.zugferdProfile ?? "en16931",
+    settings: {
+      pdf_theme: company.pdfTheme ?? "classic",
+    },
   };
 }
 

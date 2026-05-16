@@ -9,6 +9,7 @@
     updateInvoice,
     type InvoiceFormInput,
     type InvoiceItemInput,
+    type ReverseChargeType,
   } from "$lib/db/invoices";
   import type { Customer, Settings } from "$lib/db/schema";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
@@ -51,7 +52,8 @@
   let dueDateIso = $state(toIsoDate(addDaysUnix(nowUnix(), 14)));
   let notes = $state("");
   let paymentTerms = $state("");
-  let isReverseCharge = $state(false);
+  let reverseChargeType = $state<ReverseChargeType>("none");
+  const isReverseCharge = $derived(reverseChargeType !== "none");
   let isCreditNote = $state(false);
   let correctsInvoiceId = $state<number | null>(null);
   let items = $state<Array<InvoiceItemInput & { priceText: string }>>([
@@ -62,14 +64,18 @@
     customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
   );
 
-  // Reverse-Charge nur erlaubt, wenn weder Firma noch Rechnung Kleinunternehmer
-  // sind und beide Parteien eine USt-IdNr. haben. Wir prüfen das EU-Länder-Kriterium
-  // bewusst nicht automatisch — der User trägt die Verantwortung.
-  const canReverseCharge = $derived(
+  // Reverse-Charge: sender must not be Kleinunternehmer. intra_eu requires both
+  // VAT-IDs; third_country (export outside EU) only requires the sender's. The
+  // EU/non-EU country judgement stays with the user.
+  const canReverseChargeIntraEu = $derived(
     !!settings &&
       !settings.isKleinunternehmer &&
       !!settings.vatId &&
       !!selectedCustomer?.vatId,
+  );
+
+  const canReverseChargeThirdCountry = $derived(
+    !!settings && !settings.isKleinunternehmer && !!settings.vatId,
   );
 
   const reverseChargeBlockedReason = $derived.by(() => {
@@ -78,14 +84,19 @@
       return "Nicht verfügbar für Kleinunternehmer (§ 19 UStG).";
     if (!settings.vatId)
       return "Eigene USt-IdNr. in den Einstellungen fehlt.";
-    if (!selectedCustomer) return "Erst Kunden auswählen.";
-    if (!selectedCustomer.vatId)
-      return "Kunde hat keine USt-IdNr. hinterlegt.";
+    if (reverseChargeType === "intra_eu") {
+      if (!selectedCustomer) return "Erst Kunden auswählen.";
+      if (!selectedCustomer.vatId)
+        return "Innergemeinschaftliche Lieferung: Kunde benötigt USt-IdNr.";
+    }
     return "";
   });
 
   $effect(() => {
-    if (!canReverseCharge && isReverseCharge) isReverseCharge = false;
+    if (reverseChargeType === "intra_eu" && !canReverseChargeIntraEu)
+      reverseChargeType = "none";
+    if (reverseChargeType === "third_country" && !canReverseChargeThirdCountry)
+      reverseChargeType = "none";
   });
 
   $effect(() => {
@@ -140,7 +151,7 @@
           dueDateIso = toIsoDate(res.invoice.dueDate);
           notes = res.invoice.notes ?? "";
           paymentTerms = res.invoice.paymentTerms ?? "";
-          isReverseCharge = res.invoice.isReverseCharge;
+          reverseChargeType = res.invoice.reverseChargeType;
           isCreditNote = res.invoice.isCreditNote;
           correctsInvoiceId = res.invoice.correctsInvoiceId;
           items = res.items.map((it) => ({
@@ -194,6 +205,12 @@
     customers.map((c) => ({ value: String(c.id), label: `${c.customerNumber} · ${c.name}` })),
   );
 
+  const rcItems: { value: ReverseChargeType; label: string }[] = [
+    { value: "none", label: "Keine" },
+    { value: "intra_eu", label: "Innergemeinschaftliche Lieferung (EU)" },
+    { value: "third_country", label: "Ausfuhrlieferung Drittland" },
+  ];
+
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     const customerId = customerIdStr ? Number.parseInt(customerIdStr, 10) : null;
@@ -205,6 +222,20 @@
       error = "Mindestens eine Position erforderlich.";
       return;
     }
+    if (reverseChargeType !== "none") {
+      if (settings?.isKleinunternehmer) {
+        error = "Reverse-Charge ist für Kleinunternehmer nicht zulässig.";
+        return;
+      }
+      if (reverseChargeType === "intra_eu" && !selectedCustomer?.vatId) {
+        error = "Innergemeinschaftliche Lieferung erfordert eine USt-IdNr. des Kunden.";
+        return;
+      }
+      if (items.some((it) => it.vatRate !== 0)) {
+        error = "Bei Reverse-Charge müssen alle Positionen 0 % USt haben.";
+        return;
+      }
+    }
     saving = true;
     error = null;
     try {
@@ -215,7 +246,7 @@
         dueDate: fromIsoDate(dueDateIso),
         notes: notes.trim() || null,
         paymentTerms: paymentTerms.trim() || null,
-        isReverseCharge,
+        reverseChargeType,
         items: items.map(({ priceText: _p, ...rest }) => rest),
       };
       let savedId: number;
@@ -320,29 +351,27 @@
             <Input type="date" bind:value={deliveryDateIso} />
           </div>
           {#if settings && !settings.isKleinunternehmer && !isCreditNote}
-            <div class="col-span-2 flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
-              <input
-                id="reverse-charge"
-                type="checkbox"
-                bind:checked={isReverseCharge}
-                disabled={!canReverseCharge}
-                class="mt-0.5 size-4 rounded border-input accent-primary disabled:opacity-40"
+            <div class="col-span-2 flex flex-col gap-1.5">
+              <Label>Reverse-Charge</Label>
+              <Select
+                bind:value={reverseChargeType}
+                items={rcItems}
+                disabled={!canReverseChargeThirdCountry}
               />
-              <div class="flex-1 text-sm">
-                <label for="reverse-charge" class="font-medium cursor-pointer">
-                  Reverse-Charge (intra-EU B2B)
-                </label>
-                <p class="text-xs text-muted-foreground mt-0.5">
-                  Steuerschuldnerschaft des Leistungsempfängers. Setzt alle Positionen
-                  auf 0&nbsp;% USt und schreibt den Hinweis auf die Rechnung. Verantwortung
-                  für das EU-B2B-Kriterium liegt beim Nutzer.
-                </p>
-                {#if !canReverseCharge && reverseChargeBlockedReason}
-                  <p class="text-xs text-amber-600 dark:text-amber-500 mt-1">
-                    {reverseChargeBlockedReason}
-                  </p>
+              <p class="text-xs text-muted-foreground">
+                {#if reverseChargeType === "intra_eu"}
+                  Steuerschuldnerschaft des Leistungsempfängers (EU-B2B). Alle Positionen auf 0&nbsp;% USt.
+                {:else if reverseChargeType === "third_country"}
+                  Steuerfreie Ausfuhrlieferung (Drittland). Alle Positionen auf 0&nbsp;% USt.
+                {:else}
+                  Inlandsumsatz oder regulärer Umsatzsteuerausweis.
                 {/if}
-              </div>
+              </p>
+              {#if reverseChargeBlockedReason}
+                <p class="text-xs text-amber-600 dark:text-amber-500">
+                  {reverseChargeBlockedReason}
+                </p>
+              {/if}
             </div>
           {/if}
         </section>

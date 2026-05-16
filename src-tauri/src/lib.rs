@@ -1,6 +1,7 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod backup;
+mod crypto;
 mod fs_export;
 mod sidecar;
 
@@ -52,6 +53,18 @@ pub fn run() {
             sql: include_str!("../../src/lib/db/migrations/0006_credit_notes.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 8,
+            description: "pdf_theme",
+            sql: include_str!("../../src/lib/db/migrations/0007_pdf_theme.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 9,
+            description: "reverse_charge_type",
+            sql: include_str!("../../src/lib/db/migrations/0008_reverse_charge_type.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -72,6 +85,7 @@ pub fn run() {
             backup::snapshot_db_path,
             backup::bundle_backup,
             backup::stage_restore,
+            backup::apply_pending_partial_restore,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())

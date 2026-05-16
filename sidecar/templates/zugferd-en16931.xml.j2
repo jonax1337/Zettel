@@ -33,9 +33,14 @@
       <ram:SubjectCode>AAI</ram:SubjectCode>
     </ram:IncludedNote>
     {% endif %}
-    {% if invoice.isReverseCharge %}
+    {% if invoice.reverseChargeType == 'intra_eu' %}
     <ram:IncludedNote>
       <ram:Content>Steuerschuldnerschaft des Leistungsempfängers / Reverse charge — VAT to be paid by the recipient.</ram:Content>
+      <ram:SubjectCode>AAI</ram:SubjectCode>
+    </ram:IncludedNote>
+    {% elif invoice.reverseChargeType == 'third_country' %}
+    <ram:IncludedNote>
+      <ram:Content>Steuerfreie Ausfuhrlieferung / Export outside EU — VAT exempt.</ram:Content>
       <ram:SubjectCode>AAI</ram:SubjectCode>
     </ram:IncludedNote>
     {% endif %}
@@ -61,8 +66,11 @@
       <ram:SpecifiedLineTradeSettlement>
         <ram:ApplicableTradeTax>
           <ram:TypeCode>VAT</ram:TypeCode>
-          {% if invoice.isReverseCharge %}
+          {% if invoice.reverseChargeType == 'intra_eu' %}
           <ram:CategoryCode>K</ram:CategoryCode>
+          <ram:RateApplicablePercent>0</ram:RateApplicablePercent>
+          {% elif invoice.reverseChargeType == 'third_country' %}
+          <ram:CategoryCode>G</ram:CategoryCode>
           <ram:RateApplicablePercent>0</ram:RateApplicablePercent>
           {% elif invoice.isKleinunternehmer %}
           <ram:CategoryCode>E</ram:CategoryCode>
@@ -133,14 +141,6 @@
 
     <ram:ApplicableHeaderTradeSettlement>
       <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
-      {% if invoice.isCreditNote and invoice.correctsInvoice %}
-      <ram:InvoiceReferencedDocument>
-        <ram:IssuerAssignedID>{{ invoice.correctsInvoice.number }}</ram:IssuerAssignedID>
-        <ram:FormattedIssueDateTime>
-          <qdt:DateTimeString format="102">{{ invoice.correctsInvoice.issueDate | date_xml }}</qdt:DateTimeString>
-        </ram:FormattedIssueDateTime>
-      </ram:InvoiceReferencedDocument>
-      {% endif %}
       {% if company.bankIban %}
       <ram:SpecifiedTradeSettlementPaymentMeans>
         <ram:TypeCode>58</ram:TypeCode>
@@ -160,14 +160,19 @@
       <ram:ApplicableTradeTax>
         <ram:CalculatedAmount>{{ grp.tax | cents_xml }}</ram:CalculatedAmount>
         <ram:TypeCode>VAT</ram:TypeCode>
-        {% if invoice.isReverseCharge %}
+        {% if invoice.reverseChargeType == 'intra_eu' %}
         <ram:ExemptionReason>VAT exempt for EEA intra-community supply of goods and services</ram:ExemptionReason>
+        {% elif invoice.reverseChargeType == 'third_country' %}
+        <ram:ExemptionReason>Export outside EU</ram:ExemptionReason>
         {% elif invoice.isKleinunternehmer %}
         <ram:ExemptionReason>{{ company.kleinunternehmerNote or "Kleinunternehmer gemäß § 19 UStG" }}</ram:ExemptionReason>
         {% endif %}
         <ram:BasisAmount>{{ grp.basis | cents_xml }}</ram:BasisAmount>
-        {% if invoice.isReverseCharge %}
+        {% if invoice.reverseChargeType == 'intra_eu' %}
         <ram:CategoryCode>K</ram:CategoryCode>
+        <ram:RateApplicablePercent>0</ram:RateApplicablePercent>
+        {% elif invoice.reverseChargeType == 'third_country' %}
+        <ram:CategoryCode>G</ram:CategoryCode>
         <ram:RateApplicablePercent>0</ram:RateApplicablePercent>
         {% elif invoice.isKleinunternehmer %}
         <ram:CategoryCode>E</ram:CategoryCode>
@@ -199,6 +204,14 @@
         <ram:GrandTotalAmount>{{ invoice.total | cents_xml }}</ram:GrandTotalAmount>
         <ram:DuePayableAmount>{{ invoice.total | cents_xml }}</ram:DuePayableAmount>
       </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+      {% if invoice.isCreditNote and invoice.correctsInvoice %}
+      <ram:InvoiceReferencedDocument>
+        <ram:IssuerAssignedID>{{ invoice.correctsInvoice.number }}</ram:IssuerAssignedID>
+        <ram:FormattedIssueDateTime>
+          <qdt:DateTimeString format="102">{{ invoice.correctsInvoice.issueDate | date_xml }}</qdt:DateTimeString>
+        </ram:FormattedIssueDateTime>
+      </ram:InvoiceReferencedDocument>
+      {% endif %}
     </ram:ApplicableHeaderTradeSettlement>
 
   </rsm:SupplyChainTradeTransaction>
