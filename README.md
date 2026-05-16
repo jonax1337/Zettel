@@ -65,7 +65,7 @@ Mitmachen: [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## Tech-Stack (Kurzfassung)
 
-- **Frontend:** Tauri 2, Svelte 5 (Runes), TypeScript strict, Tailwind v4, Bits UI
+- **Frontend:** Tauri 2, Svelte 5 (Runes), TypeScript strict, Tailwind v4, Bits-UI-Primitives mit shadcn-Style-Wrappern unter `src/lib/ui/`, Lucide-Icons, Light/Dark/System-Theme
 - **Persistenz:** SQLite (lokal, `~/AppData/.../zettel.db`)
 - **PDF/XML:** Python-Sidecar (WeasyPrint + factur-x + Jinja2), als PyInstaller-Binary gebündelt
 
