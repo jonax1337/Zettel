@@ -29,6 +29,7 @@ type SettingsRow = {
   default_payment_terms_days: number;
   logo_path: string | null;
   zugferd_profile: string;
+  pdf_theme: string;
   created_at: number;
   updated_at: number;
 };
@@ -60,6 +61,7 @@ function mapSettings(r: SettingsRow): Settings {
     defaultPaymentTermsDays: r.default_payment_terms_days,
     logoPath: r.logo_path,
     zugferdProfile: (r.zugferd_profile ?? "en16931") as Settings["zugferdProfile"],
+    pdfTheme: (r.pdf_theme ?? "classic") as Settings["pdfTheme"],
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -103,6 +105,7 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       default_payment_terms_days = ?,
       logo_path = ?,
       zugferd_profile = ?,
+      pdf_theme = ?,
       updated_at = unixepoch()
     WHERE id = 1`,
     [
@@ -130,6 +133,7 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       s.defaultPaymentTermsDays ?? 14,
       s.logoPath ?? null,
       s.zugferdProfile ?? "en16931",
+      s.pdfTheme ?? "classic",
     ],
   );
 }

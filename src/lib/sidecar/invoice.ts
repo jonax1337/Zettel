@@ -92,6 +92,9 @@ function buildPayload(opts: {
     },
     outputPath,
     profile: company.zugferdProfile ?? "en16931",
+    settings: {
+      pdf_theme: company.pdfTheme ?? "classic",
+    },
   };
 }
 

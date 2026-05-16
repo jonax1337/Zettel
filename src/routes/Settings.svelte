@@ -21,7 +21,7 @@
   import { Image, X, Download, Upload } from "@lucide/svelte";
 
   // aktueller DB-Schema-Stand (siehe src-tauri/src/lib.rs Migrations-Vektor)
-  const CURRENT_DB_SCHEMA_VERSION = 7;
+  const CURRENT_DB_SCHEMA_VERSION = 8;
 
   let s = $state<Settings | null>(null);
   let loading = $state(true);
@@ -70,6 +70,12 @@
     { value: "en16931", label: "EN 16931 / Comfort (Standard)" },
     { value: "basic", label: "BASIC (Factur-X 1.0)" },
     { value: "extended", label: "EXTENDED (Factur-X 1.0)" },
+  ];
+
+  const themeItems = [
+    { value: "classic", label: "Klassisch" },
+    { value: "modern", label: "Modern" },
+    { value: "minimal", label: "Minimal" },
   ];
 
   // --- Backup / Restore ---
@@ -352,6 +358,14 @@
             <Select bind:value={s.zugferdProfile} items={profileItems} />
             <span class="text-xs text-muted-foreground">
               EN 16931 deckt alle B2B-Standardfälle ab und ist als E-Rechnung universell akzeptiert.
+            </span>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <Label>PDF-Design</Label>
+            <Select bind:value={s.pdfTheme} items={themeItems} />
+            <span class="text-xs text-muted-foreground">
+              Beeinflusst nur die visuelle Darstellung der PDF — das eingebettete ZUGFeRD-XML bleibt unverändert.
             </span>
           </div>
         </div>
