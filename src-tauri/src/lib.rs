@@ -46,6 +46,12 @@ pub fn run() {
             sql: include_str!("../../src/lib/db/migrations/0005_offers.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "credit_notes",
+            sql: include_str!("../../src/lib/db/migrations/0006_credit_notes.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

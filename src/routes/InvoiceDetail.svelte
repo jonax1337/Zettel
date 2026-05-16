@@ -2,7 +2,9 @@
   import { link, push } from "svelte-spa-router";
   import {
     cancelInvoice,
+    createCreditNoteFromInvoice,
     deleteInvoice,
+    findCreditNoteFor,
     getInvoice,
     markPaid,
     markSent,
@@ -50,6 +52,8 @@
 
   let invoice = $state<Invoice | null>(null);
   let items = $state<InvoiceItem[]>([]);
+  let originalInvoice = $state<Invoice | null>(null);
+  let cancelledByCreditNote = $state<Invoice | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let busy = $state(false);
@@ -57,6 +61,8 @@
   let lastPdfPath = $state<string | null>(null);
   let pdfError = $state<string | null>(null);
   let confirmDeleteOpen = $state(false);
+  let confirmCreditNoteOpen = $state(false);
+  let creatingCreditNote = $state(false);
 
   const customer = $derived.by(() => {
     if (!invoice) return null;
@@ -81,6 +87,17 @@
       invoice = res.invoice;
       items = res.items;
       lastPdfPath = res.invoice.pdfPath;
+
+      const [origRes, cnRes] = await Promise.all([
+        res.invoice.correctsInvoiceId
+          ? getInvoice(res.invoice.correctsInvoiceId)
+          : Promise.resolve(null),
+        res.invoice.isCreditNote
+          ? Promise.resolve(null)
+          : findCreditNoteFor(res.invoice.id),
+      ]);
+      originalInvoice = origRes?.invoice ?? null;
+      cancelledByCreditNote = cnRes;
     } catch (e) {
       error = String(e);
     } finally {
@@ -116,6 +133,22 @@
       push("/invoices");
     } catch (e) {
       toast.error("Löschen fehlgeschlagen", String(e));
+    }
+  }
+
+  async function performCreateCreditNote() {
+    if (!invoice) return;
+    creatingCreditNote = true;
+    try {
+      const newId = await createCreditNoteFromInvoice(invoice.id);
+      const res = await getInvoice(newId);
+      const newNumber = res?.invoice.number ?? `#${newId}`;
+      toast.success(`Stornorechnung ${newNumber} als Entwurf erstellt`);
+      push(`/invoices/${newId}/edit`);
+    } catch (e) {
+      toast.error("Stornorechnung fehlgeschlagen", String(e));
+    } finally {
+      creatingCreditNote = false;
     }
   }
 
@@ -174,6 +207,13 @@
     paid: "success",
     cancelled: "outline",
   };
+
+  const canCreateCreditNote = $derived(
+    !!invoice &&
+      !invoice.isCreditNote &&
+      (invoice.status === "sent" || invoice.status === "paid") &&
+      !cancelledByCreditNote,
+  );
 </script>
 
 <header class="mb-6">
@@ -191,11 +231,63 @@
 {:else if error && !invoice}
   <p class="text-sm text-destructive">{error}</p>
 {:else if invoice && customer}
+  {#if invoice.isCreditNote}
+    <Card class="border-amber-500/40 bg-amber-500/10 dark:bg-amber-500/5 mb-4">
+      <CardContent>
+        <div class="flex items-start gap-3">
+          <AlertTriangle class="size-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+          <div class="flex-1 text-sm">
+            <div class="font-medium text-amber-700 dark:text-amber-400">Stornorechnung</div>
+            <div class="mt-0.5 text-muted-foreground">
+              Storniert die Rechnung
+              {#if originalInvoice}
+                <a
+                  href={`/invoices/${originalInvoice.id}`}
+                  use:link
+                  class="font-mono font-medium text-foreground hover:underline"
+                >{originalInvoice.number}</a>
+                vom {formatDate(originalInvoice.issueDate)}
+              {:else if invoice.correctsInvoiceId}
+                <span class="font-mono">#{invoice.correctsInvoiceId}</span>
+              {/if}.
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  {/if}
+
+  {#if cancelledByCreditNote}
+    <Card class="border-amber-500/40 bg-amber-500/10 dark:bg-amber-500/5 mb-4">
+      <CardContent>
+        <div class="flex items-start gap-3">
+          <AlertTriangle class="size-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+          <div class="flex-1 text-sm">
+            <div class="font-medium text-amber-700 dark:text-amber-400">Storniert</div>
+            <div class="mt-0.5 text-muted-foreground">
+              Wurde storniert durch
+              <a
+                href={`/invoices/${cancelledByCreditNote.id}`}
+                use:link
+                class="font-mono font-medium text-foreground hover:underline"
+              >{cancelledByCreditNote.number}</a>.
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  {/if}
+
   <div class="flex items-start justify-between gap-4 mb-6">
     <div>
       <div class="flex items-center gap-3">
-        <h1 class="text-3xl font-semibold tracking-tight font-mono">{invoice.number}</h1>
+        <h1 class="text-3xl font-semibold tracking-tight font-mono">
+          {invoice.isCreditNote ? "Storno " : ""}{invoice.number}
+        </h1>
         <Badge variant={statusVariant[invoice.status]}>{statusLabel[invoice.status]}</Badge>
+        {#if invoice.isCreditNote}
+          <Badge variant="destructive">Stornorechnung</Badge>
+        {/if}
       </div>
       <p class="text-sm text-muted-foreground mt-1.5">
         {customer.name} · {formatDate(invoice.issueDate)}
@@ -237,6 +329,17 @@
         <Button disabled={busy} onclick={() => action("Als bezahlt markiert", () => markPaid(invoice!.id))}>
           <CheckCircle2 />
           Bezahlt
+        </Button>
+      {/if}
+
+      {#if canCreateCreditNote}
+        <Button
+          variant="outline"
+          disabled={creatingCreditNote}
+          onclick={() => (confirmCreditNoteOpen = true)}
+        >
+          <Ban />
+          Stornorechnung erstellen
         </Button>
       {/if}
 
@@ -316,10 +419,12 @@
           Eckdaten
         </h2>
         <dl class="text-sm grid grid-cols-2 gap-y-1.5">
-          <dt class="text-muted-foreground">Rechnungsdatum</dt>
+          <dt class="text-muted-foreground">{invoice.isCreditNote ? "Stornodatum" : "Rechnungsdatum"}</dt>
           <dd>{formatDate(invoice.issueDate)}</dd>
-          <dt class="text-muted-foreground">Fällig am</dt>
-          <dd>{formatDate(invoice.dueDate)}</dd>
+          {#if !invoice.isCreditNote}
+            <dt class="text-muted-foreground">Fällig am</dt>
+            <dd>{formatDate(invoice.dueDate)}</dd>
+          {/if}
           {#if invoice.deliveryDate}
             <dt class="text-muted-foreground">Lieferdatum</dt>
             <dd>{formatDate(invoice.deliveryDate)}</dd>
@@ -390,7 +495,7 @@
     </table>
   </Card>
 
-  {#if invoice.paymentTerms}
+  {#if invoice.paymentTerms && !invoice.isCreditNote}
     <section class="mb-4">
       <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-1">
         Zahlungsbedingungen
@@ -415,5 +520,16 @@
     confirmLabel="Löschen"
     destructive
     onConfirm={performDelete}
+  />
+
+  <ConfirmDialog
+    bind:open={confirmCreditNoteOpen}
+    title="Stornorechnung erstellen?"
+    description={invoice
+      ? `Erstellt einen Entwurf, der ${invoice.number} vollständig storniert. Mengen lassen sich anschließend für Teilstornos anpassen.`
+      : ""}
+    confirmLabel="Erstellen"
+    destructive
+    onConfirm={performCreateCreditNote}
   />
 {/if}

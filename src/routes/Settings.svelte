@@ -21,7 +21,7 @@
   import { Image, X, Download, Upload } from "@lucide/svelte";
 
   // aktueller DB-Schema-Stand (siehe src-tauri/src/lib.rs Migrations-Vektor)
-  const CURRENT_DB_SCHEMA_VERSION = 6;
+  const CURRENT_DB_SCHEMA_VERSION = 7;
 
   let s = $state<Settings | null>(null);
   let loading = $state(true);
