@@ -83,7 +83,7 @@ def _embed_xml(pdf_bytes: bytes, xml_str: str, profile: str) -> bytes:
 
 
 def _render_offer_html_pdf(payload: dict[str, Any]) -> bytes:
-    """Render the offer PDF using Jinja + WeasyPrint, plain PDF (no PDF/A-3)."""
+    """Render the offer PDF as PDF/A-3b (archival), without ZUGFeRD XML."""
     env = build_env()
     template = env.get_template("offer.html.j2")
     company = dict(payload["company"])
@@ -98,19 +98,22 @@ def _render_offer_html_pdf(payload: dict[str, Any]) -> bytes:
     stylesheets = [CSS(filename=str(css_path))] if css_path.exists() else []
 
     buf = io.BytesIO()
+    # PDF/A-3b: WeasyPrint emits the required XMP packet, sRGB OutputIntent and
+    # ensures all fonts are embedded. Offers aren't e-invoices, so we skip the
+    # factur-x XML attachment step — the file is still long-term archivable.
     HTML(string=html_str, base_url=str(css_path.parent)).write_pdf(
         target=buf,
         stylesheets=stylesheets,
-        pdf_variant=None,
+        pdf_variant="pdf/a-3b",
     )
     return buf.getvalue()
 
 
 def render_offer_pdf(payload: dict[str, Any]) -> Path:
     """
-    Render an offer (Angebot) to a plain PDF — no ZUGFeRD embed, no PDF/A-3.
+    Render an offer (Angebot) to a PDF/A-3b — no ZUGFeRD XML embedded.
 
-    Returns: Path to the generated PDF file.
+    Returns: Path to the generated PDF/A-3 file.
     """
     output_path = Path(payload["outputPath"]).expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
