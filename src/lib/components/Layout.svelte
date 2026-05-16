@@ -4,6 +4,7 @@
     LayoutDashboard,
     Users,
     FileText,
+    Repeat,
     Download,
     Settings as SettingsIcon,
     Monitor,
@@ -32,6 +33,7 @@
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/customers", label: "Kunden", icon: Users },
     { href: "/invoices", label: "Rechnungen", icon: FileText },
+    { href: "/recurring", label: "Vorlagen", icon: Repeat },
     { href: "/export", label: "Export", icon: Download },
     { href: "/settings", label: "Einstellungen", icon: SettingsIcon },
   ];
