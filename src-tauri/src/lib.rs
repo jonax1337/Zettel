@@ -1,6 +1,7 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod backup;
+mod crypto;
 mod fs_export;
 mod sidecar;
 
