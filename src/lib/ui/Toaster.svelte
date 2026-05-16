@@ -41,6 +41,19 @@
         {#if t.description}
           <div class="text-xs text-muted-foreground mt-1">{t.description}</div>
         {/if}
+        {#if t.action}
+          <button
+            type="button"
+            onclick={async () => {
+              const action = t.action!;
+              dismiss(t.id);
+              await action.onClick();
+            }}
+            class="mt-2 text-xs font-medium text-primary hover:underline"
+          >
+            {t.action.label}
+          </button>
+        {/if}
       </div>
       <button
         type="button"

@@ -46,6 +46,11 @@
   "plugins": {
     "sql": {
       "preload": ["sqlite:zettel.db"]
+    },
+    "updater": {
+      "endpoints": ["https://github.com/jonax1337/zettel/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJEODA0OUVEMEIzREU1OEEKUldTSzVUMEw3VW1BdmU2cXBOT0QwVTFYSmRqSUxlWE55QnBLdzdKblAxUCtBYThIQlJuS2VpdWwK",
+      "dialog": false
     }
   }
 }
