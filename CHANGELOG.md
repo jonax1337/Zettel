@@ -6,6 +6,21 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-05-16
+
+### Added
+- **Auto-Update.** Tauri-Updater-Integration mit Ed25519-signierten Releases gegen einen statischen `latest.json` Feed bei GitHub Releases. Beim App-Start (10 Sek nach Mount) prüft die App still auf neue Versionen; bei Verfügbarkeit erscheint ein Toast „Update v0.x.x verfügbar — Installieren". In den Einstellungen gibt es zusätzlich einen „Nach Updates suchen"-Button und die Anzeige der installierten Version. Plattformübergreifend (Windows NSIS, macOS, Linux AppImage). (#30, PR #33)
+
+### Internal
+- Neue Tauri-Plugins `tauri-plugin-updater` und `tauri-plugin-process` (für `relaunch()`).
+- Neues Frontend-Modul `src/lib/updater.ts`, kapselt `check()` / `downloadAndInstall()` / `relaunch()` mit Tauri-Guard.
+- `Toaster` um optionale Action erweitert (Label + onClick), damit der Update-Toast einen klickbaren Installieren-Button hat.
+- CI signiert Build-Artefakte mit `TAURI_SIGNING_PRIVATE_KEY` und uploadet `.sig`-Dateien + ein generiertes `latest.json` an den Release.
+- Setup-Doku unter `docs/auto-update-setup.md`.
+
+### Notes
+- Bestehende v0.4.0-Installationen erhalten dieses Update **nicht** automatisch — Auto-Update beginnt erst ab v0.4.1 → v0.4.2. v0.4.0-User müssen einmalig manuell upgraden.
+
 ## [0.4.0] — 2026-05-16
 
 ### Added

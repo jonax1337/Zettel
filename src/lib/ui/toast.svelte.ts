@@ -1,11 +1,17 @@
 export type ToastVariant = "default" | "success" | "error" | "warning";
 
+export type ToastAction = {
+  label: string;
+  onClick: () => void | Promise<void>;
+};
+
 export type Toast = {
   id: number;
   title: string;
   description?: string;
   variant: ToastVariant;
   duration: number;
+  action?: ToastAction;
 };
 
 let nextId = 1;
@@ -34,4 +40,16 @@ export const toast = {
     push({ title, description, variant: "error", duration: 5000 }),
   warning: (title: string, description?: string) =>
     push({ title, description, variant: "warning", duration: 4000 }),
+  action: (
+    title: string,
+    action: ToastAction,
+    opts: Partial<Omit<Toast, "id" | "title" | "action">> = {},
+  ) =>
+    push({
+      title,
+      variant: "default",
+      duration: 0,
+      ...opts,
+      action,
+    }),
 };
