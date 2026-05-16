@@ -67,8 +67,23 @@ def _vat_groups(items: list[dict[str, Any]], is_klein: bool) -> list[dict[str, A
     return sorted(groups.values(), key=lambda g: g["rate"])
 
 
+_PROFILE_URNS = {
+    "basic": "urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:basic",
+    "en16931": "urn:cen.eu:en16931:2017",
+    "extended": "urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended",
+}
+
+
 def render_zugferd_xml(payload: dict[str, Any]) -> str:
-    """Render the EN 16931 XML string for embedding in PDF/A-3."""
+    """Render the ZUGFeRD XML for embedding in PDF/A-3.
+
+    Profile selection only swaps the ``GuidelineSpecifiedDocumentContextParameter``
+    URN — the actual field set written stays the same. BASIC is a strict subset
+    of EN 16931, so emitting EN 16931's mandatory fields is valid for BASIC too.
+    EXTENDED is a superset; the optional EXTENDED-only fields (delivery address,
+    project ID, …) are currently not modeled in Zettel and can be added later
+    without changing the URN selection.
+    """
     env = build_env()
     env.filters["date_xml"] = _date_xml
     env.filters["cents_xml"] = _cents_xml
@@ -81,6 +96,8 @@ def render_zugferd_xml(payload: dict[str, Any]) -> str:
     company = payload["company"]
     customer = payload["customer"]
     is_klein = bool(invoice.get("isKleinunternehmer"))
+    profile = (payload.get("profile") or "en16931").lower()
+    guideline_urn = _PROFILE_URNS.get(profile, _PROFILE_URNS["en16931"])
 
     return template.render(
         invoice=invoice,
@@ -88,4 +105,5 @@ def render_zugferd_xml(payload: dict[str, Any]) -> str:
         company=company,
         customer=customer,
         vat_groups=_vat_groups(items, is_klein),
+        guideline_urn=guideline_urn,
     )

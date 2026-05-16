@@ -1,0 +1,59 @@
+{
+  "command": "generate_invoice",
+  "payload": {
+    "invoice": {
+      "number": "RE-2026-TEST-06",
+      "issueDate": 1747353600,
+      "deliveryDate": 1747353600,
+      "dueDate": 1748563200,
+      "subtotal": 50000,
+      "vatAmount": 9500,
+      "total": 59500,
+      "isKleinunternehmer": false,
+      "isReverseCharge": false,
+      "notes": "Test BASIC-Profil.",
+      "paymentTerms": "Zahlbar innerhalb von 14 Tagen ohne Abzug."
+    },
+    "items": [
+      {
+        "position": 1,
+        "description": "Test-Leistung BASIC-Profil",
+        "quantity": 5,
+        "unit": "h",
+        "unitPrice": 10000,
+        "vatRate": 19,
+        "lineTotal": 50000
+      }
+    ],
+    "company": {
+      "companyName": "Laux Digital GmbH",
+      "ownerName": "Jonas Laux",
+      "street": "Musterstr. 1",
+      "postalCode": "10115",
+      "city": "Berlin",
+      "country": "DE",
+      "taxNumber": "12/345/67890",
+      "vatId": "DE123456789",
+      "email": "hi@laux.digital",
+      "phone": null,
+      "website": "laux.digital",
+      "bankName": "Sparkasse",
+      "bankIban": "DE89370400440532013000",
+      "bankBic": "COBADEFFXXX",
+      "isKleinunternehmer": false,
+      "kleinunternehmerNote": "",
+      "logoPath": null
+    },
+    "customer": {
+      "name": "Acme GmbH",
+      "contactPerson": "Frau Schmidt",
+      "street": "Beispielweg 42",
+      "postalCode": "80331",
+      "city": "München",
+      "country": "DE",
+      "vatId": "DE987654321"
+    },
+    "outputPath": "test-payloads/out-06-basic.pdf",
+    "profile": "basic"
+  }
+}
