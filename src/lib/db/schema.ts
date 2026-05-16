@@ -39,6 +39,14 @@ export const settings = sqliteTable("settings", {
   defaultPaymentTermsDays: integer("default_payment_terms_days")
     .notNull()
     .default(14),
+  vendorNumberFormat: text("vendor_number_format")
+    .notNull()
+    .default("L-{NNNN}"),
+  vendorNumberCounter: integer("vendor_number_counter").notNull().default(0),
+  expenseNumberFormat: text("expense_number_format")
+    .notNull()
+    .default("EX-{YYYY}-{NNNN}"),
+  expenseNumberCounter: integer("expense_number_counter").notNull().default(0),
   logoPath: text("logo_path"),
   zugferdProfile: text("zugferd_profile", {
     enum: ["basic", "en16931", "extended"],
@@ -223,6 +231,96 @@ export const offerItems = sqliteTable("offer_items", {
 export type Offer = typeof offers.$inferSelect;
 export type OfferItem = typeof offerItems.$inferSelect;
 export type OfferStatus = Offer["status"];
+
+export const vendors = sqliteTable("vendors", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  vendorNumber: text("vendor_number").notNull().unique(),
+  name: text("name").notNull(),
+  contactPerson: text("contact_person"),
+  street: text("street").notNull().default(""),
+  postalCode: text("postal_code").notNull().default(""),
+  city: text("city").notNull().default(""),
+  country: text("country").notNull().default("DE"),
+  email: text("email"),
+  phone: text("phone"),
+  vatId: text("vat_id"),
+  bankName: text("bank_name"),
+  bankIban: text("bank_iban"),
+  bankBic: text("bank_bic"),
+  defaultCategory: text("default_category"),
+  notes: text("notes"),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+});
+
+export const expenses = sqliteTable("expenses", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  number: text("number"),
+  internalNumber: text("internal_number").notNull().unique(),
+  vendorId: integer("vendor_id").notNull(),
+  vendorSnapshot: text("vendor_snapshot").notNull().default("{}"),
+  issueDate: integer("issue_date").notNull(),
+  dueDate: integer("due_date"),
+  paidDate: integer("paid_date"),
+  status: text("status", {
+    enum: ["draft", "open", "paid", "cancelled"],
+  })
+    .notNull()
+    .default("open"),
+  subtotal: integer("subtotal").notNull().default(0),
+  vatAmount: integer("vat_amount").notNull().default(0),
+  total: integer("total").notNull().default(0),
+  currency: text("currency").notNull().default("EUR"),
+  isReverseCharge: integer("is_reverse_charge", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  reverseChargeType: text("reverse_charge_type", {
+    enum: ["none", "intra_eu", "third_country"],
+  })
+    .notNull()
+    .default("none"),
+  zugferdExtracted: integer("zugferd_extracted", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  pdfPath: text("pdf_path"),
+  notes: text("notes"),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+});
+
+export const expenseItems = sqliteTable("expense_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  expenseId: integer("expense_id").notNull(),
+  position: integer("position").notNull(),
+  description: text("description").notNull().default(""),
+  category: text("category"),
+  datevAccount: text("datev_account"),
+  quantity: real("quantity").notNull().default(1),
+  unit: text("unit").notNull().default("Stk"),
+  unitPrice: integer("unit_price").notNull().default(0),
+  vatRate: integer("vat_rate").notNull().default(19),
+  lineTotal: integer("line_total").notNull().default(0),
+});
+
+export type Vendor = typeof vendors.$inferSelect;
+export type VendorInsert = typeof vendors.$inferInsert;
+export type Expense = typeof expenses.$inferSelect;
+export type ExpenseInsert = typeof expenses.$inferInsert;
+export type ExpenseItem = typeof expenseItems.$inferSelect;
+export type ExpenseItemInsert = typeof expenseItems.$inferInsert;
+export type ExpenseStatus = Expense["status"];
+
+export type VendorSnapshot = {
+  vendorNumber: string;
+  name: string;
+  contactPerson: string | null;
+  street: string;
+  postalCode: string;
+  city: string;
+  country: string;
+  email: string | null;
+  vatId: string | null;
+};
 
 export type CustomerSnapshot = {
   customerNumber: string;

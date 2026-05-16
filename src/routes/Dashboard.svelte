@@ -33,6 +33,8 @@
     generateInvoiceFromRecurring,
     type RecurringListRow,
   } from "$lib/db/recurring";
+  import { sumExpensesYtd, sumOpenExpenses } from "$lib/db/expenses";
+  import { Wallet, ReceiptText, Scale } from "@lucide/svelte";
   import { toast } from "$lib/ui";
 
   let customerCount = $state(0);
@@ -44,6 +46,8 @@
     overdueTotal: 0,
   });
   let offerStats = $state({ count: 0, total: 0, expiringSoonCount: 0 });
+  let expensesOpen = $state({ count: 0, total: 0 });
+  let expensesPaidYtd = $state(0);
   let recent = $state<InvoiceListRow[]>([]);
   let revenue = $state<MonthlyRevenuePoint[]>([]);
   let top = $state<TopCustomer[]>([]);
@@ -52,7 +56,7 @@
 
   async function reload() {
     await expireDueOffers().catch(() => {});
-    const [cs, s, r, rev, tc, dr, os] = await Promise.all([
+    const [cs, s, r, rev, tc, dr, os, eo, ey] = await Promise.all([
       listCustomers(),
       dashboardStats(),
       recentInvoices(10),
@@ -60,6 +64,8 @@
       topCustomers(5, 12),
       dueRecurring(),
       openOffersStats(),
+      sumOpenExpenses(),
+      sumExpensesYtd(),
     ]);
     customerCount = cs.length;
     stats = s;
@@ -68,8 +74,12 @@
     top = tc;
     due = dr;
     offerStats = os;
+    expensesOpen = eo;
+    expensesPaidYtd = ey;
     loading = false;
   }
+
+  const ytdBalance = $derived(stats.paidYtdTotal - expensesPaidYtd);
 
   async function onGenerateDue(id: number) {
     try {
@@ -192,6 +202,63 @@
       </div>
       <div class="text-xs text-muted-foreground mt-1">
         {stats.overdueCount} Rechnung{stats.overdueCount === 1 ? "" : "en"}
+      </div>
+    </CardContent>
+  </Card>
+</div>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+  <Card
+    class="cursor-pointer hover:bg-muted/30 transition-colors"
+    onclick={() => push("/expenses")}
+  >
+    <CardContent>
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-muted-foreground uppercase tracking-wider">
+          Offene Eingangsrechnungen
+        </span>
+        <ReceiptText class="size-4 text-warning" />
+      </div>
+      <div class="text-2xl font-semibold mt-2 tabular-nums">
+        {loading ? "…" : centsToEur(expensesOpen.total)}
+      </div>
+      <div class="text-xs text-muted-foreground mt-1">
+        {expensesOpen.count} Beleg{expensesOpen.count === 1 ? "" : "e"}
+      </div>
+    </CardContent>
+  </Card>
+
+  <Card>
+    <CardContent>
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-muted-foreground uppercase tracking-wider">
+          Ausgaben {new Date().getFullYear()}
+        </span>
+        <Wallet class="size-4 text-muted-foreground" />
+      </div>
+      <div class="text-2xl font-semibold mt-2 tabular-nums">
+        {loading ? "…" : centsToEur(expensesPaidYtd)}
+      </div>
+      <div class="text-xs text-muted-foreground mt-1">bezahlt im laufenden Jahr</div>
+    </CardContent>
+  </Card>
+
+  <Card>
+    <CardContent>
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-muted-foreground uppercase tracking-wider">
+          Saldo {new Date().getFullYear()}
+        </span>
+        <Scale class="size-4 text-muted-foreground" />
+      </div>
+      <div
+        class={"text-2xl font-semibold mt-2 tabular-nums " +
+          (ytdBalance < 0 ? "text-destructive" : "text-success")}
+      >
+        {loading ? "…" : centsToEur(ytdBalance)}
+      </div>
+      <div class="text-xs text-muted-foreground mt-1" title="Kein EÜR-Ersatz. Ohne AfA, Privatentnahmen, Rücklagen.">
+        Einnahmen − Ausgaben (Indikator)
       </div>
     </CardContent>
   </Card>

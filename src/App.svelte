@@ -13,6 +13,11 @@
   import OfferDetail from "./routes/OfferDetail.svelte";
   import RecurringList from "./routes/RecurringList.svelte";
   import RecurringEdit from "./routes/RecurringEdit.svelte";
+  import VendorsList from "./routes/VendorsList.svelte";
+  import VendorEdit from "./routes/VendorEdit.svelte";
+  import ExpensesList from "./routes/ExpensesList.svelte";
+  import ExpenseEdit from "./routes/ExpenseEdit.svelte";
+  import UstvaReport from "./routes/UstvaReport.svelte";
   import Settings from "./routes/Settings.svelte";
   import Export from "./routes/Export.svelte";
   import NotFound from "./routes/NotFound.svelte";
@@ -84,6 +89,25 @@
       component: RecurringEdit as unknown as never,
       props: { mode: "edit" },
     }),
+    "/vendors": VendorsList,
+    "/vendors/new": wrap({
+      component: VendorEdit as unknown as never,
+      props: { mode: "new" },
+    }),
+    "/vendors/:id": wrap({
+      component: VendorEdit as unknown as never,
+      props: { mode: "edit" },
+    }),
+    "/expenses": ExpensesList,
+    "/expenses/new": wrap({
+      component: ExpenseEdit as unknown as never,
+      props: { mode: "new" },
+    }),
+    "/expenses/:id": wrap({
+      component: ExpenseEdit as unknown as never,
+      props: { mode: "edit" },
+    }),
+    "/reports/ustva": UstvaReport,
     "/settings": Settings,
     "/export": Export,
     "*": NotFound,

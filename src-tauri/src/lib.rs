@@ -65,6 +65,12 @@ pub fn run() {
             sql: include_str!("../../src/lib/db/migrations/0008_reverse_charge_type.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 10,
+            description: "expenses",
+            sql: include_str!("../../src/lib/db/migrations/0009_expenses.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -83,7 +89,9 @@ pub fn run() {
             sidecar::generate_invoice,
             sidecar::generate_offer,
             sidecar::ping_sidecar,
+            sidecar::extract_zugferd,
             fs_export::save_text_file,
+            fs_export::import_expense_pdf,
             backup::snapshot_db_path,
             backup::bundle_backup,
             backup::stage_restore,

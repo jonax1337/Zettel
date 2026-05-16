@@ -3,10 +3,13 @@
   import {
     LayoutDashboard,
     Users,
+    Truck,
     FileText,
     FileSignature,
+    FileInput,
     Repeat,
     Download,
+    BarChart3,
     Settings as SettingsIcon,
     Monitor,
     Sun,
@@ -29,14 +32,44 @@
       .then((t) => (windowTitle = t));
   });
 
-  const nav = [
-    { href: "/", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/customers", label: "Kunden", icon: Users },
-    { href: "/offers", label: "Angebote", icon: FileSignature },
-    { href: "/invoices", label: "Rechnungen", icon: FileText },
-    { href: "/recurring", label: "Vorlagen", icon: Repeat },
-    { href: "/export", label: "Export", icon: Download },
-    { href: "/settings", label: "Einstellungen", icon: SettingsIcon },
+  const navGroups: Array<{
+    label: string | null;
+    items: Array<{ href: string; label: string; icon: typeof LayoutDashboard }>;
+  }> = [
+    {
+      label: null,
+      items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }],
+    },
+    {
+      label: "Stammdaten",
+      items: [
+        { href: "/customers", label: "Kunden", icon: Users },
+        { href: "/vendors", label: "Lieferanten", icon: Truck },
+      ],
+    },
+    {
+      label: "Ausgangsbelege",
+      items: [
+        { href: "/offers", label: "Angebote", icon: FileSignature },
+        { href: "/invoices", label: "Rechnungen", icon: FileText },
+        { href: "/recurring", label: "Vorlagen", icon: Repeat },
+      ],
+    },
+    {
+      label: "Eingangsbelege",
+      items: [{ href: "/expenses", label: "Eingangsrechnungen", icon: FileInput }],
+    },
+    {
+      label: "Auswertung",
+      items: [
+        { href: "/reports/ustva", label: "UStVA", icon: BarChart3 },
+        { href: "/export", label: "DATEV-Export", icon: Download },
+      ],
+    },
+    {
+      label: "System",
+      items: [{ href: "/settings", label: "Einstellungen", icon: SettingsIcon }],
+    },
   ];
 
   function isActive(href: string) {
@@ -60,22 +93,31 @@
 
   <div class="flex flex-1 min-h-0">
     <aside class="w-60 shrink-0 border-r bg-card/50 flex flex-col">
-        <nav class="flex-1 p-2 flex flex-col gap-0.5 pt-4">
-          {#each nav as item}
-            {@const active = isActive(item.href)}
-            <a
-              href={item.href}
-              use:link
-              class={cn(
-                "group relative flex items-center gap-2.5 rounded-md px-3 h-9 text-sm font-medium transition-colors",
-                active
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-              )}
-            >
-              <item.icon class="size-4 shrink-0" />
-              <span>{item.label}</span>
-            </a>
+        <nav class="flex-1 p-2 flex flex-col gap-4 pt-4 overflow-y-auto">
+          {#each navGroups as group, gi (gi)}
+            <div class="flex flex-col gap-0.5">
+              {#if group.label}
+                <div class="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  {group.label}
+                </div>
+              {/if}
+              {#each group.items as item (item.href)}
+                {@const active = isActive(item.href)}
+                <a
+                  href={item.href}
+                  use:link
+                  class={cn(
+                    "group relative flex items-center gap-2.5 rounded-md px-3 h-9 text-sm font-medium transition-colors",
+                    active
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                  )}
+                >
+                  <item.icon class="size-4 shrink-0" />
+                  <span>{item.label}</span>
+                </a>
+              {/each}
+            </div>
           {/each}
         </nav>
 

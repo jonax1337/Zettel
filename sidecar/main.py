@@ -60,6 +60,7 @@ def _add_gtk_dll_path() -> None:
 _add_gtk_dll_path()
 
 from invoice.pdf import render_invoice_pdf, render_offer_pdf  # noqa: E402
+from invoice.extract import extract_from_pdf  # noqa: E402
 
 
 def _err(code: str, message: str, details: str | None = None) -> dict:
@@ -115,6 +116,18 @@ def handle(req: dict) -> dict:
                 str(e),
                 traceback.format_exc(),
             )
+
+    if command == "extract_zugferd":
+        try:
+            pdf_path = payload.get("pdfPath")
+            if not pdf_path:
+                return _err("MISSING_FIELD", "payload.pdfPath is required")
+            result = extract_from_pdf(pdf_path)
+            return {"success": True, **result}
+        except FileNotFoundError as e:
+            return _err("PDF_NOT_FOUND", str(e))
+        except Exception as e:
+            return _err("EXTRACT_FAILED", str(e), traceback.format_exc())
 
     return _err("UNKNOWN_COMMAND", f"Unknown command: {command!r}")
 

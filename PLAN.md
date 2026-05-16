@@ -1,8 +1,8 @@
 # Faktura — Project Plan
 
 > **Name:** Zettel
-> **Status:** v0.2 release-ready auf `release/v0.2` · v0.1.0 auf `main`
-> **Released:** v0.1.0 (2026-05-16, 5/5 ZUGFeRD-Validierungen grün)
+> **Status:** v0.4.3 released · v0.5.0 in Planung („Buchhaltungs-Light")
+> **Released:** v0.1.0 → v0.4.3 (alle 2026-05-16, Auto-Update aktiv ab v0.4.3)
 > **Lizenz:** MIT
 > **Owner:** Jonas Laux ([laux.digital](https://laux.digital))
 
@@ -30,13 +30,15 @@ Zielgruppe: Freelancer, Solo-Selbstständige, Kleinunternehmer nach §19 UStG, d
 
 ## 3. Non-Goals (explizit ausgeschlossen)
 
-- ❌ Vollständige Buchhaltung (keine EÜR, keine Steuererklärung, keine Bilanz)
+- ❌ Vollständige Buchhaltung im Sinne von EÜR-Abgabe, Steuererklärung, Bilanz, GoBD-Zertifizierung
 - ❌ Banking-Integration / Kontoabgleich (HBCI, FinTS)
 - ❌ Mehrbenutzer / Cloud-Sync / SaaS-Modus
 - ❌ Mehrmandantenfähigkeit
 - ❌ Mobile App (Desktop-only)
-- ❌ Brand-Identity / Custom-Theming Phase 1 (kann später optional kommen)
-- ❌ Komplexe Reporting / BWA / Auswertungen
+- ❌ ELSTER-Direkt-Upload (UStVA-Vorbereitung als Report ist OK, Upload nicht)
+- ❌ OCR für Nicht-ZUGFeRD-PDFs (Phase v0.6+)
+
+**Erweiterung ab v0.5.0:** „Buchhaltungs-Light" ist erlaubt — also Eingangsrechnungen erfassen, Lieferanten verwalten, Kategorien, einfache Saldo-Übersicht. Die obigen Non-Goals bleiben aber bestehen.
 
 ---
 
@@ -444,10 +446,10 @@ faktura/
 - [x] PyInstaller Bundle für Windows (`sidecar/build.py`, onedir + GTK-DLLs)
 - [x] Tauri externalBin via `bundle.resources` + Dev/Release-Split in `sidecar.rs`
 - [x] Windows MSI + NSIS-Installer gebaut, installiert, sidecar funktioniert end-to-end
-- [x] GitHub Actions Matrix (Win/macOS-arm/macOS-x86/Linux) — Workflow geschrieben, **noch nicht ausgeführt**
+- [x] GitHub Actions Matrix (Win/macOS-arm/Linux — macOS-x86 entfernt wegen langsamer Intel-Builds, siehe v0.2.0-Notiz)
 - [x] README, CONTRIBUTING, CODE_OF_CONDUCT, Disclaimer
-- [ ] macOS + Linux Builds tatsächlich grün (passiert beim ersten Push)
-- [ ] README-Screenshots (Placeholder vorhanden)
+- [x] macOS + Linux Builds grün (ab v0.2.0)
+- [x] README-Screenshots ergänzt
 
 ### M6 — OSS-Release ✅
 - [x] Repo öffentlich auf GitHub: `jonax1337/zettel`
@@ -455,30 +457,70 @@ faktura/
 - [x] Issue-Templates (Bug, Feature, ZUGFeRD-Validierung) + PR-Template
 - [x] README modernisiert (for-the-badge style, Hero-Section, Disclaimer)
 - [x] CHANGELOG.md eingeführt
-- [ ] Tag `v0.1.0` → CI-Release-Job (steht für den ersten Cross-Platform-Bau noch aus)
+- [x] Tag `v0.1.0` → CI-Release-Job (Cross-Platform-Artefakte gebaut)
 - [ ] Demo-Video / GIF (manuell aufzunehmen)
 - [ ] Launch: HN, r/selbststaendig, r/Freelance_DE, Mastodon
 
-### v0.2.0 ✅ — auf `release/v0.2`
-- [x] Reverse-Charge / intra-EU B2B (CategoryCode K, ExemptionReason) — PR #7, Issue #2
-- [x] BASIC + EXTENDED ZUGFeRD-Profile (URN parametrisiert in `zugferd-en16931.xml.j2`) — PR #9, Issue #3
-- [x] DATEV-Export (CSV, Format 700, SKR03/SKR04) — PR #8, Issue #4
-- [x] Backup / Restore (ZIP, staged restore on next launch) — PR #11, Issue #5
-- [x] Wiederkehrende Rechnungen (Vorlagen, Dashboard-Widget, manuelle Erzeugung) — PR #12, Issue #6
-- [x] `.gitattributes` (LF-Pinning, `include_str!`-Migrations byte-stabil) — PR #10
-- [ ] 3 neue Test-Rechnungen (Reverse-Charge, BASIC, EXTENDED) gegen erechnungs-validator.de prüfen
-- [ ] PR `release/v0.2 → main` + Tag `v0.2.0`
+### v0.2.0 ✅ — released
+- Reverse-Charge / intra-EU B2B (CategoryCode K, ExemptionReason)
+- BASIC + EXTENDED ZUGFeRD-Profile (URN parametrisiert)
+- DATEV-Export (CSV, Format 700, SKR03/SKR04)
+- Backup / Restore (ZIP, staged restore beim nächsten Start)
+- Wiederkehrende Rechnungen (Vorlagen, Dashboard-Widget, manuelle Erzeugung)
+- `.gitattributes` (LF-Pinning, `include_str!`-Migrations byte-stabil)
 
-### Phase 3 / v0.3+ (nicht im v0.2-Scope)
-- Eingangsrechnungs-Verarbeitung (ZUGFeRD-XML extrahieren)
-- Reverse-Charge außerhalb der EU (Drittland)
-- I18n (englisch)
-- Auto-Update via Tauri Updater
-- Mehrere Logo-Themes / PDF-Templates
-- „Aus dieser Rechnung Vorlage erstellen"-Button im Rechnungs-Detail
-- Backup-Verschlüsselung / Cloud-Upload
-- Granularer Restore (nur Kunden / nur Rechnungen)
-- Stornobuchungen im DATEV-Export
+### v0.3.x ✅ — released
+- Angebote (`/offers`, eigene Tabelle, Konvertierung zu Rechnung)
+- Stornorechnungen / Credit Notes mit EN-16931-konformem CII-XML
+
+### v0.4.x ✅ — released (zuletzt v0.4.3)
+- PDF-Theme-System (classic / modern / minimal) — gilt für Rechnungen **und** Angebote
+- Reverse-Charge Drittland (CategoryCode G statt K)
+- Granularer Restore (Kunden / Rechnungen / Settings selektiv)
+- Backup-Verschlüsselung (AES-256-GCM, passwortgeschützte ZIPs)
+- „Aus Rechnung Vorlage erstellen"-Button (Recurring Templates)
+- PDF/A-3b für Angebote (kein ZUGFeRD-XML, aber Archivierungs-konform)
+- **Auto-Update** via Tauri Updater (Ed25519-signiert, statisches `latest.json` bei GitHub Releases)
+- v0.4.3 Fix: `bundle.createUpdaterArtifacts` + NSIS-Sig-Pfade für Tauri-2 korrigiert (erstes echtes Update-fähiges Release)
+
+---
+
+### v0.5.0 🔲 — „Buchhaltungs-Light" (in Planung)
+
+**Roter Faden:** Bisher konnte Zettel nur Ausgangsbelege. v0.5 macht den Gegenpol auf — Eingangsrechnungen, Lieferanten, einfache Saldo-Übersicht. Detail-Spec in `Areas/Zettel/Features/v0.5.0-buchhaltung-light.md` (Obsidian).
+
+**Kern-Features:**
+- [ ] **Eingangsrechnungen** — Route `/expenses`, Tabellen `expenses` + `expense_items`
+  - [ ] ZUGFeRD/Factur-X-XML aus eingehenden PDFs extrahieren (neuer Sidecar-Command `extract_zugferd`)
+  - [ ] Manueller Erfassungs-Fallback (Lieferant, Datum, Betrag, USt, Kategorie)
+  - [ ] PDF-Ablage unter `~/Documents/Zettel/Eingangsrechnungen/`
+  - [ ] Status: offen / bezahlt / storniert
+- [ ] **Lieferanten** (`vendors`) — eigene Tabelle, Route `/vendors`, analog Customers
+- [ ] **Kategorien / Kostenstellen** — Free-Text mit Autocomplete (Bürobedarf, Software, Reise, …). Spätere DATEV-Konten-Mapping als Bonus
+- [ ] **DATEV-Export erweitert**
+  - [ ] Eingangsrechnungen mit aufnehmen (Aufwandskonten)
+  - [ ] **Stornobuchungen** als negative Beträge (Carry-over aus v0.3+)
+- [ ] **Dashboard-Erweiterung**
+  - [ ] Card „Offene Eingangsrechnungen"
+  - [ ] Card „Ausgaben YTD"
+  - [ ] Mini-Saldo: Einnahmen YTD − Ausgaben YTD (kein EÜR-Ersatz, nur Indikator)
+
+**Stretch / optional:**
+- [ ] UStVA-Vorbereitungs-Report pro Quartal (CSV/PDF zum Abtippen, **kein** ELSTER-Upload)
+- [ ] Wiederkehrende Eingangsrechnungen (Hosting, Software-Abos) — analog zum bestehenden Recurring-Feature
+
+**Bewusst nicht in v0.5:**
+- Banking-Anbindung (FinTS) — bleibt Non-Goal
+- GoBD-zertifizierte Archivierung — Disclaimer wie immer
+- OCR für Nicht-ZUGFeRD-PDFs (v0.6+)
+
+### v0.6+ / Backlog (nicht für v0.5 geplant)
+- OCR für Eingangsrechnungen ohne ZUGFeRD-XML (Tesseract o.ä.)
+- I18n (englische UI)
+- Mehrere PDF-Themes über die bestehenden 3 hinaus
+- Mahnwesen / Zahlungserinnerungen
+- ELSTER-Anbindung (würde Non-Goal aufweichen — explizit prüfen)
+- Backup-Cloud-Upload (S3-kompatibel)
 
 ---
 
@@ -528,6 +570,7 @@ faktura/
 - [x] Mindestens 5 manuell generierte Test-Rechnungen erfolgreich gegen erechnungs-validator.de validiert (Stand 2026-05-16, 5/5 grün)
 - [x] Windows-Build (MSI + NSIS) erfolgreich installiert + smoke-getestet
 - [x] README mit Quickstart + Disclaimer (Screenshots-Placeholder)
-- [ ] Cross-Platform-Builds (Win/Mac/Linux) verfügbar als GitHub Release — *Workflow bereit, noch nicht ausgeführt*
-- [ ] Repo öffentlich auf GitHub
-- [ ] README-Screenshots ergänzt
+- [x] Cross-Platform-Builds (Win/macOS-arm/Linux) als GitHub Release verfügbar
+- [x] Repo öffentlich auf GitHub (`jonax1337/zettel`)
+- [x] README-Screenshots ergänzt
+- [x] Auto-Update funktioniert (v0.4.3 erstes Update-fähiges Release)

@@ -6,6 +6,28 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-05-16
+
+> **Buchhaltungs-Light.** Zettel deckte bisher nur Ausgangsbelege ab — v0.5 macht den Gegenpol auf. Eingangsrechnungen mit ZUGFeRD-Drag-&-Drop, Lieferantenverwaltung, DATEV-Export inklusive Aufwände + Stornos, und ein UStVA-Vorbereitungs-Report. Damit ist der vollständige Steuerberater-Übergabe-Workflow abgebildet.
+
+### Added
+- **Eingangsrechnungen** (`/expenses`). Neues Datenmodell `expenses` + `expense_items` mit eigenem Nummernkreis `EX-YYYY-NNNN`, Statusfluss `draft → open → paid / cancelled`, Reverse-Charge-Erfassung als Leistungsempfänger, Kategorie-Feld mit Autocomplete aus der Belegehistorie. (#39, PR #42)
+- **Lieferanten** (`/vendors`). Eigenes Stammdatenmodell `L-NNNN`, inkl. Bankverbindung und Standard-Kategorie für Vorbefüllung.
+- **ZUGFeRD-Drop-Zone.** Eingehende PDFs per Drag & Drop in den Editor: neuer Sidecar-Command `extract_zugferd` (Python via `factur-x` + lxml) parsed eingebettete Factur-X-XML defensiv (BASIC/EN16931/EXTENDED). Vendor-Matching per USt-IdNr. (fallback Name), bei Treffer wird das Formular automatisch befüllt. Original-PDF landet kollisionssicher unter `~/Documents/Zettel/Eingangsrechnungen/<vendor-slug>/`. (#38, PR #42)
+- **DATEV-Export erweitert.** Buchungsstapel enthält jetzt Erlöse **und** Aufwände im selben CSV. Konten-Mapping um Kreditor + Aufwand-19 %/7 %/Exempt/§13b erweitert (SKR03 + SKR04). `expense_items.datev_account` überschreibt Default-Konten pro Position. Stornorechnungen werden als Soll/Haben-Drehung exportiert. UI mit Checkboxen „Rechnungen / Eingangsrechnungen / Stornos einschließen". (#40, PR #42)
+- **UStVA-Vorbereitungs-Report** (`/reports/ustva`). Quartalsweise Aggregation der ELSTER-Kennzahlen 81 / 86 / 41 / 21 / 66 als reine Vorbereitungshilfe zum Abtippen. CSV-Export. Disclaimer prominent: keine Steuerberatung, kein ELSTER-Upload. (#41, PR #42)
+- **Dashboard-Cards** für „Offene Eingangsrechnungen", „Ausgaben YTD" und „Saldo YTD" (Einnahmen − Ausgaben als reiner Indikator, kein EÜR-Ersatz).
+- **Sidebar aufgeräumt.** Nav-Items in Gruppen (Stammdaten, Ausgangsbelege, Eingangsbelege, Auswertung, System) mit dezenten Section-Headers. „Export" → „DATEV-Export" zur Abgrenzung vom UStVA-Report.
+
+### Changed
+- **Update-Check in den Settings-Header verschoben.** Statt einer eigenen Karte zwischen Backup und Save-Button sitzt der „Nach Updates suchen"-Button jetzt rechts oben im Header neben der Versionsanzeige — klare Trennung zwischen Formular (Daten ändern) und Aktion (App aktualisieren).
+
+### Migration
+- `0009_expenses.sql` — `user_version = 10`. Erstellt `vendors`, `expenses`, `expense_items` und fügt 4 Settings-Spalten (`vendor_number_format/counter`, `expense_number_format/counter`) hinzu. Idempotent.
+
+### Notes
+- **Bewusst NICHT in v0.5:** OCR für Nicht-ZUGFeRD-PDFs, Banking-Anbindung (FinTS), ELSTER-Direktupload, GoBD-Zertifizierung, wiederkehrende Eingangsrechnungen. Bleiben Non-Goals oder v0.6+.
+
 ## [0.4.3] — 2026-05-16
 
 ### Fixed
