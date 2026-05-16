@@ -6,6 +6,16 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-05-16
+
+### Added
+- **PDF-Themes auch für Angebote.** Das in v0.4 eingeführte `settings.pdf_theme` wirkt jetzt auch auf Angebot-PDFs. Kein separates Theme-Setting; gleicher Wert für Rechnungen und Angebote. (#31, PR #35)
+- **Angebot-PDFs sind PDF/A-3b.** Angebote werden jetzt PDF/A-3-konform gerendert (XMP, sRGB-OutputIntent, eingebettete Schriften), passend zum Archivierungs-Charakter. Keine ZUGFeRD-XML-Einbettung — Angebote sind keine E-Rechnungen. (#32, PR #36)
+
+### Internal
+- WeasyPrint 65.1's nativer `pdf_variant="pdf/a-3b"` deckt PDF/A-3b vollständig ab — keine neue Python-Dep (pikepdf wurde nicht benötigt).
+- `offer.html.j2` bekommt die Theme-Body-Klasse, `pdf.py` reicht `settings` in den Jinja-Context, `src/lib/sidecar/offer.ts` ergänzt `pdf_theme` im Payload — pure Vererbung über die geteilte `invoice.css`, kein CSS-Duplikat.
+
 ## [0.4.1] — 2026-05-16
 
 ### Added
