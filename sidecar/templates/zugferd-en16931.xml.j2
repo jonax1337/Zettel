@@ -33,9 +33,14 @@
       <ram:SubjectCode>AAI</ram:SubjectCode>
     </ram:IncludedNote>
     {% endif %}
-    {% if invoice.isReverseCharge %}
+    {% if invoice.reverseChargeType == 'intra_eu' %}
     <ram:IncludedNote>
       <ram:Content>Steuerschuldnerschaft des Leistungsempfängers / Reverse charge — VAT to be paid by the recipient.</ram:Content>
+      <ram:SubjectCode>AAI</ram:SubjectCode>
+    </ram:IncludedNote>
+    {% elif invoice.reverseChargeType == 'third_country' %}
+    <ram:IncludedNote>
+      <ram:Content>Steuerfreie Ausfuhrlieferung / Export outside EU — VAT exempt.</ram:Content>
       <ram:SubjectCode>AAI</ram:SubjectCode>
     </ram:IncludedNote>
     {% endif %}
@@ -61,8 +66,11 @@
       <ram:SpecifiedLineTradeSettlement>
         <ram:ApplicableTradeTax>
           <ram:TypeCode>VAT</ram:TypeCode>
-          {% if invoice.isReverseCharge %}
+          {% if invoice.reverseChargeType == 'intra_eu' %}
           <ram:CategoryCode>K</ram:CategoryCode>
+          <ram:RateApplicablePercent>0</ram:RateApplicablePercent>
+          {% elif invoice.reverseChargeType == 'third_country' %}
+          <ram:CategoryCode>G</ram:CategoryCode>
           <ram:RateApplicablePercent>0</ram:RateApplicablePercent>
           {% elif invoice.isKleinunternehmer %}
           <ram:CategoryCode>E</ram:CategoryCode>
@@ -160,14 +168,19 @@
       <ram:ApplicableTradeTax>
         <ram:CalculatedAmount>{{ grp.tax | cents_xml }}</ram:CalculatedAmount>
         <ram:TypeCode>VAT</ram:TypeCode>
-        {% if invoice.isReverseCharge %}
+        {% if invoice.reverseChargeType == 'intra_eu' %}
         <ram:ExemptionReason>VAT exempt for EEA intra-community supply of goods and services</ram:ExemptionReason>
+        {% elif invoice.reverseChargeType == 'third_country' %}
+        <ram:ExemptionReason>Export outside EU</ram:ExemptionReason>
         {% elif invoice.isKleinunternehmer %}
         <ram:ExemptionReason>{{ company.kleinunternehmerNote or "Kleinunternehmer gemäß § 19 UStG" }}</ram:ExemptionReason>
         {% endif %}
         <ram:BasisAmount>{{ grp.basis | cents_xml }}</ram:BasisAmount>
-        {% if invoice.isReverseCharge %}
+        {% if invoice.reverseChargeType == 'intra_eu' %}
         <ram:CategoryCode>K</ram:CategoryCode>
+        <ram:RateApplicablePercent>0</ram:RateApplicablePercent>
+        {% elif invoice.reverseChargeType == 'third_country' %}
+        <ram:CategoryCode>G</ram:CategoryCode>
         <ram:RateApplicablePercent>0</ram:RateApplicablePercent>
         {% elif invoice.isKleinunternehmer %}
         <ram:CategoryCode>E</ram:CategoryCode>

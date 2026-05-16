@@ -52,6 +52,14 @@ pub fn run() {
             sql: include_str!("../../src/lib/db/migrations/0006_credit_notes.sql"),
             kind: MigrationKind::Up,
         },
+        // Slot 8 (version 9) reserved gap: parallel Theme PR will land at version 8.
+        // If at merge time slot 7 (version 8) doesn't exist, renumber this to 8.
+        Migration {
+            version: 9,
+            description: "reverse_charge_type",
+            sql: include_str!("../../src/lib/db/migrations/0008_reverse_charge_type.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

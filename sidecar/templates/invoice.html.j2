@@ -118,9 +118,13 @@
     <p class="callout">{{ company.kleinunternehmerNote }}</p>
   {% endif %}
 
-  {% if invoice.isReverseCharge %}
+  {% if invoice.reverseChargeType == 'intra_eu' %}
     <p class="callout">
       Steuerschuldnerschaft des Leistungsempfängers / Reverse charge — VAT to be paid by the recipient.
+    </p>
+  {% elif invoice.reverseChargeType == 'third_country' %}
+    <p class="callout">
+      Steuerfreie Ausfuhrlieferung / Export outside EU — VAT exempt.
     </p>
   {% endif %}
 

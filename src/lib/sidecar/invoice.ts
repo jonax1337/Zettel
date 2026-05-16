@@ -48,6 +48,7 @@ function buildPayload(opts: {
       total: invoice.total,
       isKleinunternehmer: invoice.isKleinunternehmer,
       isReverseCharge: invoice.isReverseCharge,
+      reverseChargeType: invoice.reverseChargeType,
       isCreditNote: invoice.isCreditNote,
       correctsInvoice: correctsInvoice ?? null,
       notes: invoice.notes,
