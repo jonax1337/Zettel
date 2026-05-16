@@ -1,0 +1,59 @@
+{
+  "command": "generate_invoice",
+  "payload": {
+    "invoice": {
+      "number": "RE-2026-TEST-05",
+      "issueDate": 1747353600,
+      "deliveryDate": 1747353600,
+      "dueDate": 1748563200,
+      "subtotal": 250000,
+      "vatAmount": 0,
+      "total": 250000,
+      "isKleinunternehmer": false,
+      "isReverseCharge": true,
+      "notes": "Lieferung an EU-Geschäftskunden.",
+      "paymentTerms": "Zahlbar innerhalb von 14 Tagen ohne Abzug."
+    },
+    "items": [
+      {
+        "position": 1,
+        "description": "Consulting Services Q2",
+        "quantity": 20,
+        "unit": "h",
+        "unitPrice": 12500,
+        "vatRate": 0,
+        "lineTotal": 250000
+      }
+    ],
+    "company": {
+      "companyName": "Laux Digital GmbH",
+      "ownerName": "Jonas Laux",
+      "street": "Musterstr. 1",
+      "postalCode": "10115",
+      "city": "Berlin",
+      "country": "DE",
+      "taxNumber": "12/345/67890",
+      "vatId": "DE123456789",
+      "email": "hi@laux.digital",
+      "phone": null,
+      "website": "laux.digital",
+      "bankName": "Sparkasse",
+      "bankIban": "DE89370400440532013000",
+      "bankBic": "COBADEFFXXX",
+      "isKleinunternehmer": false,
+      "kleinunternehmerNote": "",
+      "logoPath": null
+    },
+    "customer": {
+      "name": "Acme B.V.",
+      "contactPerson": "J. de Vries",
+      "street": "Herengracht 123",
+      "postalCode": "1015 BG",
+      "city": "Amsterdam",
+      "country": "NL",
+      "vatId": "NL123456789B01"
+    },
+    "outputPath": "test-payloads/out-05-reverse-charge.pdf",
+    "profile": "en16931"
+  }
+}
