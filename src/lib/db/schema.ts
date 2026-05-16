@@ -45,6 +45,11 @@ export const settings = sqliteTable("settings", {
   })
     .notNull()
     .default("en16931"),
+  pdfTheme: text("pdf_theme", {
+    enum: ["classic", "modern", "minimal"],
+  })
+    .notNull()
+    .default("classic"),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),

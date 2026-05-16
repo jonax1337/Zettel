@@ -1,8 +1,111 @@
 /* ============================================================
    Zettel — Rechnungs-Template
-   Aesthetic: minimal, monochrome, generous whitespace, one
-   subtle slate accent. Print-optimized, A4.
+   Three themes via CSS variables, switched by body.theme-*:
+   classic (default), modern, minimal.
    ============================================================ */
+
+:root {
+  --font-family: "Helvetica", "Arial", sans-serif;
+  --font-mono: "Courier New", monospace;
+  --font-size-base: 10pt;
+  --line-height: 1.45;
+
+  --color-text: #1f2933;
+  --color-muted: #66707b;
+  --color-faint: #8a929c;
+  --color-rule: #1f2933;
+  --color-rule-soft: #e6e9ec;
+  --color-rule-row: #eaedf0;
+  --color-bg-soft: #f7f8f9;
+  --color-accent: #1f2933;
+  --color-accent-soft: #66707b;
+
+  --doctype-size: 22pt;
+  --doctype-weight: 300;
+  --doctype-tracking: 1.5pt;
+  --doctype-transform: uppercase;
+
+  --brand-name-size: 13pt;
+  --brand-name-weight: 700;
+  --brand-name-tracking: 0.2pt;
+
+  --masthead-rule: 0.6pt solid var(--color-rule);
+  --grand-rule: 0.6pt solid var(--color-rule);
+  --thead-rule: 0.6pt solid var(--color-rule);
+  --tbody-last-rule: 0.4pt solid var(--color-rule);
+
+  --meta-bg: var(--color-bg-soft);
+  --meta-border: 0.3pt solid var(--color-rule-soft);
+  --meta-radius: 1.5mm;
+
+  --callout-bg: var(--color-bg-soft);
+  --callout-border: 1mm solid var(--color-accent-soft);
+  --callout-radius: 0 1.5mm 1.5mm 0;
+}
+
+/* ----- Theme: classic (default) ----- */
+body.theme-classic {
+  /* uses :root defaults */
+}
+
+/* ----- Theme: modern — colored accent, bolder typography ----- */
+body.theme-modern {
+  --font-family: "Helvetica", "Arial", sans-serif;
+  --color-accent: #0f4c75;
+  --color-accent-soft: #3282b8;
+  --color-rule: #0f4c75;
+  --color-bg-soft: #eef4f8;
+  --color-rule-soft: #cfe0eb;
+
+  --doctype-weight: 700;
+  --doctype-tracking: 0.5pt;
+  --doctype-transform: none;
+
+  --brand-name-size: 14pt;
+  --brand-name-tracking: 0pt;
+
+  --masthead-rule: 1.2pt solid var(--color-accent);
+  --grand-rule: 1.2pt solid var(--color-accent);
+  --thead-rule: 1pt solid var(--color-accent);
+  --tbody-last-rule: 0.6pt solid var(--color-accent);
+
+  --meta-radius: 2.5mm;
+  --callout-radius: 1.5mm;
+}
+
+/* ----- Theme: minimal — no boxes, hairline rules ----- */
+body.theme-minimal {
+  --color-text: #111111;
+  --color-muted: #888888;
+  --color-faint: #aaaaaa;
+  --color-rule: #111111;
+  --color-rule-soft: #eeeeee;
+  --color-rule-row: #f3f3f3;
+  --color-bg-soft: transparent;
+  --color-accent: #111111;
+  --color-accent-soft: #888888;
+
+  --doctype-size: 18pt;
+  --doctype-weight: 400;
+  --doctype-tracking: 0.5pt;
+  --doctype-transform: none;
+
+  --brand-name-weight: 500;
+  --brand-name-tracking: 0pt;
+
+  --masthead-rule: 0.3pt solid var(--color-rule);
+  --grand-rule: 0.3pt solid var(--color-rule);
+  --thead-rule: 0.3pt solid var(--color-rule);
+  --tbody-last-rule: 0.3pt solid var(--color-rule);
+
+  --meta-bg: transparent;
+  --meta-border: 0pt solid transparent;
+  --meta-radius: 0;
+
+  --callout-bg: transparent;
+  --callout-border: 0.3pt solid var(--color-rule-soft);
+  --callout-radius: 0;
+}
 
 @page {
   size: A4;
@@ -18,10 +121,10 @@
 * { box-sizing: border-box; }
 
 body {
-  font-family: "Helvetica", "Arial", sans-serif;
-  font-size: 10pt;
-  color: #1f2933;
-  line-height: 1.45;
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  color: var(--color-text);
+  line-height: var(--line-height);
   margin: 0;
   -webkit-print-color-adjust: exact;
 }
@@ -32,7 +135,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  border-bottom: 0.6pt solid #1f2933;
+  border-bottom: var(--masthead-rule);
   padding-bottom: 6mm;
   margin-bottom: 10mm;
 }
@@ -45,14 +148,14 @@ body {
 }
 
 .brand .brand-name {
-  font-size: 13pt;
-  font-weight: 700;
-  letter-spacing: 0.2pt;
+  font-size: var(--brand-name-size);
+  font-weight: var(--brand-name-weight);
+  letter-spacing: var(--brand-name-tracking);
 }
 
 .brand .brand-owner {
   font-size: 9pt;
-  color: #66707b;
+  color: var(--color-muted);
   margin-top: 0.5mm;
 }
 
@@ -61,18 +164,18 @@ body {
 }
 
 .title-block .doctype {
-  font-size: 22pt;
-  font-weight: 300;
-  letter-spacing: 1.5pt;
-  text-transform: uppercase;
-  color: #1f2933;
+  font-size: var(--doctype-size);
+  font-weight: var(--doctype-weight);
+  letter-spacing: var(--doctype-tracking);
+  text-transform: var(--doctype-transform);
+  color: var(--color-accent);
   line-height: 1;
 }
 
 .title-block .docnumber {
   font-size: 10pt;
-  font-family: "Courier New", monospace;
-  color: #66707b;
+  font-family: var(--font-mono);
+  color: var(--color-muted);
   margin-top: 2mm;
 }
 
@@ -92,8 +195,8 @@ body {
 
 .addressee .sender-line {
   font-size: 7.5pt;
-  color: #8a929c;
-  border-bottom: 0.3pt solid #d8dde2;
+  color: var(--color-faint);
+  border-bottom: 0.3pt solid var(--color-rule-soft);
   padding-bottom: 1.5mm;
   margin-bottom: 4mm;
 }
@@ -106,9 +209,9 @@ body {
 .meta {
   width: 75mm;
   font-size: 9pt;
-  background: #f7f8f9;
-  border: 0.3pt solid #e6e9ec;
-  border-radius: 1.5mm;
+  background: var(--meta-bg);
+  border: var(--meta-border);
+  border-radius: var(--meta-radius);
   padding: 3.5mm 4mm;
 }
 
@@ -120,11 +223,11 @@ body {
 }
 
 .meta-row + .meta-row {
-  border-top: 0.2pt solid #e6e9ec;
+  border-top: 0.2pt solid var(--color-rule-soft);
 }
 
 .meta-label {
-  color: #66707b;
+  color: var(--color-muted);
 }
 
 .meta-value {
@@ -146,23 +249,23 @@ table.items thead th {
   font-size: 8.5pt;
   text-transform: uppercase;
   letter-spacing: 0.4pt;
-  color: #66707b;
+  color: var(--color-muted);
   padding: 2.5mm 2.5mm;
-  border-bottom: 0.6pt solid #1f2933;
+  border-bottom: var(--thead-rule);
 }
 
 table.items tbody td {
   padding: 2.5mm 2.5mm;
-  border-bottom: 0.2pt solid #eaedf0;
+  border-bottom: 0.2pt solid var(--color-rule-row);
   vertical-align: top;
   font-size: 10pt;
 }
 
 table.items tbody tr:last-child td {
-  border-bottom: 0.4pt solid #1f2933;
+  border-bottom: var(--tbody-last-rule);
 }
 
-.col-pos    { width: 9mm;  text-align: right; color: #8a929c; }
+.col-pos    { width: 9mm;  text-align: right; color: var(--color-faint); }
 .col-desc   { }
 .col-qty    { width: 14mm; text-align: right; font-variant-numeric: tabular-nums; }
 .col-unit   { width: 16mm; }
@@ -186,7 +289,7 @@ table.totals {
 table.totals th {
   text-align: left;
   font-weight: 400;
-  color: #66707b;
+  color: var(--color-muted);
   padding: 1.5mm 4mm 1.5mm 0;
 }
 
@@ -198,10 +301,10 @@ table.totals td {
 
 table.totals tr.grand th,
 table.totals tr.grand td {
-  border-top: 0.6pt solid #1f2933;
+  border-top: var(--grand-rule);
   font-weight: 700;
   font-size: 12pt;
-  color: #1f2933;
+  color: var(--color-accent);
   padding-top: 2.5mm;
 }
 
@@ -210,11 +313,11 @@ table.totals tr.grand td {
 .callout {
   margin: 6mm 0;
   padding: 3.5mm 4.5mm;
-  background: #f7f8f9;
-  border-left: 1mm solid #66707b;
-  border-radius: 0 1.5mm 1.5mm 0;
+  background: var(--callout-bg);
+  border-left: var(--callout-border);
+  border-radius: var(--callout-radius);
   font-size: 9.5pt;
-  color: #1f2933;
+  color: var(--color-text);
 }
 
 /* ----- Generic content blocks ----- */
@@ -229,7 +332,7 @@ table.totals tr.grand td {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.4pt;
-  color: #66707b;
+  color: var(--color-muted);
   margin-bottom: 1.5mm;
 }
 
@@ -248,8 +351,8 @@ table.totals tr.grand td {
   gap: 6mm;
   justify-content: space-between;
   font-size: 7.5pt;
-  color: #66707b;
-  border-top: 0.3pt solid #e6e9ec;
+  color: var(--color-muted);
+  border-top: 0.3pt solid var(--color-rule-soft);
   padding-top: 3mm;
   margin-top: 14mm;
 }
@@ -260,13 +363,13 @@ table.totals tr.grand td {
 
 .doc-footer .col-title {
   font-weight: 600;
-  color: #1f2933;
+  color: var(--color-text);
   margin-bottom: 1mm;
   font-size: 7.5pt;
   letter-spacing: 0.2pt;
 }
 
 .doc-footer .iban {
-  font-family: "Courier New", monospace;
+  font-family: var(--font-mono);
   letter-spacing: 0.2pt;
 }
