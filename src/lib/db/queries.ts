@@ -23,6 +23,9 @@ type SettingsRow = {
   kleinunternehmer_note: string;
   invoice_number_format: string;
   invoice_number_counter: number;
+  offer_number_format: string | null;
+  offer_number_counter: number | null;
+  default_offer_validity_days: number | null;
   default_payment_terms_days: number;
   logo_path: string | null;
   zugferd_profile: string;
@@ -51,6 +54,9 @@ function mapSettings(r: SettingsRow): Settings {
     kleinunternehmerNote: r.kleinunternehmer_note,
     invoiceNumberFormat: r.invoice_number_format,
     invoiceNumberCounter: r.invoice_number_counter,
+    offerNumberFormat: r.offer_number_format ?? "AN-{YYYY}-{NNNN}",
+    offerNumberCounter: r.offer_number_counter ?? 0,
+    defaultOfferValidityDays: r.default_offer_validity_days ?? 30,
     defaultPaymentTermsDays: r.default_payment_terms_days,
     logoPath: r.logo_path,
     zugferdProfile: (r.zugferd_profile ?? "en16931") as Settings["zugferdProfile"],
@@ -91,6 +97,9 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       kleinunternehmer_note = ?,
       invoice_number_format = ?,
       invoice_number_counter = ?,
+      offer_number_format = ?,
+      offer_number_counter = ?,
+      default_offer_validity_days = ?,
       default_payment_terms_days = ?,
       logo_path = ?,
       zugferd_profile = ?,
@@ -115,6 +124,9 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       s.kleinunternehmerNote ?? "",
       s.invoiceNumberFormat ?? "RE-{YYYY}-{NNNN}",
       s.invoiceNumberCounter ?? 0,
+      s.offerNumberFormat ?? "AN-{YYYY}-{NNNN}",
+      s.offerNumberCounter ?? 0,
+      s.defaultOfferValidityDays ?? 30,
       s.defaultPaymentTermsDays ?? 14,
       s.logoPath ?? null,
       s.zugferdProfile ?? "en16931",

@@ -80,6 +80,43 @@ def _embed_xml(pdf_bytes: bytes, xml_str: str, profile: str) -> bytes:
     return result
 
 
+def _render_offer_html_pdf(payload: dict[str, Any]) -> bytes:
+    """Render the offer PDF using Jinja + WeasyPrint, plain PDF (no PDF/A-3)."""
+    env = build_env()
+    template = env.get_template("offer.html.j2")
+    company = dict(payload["company"])
+    company["logoDataUri"] = _logo_data_uri(company.get("logoPath"))
+    html_str = template.render(
+        offer=payload["offer"],
+        items=payload["items"],
+        company=company,
+        customer=payload["customer"],
+    )
+    css_path = Path(template.environment.loader.searchpath[0]) / "invoice.css"
+    stylesheets = [CSS(filename=str(css_path))] if css_path.exists() else []
+
+    buf = io.BytesIO()
+    HTML(string=html_str, base_url=str(css_path.parent)).write_pdf(
+        target=buf,
+        stylesheets=stylesheets,
+        pdf_variant=None,
+    )
+    return buf.getvalue()
+
+
+def render_offer_pdf(payload: dict[str, Any]) -> Path:
+    """
+    Render an offer (Angebot) to a plain PDF — no ZUGFeRD embed, no PDF/A-3.
+
+    Returns: Path to the generated PDF file.
+    """
+    output_path = Path(payload["outputPath"]).expanduser().resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    pdf_bytes = _render_offer_html_pdf(payload)
+    output_path.write_bytes(pdf_bytes)
+    return output_path
+
+
 def render_invoice_pdf(payload: dict[str, Any]) -> Path:
     """
     payload schema — see sidecar/README.md for the full list of fields.

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>Angebot {{ offer.number }}</title>
+</head>
+<body>
+
+  <header class="masthead">
+    <div class="brand">
+      {% if company.logoDataUri %}<img class="brand-logo" src="{{ company.logoDataUri }}" alt="" />{% endif %}
+      <div class="brand-name">{{ company.companyName }}</div>
+      {% if company.ownerName %}<div class="brand-owner">{{ company.ownerName }}</div>{% endif %}
+    </div>
+    <div class="title-block">
+      <div class="doctype">Angebot</div>
+      <div class="docnumber">{{ offer.number }}</div>
+    </div>
+  </header>
+
+  <section class="parties">
+    <div class="addressee">
+      <div class="sender-line">
+        {{ company.companyName }}
+        {%- if company.street %} · {{ company.street }}{% endif %}
+        {%- if company.postalCode %} · {{ company.postalCode }} {{ company.city }}{% endif %}
+      </div>
+      <div class="addressee-name">{{ customer.name }}</div>
+      {% if customer.contactPerson %}<div>z. Hd. {{ customer.contactPerson }}</div>{% endif %}
+      <div>{{ customer.street }}</div>
+      <div>{{ customer.postalCode }} {{ customer.city }}</div>
+      {% if customer.country and customer.country != "DE" %}<div>{{ customer.country }}</div>{% endif %}
+    </div>
+
+    <div class="meta">
+      <div class="meta-row">
+        <span class="meta-label">Angebotsnr.</span>
+        <span class="meta-value">{{ offer.number }}</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Datum</span>
+        <span class="meta-value">{{ offer.issueDate | date_unix }}</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Gültig bis</span>
+        <span class="meta-value">{{ offer.validUntil | date_unix }}</span>
+      </div>
+      {% if customer.vatId %}
+      <div class="meta-row">
+        <span class="meta-label">USt-IdNr. Kunde</span>
+        <span class="meta-value">{{ customer.vatId }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if offer.introText %}
+    <section class="block">
+      <div class="notes">{{ offer.introText | replace('\n', '<br>') | safe }}</div>
+    </section>
+  {% endif %}
+
+  <table class="items">
+    <thead>
+      <tr>
+        <th class="col-pos">Pos.</th>
+        <th class="col-desc">Beschreibung</th>
+        <th class="col-qty">Menge</th>
+        <th class="col-unit">Einheit</th>
+        <th class="col-price">Einzelpreis</th>
+        {% if not offer.isKleinunternehmer and not offer.isReverseCharge %}<th class="col-vat">USt %</th>{% endif %}
+        <th class="col-total">Gesamt</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in items %}
+        <tr>
+          <td class="col-pos">{{ it.position }}</td>
+          <td class="col-desc">{{ it.description }}</td>
+          <td class="col-qty">{{ it.quantity | qty }}</td>
+          <td class="col-unit">{{ it.unit }}</td>
+          <td class="col-price">{{ it.unitPrice | eur }}</td>
+          {% if not offer.isKleinunternehmer and not offer.isReverseCharge %}<td class="col-vat">{{ it.vatRate }}</td>{% endif %}
+          <td class="col-total">{{ it.lineTotal | eur }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <section class="totals-wrap">
+    <table class="totals">
+      <tr>
+        <th>Zwischensumme</th>
+        <td>{{ offer.subtotal | eur }}</td>
+      </tr>
+      {% if not offer.isKleinunternehmer and not offer.isReverseCharge %}
+        <tr>
+          <th>Umsatzsteuer</th>
+          <td>{{ offer.vatAmount | eur }}</td>
+        </tr>
+      {% endif %}
+      <tr class="grand">
+        <th>Gesamtbetrag</th>
+        <td>{{ offer.total | eur }}</td>
+      </tr>
+    </table>
+  </section>
+
+  {% if offer.isKleinunternehmer and company.kleinunternehmerNote %}
+    <p class="callout">{{ company.kleinunternehmerNote }}</p>
+  {% endif %}
+
+  {% if offer.isReverseCharge %}
+    <p class="callout">
+      Bei Auftragsannahme wird die Rechnung mit dem Hinweis "Steuerschuldnerschaft des Leistungsempfängers" ausgestellt (Reverse Charge).
+    </p>
+  {% endif %}
+
+  <p class="callout">
+    Dieses Angebot ist freibleibend und unverbindlich. Gültig bis {{ offer.validUntil | date_unix }}.
+    Bei Annahme erstellen wir eine entsprechende Rechnung.
+  </p>
+
+  {% if offer.notes %}
+    <section class="block">
+      <div class="block-title">Hinweise</div>
+      <div class="notes">{{ offer.notes | replace('\n', '<br>') | safe }}</div>
+    </section>
+  {% endif %}
+
+  <footer class="doc-footer">
+    <div class="col">
+      <div class="col-title">{{ company.companyName }}</div>
+      {% if company.ownerName %}<div>{{ company.ownerName }}</div>{% endif %}
+      <div>{{ company.street }}</div>
+      <div>{{ company.postalCode }} {{ company.city }}</div>
+    </div>
+    <div class="col">
+      <div class="col-title">Kontakt</div>
+      {% if company.email %}<div>{{ company.email }}</div>{% endif %}
+      {% if company.phone %}<div>{{ company.phone }}</div>{% endif %}
+      {% if company.website %}<div>{{ company.website }}</div>{% endif %}
+    </div>
+    <div class="col">
+      <div class="col-title">Steuer</div>
+      {% if company.taxNumber %}<div>St-Nr. {{ company.taxNumber }}</div>{% endif %}
+      {% if company.vatId %}<div>USt-IdNr. {{ company.vatId }}</div>{% endif %}
+    </div>
+  </footer>
+
+</body>
+</html>

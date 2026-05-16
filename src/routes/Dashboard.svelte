@@ -25,7 +25,9 @@
     Trophy,
     Repeat,
     FileText,
+    FileSignature,
   } from "@lucide/svelte";
+  import { openOffersStats, expireDueOffers } from "$lib/db/offers";
   import { openCustomerForm, openInvoiceForm } from "$lib/window";
   import {
     dueRecurring,
@@ -42,6 +44,7 @@
     overdueCount: 0,
     overdueTotal: 0,
   });
+  let offerStats = $state({ count: 0, total: 0, expiringSoonCount: 0 });
   let recent = $state<InvoiceListRow[]>([]);
   let revenue = $state<MonthlyRevenuePoint[]>([]);
   let top = $state<TopCustomer[]>([]);
@@ -49,13 +52,15 @@
   let loading = $state(true);
 
   async function reload() {
-    const [cs, s, r, rev, tc, dr] = await Promise.all([
+    await expireDueOffers().catch(() => {});
+    const [cs, s, r, rev, tc, dr, os] = await Promise.all([
       listCustomers(),
       dashboardStats(),
       recentInvoices(10),
       monthlyRevenue(12),
       topCustomers(5, 12),
       dueRecurring(),
+      openOffersStats(),
     ]);
     customerCount = cs.length;
     stats = s;
@@ -63,6 +68,7 @@
     revenue = rev;
     top = tc;
     due = dr;
+    offerStats = os;
     loading = false;
   }
 
@@ -127,7 +133,7 @@
   </div>
 </header>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
   <Card>
     <CardContent>
       <div class="flex items-center justify-between">
@@ -135,6 +141,24 @@
         <Users class="size-4 text-muted-foreground" />
       </div>
       <div class="text-2xl font-semibold mt-2 tabular-nums">{loading ? "…" : customerCount}</div>
+    </CardContent>
+  </Card>
+
+  <Card
+    class="cursor-pointer hover:bg-muted/30 transition-colors"
+    onclick={() => push("/offers")}
+  >
+    <CardContent>
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-muted-foreground uppercase tracking-wider">Offene Angebote</span>
+        <FileSignature class="size-4 text-muted-foreground" />
+      </div>
+      <div class="text-2xl font-semibold mt-2 tabular-nums">{loading ? "…" : centsToEur(offerStats.total)}</div>
+      <div class="text-xs text-muted-foreground mt-1">
+        {offerStats.count} Angebot{offerStats.count === 1 ? "" : "e"}{#if offerStats.expiringSoonCount > 0}
+          <span class="text-amber-600 dark:text-amber-500"> · {offerStats.expiringSoonCount} läuft bald ab</span>
+        {/if}
+      </div>
     </CardContent>
   </Card>
 

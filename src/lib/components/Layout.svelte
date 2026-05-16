@@ -4,6 +4,7 @@
     LayoutDashboard,
     Users,
     FileText,
+    FileSignature,
     Repeat,
     Download,
     Settings as SettingsIcon,
@@ -32,6 +33,7 @@
   const nav = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/customers", label: "Kunden", icon: Users },
+    { href: "/offers", label: "Angebote", icon: FileSignature },
     { href: "/invoices", label: "Rechnungen", icon: FileText },
     { href: "/recurring", label: "Vorlagen", icon: Repeat },
     { href: "/export", label: "Export", icon: Download },
