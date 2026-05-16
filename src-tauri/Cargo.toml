@@ -26,6 +26,10 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 walkdir = "2"
 dirs = "5"
 rusqlite = { version = "0.31", features = ["bundled"] }
+aes-gcm = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+zeroize = "1.7"
 
 [profile.release]
 panic = "abort"

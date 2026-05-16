@@ -24,6 +24,8 @@ use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
+use crate::crypto;
+
 /// App identifier — must match `tauri.conf.json:identifier`. Hardcoded so the
 /// pre-builder restore step works without an AppHandle.
 const APP_IDENTIFIER: &str = "digital.laux.zettel";
@@ -98,6 +100,7 @@ pub async fn bundle_backup(
     target_zip: String,
     invoice_count: Option<u32>,
     db_schema_version: u32,
+    password: Option<String>,
 ) -> Result<String, String> {
     let snapshot = PathBuf::from(&snapshot_path);
     if !snapshot.is_file() {
@@ -161,6 +164,13 @@ pub async fn bundle_backup(
 
     zip.finish().map_err(|e| e.to_string())?;
     let _ = fs::remove_file(&snapshot);
+
+    if let Some(mut pw) = password {
+        let plain = fs::read(&target).map_err(|e| e.to_string())?;
+        let enc = crypto::encrypt(&plain, &mut pw)?;
+        fs::write(&target, &enc).map_err(|e| e.to_string())?;
+    }
+
     Ok(target.to_string_lossy().into_owned())
 }
 
@@ -169,11 +179,37 @@ pub async fn stage_restore(
     app: AppHandle,
     source_zip: String,
     sections: Option<PartialRestoreSections>,
+    password: Option<String>,
 ) -> Result<String, String> {
     let src = PathBuf::from(&source_zip);
     if !src.is_file() {
         return Err(format!("ZIP missing: {}", source_zip));
     }
+
+    // Sniff magic bytes to decide whether decryption is required. Plain ZIPs
+    // never start with our 12-byte sentinel, so the prefix check is unambiguous.
+    let mut head = [0u8; 12];
+    {
+        let mut f = File::open(&src).map_err(|e| e.to_string())?;
+        let _ = f.read(&mut head).map_err(|e| e.to_string())?;
+    }
+    let encrypted = crypto::is_encrypted(&head);
+    let decrypted_tmp: Option<PathBuf> = if encrypted {
+        let mut pw = match password {
+            Some(p) if !p.is_empty() => p,
+            _ => return Err("password_required".into()),
+        };
+        let blob = fs::read(&src).map_err(|e| e.to_string())?;
+        let plain = crypto::decrypt(&blob, &mut pw)?;
+        let tmp = app_data_dir(&app)?.join("restore_decrypted.tmp.zip");
+        if let Some(parent) = tmp.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::write(&tmp, &plain).map_err(|e| e.to_string())?;
+        Some(tmp)
+    } else {
+        None
+    };
 
     let pending_root = app_data_dir(&app)?.join(PENDING_DIR);
     if pending_root.exists() {
@@ -181,7 +217,8 @@ pub async fn stage_restore(
     }
     fs::create_dir_all(&pending_root).map_err(|e| e.to_string())?;
 
-    let file = File::open(&src).map_err(|e| e.to_string())?;
+    let zip_path = decrypted_tmp.clone().unwrap_or_else(|| src.clone());
+    let file = File::open(&zip_path).map_err(|e| e.to_string())?;
     let mut archive = ZipArchive::new(file).map_err(|e| e.to_string())?;
 
     let mut found_db = false;
@@ -222,10 +259,16 @@ pub async fn stage_restore(
     }
     if !manifest_ok {
         let _ = fs::remove_dir_all(&pending_root);
+        if let Some(tmp) = &decrypted_tmp {
+            let _ = fs::remove_file(tmp);
+        }
         return Err("Kein manifest.json im Backup gefunden.".into());
     }
     if !found_db {
         let _ = fs::remove_dir_all(&pending_root);
+        if let Some(tmp) = &decrypted_tmp {
+            let _ = fs::remove_file(tmp);
+        }
         return Err("Keine zettel.db im Backup gefunden.".into());
     }
 
@@ -245,6 +288,10 @@ pub async fn stage_restore(
     // Marker schreiben
     fs::write(app_data_dir(&app)?.join(PENDING_MARKER), b"pending")
         .map_err(|e| e.to_string())?;
+
+    if let Some(tmp) = decrypted_tmp {
+        let _ = fs::remove_file(&tmp);
+    }
     Ok(pending_root.to_string_lossy().into_owned())
 }
 

@@ -86,6 +86,11 @@
   let restoreSectionCustomers = $state(true);
   let restoreSectionInvoices = $state(true);
   let restoreSectionSettings = $state(true);
+  let backupEncrypt = $state(false);
+  let backupPassword = $state("");
+  let backupPasswordConfirm = $state("");
+  let restorePassword = $state("");
+  let restoreNeedsPassword = $state(false);
   const restoreIsFull = $derived(
     restoreSectionCustomers && restoreSectionInvoices && restoreSectionSettings,
   );
@@ -101,6 +106,16 @@
   }
 
   async function onBackup() {
+    if (backupEncrypt) {
+      if (backupPassword.length < 8) {
+        toast.error("Passwort zu kurz", "Mindestens 8 Zeichen.");
+        return;
+      }
+      if (backupPassword !== backupPasswordConfirm) {
+        toast.error("Passwörter stimmen nicht überein");
+        return;
+      }
+    }
     backupBusy = true;
     try {
       const target = await save({
@@ -116,8 +131,11 @@
         targetZip: target,
         invoiceCount: null,
         dbSchemaVersion: CURRENT_DB_SCHEMA_VERSION,
+        password: backupEncrypt ? backupPassword : null,
       });
       toast.success("Backup gespeichert", target);
+      backupPassword = "";
+      backupPasswordConfirm = "";
     } catch (e) {
       toast.error("Backup fehlgeschlagen", String(e));
     } finally {
@@ -135,6 +153,8 @@
     restoreSectionCustomers = true;
     restoreSectionInvoices = true;
     restoreSectionSettings = true;
+    restoreNeedsPassword = false;
+    restorePassword = "";
   }
 
   async function onRunRestore() {
@@ -156,6 +176,7 @@
           invoices: restoreSectionInvoices,
           settings: restoreSectionSettings,
         },
+        password: restorePassword || null,
       });
       await invoke<void>("apply_pending_partial_restore");
       toast.success(
@@ -163,8 +184,16 @@
         "Die ausgewählten Bereiche wurden eingespielt.",
       );
       pendingRestoreZip = null;
+      restorePassword = "";
+      restoreNeedsPassword = false;
     } catch (e) {
-      toast.error("Wiederherstellung fehlgeschlagen", String(e));
+      const msg = String(e);
+      if (msg.includes("password_required")) {
+        restoreNeedsPassword = true;
+        toast.error("Passwort erforderlich", "Dieses Backup ist verschlüsselt.");
+      } else {
+        toast.error("Wiederherstellung fehlgeschlagen", msg);
+      }
     } finally {
       restoreBusy = false;
     }
@@ -177,16 +206,26 @@
       await invoke<string>("stage_restore", {
         sourceZip: pendingRestoreZip,
         sections: null,
+        password: restorePassword || null,
       });
       toast.success(
         "Wiederherstellung vorbereitet",
         "Bitte die App neu starten — das Backup wird beim nächsten Start eingespielt.",
       );
+      pendingRestoreZip = null;
+      restorePassword = "";
+      restoreNeedsPassword = false;
     } catch (e) {
-      toast.error("Wiederherstellung fehlgeschlagen", String(e));
+      const msg = String(e);
+      if (msg.includes("password_required")) {
+        restoreNeedsPassword = true;
+        toast.error("Passwort erforderlich", "Dieses Backup ist verschlüsselt.");
+      } else {
+        toast.error("Wiederherstellung fehlgeschlagen", msg);
+        pendingRestoreZip = null;
+      }
     } finally {
       restoreBusy = false;
-      pendingRestoreZip = null;
     }
   }
 </script>
@@ -428,6 +467,31 @@
         </CardDescription>
       </CardHeader>
       <CardContent>
+        <div class="mb-4 space-y-3">
+          <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+            <input
+              type="checkbox"
+              bind:checked={backupEncrypt}
+              class="size-4 rounded border-border accent-primary"
+            />
+            Backup verschlüsseln (AES-256-GCM)
+          </label>
+          {#if backupEncrypt}
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div class="flex flex-col gap-1.5">
+                <Label>Passwort</Label>
+                <Input type="password" bind:value={backupPassword} autocomplete="new-password" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <Label>Passwort bestätigen</Label>
+                <Input type="password" bind:value={backupPasswordConfirm} autocomplete="new-password" />
+              </div>
+              <span class="sm:col-span-2 text-xs text-muted-foreground">
+                Mindestens 8 Zeichen. Ohne dieses Passwort lässt sich das Backup nicht wiederherstellen — es wird nirgendwo gespeichert.
+              </span>
+            </div>
+          {/if}
+        </div>
         <div class="flex flex-wrap items-center gap-3">
           <Button type="button" variant="outline" onclick={onBackup} disabled={backupBusy}>
             <Download class="size-4" />
@@ -472,6 +536,15 @@
                 Einstellungen
               </label>
             </div>
+            {#if restoreNeedsPassword}
+              <div class="flex flex-col gap-1.5">
+                <Label>Passwort des Backups</Label>
+                <Input type="password" bind:value={restorePassword} autocomplete="current-password" />
+                <span class="text-xs text-muted-foreground">
+                  Dieses Backup ist verschlüsselt. Bitte Passwort eingeben und erneut wiederherstellen.
+                </span>
+              </div>
+            {/if}
             <div class="flex flex-wrap items-center gap-2 pt-1">
               <Button
                 type="button"
