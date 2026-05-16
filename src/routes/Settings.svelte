@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { open, save } from "@tauri-apps/plugin-dialog";
+  import { invoke } from "@tauri-apps/api/core";
+  import { execute } from "$lib/db/client";
   import { loadSettings, saveSettings } from "$lib/db/queries";
   import type { Settings } from "$lib/db/schema";
   import {
@@ -12,10 +14,14 @@
     CardTitle,
     CardDescription,
     CardContent,
+    ConfirmDialog,
     Select,
     toast,
   } from "$lib/ui";
-  import { Image, X } from "@lucide/svelte";
+  import { Image, X, Download, Upload } from "@lucide/svelte";
+
+  // aktueller DB-Schema-Stand (siehe src-tauri/src/lib.rs Migrations-Vektor)
+  const CURRENT_DB_SCHEMA_VERSION = 4;
 
   let s = $state<Settings | null>(null);
   let loading = $state(true);
@@ -62,9 +68,74 @@
 
   const profileItems = [
     { value: "en16931", label: "EN 16931 / Comfort (Standard)" },
-    { value: "basic", label: "BASIC — folgt in v0.2", disabled: true },
-    { value: "extended", label: "EXTENDED — folgt in v0.2", disabled: true },
+    { value: "basic", label: "BASIC (Factur-X 1.0)" },
+    { value: "extended", label: "EXTENDED (Factur-X 1.0)" },
   ];
+
+  // --- Backup / Restore ---
+  let backupBusy = $state(false);
+  let restoreBusy = $state(false);
+  let confirmRestoreOpen = $state(false);
+  let pendingRestoreZip = $state<string | null>(null);
+
+  function defaultBackupFilename(): string {
+    const d = new Date();
+    const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    const hm = `${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
+    return `zettel-backup-${ymd}-${hm}.zip`;
+  }
+
+  async function onBackup() {
+    backupBusy = true;
+    try {
+      const target = await save({
+        defaultPath: defaultBackupFilename(),
+        filters: [{ name: "Zettel Backup", extensions: ["zip"] }],
+      });
+      if (!target) return;
+      // Konsistenter SQLite-Snapshot über die aktive Plugin-Verbindung
+      const snapshotPath = await invoke<string>("snapshot_db_path");
+      await execute(`VACUUM INTO ?`, [snapshotPath]);
+      await invoke<string>("bundle_backup", {
+        snapshotPath,
+        targetZip: target,
+        invoiceCount: null,
+        dbSchemaVersion: CURRENT_DB_SCHEMA_VERSION,
+      });
+      toast.success("Backup gespeichert", target);
+    } catch (e) {
+      toast.error("Backup fehlgeschlagen", String(e));
+    } finally {
+      backupBusy = false;
+    }
+  }
+
+  async function onPickRestore() {
+    const picked = await open({
+      multiple: false,
+      filters: [{ name: "Zettel Backup", extensions: ["zip"] }],
+    });
+    if (typeof picked !== "string") return;
+    pendingRestoreZip = picked;
+    confirmRestoreOpen = true;
+  }
+
+  async function onConfirmRestore() {
+    if (!pendingRestoreZip) return;
+    restoreBusy = true;
+    try {
+      await invoke<string>("stage_restore", { sourceZip: pendingRestoreZip });
+      toast.success(
+        "Wiederherstellung vorbereitet",
+        "Bitte die App neu starten — das Backup wird beim nächsten Start eingespielt.",
+      );
+    } catch (e) {
+      toast.error("Wiederherstellung fehlgeschlagen", String(e));
+    } finally {
+      restoreBusy = false;
+      pendingRestoreZip = null;
+    }
+  }
 </script>
 
 <header class="mb-6">
@@ -262,6 +333,33 @@
       </CardContent>
     </Card>
 
+    <Card>
+      <CardHeader>
+        <CardTitle>Backup & Wiederherstellung</CardTitle>
+        <CardDescription>
+          Sichert die Datenbank und alle erzeugten Rechnungs-PDFs in eine ZIP-Datei.
+          Wiederhergestellte Backups werden beim nächsten App-Start eingespielt.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div class="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="outline" onclick={onBackup} disabled={backupBusy}>
+            <Download class="size-4" />
+            {backupBusy ? "Sichere…" : "Backup erstellen"}
+          </Button>
+          <Button type="button" variant="outline" onclick={onPickRestore} disabled={restoreBusy}>
+            <Upload class="size-4" />
+            {restoreBusy ? "Stelle wieder her…" : "Backup wiederherstellen…"}
+          </Button>
+        </div>
+        <p class="text-xs text-muted-foreground mt-3">
+          Eine Wiederherstellung überschreibt die bestehende Datenbank und alle PDFs unter
+          <code>~/Documents/Zettel/Rechnungen/</code>. Die alte DB wird vorsichtshalber als
+          <code>zettel.db.bak</code> aufbewahrt.
+        </p>
+      </CardContent>
+    </Card>
+
     <div class="flex items-center gap-3">
       <Button type="submit" disabled={saving}>
         {saving ? "Speichere…" : "Speichern"}
@@ -271,4 +369,13 @@
       {/if}
     </div>
   </form>
+
+  <ConfirmDialog
+    bind:open={confirmRestoreOpen}
+    title="Backup wiederherstellen?"
+    description={`Die aktuelle Datenbank und alle PDFs werden ersetzt. Die alte DB landet als zettel.db.bak im App-Datenverzeichnis. Die App muss anschließend neu gestartet werden.\n\nQuelle: ${pendingRestoreZip ?? ""}`}
+    confirmLabel="Wiederherstellen"
+    cancelLabel="Abbrechen"
+    onConfirm={onConfirmRestore}
+  />
 {/if}

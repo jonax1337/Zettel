@@ -1,0 +1,1 @@
+ALTER TABLE invoices ADD COLUMN is_reverse_charge INTEGER NOT NULL DEFAULT 0;

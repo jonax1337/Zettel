@@ -38,7 +38,7 @@ ZUGFeRD- / Factur-X-konforme PDF/A-3 mit eingebettetem EN-16931-XML — lokal, o
 
 Ich bin Solo-Selbstständiger und hatte keine Lust auf weitere 20–30 € pro Monat für SaaS-Buchhaltung, nur um ein paar Rechnungen pro Quartal zu schreiben. Zettel ist das, was dabei rausgekommen ist: ein kleines Desktop-Tool, das **lokal** läuft, die deutsche E-Rechnungs-Norm **EN 16931** korrekt umsetzt und den **Kleinunternehmer-Modus (§ 19 UStG)** als First-Class-Feature behandelt — nicht als Häkchen, das man hinter einem Premium-Tarif suchen muss.
 
-Stand 0.1: fünf von fünf manuell erzeugten Test-Rechnungen sind grün bei [erechnungs-validator.de](https://erechnungs-validator.de). Reicht für mich, reicht hoffentlich auch für dich.
+Stand 0.2: fünf von fünf v0.1-Test-Rechnungen sind grün bei [erechnungs-validator.de](https://erechnungs-validator.de). v0.2 bringt Reverse-Charge, BASIC/EXTENDED-Profile, DATEV-Export, Backup/Restore und wiederkehrende Rechnungen dazu. Reicht für mich, reicht hoffentlich auch für dich.
 
 ## Install
 
@@ -69,11 +69,21 @@ brew install pango cairo gdk-pixbuf
 
 ## Was drin ist
 
-Kunden- und Rechnungsverwaltung lokal in SQLite. PDF/A-3-Rechnungen mit eingebettetem Factur-X-XML im Profil **EN 16931**. Kleinunternehmer-Modus inklusive korrektem `CategoryCode E` und BR-CO-26-konformem `BT-29`-Fallback, wenn keine USt-IdNr. vorhanden ist. Mehrere USt-Sätze pro Rechnung (0 %, 7 %, 19 %). Status-Workflow Entwurf → Versandt → Bezahlt → Storniert. Konfigurierbare Nummernkreise, Logo-Upload, Customer-Snapshot pro Rechnung.
+**Rechnungen & Kunden lokal.** SQLite, kein Cloud-Sync. Status-Workflow Entwurf → Versandt → Bezahlt → Storniert. Customer-Snapshot pro Rechnung (rechtssicher zum Rechnungszeitpunkt). Konfigurierbare Nummernkreise, Logo-Upload.
+
+**E-Rechnung konform.** PDF/A-3 mit eingebettetem Factur-X-XML in den Profilen **BASIC**, **EN 16931** und **EXTENDED**. Kleinunternehmer-Modus mit korrektem `CategoryCode E` und BR-CO-26-konformem `BT-29`-Fallback ohne USt-IdNr. Mehrere USt-Sätze pro Rechnung (0 %, 7 %, 19 %).
+
+**Reverse-Charge / intra-EU B2B.** Toggle pro Rechnung, automatischer 0 %-Ausweis, ZUGFeRD `CategoryCode K` + `ExemptionReason`, deutscher und englischer Hinweistext auf der PDF.
+
+**DATEV-Export.** Buchungsstapel (Format 700, SKR03/SKR04) für den Steuerberater — eine Buchungszeile pro USt-Rate pro Rechnung. Kleinunternehmer- und Reverse-Charge-Rechnungen auf den passenden Erlöskonten. UTF-8-BOM, CRLF, importierbar in DATEV Kanzlei-Rechnungswesen.
+
+**Wiederkehrende Rechnungen.** Vorlagen für Retainer/Subscriptions (monatlich / quartalsweise / jährlich). Fällige Vorlagen erscheinen auf dem Dashboard — ein Klick erzeugt einen Entwurf. Keine stille Auto-Generierung im Hintergrund.
+
+**Backup & Restore.** ZIP mit konsistentem SQLite-Snapshot (`VACUUM INTO`), allen PDFs und einem Manifest. Restore wird beim nächsten App-Start eingespielt; die alte DB landet vorsichtshalber als `zettel.db.bak`.
 
 ## Was nicht drin ist
 
-Keine vollständige Buchhaltung, kein Banking, kein Cloud-Sync, keine Mobile-App. Reverse-Charge und intra-EU-B2B sind für v0.2 geplant, Eingangsrechnungen einlesen für v0.3. Die vollständigen Non-Goals stehen in [`PLAN.md`](./PLAN.md#3-non-goals-explizit-ausgeschlossen) — bitte vor einem Feature-Request kurz reinschauen.
+Keine vollständige Buchhaltung, kein Banking, kein Cloud-Sync, keine Mobile-App. Eingangsrechnungen einlesen und Drittland-Reverse-Charge sind für v0.3+ geplant. Vollständige Non-Goals in [`PLAN.md`](./PLAN.md#3-non-goals-explizit-ausgeschlossen).
 
 ## Stack
 

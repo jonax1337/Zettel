@@ -2,22 +2,16 @@
   import { link, push } from "svelte-spa-router";
   import { listCustomers, loadSettings } from "$lib/db/queries";
   import {
-    computeLineTotal,
-    computeTotals,
-    createInvoice,
-    getInvoice,
-    updateInvoice,
-    type InvoiceFormInput,
-    type InvoiceItemInput,
-  } from "$lib/db/invoices";
-  import type { Customer, Settings } from "$lib/db/schema";
+    createRecurring,
+    getRecurring,
+    updateRecurring,
+    type RecurringFormInput,
+    type RecurringItemInput,
+  } from "$lib/db/recurring";
+  import { computeLineTotal, computeTotals } from "$lib/db/invoices";
+  import type { Customer, Settings, RecurringInterval } from "$lib/db/schema";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
-  import {
-    addDaysUnix,
-    fromIsoDate,
-    nowUnix,
-    toIsoDate,
-  } from "$lib/utils/date";
+  import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import {
     Button,
     Input,
@@ -29,15 +23,12 @@
     toast,
   } from "$lib/ui";
   import { ArrowLeft, Plus, Trash2 } from "@lucide/svelte";
-  import { isPopupWindow, emitSavedAndClose } from "$lib/window";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
 
   type Props = {
     mode: "new" | "edit";
     params?: { id?: string };
   };
   let { mode, params }: Props = $props();
-  const popup = isPopupWindow();
 
   let customers = $state<Customer[]>([]);
   let settings = $state<Settings | null>(null);
@@ -48,14 +39,16 @@
   let saving = $state(false);
   let error = $state<string | null>(null);
 
+  let name = $state("");
   let customerIdStr = $state<string>("");
-  let issueDateIso = $state(toIsoDate(nowUnix()));
-  let deliveryDateIso = $state("");
-  let dueDateIso = $state(toIsoDate(addDaysUnix(nowUnix(), 14)));
+  let interval = $state<RecurringInterval>("monthly");
+  let startDateIso = $state(toIsoDate(nowUnix()));
+  let paymentTermsDays = $state(14);
+  let isReverseCharge = $state(false);
+  let active = $state(true);
   let notes = $state("");
   let paymentTerms = $state("");
-  let isReverseCharge = $state(false);
-  let items = $state<Array<InvoiceItemInput & { priceText: string }>>([
+  let items = $state<Array<RecurringItemInput & { priceText: string }>>([
     { description: "", quantity: 1, unit: "Stk", unitPrice: 0, vatRate: 0, priceText: "" },
   ]);
 
@@ -63,27 +56,12 @@
     customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
   );
 
-  // Reverse-Charge nur erlaubt, wenn weder Firma noch Rechnung Kleinunternehmer
-  // sind und beide Parteien eine USt-IdNr. haben. Wir prüfen das EU-Länder-Kriterium
-  // bewusst nicht automatisch — der User trägt die Verantwortung.
   const canReverseCharge = $derived(
     !!settings &&
       !settings.isKleinunternehmer &&
       !!settings.vatId &&
       !!selectedCustomer?.vatId,
   );
-
-  const reverseChargeBlockedReason = $derived.by(() => {
-    if (!settings) return "";
-    if (settings.isKleinunternehmer)
-      return "Nicht verfügbar für Kleinunternehmer (§ 19 UStG).";
-    if (!settings.vatId)
-      return "Eigene USt-IdNr. in den Einstellungen fehlt.";
-    if (!selectedCustomer) return "Erst Kunden auswählen.";
-    if (!selectedCustomer.vatId)
-      return "Kunde hat keine USt-IdNr. hinterlegt.";
-    return "";
-  });
 
   $effect(() => {
     if (!canReverseCharge && isReverseCharge) isReverseCharge = false;
@@ -110,7 +88,7 @@
         settings = s;
         customers = cs;
         if (mode === "new") {
-          paymentTerms = `Zahlbar innerhalb von ${s.defaultPaymentTermsDays} Tagen ohne Abzug.`;
+          paymentTermsDays = s.defaultPaymentTermsDays;
           for (const it of items) it.vatRate = s.isKleinunternehmer ? 0 : 19;
           items = [...items];
         }
@@ -123,25 +101,21 @@
       const numId = Number.parseInt(params.id, 10);
       if (Number.isNaN(numId)) return;
       id = numId;
-      getInvoice(numId)
+      getRecurring(numId)
         .then((res) => {
           if (!res) {
-            error = "Rechnung nicht gefunden.";
+            error = "Vorlage nicht gefunden.";
             return;
           }
-          if (res.invoice.status !== "draft") {
-            error = "Nur Entwürfe können bearbeitet werden.";
-            return;
-          }
-          customerIdStr = String(res.invoice.customerId);
-          issueDateIso = toIsoDate(res.invoice.issueDate);
-          deliveryDateIso = res.invoice.deliveryDate
-            ? toIsoDate(res.invoice.deliveryDate)
-            : "";
-          dueDateIso = toIsoDate(res.invoice.dueDate);
-          notes = res.invoice.notes ?? "";
-          paymentTerms = res.invoice.paymentTerms ?? "";
-          isReverseCharge = res.invoice.isReverseCharge;
+          name = res.recurring.name;
+          customerIdStr = String(res.recurring.customerId);
+          interval = res.recurring.interval;
+          startDateIso = toIsoDate(res.recurring.startDate);
+          paymentTermsDays = res.recurring.paymentTermsDays;
+          isReverseCharge = res.recurring.isReverseCharge;
+          active = res.recurring.active;
+          notes = res.recurring.notes ?? "";
+          paymentTerms = res.recurring.paymentTerms ?? "";
           items = res.items.map((it) => ({
             description: it.description,
             quantity: it.quantity,
@@ -193,9 +167,25 @@
     customers.map((c) => ({ value: String(c.id), label: `${c.customerNumber} · ${c.name}` })),
   );
 
+  const intervalItems = [
+    { value: "monthly", label: "Monatlich" },
+    { value: "quarterly", label: "Quartalsweise" },
+    { value: "yearly", label: "Jährlich" },
+  ];
+
+  const vatItems = [
+    { value: "0", label: "0 %" },
+    { value: "7", label: "7 %" },
+    { value: "19", label: "19 %" },
+  ];
+
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     const customerId = customerIdStr ? Number.parseInt(customerIdStr, 10) : null;
+    if (!name.trim()) {
+      error = "Bitte einen Namen vergeben.";
+      return;
+    }
     if (customerId === null || Number.isNaN(customerId)) {
       error = "Bitte einen Kunden auswählen.";
       return;
@@ -207,32 +197,31 @@
     saving = true;
     error = null;
     try {
-      const input: InvoiceFormInput = {
+      const input: RecurringFormInput = {
+        name: name.trim(),
         customerId,
-        issueDate: fromIsoDate(issueDateIso),
-        deliveryDate: deliveryDateIso ? fromIsoDate(deliveryDateIso) : null,
-        dueDate: fromIsoDate(dueDateIso),
+        interval,
+        startDate: fromIsoDate(startDateIso),
+        paymentTermsDays,
+        isReverseCharge,
         notes: notes.trim() || null,
         paymentTerms: paymentTerms.trim() || null,
-        isReverseCharge,
+        active,
         items: items.map(({ priceText: _p, ...rest }) => rest),
       };
       let savedId: number;
       if (mode === "new") {
-        savedId = await createInvoice(input);
-        toast.success("Rechnung erstellt");
+        savedId = await createRecurring(input);
+        toast.success("Vorlage erstellt");
       } else if (id !== null) {
-        await updateInvoice(id, input);
+        await updateRecurring(id, input);
         toast.success("Änderungen gespeichert");
         savedId = id;
       } else {
         throw new Error("Keine ID");
       }
-      if (popup) {
-        await emitSavedAndClose("invoice:saved", { id: savedId });
-      } else {
-        push(`/invoices/${savedId}`);
-      }
+      push(`/recurring`);
+      void savedId;
     } catch (err) {
       error = String(err);
       toast.error("Speichern fehlgeschlagen", String(err));
@@ -240,36 +229,20 @@
       saving = false;
     }
   }
-
-  async function onCancel() {
-    if (popup) {
-      await getCurrentWindow().close();
-    } else {
-      push("/invoices");
-    }
-  }
-
-  const vatItems = [
-    { value: "0", label: "0 %" },
-    { value: "7", label: "7 %" },
-    { value: "19", label: "19 %" },
-  ];
 </script>
 
-{#if !popup}
-  <header class="mb-6">
-    <a
-      href="/invoices"
-      use:link
-      class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-    >
-      <ArrowLeft class="size-4" /> Rechnungen
-    </a>
-    <h1 class="text-3xl font-semibold tracking-tight mt-2">
-      {mode === "new" ? "Neue Rechnung" : "Rechnung bearbeiten"}
-    </h1>
-  </header>
-{/if}
+<header class="mb-6">
+  <a
+    href="/recurring"
+    use:link
+    class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+  >
+    <ArrowLeft class="size-4" /> Wiederkehrende Rechnungen
+  </a>
+  <h1 class="text-3xl font-semibold tracking-tight mt-2">
+    {mode === "new" ? "Neue Vorlage" : "Vorlage bearbeiten"}
+  </h1>
+</header>
 
 {#if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
@@ -279,48 +252,49 @@
       <CardContent>
         <section class="grid grid-cols-2 gap-4">
           <div class="col-span-2 flex flex-col gap-1.5">
+            <Label>Bezeichnung <span class="text-destructive">*</span></Label>
+            <Input bind:value={name} placeholder="z. B. Monatlicher Retainer Acme" required />
+          </div>
+          <div class="col-span-2 flex flex-col gap-1.5">
             <Label>Kunde <span class="text-destructive">*</span></Label>
-            <Select
-              bind:value={customerIdStr}
-              items={customerItems}
-              placeholder="— bitte wählen —"
+            <Select bind:value={customerIdStr} items={customerItems} placeholder="— bitte wählen —" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label>Intervall</Label>
+            <Select bind:value={interval as unknown as string} items={intervalItems} />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label>Erste Fälligkeit</Label>
+            <Input type="date" bind:value={startDateIso} required />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label>Zahlungsfrist (Tage)</Label>
+            <Input type="number" min="0" bind:value={paymentTermsDays} />
+          </div>
+          <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+            <input
+              type="checkbox"
+              bind:checked={active}
+              class="size-4 rounded border-border accent-primary"
             />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <Label>Rechnungsdatum</Label>
-            <Input type="date" bind:value={issueDateIso} required />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <Label>Fällig am</Label>
-            <Input type="date" bind:value={dueDateIso} required />
-          </div>
-          <div class="flex flex-col gap-1.5 col-span-2">
-            <Label>Liefer-/Leistungsdatum</Label>
-            <Input type="date" bind:value={deliveryDateIso} />
-          </div>
+            Aktiv (erscheint im Dashboard)
+          </label>
           {#if settings && !settings.isKleinunternehmer}
             <div class="col-span-2 flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
               <input
-                id="reverse-charge"
+                id="rc-recurring"
                 type="checkbox"
                 bind:checked={isReverseCharge}
                 disabled={!canReverseCharge}
                 class="mt-0.5 size-4 rounded border-input accent-primary disabled:opacity-40"
               />
               <div class="flex-1 text-sm">
-                <label for="reverse-charge" class="font-medium cursor-pointer">
+                <label for="rc-recurring" class="font-medium cursor-pointer">
                   Reverse-Charge (intra-EU B2B)
                 </label>
                 <p class="text-xs text-muted-foreground mt-0.5">
-                  Steuerschuldnerschaft des Leistungsempfängers. Setzt alle Positionen
-                  auf 0&nbsp;% USt und schreibt den Hinweis auf die Rechnung. Verantwortung
-                  für das EU-B2B-Kriterium liegt beim Nutzer.
+                  Wird bei jeder erzeugten Rechnung übernommen. Setzt 0&nbsp;% USt und den Hinweistext.
                 </p>
-                {#if !canReverseCharge && reverseChargeBlockedReason}
-                  <p class="text-xs text-amber-600 dark:text-amber-500 mt-1">
-                    {reverseChargeBlockedReason}
-                  </p>
-                {/if}
               </div>
             </div>
           {/if}
@@ -358,20 +332,11 @@
             {#each items as it, idx (idx)}
               <tr class="border-t">
                 <td class="px-3 py-2 text-xs text-muted-foreground">{idx + 1}</td>
+                <td class="px-2 py-1.5"><Input bind:value={it.description} required /></td>
                 <td class="px-2 py-1.5">
-                  <Input bind:value={it.description} required />
+                  <Input type="number" step="0.01" min="0" bind:value={it.quantity} />
                 </td>
-                <td class="px-2 py-1.5">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    bind:value={it.quantity}
-                  />
-                </td>
-                <td class="px-2 py-1.5">
-                  <Input bind:value={it.unit} />
-                </td>
+                <td class="px-2 py-1.5"><Input bind:value={it.unit} /></td>
                 <td class="px-2 py-1.5">
                   <Input
                     bind:value={it.priceText}
@@ -413,22 +378,8 @@
           </tbody>
           <tfoot class="bg-muted/40 text-sm">
             <tr class="border-t">
-              <td colspan={vatExempt ? 5 : 6} class="px-3 py-2 text-right text-muted-foreground">
-                Zwischensumme
-              </td>
-              <td class="px-3 py-2 text-right font-mono">{centsToEur(totals.subtotal)}</td>
-              <td></td>
-            </tr>
-            {#if !vatExempt}
-              <tr>
-                <td colspan="6" class="px-3 py-2 text-right text-muted-foreground">USt</td>
-                <td class="px-3 py-2 text-right font-mono">{centsToEur(totals.vatAmount)}</td>
-                <td></td>
-              </tr>
-            {/if}
-            <tr class="border-t">
               <td colspan={vatExempt ? 5 : 6} class="px-3 py-2 text-right font-semibold">
-                Gesamtbetrag
+                Voraussichtlicher Gesamtbetrag pro Erzeugung
               </td>
               <td class="px-3 py-2 text-right font-mono font-semibold">{centsToEur(totals.total)}</td>
               <td></td>
@@ -455,7 +406,9 @@
       <Button type="submit" disabled={saving}>
         {saving ? "Speichere…" : mode === "new" ? "Anlegen" : "Speichern"}
       </Button>
-      <Button type="button" onclick={onCancel} variant="ghost">Abbrechen</Button>
+      <a href="/recurring" use:link>
+        <Button type="button" variant="ghost">Abbrechen</Button>
+      </a>
       {#if error}
         <span class="text-sm text-destructive">{error}</span>
       {/if}

@@ -1,0 +1,46 @@
+# Default: let Git decide based on content detection.
+* text=auto eol=lf
+
+# Files that MUST have LF endings regardless of platform.
+# These are read via Rust `include_str!` at compile time — a Windows checkout
+# with CRLF would silently change the byte-content of the binary and, in the
+# case of tauri-plugin-sql migrations, fail with a "migration was previously
+# applied but has been modified" panic.
+*.sql        text eol=lf
+*.j2         text eol=lf
+*.py         text eol=lf
+*.rs         text eol=lf
+*.toml       text eol=lf
+*.yml        text eol=lf
+*.yaml       text eol=lf
+*.json       text eol=lf
+*.svelte     text eol=lf
+*.ts         text eol=lf
+*.tsx        text eol=lf
+*.js         text eol=lf
+*.mjs        text eol=lf
+*.cjs        text eol=lf
+*.css        text eol=lf
+*.html       text eol=lf
+*.md         text eol=lf
+*.sh         text eol=lf
+
+# Windows-only files that should keep CRLF.
+*.bat        text eol=crlf
+*.cmd        text eol=crlf
+*.ps1        text eol=crlf
+
+# Binary files — Git should not touch them.
+*.png        binary
+*.jpg        binary
+*.jpeg       binary
+*.gif        binary
+*.ico        binary
+*.icns       binary
+*.pdf        binary
+*.zip        binary
+*.exe        binary
+*.dll        binary
+*.dmg        binary
+*.msi        binary
+*.deb        binary

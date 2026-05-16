@@ -1,7 +1,8 @@
 # Faktura — Project Plan
 
 > **Name:** Zettel
-> **Status:** v0.1 release-ready (M1–M5 abgeschlossen, 5/5 Validierungen grün)
+> **Status:** v0.2 release-ready auf `release/v0.2` · v0.1.0 auf `main`
+> **Released:** v0.1.0 (2026-05-16, 5/5 ZUGFeRD-Validierungen grün)
 > **Lizenz:** MIT
 > **Owner:** Jonas Laux ([laux.digital](https://laux.digital))
 
@@ -448,29 +449,36 @@ faktura/
 - [ ] macOS + Linux Builds tatsächlich grün (passiert beim ersten Push)
 - [ ] README-Screenshots (Placeholder vorhanden)
 
-### M6 — OSS-Release
-- [ ] Git-Repo initialisieren + auf GitHub pushen
-- [ ] Tag `v0.1.0` → CI baut alle Plattformen → Release-Job
-- [ ] GitHub Discussions aktivieren
-- [ ] Issue-Templates (Bug, Feature, Question)
-- [ ] Demo-Video / GIF
+### M6 — OSS-Release ✅
+- [x] Repo öffentlich auf GitHub: `jonax1337/zettel`
+- [x] GitHub Discussions aktiviert
+- [x] Issue-Templates (Bug, Feature, ZUGFeRD-Validierung) + PR-Template
+- [x] README modernisiert (for-the-badge style, Hero-Section, Disclaimer)
+- [x] CHANGELOG.md eingeführt
+- [ ] Tag `v0.1.0` → CI-Release-Job (steht für den ersten Cross-Platform-Bau noch aus)
+- [ ] Demo-Video / GIF (manuell aufzunehmen)
 - [ ] Launch: HN, r/selbststaendig, r/Freelance_DE, Mastodon
 
-### Phase 2 (v0.2+)
-- BASIC + EXTENDED ZUGFeRD-Profile (eigene XML-Templates)
-- Reverse-Charge / intra-EU B2B (CategoryCode K, ExemptionReason)
-- DATEV-Export
-- Eingangsrechnungs-Verarbeitung (ZUGFeRD-XML extrahieren)
-- Backup/Restore, I18n, Auto-Update, wiederkehrende Rechnungen
+### v0.2.0 ✅ — auf `release/v0.2`
+- [x] Reverse-Charge / intra-EU B2B (CategoryCode K, ExemptionReason) — PR #7, Issue #2
+- [x] BASIC + EXTENDED ZUGFeRD-Profile (URN parametrisiert in `zugferd-en16931.xml.j2`) — PR #9, Issue #3
+- [x] DATEV-Export (CSV, Format 700, SKR03/SKR04) — PR #8, Issue #4
+- [x] Backup / Restore (ZIP, staged restore on next launch) — PR #11, Issue #5
+- [x] Wiederkehrende Rechnungen (Vorlagen, Dashboard-Widget, manuelle Erzeugung) — PR #12, Issue #6
+- [x] `.gitattributes` (LF-Pinning, `include_str!`-Migrations byte-stabil) — PR #10
+- [ ] 3 neue Test-Rechnungen (Reverse-Charge, BASIC, EXTENDED) gegen erechnungs-validator.de prüfen
+- [ ] PR `release/v0.2 → main` + Tag `v0.2.0`
 
-### Phase 2 / Future (nicht im Scope von v1)
-- DATEV-Export (CSV nach DATEV-Spezifikation)
-- Eingangsrechnungen einlesen (ZUGFeRD-XML extrahieren)
-- Backup/Restore-Mechanismus
+### Phase 3 / v0.3+ (nicht im v0.2-Scope)
+- Eingangsrechnungs-Verarbeitung (ZUGFeRD-XML extrahieren)
+- Reverse-Charge außerhalb der EU (Drittland)
 - I18n (englisch)
 - Auto-Update via Tauri Updater
-- Mehrere Logo-Themes / Templates
-- Wiederkehrende Rechnungen (Abos)
+- Mehrere Logo-Themes / PDF-Templates
+- „Aus dieser Rechnung Vorlage erstellen"-Button im Rechnungs-Detail
+- Backup-Verschlüsselung / Cloud-Upload
+- Granularer Restore (nur Kunden / nur Rechnungen)
+- Stornobuchungen im DATEV-Export
 
 ---
 
@@ -479,7 +487,7 @@ faktura/
 - **Name:** Faktura, Zettel, Belegbox, Faktor, andere? → entscheiden vor M1
 - **PDF-Output-Pfad:** `~/Documents/Faktura/` als Default oder konfigurierbar in Settings? → konfigurierbar, Default vorschlagen
 - **Logo-Format:** PNG only oder auch SVG? → PNG für Phase 1 (WeasyPrint kann SVG, aber PNG ist robuster)
-- **Backup/Export:** ZIP mit DB-Dump + alle PDFs? → Phase 2
+- **Backup/Export:** ZIP mit DB-Dump + alle PDFs? → ✅ in v0.2 implementiert (`src-tauri/src/backup.rs`)
 - **Update-Mechanismus:** Tauri Updater (selfsigned) oder GitHub Releases manuell? → GitHub Releases für v1, Updater Phase 2
 - **Code-Signing:** unsigned für v1 (User akzeptiert SmartScreen-Warning), später Cert? → unsigned v1
 - **Telemetrie:** keine. Punkt.

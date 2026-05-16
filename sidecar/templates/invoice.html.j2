@@ -68,7 +68,7 @@
         <th class="col-qty">Menge</th>
         <th class="col-unit">Einheit</th>
         <th class="col-price">Einzelpreis</th>
-        {% if not invoice.isKleinunternehmer %}<th class="col-vat">USt %</th>{% endif %}
+        {% if not invoice.isKleinunternehmer and not invoice.isReverseCharge %}<th class="col-vat">USt %</th>{% endif %}
         <th class="col-total">Gesamt</th>
       </tr>
     </thead>
@@ -80,7 +80,7 @@
           <td class="col-qty">{{ it.quantity | qty }}</td>
           <td class="col-unit">{{ it.unit }}</td>
           <td class="col-price">{{ it.unitPrice | eur }}</td>
-          {% if not invoice.isKleinunternehmer %}<td class="col-vat">{{ it.vatRate }}</td>{% endif %}
+          {% if not invoice.isKleinunternehmer and not invoice.isReverseCharge %}<td class="col-vat">{{ it.vatRate }}</td>{% endif %}
           <td class="col-total">{{ it.lineTotal | eur }}</td>
         </tr>
       {% endfor %}
@@ -93,7 +93,7 @@
         <th>Zwischensumme</th>
         <td>{{ invoice.subtotal | eur }}</td>
       </tr>
-      {% if not invoice.isKleinunternehmer %}
+      {% if not invoice.isKleinunternehmer and not invoice.isReverseCharge %}
         <tr>
           <th>Umsatzsteuer</th>
           <td>{{ invoice.vatAmount | eur }}</td>
@@ -108,6 +108,12 @@
 
   {% if invoice.isKleinunternehmer and company.kleinunternehmerNote %}
     <p class="callout">{{ company.kleinunternehmerNote }}</p>
+  {% endif %}
+
+  {% if invoice.isReverseCharge %}
+    <p class="callout">
+      Steuerschuldnerschaft des Leistungsempfängers / Reverse charge — VAT to be paid by the recipient.
+    </p>
   {% endif %}
 
   {% if invoice.paymentTerms %}

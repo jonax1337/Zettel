@@ -86,6 +86,9 @@ export const invoices = sqliteTable("invoices", {
   isKleinunternehmer: integer("is_kleinunternehmer", { mode: "boolean" })
     .notNull()
     .default(false),
+  isReverseCharge: integer("is_reverse_charge", { mode: "boolean" })
+    .notNull()
+    .default(false),
   notes: text("notes"),
   paymentTerms: text("payment_terms"),
   pdfPath: text("pdf_path"),
@@ -111,6 +114,34 @@ export const invoiceItems = sqliteTable("invoice_items", {
   lineTotal: integer("line_total").notNull().default(0),
 });
 
+export const recurringInvoices = sqliteTable("recurring_invoices", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  customerId: integer("customer_id").notNull(),
+  interval: text("interval", { enum: ["monthly", "quarterly", "yearly"] }).notNull(),
+  startDate: integer("start_date").notNull(),
+  nextDueDate: integer("next_due_date").notNull(),
+  lastGeneratedAt: integer("last_generated_at"),
+  paymentTermsDays: integer("payment_terms_days").notNull().default(14),
+  isReverseCharge: integer("is_reverse_charge", { mode: "boolean" }).notNull().default(false),
+  notes: text("notes"),
+  paymentTerms: text("payment_terms"),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+});
+
+export const recurringInvoiceItems = sqliteTable("recurring_invoice_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  recurringId: integer("recurring_id").notNull(),
+  position: integer("position").notNull(),
+  description: text("description").notNull().default(""),
+  quantity: real("quantity").notNull().default(1),
+  unit: text("unit").notNull().default("Stk"),
+  unitPrice: integer("unit_price").notNull().default(0),
+  vatRate: integer("vat_rate").notNull().default(0),
+});
+
 export type Settings = typeof settings.$inferSelect;
 export type SettingsInsert = typeof settings.$inferInsert;
 export type Customer = typeof customers.$inferSelect;
@@ -120,6 +151,9 @@ export type InvoiceInsert = typeof invoices.$inferInsert;
 export type InvoiceItem = typeof invoiceItems.$inferSelect;
 export type InvoiceItemInsert = typeof invoiceItems.$inferInsert;
 export type InvoiceStatus = Invoice["status"];
+export type RecurringInvoice = typeof recurringInvoices.$inferSelect;
+export type RecurringInvoiceItem = typeof recurringInvoiceItems.$inferSelect;
+export type RecurringInterval = RecurringInvoice["interval"];
 
 export type CustomerSnapshot = {
   customerNumber: string;
