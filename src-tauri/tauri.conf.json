@@ -46,6 +46,11 @@
   "plugins": {
     "sql": {
       "preload": ["sqlite:zettel.db"]
+    },
+    "updater": {
+      "endpoints": ["https://github.com/jonax1337/zettel/releases/latest/download/latest.json"],
+      "pubkey": "PLACEHOLDER_REPLACE_WITH_OUTPUT_OF_TAURI_SIGNER_GENERATE",
+      "dialog": false
     }
   }
 }

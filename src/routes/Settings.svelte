@@ -18,7 +18,9 @@
     Select,
     toast,
   } from "$lib/ui";
-  import { Image, X, Download, Upload } from "@lucide/svelte";
+  import { Image, X, Download, Upload, RefreshCw } from "@lucide/svelte";
+  import { version as appVersion } from "../../package.json";
+  import { checkForUpdate } from "$lib/updater";
 
   // aktueller DB-Schema-Stand (siehe src-tauri/src/lib.rs Migrations-Vektor)
   const CURRENT_DB_SCHEMA_VERSION = 9;
@@ -196,6 +198,32 @@
       }
     } finally {
       restoreBusy = false;
+    }
+  }
+
+  // --- Updates ---
+  let updateChecking = $state(false);
+
+  async function onCheckUpdate() {
+    updateChecking = true;
+    try {
+      const result = await checkForUpdate();
+      if (result.available) {
+        toast.action(
+          `Update v${result.version} verfügbar`,
+          {
+            label: "Installieren",
+            onClick: () => result.install(),
+          },
+          { description: "Klick zum Herunterladen und Neustarten." },
+        );
+      } else {
+        toast.success("Bereits aktuell.", `Installierte Version: v${appVersion}`);
+      }
+    } catch (e) {
+      toast.error("Update-Prüfung fehlgeschlagen", String(e));
+    } finally {
+      updateChecking = false;
     }
   }
 
@@ -579,6 +607,27 @@
           <code>zettel.db.bak</code> erhalten); bei Teil-Wiederherstellung werden nur die
           gewählten Bereiche aus dem Backup übernommen.
         </p>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Updates</CardTitle>
+        <CardDescription>
+          Prüft auf neue Versionen über GitHub Releases. Updates sind Ed25519-signiert.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="text-sm">
+            <span class="text-muted-foreground">Installierte Version:</span>
+            <code class="ml-1">v{appVersion}</code>
+          </div>
+          <Button type="button" variant="outline" onclick={onCheckUpdate} disabled={updateChecking}>
+            <RefreshCw class="size-4" />
+            {updateChecking ? "Prüfe…" : "Nach Updates suchen"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
 

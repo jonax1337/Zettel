@@ -16,6 +16,31 @@
   import Settings from "./routes/Settings.svelte";
   import Export from "./routes/Export.svelte";
   import NotFound from "./routes/NotFound.svelte";
+  import { onMount } from "svelte";
+  import { checkForUpdate, isTauri } from "$lib/updater";
+  import { toast } from "$lib/ui";
+
+  onMount(() => {
+    if (!isTauri()) return;
+    const timer = setTimeout(async () => {
+      try {
+        const result = await checkForUpdate();
+        if (result.available) {
+          toast.action(
+            `Update v${result.version} verfügbar`,
+            {
+              label: "Installieren",
+              onClick: () => result.install(),
+            },
+            { description: "Klick zum Herunterladen und Neustarten." },
+          );
+        }
+      } catch {
+        // Silent: offline, dev build without pubkey, etc.
+      }
+    }, 10_000);
+    return () => clearTimeout(timer);
+  });
 
   // svelte-spa-router's TS types are still Svelte 4-shaped; Svelte 5 Component<>
   // is structurally compatible at runtime, so we cast through unknown.
