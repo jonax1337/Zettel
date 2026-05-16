@@ -81,7 +81,7 @@ export function openInvoiceForm(id?: number) {
     label,
     url: `index.html#${path}?popup=1`,
     title: isEdit ? "Rechnung bearbeiten" : "Neue Rechnung",
-    width: 1100,
+    width: 950,
     height: 820,
     savedEvent: "invoice:saved",
   });

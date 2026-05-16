@@ -84,7 +84,7 @@
   </p>
 </header>
 
-<div class="space-y-6 max-w-3xl">
+<div class="space-y-6">
   <Card>
     <CardHeader>
       <CardTitle class="flex items-center gap-2">
