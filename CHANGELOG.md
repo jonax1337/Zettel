@@ -6,6 +6,14 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-05-16
+
+### Fixed
+- **Auto-Update brach mit „None of the fallback platforms found in response platforms object" ab.** Zwei Ursachen: (1) `bundle.createUpdaterArtifacts` war in `tauri.conf.json` nicht gesetzt, sodass Tauri 2 keine `.sig`-Dateien für die Updater-Bundles generierte. (2) Der `latest.json`-Builder im CI-Workflow suchte nach Tauri-v1-Format `*.nsis.zip.sig`, Tauri 2 signiert die NSIS-`-setup.exe` aber direkt (sig = `-setup.exe.sig`). Damit blieb `platforms` im Feed leer, jeder Update-Check schlug fehl.
+
+### Notes
+- Damit ist v0.4.3 das erste tatsächlich Update-fähige Release. v0.4.2 → v0.4.3 ist der erste echte Auto-Update-Roundtrip.
+
 ## [0.4.2] — 2026-05-16
 
 > **Hinweis:** v0.4.1 wurde nicht ausgeliefert — der CI-Build schlug fehl, weil `pnpm-lock.yaml` nicht aktualisiert war. v0.4.2 bündelt die Auto-Update-Implementierung und die Angebote-Verbesserungen mit dem Lockfile-Fix.
