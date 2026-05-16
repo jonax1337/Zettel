@@ -46,6 +46,7 @@ function buildPayload(opts: {
       vatAmount: invoice.vatAmount,
       total: invoice.total,
       isKleinunternehmer: invoice.isKleinunternehmer,
+      isReverseCharge: invoice.isReverseCharge,
       notes: invoice.notes,
       paymentTerms: invoice.paymentTerms,
     },

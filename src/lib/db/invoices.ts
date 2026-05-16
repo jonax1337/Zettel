@@ -23,6 +23,7 @@ type InvoiceRow = {
   vat_amount: number;
   total: number;
   is_kleinunternehmer: number;
+  is_reverse_charge: number;
   notes: string | null;
   payment_terms: string | null;
   pdf_path: string | null;
@@ -58,6 +59,7 @@ function mapInvoice(r: InvoiceRow): Invoice {
     vatAmount: r.vat_amount,
     total: r.total,
     isKleinunternehmer: r.is_kleinunternehmer === 1,
+    isReverseCharge: r.is_reverse_charge === 1,
     notes: r.notes,
     paymentTerms: r.payment_terms,
     pdfPath: r.pdf_path,
@@ -99,6 +101,7 @@ export type InvoiceFormInput = {
   dueDate: number;
   notes: string | null;
   paymentTerms: string | null;
+  isReverseCharge: boolean;
   items: InvoiceItemInput[];
 };
 
@@ -110,14 +113,15 @@ export function computeLineTotal(item: InvoiceItemInput): number {
 
 export function computeTotals(
   items: InvoiceItemInput[],
-  isKleinunternehmer: boolean,
+  opts: { isKleinunternehmer: boolean; isReverseCharge: boolean },
 ): { subtotal: number; vatAmount: number; total: number } {
+  const vatExempt = opts.isKleinunternehmer || opts.isReverseCharge;
   let subtotal = 0;
   let vatAmount = 0;
   for (const item of items) {
     const line = computeLineTotal(item);
     subtotal += line;
-    if (!isKleinunternehmer) {
+    if (!vatExempt) {
       vatAmount += Math.round((line * item.vatRate) / 100);
     }
   }
@@ -262,14 +266,18 @@ async function writeItems(
 export async function createInvoice(input: InvoiceFormInput): Promise<number> {
   const settings = await loadSettings();
   const snapshot = await buildCustomerSnapshot(input.customerId);
-  const totals = computeTotals(input.items, settings.isKleinunternehmer);
+  const totals = computeTotals(input.items, {
+    isKleinunternehmer: settings.isKleinunternehmer,
+    isReverseCharge: input.isReverseCharge,
+  });
   const { number } = await nextInvoiceNumber();
 
   const res = await execute(
     `INSERT INTO invoices
       (number, customer_id, customer_snapshot, issue_date, delivery_date, due_date,
-       status, subtotal, vat_amount, total, is_kleinunternehmer, notes, payment_terms)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)`,
+       status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
+       notes, payment_terms)
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.customerId,
@@ -281,6 +289,7 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
       totals.vatAmount,
       totals.total,
       settings.isKleinunternehmer ? 1 : 0,
+      input.isReverseCharge ? 1 : 0,
       input.notes,
       input.paymentTerms,
     ],
@@ -299,8 +308,10 @@ export async function updateInvoice(
   if (existing.invoice.status !== "draft") {
     throw new Error("Nur Entwürfe können bearbeitet werden.");
   }
-  const settings = await loadSettings();
-  const totals = computeTotals(input.items, existing.invoice.isKleinunternehmer);
+  const totals = computeTotals(input.items, {
+    isKleinunternehmer: existing.invoice.isKleinunternehmer,
+    isReverseCharge: input.isReverseCharge,
+  });
 
   // If customer changed, refresh snapshot.
   let snapshotJson = existing.invoice.customerSnapshot;
@@ -313,6 +324,7 @@ export async function updateInvoice(
       customer_id = ?, customer_snapshot = ?,
       issue_date = ?, delivery_date = ?, due_date = ?,
       subtotal = ?, vat_amount = ?, total = ?,
+      is_reverse_charge = ?,
       notes = ?, payment_terms = ?, updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -324,13 +336,13 @@ export async function updateInvoice(
       totals.subtotal,
       totals.vatAmount,
       totals.total,
+      input.isReverseCharge ? 1 : 0,
       input.notes,
       input.paymentTerms,
       id,
     ],
   );
   await writeItems(id, input.items);
-  void settings;
 }
 
 export async function deleteInvoice(id: number): Promise<void> {

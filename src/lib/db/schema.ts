@@ -86,6 +86,9 @@ export const invoices = sqliteTable("invoices", {
   isKleinunternehmer: integer("is_kleinunternehmer", { mode: "boolean" })
     .notNull()
     .default(false),
+  isReverseCharge: integer("is_reverse_charge", { mode: "boolean" })
+    .notNull()
+    .default(false),
   notes: text("notes"),
   paymentTerms: text("payment_terms"),
   pdfPath: text("pdf_path"),

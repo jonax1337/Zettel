@@ -23,6 +23,12 @@ pub fn run() {
             sql: include_str!("../../src/lib/db/migrations/0002_zugferd_profile.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "reverse_charge",
+            sql: include_str!("../../src/lib/db/migrations/0003_reverse_charge.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

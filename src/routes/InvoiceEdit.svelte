@@ -54,9 +54,55 @@
   let dueDateIso = $state(toIsoDate(addDaysUnix(nowUnix(), 14)));
   let notes = $state("");
   let paymentTerms = $state("");
+  let isReverseCharge = $state(false);
   let items = $state<Array<InvoiceItemInput & { priceText: string }>>([
     { description: "", quantity: 1, unit: "Stk", unitPrice: 0, vatRate: 0, priceText: "" },
   ]);
+
+  const selectedCustomer = $derived(
+    customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
+  );
+
+  // Reverse-Charge nur erlaubt, wenn weder Firma noch Rechnung Kleinunternehmer
+  // sind und beide Parteien eine USt-IdNr. haben. Wir prüfen das EU-Länder-Kriterium
+  // bewusst nicht automatisch — der User trägt die Verantwortung.
+  const canReverseCharge = $derived(
+    !!settings &&
+      !settings.isKleinunternehmer &&
+      !!settings.vatId &&
+      !!selectedCustomer?.vatId,
+  );
+
+  const reverseChargeBlockedReason = $derived.by(() => {
+    if (!settings) return "";
+    if (settings.isKleinunternehmer)
+      return "Nicht verfügbar für Kleinunternehmer (§ 19 UStG).";
+    if (!settings.vatId)
+      return "Eigene USt-IdNr. in den Einstellungen fehlt.";
+    if (!selectedCustomer) return "Erst Kunden auswählen.";
+    if (!selectedCustomer.vatId)
+      return "Kunde hat keine USt-IdNr. hinterlegt.";
+    return "";
+  });
+
+  $effect(() => {
+    if (!canReverseCharge && isReverseCharge) isReverseCharge = false;
+  });
+
+  $effect(() => {
+    if (isReverseCharge) {
+      let changed = false;
+      for (const it of items) {
+        if (it.vatRate !== 0) {
+          it.vatRate = 0;
+          changed = true;
+        }
+      }
+      if (changed) items = [...items];
+    }
+  });
+
+  const vatExempt = $derived(!!settings?.isKleinunternehmer || isReverseCharge);
 
   $effect(() => {
     Promise.all([loadSettings(), listCustomers()])
@@ -95,6 +141,7 @@
           dueDateIso = toIsoDate(res.invoice.dueDate);
           notes = res.invoice.notes ?? "";
           paymentTerms = res.invoice.paymentTerms ?? "";
+          isReverseCharge = res.invoice.isReverseCharge;
           items = res.items.map((it) => ({
             description: it.description,
             quantity: it.quantity,
@@ -136,7 +183,10 @@
 
   const totals = $derived.by(() => {
     if (!settings) return { subtotal: 0, vatAmount: 0, total: 0 };
-    return computeTotals(items, settings.isKleinunternehmer);
+    return computeTotals(items, {
+      isKleinunternehmer: settings.isKleinunternehmer,
+      isReverseCharge,
+    });
   });
 
   const customerItems = $derived(
@@ -164,6 +214,7 @@
         dueDate: fromIsoDate(dueDateIso),
         notes: notes.trim() || null,
         paymentTerms: paymentTerms.trim() || null,
+        isReverseCharge,
         items: items.map(({ priceText: _p, ...rest }) => rest),
       };
       let savedId: number;
@@ -247,6 +298,32 @@
             <Label>Liefer-/Leistungsdatum</Label>
             <Input type="date" bind:value={deliveryDateIso} />
           </div>
+          {#if settings && !settings.isKleinunternehmer}
+            <div class="col-span-2 flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
+              <input
+                id="reverse-charge"
+                type="checkbox"
+                bind:checked={isReverseCharge}
+                disabled={!canReverseCharge}
+                class="mt-0.5 size-4 rounded border-input accent-primary disabled:opacity-40"
+              />
+              <div class="flex-1 text-sm">
+                <label for="reverse-charge" class="font-medium cursor-pointer">
+                  Reverse-Charge (intra-EU B2B)
+                </label>
+                <p class="text-xs text-muted-foreground mt-0.5">
+                  Steuerschuldnerschaft des Leistungsempfängers. Setzt alle Positionen
+                  auf 0&nbsp;% USt und schreibt den Hinweis auf die Rechnung. Verantwortung
+                  für das EU-B2B-Kriterium liegt beim Nutzer.
+                </p>
+                {#if !canReverseCharge && reverseChargeBlockedReason}
+                  <p class="text-xs text-amber-600 dark:text-amber-500 mt-1">
+                    {reverseChargeBlockedReason}
+                  </p>
+                {/if}
+              </div>
+            </div>
+          {/if}
         </section>
       </CardContent>
     </Card>
@@ -270,7 +347,7 @@
               <th class="px-3 py-2 w-20 font-medium">Menge</th>
               <th class="px-3 py-2 w-20 font-medium">Einheit</th>
               <th class="px-3 py-2 w-28 font-medium">Preis (€)</th>
-              {#if !settings?.isKleinunternehmer}
+              {#if !vatExempt}
                 <th class="px-3 py-2 w-24 font-medium">USt</th>
               {/if}
               <th class="px-3 py-2 w-28 font-medium text-right">Summe</th>
@@ -303,7 +380,7 @@
                     class="text-right"
                   />
                 </td>
-                {#if !settings?.isKleinunternehmer}
+                {#if !vatExempt}
                   <td class="px-2 py-1.5">
                     <Select
                       bind:value={
@@ -336,13 +413,13 @@
           </tbody>
           <tfoot class="bg-muted/40 text-sm">
             <tr class="border-t">
-              <td colspan={settings?.isKleinunternehmer ? 5 : 6} class="px-3 py-2 text-right text-muted-foreground">
+              <td colspan={vatExempt ? 5 : 6} class="px-3 py-2 text-right text-muted-foreground">
                 Zwischensumme
               </td>
               <td class="px-3 py-2 text-right font-mono">{centsToEur(totals.subtotal)}</td>
               <td></td>
             </tr>
-            {#if !settings?.isKleinunternehmer}
+            {#if !vatExempt}
               <tr>
                 <td colspan="6" class="px-3 py-2 text-right text-muted-foreground">USt</td>
                 <td class="px-3 py-2 text-right font-mono">{centsToEur(totals.vatAmount)}</td>
@@ -350,7 +427,7 @@
               </tr>
             {/if}
             <tr class="border-t">
-              <td colspan={settings?.isKleinunternehmer ? 5 : 6} class="px-3 py-2 text-right font-semibold">
+              <td colspan={vatExempt ? 5 : 6} class="px-3 py-2 text-right font-semibold">
                 Gesamtbetrag
               </td>
               <td class="px-3 py-2 text-right font-mono font-semibold">{centsToEur(totals.total)}</td>

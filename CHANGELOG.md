@@ -6,6 +6,9 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+- Reverse-Charge / intra-EU B2B: Toggle im Rechnungs-Editor, ZUGFeRD `CategoryCode K` + `ExemptionReason`, Hinweistext „Steuerschuldnerschaft des Leistungsempfängers" auf der Rechnung. Aktivierbar nur wenn beide Parteien eine USt-IdNr. haben und der Sender nicht Kleinunternehmer ist. (#2)
+
 ## [0.1.0] — 2026-05-16
 
 ### Added
