@@ -62,8 +62,8 @@
 
   const profileItems = [
     { value: "en16931", label: "EN 16931 / Comfort (Standard)" },
-    { value: "basic", label: "BASIC — folgt in v0.2", disabled: true },
-    { value: "extended", label: "EXTENDED — folgt in v0.2", disabled: true },
+    { value: "basic", label: "BASIC (Factur-X 1.0)" },
+    { value: "extended", label: "EXTENDED (Factur-X 1.0)" },
   ];
 </script>
 
