@@ -369,6 +369,63 @@ export async function cancelExpense(id: number): Promise<void> {
   );
 }
 
+// --- Export helpers ---
+
+export type ExpenseForExport = {
+  expense: Expense;
+  items: ExpenseItem[];
+  vendorName: string;
+  vendorVatId: string | null;
+};
+
+export async function loadExpensesForExport(
+  dateFromUnix: number,
+  dateToUnix: number,
+  opts: { includeCancelled?: boolean } = {},
+): Promise<ExpenseForExport[]> {
+  const statusFilter = opts.includeCancelled
+    ? "status IN ('open','paid','cancelled')"
+    : "status IN ('open','paid')";
+  const rows = await select<ExpenseRow>(
+    `SELECT * FROM expenses
+     WHERE ${statusFilter}
+       AND issue_date >= ? AND issue_date <= ?
+     ORDER BY issue_date ASC, id ASC`,
+    [dateFromUnix, dateToUnix],
+  );
+  if (!rows.length) return [];
+  const ids = rows.map((r) => r.id);
+  const placeholders = ids.map(() => "?").join(",");
+  const itemRows = await select<ExpenseItemRow>(
+    `SELECT * FROM expense_items WHERE expense_id IN (${placeholders}) ORDER BY expense_id, position`,
+    ids,
+  );
+  const itemsByExp = new Map<number, ExpenseItem[]>();
+  for (const ir of itemRows) {
+    const arr = itemsByExp.get(ir.expense_id) ?? [];
+    arr.push(mapItem(ir));
+    itemsByExp.set(ir.expense_id, arr);
+  }
+  return rows.map((r) => {
+    const expense = mapExpense(r);
+    let vendorName = "—";
+    let vendorVatId: string | null = null;
+    try {
+      const snap = JSON.parse(r.vendor_snapshot) as { name?: string; vatId?: string | null };
+      vendorName = snap.name ?? "—";
+      vendorVatId = snap.vatId ?? null;
+    } catch {
+      /* defaults */
+    }
+    return {
+      expense,
+      items: itemsByExp.get(r.id) ?? [],
+      vendorName,
+      vendorVatId,
+    };
+  });
+}
+
 // --- Aggregates for dashboard ---
 
 export async function sumOpenExpenses(): Promise<{ count: number; total: number }> {

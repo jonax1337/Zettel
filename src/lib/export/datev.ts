@@ -12,7 +12,7 @@
  * Format-Version 700 problemlos. Wer den klassischen cp1252-Strom braucht,
  * kann das beim Schreiben übersetzen.
  */
-import type { Invoice, InvoiceItem } from "$lib/db/schema";
+import type { Expense, ExpenseItem, Invoice, InvoiceItem } from "$lib/db/schema";
 
 export type DatevAccountMap = {
   /** Sammel-Debitor (Forderungen aus Lieferungen und Leistungen). */
@@ -25,6 +25,16 @@ export type DatevAccountMap = {
   revenueExempt: number;
   /** Steuerfreie innergemeinschaftliche Lieferung (Reverse-Charge). */
   revenueIntraEu: number;
+  /** Sammel-Kreditor (Verbindlichkeiten aus Lieferungen und Leistungen). */
+  kreditor: number;
+  /** Aufwand mit 19 % Vorsteuerabzug. */
+  expense19: number;
+  /** Aufwand mit 7 % Vorsteuerabzug. */
+  expense7: number;
+  /** Aufwand ohne Vorsteuerabzug (z. B. Kleinunternehmer-Lieferant). */
+  expenseExempt: number;
+  /** Aufwand Reverse-Charge-Bezug (§ 13b UStG). */
+  expenseReverseCharge: number;
 };
 
 export const SKR03: DatevAccountMap = {
@@ -33,6 +43,11 @@ export const SKR03: DatevAccountMap = {
   revenue7: 8300,
   revenueExempt: 8200,
   revenueIntraEu: 8336,
+  kreditor: 70000,
+  expense19: 3400,
+  expense7: 3300,
+  expenseExempt: 3200,
+  expenseReverseCharge: 3123,
 };
 
 export const SKR04: DatevAccountMap = {
@@ -41,6 +56,11 @@ export const SKR04: DatevAccountMap = {
   revenue7: 4300,
   revenueExempt: 4200,
   revenueIntraEu: 4125,
+  kreditor: 73000,
+  expense19: 5400,
+  expense7: 5300,
+  expenseExempt: 5200,
+  expenseReverseCharge: 5923,
 };
 
 export type Skr = "SKR03" | "SKR04";
@@ -74,6 +94,13 @@ export type DatevInvoiceInput = {
   items: InvoiceItem[];
   customerName: string;
   customerVatId: string | null;
+};
+
+export type DatevExpenseInput = {
+  expense: Expense;
+  items: ExpenseItem[];
+  vendorName: string;
+  vendorVatId: string | null;
 };
 
 // ----- Helpers -----
@@ -193,6 +220,70 @@ function bookingsForInvoice(input: DatevInvoiceInput, accounts: DatevAccountMap)
   return out;
 }
 
+function expenseAccountFor(
+  vatRate: number,
+  isReverseCharge: boolean,
+  accounts: DatevAccountMap,
+): number {
+  if (isReverseCharge) return accounts.expenseReverseCharge;
+  if (vatRate === 19) return accounts.expense19;
+  if (vatRate === 7) return accounts.expense7;
+  return accounts.expenseExempt;
+}
+
+/**
+ * Eingangsrechnung → Buchungen. Soll = Aufwandskonto (passend zum USt-Satz),
+ * Haben = Sammel-Kreditor. Stornierte Eingangsrechnungen drehen Soll/Haben.
+ * `expense_items.datev_account` (falls gesetzt) überschreibt das Default-Konto
+ * pro Position — innerhalb der Gruppe wird per Account aggregiert.
+ */
+function bookingsForExpense(input: DatevExpenseInput, accounts: DatevAccountMap): Booking[] {
+  const { expense, items, vendorName, vendorVatId } = input;
+  const isRc = expense.isReverseCharge;
+  const isCancelled = expense.status === "cancelled";
+
+  // Gruppen-Key: "<account>|<rate>" — explizite datev_account-Overrides bleiben
+  // pro Position erhalten.
+  const groups = new Map<string, { account: number; rate: number; net: number; vat: number }>();
+  for (const it of items) {
+    const account = it.datevAccount
+      ? Number.parseInt(it.datevAccount, 10) || expenseAccountFor(it.vatRate, isRc, accounts)
+      : expenseAccountFor(it.vatRate, isRc, accounts);
+    const effectiveRate = isRc ? 0 : it.vatRate;
+    const net = it.lineTotal;
+    const vat = isRc ? 0 : Math.round((net * it.vatRate) / 100);
+    const key = `${account}|${effectiveRate}`;
+    const g = groups.get(key) ?? { account, rate: effectiveRate, net: 0, vat: 0 };
+    g.net += net;
+    g.vat += vat;
+    groups.set(key, g);
+  }
+
+  const belegdatum = new Date(expense.issueDate * 1000);
+  const out: Booking[] = [];
+  const sortedKeys = [...groups.keys()].sort();
+  for (const key of sortedKeys) {
+    const g = groups.get(key)!;
+    const gross = g.net + g.vat;
+    out.push({
+      amountCents: gross,
+      debit: g.account,
+      credit: accounts.kreditor,
+      sollHaben: isCancelled ? "H" : "S",
+      buSchluessel: "",
+      belegdatum,
+      belegfeld1: expense.internalNumber,
+      buchungstext: truncate(
+        `${isCancelled ? "Storno" : "Eingangsrechnung"} ${vendorName}${expense.number ? ` (${expense.number})` : ""}`,
+        60,
+      ),
+      euVatId: isRc ? vendorVatId : null,
+      euLand: isRc && vendorVatId ? vendorVatId.slice(0, 2) : null,
+    });
+  }
+  return out;
+}
+
 // ----- CSV assembly -----
 
 /** DATEV-Spalten in der Reihenfolge laut Spec 7.00 (Auszug, nur Pflicht + EU). */
@@ -298,18 +389,25 @@ function rowFor(b: Booking): string {
 /** UTF-8-BOM-Präfix, von DATEV ab Format 700 akzeptiert. */
 export const UTF8_BOM = "﻿";
 
+export type DatevBatchInput = {
+  invoices?: DatevInvoiceInput[];
+  expenses?: DatevExpenseInput[];
+};
+
 export function buildDatevCsv(
-  inputs: DatevInvoiceInput[],
+  inputs: DatevInvoiceInput[] | DatevBatchInput,
   opts: DatevExportOpts,
   now: Date = new Date(),
 ): string {
+  const batch: DatevBatchInput = Array.isArray(inputs) ? { invoices: inputs } : inputs;
   const headerLine = buildHeaderLine(opts, now);
   const columnLine = COLUMN_HEADERS.map(quote).join(";");
   const rows: string[] = [];
-  for (const input of inputs) {
-    for (const b of bookingsForInvoice(input, opts.accounts)) {
-      rows.push(rowFor(b));
-    }
+  for (const input of batch.invoices ?? []) {
+    for (const b of bookingsForInvoice(input, opts.accounts)) rows.push(rowFor(b));
+  }
+  for (const input of batch.expenses ?? []) {
+    for (const b of bookingsForExpense(input, opts.accounts)) rows.push(rowFor(b));
   }
   // DATEV erwartet CRLF.
   return UTF8_BOM + [headerLine, columnLine, ...rows].join("\r\n") + "\r\n";
