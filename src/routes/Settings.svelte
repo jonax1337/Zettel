@@ -258,11 +258,28 @@
   }
 </script>
 
-<header class="mb-6">
-  <h1 class="text-3xl font-semibold tracking-tight">Einstellungen</h1>
-  <p class="text-sm text-muted-foreground mt-1">
-    Firmendaten, Steuer, Rechnungsnummer, Bank.
-  </p>
+<header class="mb-6 flex items-end justify-between gap-4">
+  <div>
+    <h1 class="text-3xl font-semibold tracking-tight">Einstellungen</h1>
+    <p class="text-sm text-muted-foreground mt-1">
+      Firmendaten, Steuer, Rechnungsnummer, Bank.
+    </p>
+  </div>
+  <div class="flex items-center gap-3 text-sm">
+    <span class="text-muted-foreground">
+      Version <code class="text-foreground">v{appVersion}</code>
+    </span>
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onclick={onCheckUpdate}
+      disabled={updateChecking}
+    >
+      <RefreshCw class={"size-3.5 " + (updateChecking ? "animate-spin" : "")} />
+      {updateChecking ? "Prüfe…" : "Nach Updates suchen"}
+    </Button>
+  </div>
 </header>
 
 {#if loading}
@@ -607,27 +624,6 @@
           <code>zettel.db.bak</code> erhalten); bei Teil-Wiederherstellung werden nur die
           gewählten Bereiche aus dem Backup übernommen.
         </p>
-      </CardContent>
-    </Card>
-
-    <Card>
-      <CardHeader>
-        <CardTitle>Updates</CardTitle>
-        <CardDescription>
-          Prüft auf neue Versionen über GitHub Releases. Updates sind Ed25519-signiert.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div class="flex flex-wrap items-center gap-3">
-          <div class="text-sm">
-            <span class="text-muted-foreground">Installierte Version:</span>
-            <code class="ml-1">v{appVersion}</code>
-          </div>
-          <Button type="button" variant="outline" onclick={onCheckUpdate} disabled={updateChecking}>
-            <RefreshCw class="size-4" />
-            {updateChecking ? "Prüfe…" : "Nach Updates suchen"}
-          </Button>
-        </div>
       </CardContent>
     </Card>
 
