@@ -8,6 +8,7 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 - Reverse-Charge / intra-EU B2B: Toggle im Rechnungs-Editor, ZUGFeRD `CategoryCode K` + `ExemptionReason`, Hinweistext „Steuerschuldnerschaft des Leistungsempfängers" auf der Rechnung. Aktivierbar nur wenn beide Parteien eine USt-IdNr. haben und der Sender nicht Kleinunternehmer ist. (#2)
+- DATEV-Export (Buchungsstapel, Format 700) unter `/export`: Zeitraum + Kontenrahmen wählen, CSV mit UTF-8-BOM und CRLF-Zeilenenden speichern. SKR03 (Default) und SKR04. Eine Buchungszeile pro USt-Rate pro Rechnung. Kleinunternehmer-Rechnungen auf das steuerfreie Erlöskonto (8200/4200), Reverse-Charge auf das innergem.-Lieferungs-Konto (8336/4125), Kunden-USt-IdNr. im Feld „EU-Land u. UStID". (#4)
 
 ## [0.1.0] — 2026-05-16
 

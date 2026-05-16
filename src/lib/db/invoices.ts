@@ -505,6 +505,57 @@ export async function topCustomers(limit = 5, months = 12): Promise<TopCustomer[
   }));
 }
 
+export type InvoiceForExport = {
+  invoice: Invoice;
+  items: InvoiceItem[];
+  customerName: string;
+  customerVatId: string | null;
+};
+
+export async function loadInvoicesForExport(
+  dateFromUnix: number,
+  dateToUnix: number,
+): Promise<InvoiceForExport[]> {
+  const invRows = await select<InvoiceRow>(
+    `SELECT * FROM invoices
+     WHERE status IN ('sent','paid')
+       AND issue_date >= ? AND issue_date <= ?
+     ORDER BY issue_date ASC, id ASC`,
+    [dateFromUnix, dateToUnix],
+  );
+  if (!invRows.length) return [];
+  const ids = invRows.map((r) => r.id);
+  const placeholders = ids.map(() => "?").join(",");
+  const itemRows = await select<InvoiceItemRow>(
+    `SELECT * FROM invoice_items WHERE invoice_id IN (${placeholders}) ORDER BY invoice_id, position`,
+    ids,
+  );
+  const itemsByInv = new Map<number, InvoiceItem[]>();
+  for (const ir of itemRows) {
+    const arr = itemsByInv.get(ir.invoice_id) ?? [];
+    arr.push(mapItem(ir));
+    itemsByInv.set(ir.invoice_id, arr);
+  }
+  return invRows.map((r) => {
+    const invoice = mapInvoice(r);
+    let customerName = "—";
+    let customerVatId: string | null = null;
+    try {
+      const snap = JSON.parse(r.customer_snapshot) as CustomerSnapshot;
+      customerName = snap.name ?? "—";
+      customerVatId = snap.vatId ?? null;
+    } catch {
+      /* defaults */
+    }
+    return {
+      invoice,
+      items: itemsByInv.get(r.id) ?? [],
+      customerName,
+      customerVatId,
+    };
+  });
+}
+
 export async function recentInvoices(limit = 10): Promise<InvoiceListRow[]> {
   const rows = await select<InvoiceRow & { customer_name: string }>(
     `SELECT i.*, c.name AS customer_name
