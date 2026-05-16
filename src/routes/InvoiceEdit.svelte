@@ -18,12 +18,26 @@
     nowUnix,
     toIsoDate,
   } from "$lib/utils/date";
+  import {
+    Button,
+    Input,
+    Textarea,
+    Label,
+    Card,
+    CardContent,
+    Select,
+    toast,
+  } from "$lib/ui";
+  import { ArrowLeft, Plus, Trash2 } from "@lucide/svelte";
+  import { isPopupWindow, emitSavedAndClose } from "$lib/window";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
 
   type Props = {
     mode: "new" | "edit";
     params?: { id?: string };
   };
   let { mode, params }: Props = $props();
+  const popup = isPopupWindow();
 
   let customers = $state<Customer[]>([]);
   let settings = $state<Settings | null>(null);
@@ -34,7 +48,7 @@
   let saving = $state(false);
   let error = $state<string | null>(null);
 
-  let customerId = $state<number | null>(null);
+  let customerIdStr = $state<string>("");
   let issueDateIso = $state(toIsoDate(nowUnix()));
   let deliveryDateIso = $state("");
   let dueDateIso = $state(toIsoDate(addDaysUnix(nowUnix(), 14)));
@@ -44,13 +58,11 @@
     { description: "", quantity: 1, unit: "Stk", unitPrice: 0, vatRate: 0, priceText: "" },
   ]);
 
-  // Load settings + customers, then optionally load existing invoice.
   $effect(() => {
     Promise.all([loadSettings(), listCustomers()])
       .then(([s, cs]) => {
         settings = s;
         customers = cs;
-        // Default values from settings
         if (mode === "new") {
           paymentTerms = `Zahlbar innerhalb von ${s.defaultPaymentTermsDays} Tagen ohne Abzug.`;
           for (const it of items) it.vatRate = s.isKleinunternehmer ? 0 : 19;
@@ -75,7 +87,7 @@
             error = "Nur Entwürfe können bearbeitet werden.";
             return;
           }
-          customerId = res.invoice.customerId;
+          customerIdStr = String(res.invoice.customerId);
           issueDateIso = toIsoDate(res.invoice.issueDate);
           deliveryDateIso = res.invoice.deliveryDate
             ? toIsoDate(res.invoice.deliveryDate)
@@ -127,9 +139,14 @@
     return computeTotals(items, settings.isKleinunternehmer);
   });
 
+  const customerItems = $derived(
+    customers.map((c) => ({ value: String(c.id), label: `${c.customerNumber} · ${c.name}` })),
+  );
+
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
-    if (customerId === null) {
+    const customerId = customerIdStr ? Number.parseInt(customerIdStr, 10) : null;
+    if (customerId === null || Number.isNaN(customerId)) {
       error = "Bitte einen Kunden auswählen.";
       return;
     }
@@ -152,186 +169,218 @@
       let savedId: number;
       if (mode === "new") {
         savedId = await createInvoice(input);
+        toast.success("Rechnung erstellt");
       } else if (id !== null) {
         await updateInvoice(id, input);
+        toast.success("Änderungen gespeichert");
         savedId = id;
       } else {
         throw new Error("Keine ID");
       }
-      push(`/invoices/${savedId}`);
+      if (popup) {
+        await emitSavedAndClose("invoice:saved", { id: savedId });
+      } else {
+        push(`/invoices/${savedId}`);
+      }
     } catch (err) {
       error = String(err);
+      toast.error("Speichern fehlgeschlagen", String(err));
     } finally {
       saving = false;
     }
   }
 
-  const inputClass =
-    "border rounded px-2 py-1.5 border-neutral-300 dark:border-neutral-700 bg-transparent";
+  async function onCancel() {
+    if (popup) {
+      await getCurrentWindow().close();
+    } else {
+      push("/invoices");
+    }
+  }
+
+  const vatItems = [
+    { value: "0", label: "0 %" },
+    { value: "7", label: "7 %" },
+    { value: "19", label: "19 %" },
+  ];
 </script>
 
-<header class="mb-6">
-  <a href="/invoices" use:link class="text-sm text-neutral-500 hover:underline">
-    ← Rechnungen
-  </a>
-  <h1 class="text-2xl font-semibold mt-1">
-    {mode === "new" ? "Neue Rechnung" : "Rechnung bearbeiten"}
-  </h1>
-</header>
+{#if !popup}
+  <header class="mb-6">
+    <a
+      href="/invoices"
+      use:link
+      class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+    >
+      <ArrowLeft class="size-4" /> Rechnungen
+    </a>
+    <h1 class="text-3xl font-semibold tracking-tight mt-2">
+      {mode === "new" ? "Neue Rechnung" : "Rechnung bearbeiten"}
+    </h1>
+  </header>
+{/if}
 
 {#if loading}
-  <p class="text-sm text-neutral-500">Lade…</p>
+  <p class="text-sm text-muted-foreground">Lade…</p>
 {:else}
-  <form onsubmit={onSubmit} class="max-w-4xl space-y-6">
-    <section class="grid grid-cols-2 gap-3">
-      <label class="col-span-2 flex flex-col gap-1 text-sm">
-        Kunde <span class="text-red-600">*</span>
-        <select bind:value={customerId} class={inputClass} required>
-          <option value={null}>— bitte wählen —</option>
-          {#each customers as c}
-            <option value={c.id}>{c.customerNumber} · {c.name}</option>
-          {/each}
-        </select>
-      </label>
-      <label class="flex flex-col gap-1 text-sm">
-        Rechnungsdatum
-        <input type="date" class={inputClass} bind:value={issueDateIso} required />
-      </label>
-      <label class="flex flex-col gap-1 text-sm">
-        Fällig am
-        <input type="date" class={inputClass} bind:value={dueDateIso} required />
-      </label>
-      <label class="flex flex-col gap-1 text-sm">
-        Liefer-/Leistungsdatum
-        <input type="date" class={inputClass} bind:value={deliveryDateIso} />
-      </label>
-    </section>
+  <form onsubmit={onSubmit} class="space-y-6">
+    <Card>
+      <CardContent>
+        <section class="grid grid-cols-2 gap-4">
+          <div class="col-span-2 flex flex-col gap-1.5">
+            <Label>Kunde <span class="text-destructive">*</span></Label>
+            <Select
+              bind:value={customerIdStr}
+              items={customerItems}
+              placeholder="— bitte wählen —"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label>Rechnungsdatum</Label>
+            <Input type="date" bind:value={issueDateIso} required />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label>Fällig am</Label>
+            <Input type="date" bind:value={dueDateIso} required />
+          </div>
+          <div class="flex flex-col gap-1.5 col-span-2">
+            <Label>Liefer-/Leistungsdatum</Label>
+            <Input type="date" bind:value={deliveryDateIso} />
+          </div>
+        </section>
+      </CardContent>
+    </Card>
 
     <section>
-      <div class="flex items-center justify-between mb-2">
-        <h2 class="text-sm font-semibold uppercase text-neutral-500">Positionen</h2>
-        <button
-          type="button"
-          onclick={addItem}
-          class="text-sm px-2 py-1 rounded border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-        >
-          + Position
-        </button>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold uppercase text-muted-foreground tracking-wider">
+          Positionen
+        </h2>
+        <Button type="button" size="sm" variant="outline" onclick={addItem}>
+          <Plus />
+          Position
+        </Button>
       </div>
-      <div class="border rounded overflow-hidden border-neutral-200 dark:border-neutral-800">
+      <Card class="overflow-hidden py-0">
         <table class="w-full text-sm">
-          <thead class="bg-neutral-50 dark:bg-neutral-900 text-left">
-            <tr>
-              <th class="px-2 py-2 w-12">#</th>
-              <th class="px-2 py-2">Beschreibung</th>
-              <th class="px-2 py-2 w-20">Menge</th>
-              <th class="px-2 py-2 w-20">Einheit</th>
-              <th class="px-2 py-2 w-28">Preis (€)</th>
+          <thead class="bg-muted/40 text-left">
+            <tr class="text-xs uppercase tracking-wider text-muted-foreground">
+              <th class="px-3 py-2 w-10 font-medium">#</th>
+              <th class="px-3 py-2 font-medium">Beschreibung</th>
+              <th class="px-3 py-2 w-20 font-medium">Menge</th>
+              <th class="px-3 py-2 w-20 font-medium">Einheit</th>
+              <th class="px-3 py-2 w-28 font-medium">Preis (€)</th>
               {#if !settings?.isKleinunternehmer}
-                <th class="px-2 py-2 w-20">USt %</th>
+                <th class="px-3 py-2 w-24 font-medium">USt</th>
               {/if}
-              <th class="px-2 py-2 w-28 text-right">Summe</th>
-              <th class="px-2 py-2 w-10"></th>
+              <th class="px-3 py-2 w-28 font-medium text-right">Summe</th>
+              <th class="px-3 py-2 w-10 font-medium"></th>
             </tr>
           </thead>
           <tbody>
             {#each items as it, idx (idx)}
-              <tr class="border-t border-neutral-200 dark:border-neutral-800">
-                <td class="px-2 py-1 text-xs text-neutral-500">{idx + 1}</td>
-                <td class="px-2 py-1">
-                  <input class="{inputClass} w-full" bind:value={it.description} required />
+              <tr class="border-t">
+                <td class="px-3 py-2 text-xs text-muted-foreground">{idx + 1}</td>
+                <td class="px-2 py-1.5">
+                  <Input bind:value={it.description} required />
                 </td>
-                <td class="px-2 py-1">
-                  <input
+                <td class="px-2 py-1.5">
+                  <Input
                     type="number"
                     step="0.01"
                     min="0"
-                    class="{inputClass} w-full"
                     bind:value={it.quantity}
                   />
                 </td>
-                <td class="px-2 py-1">
-                  <input class="{inputClass} w-full" bind:value={it.unit} />
+                <td class="px-2 py-1.5">
+                  <Input bind:value={it.unit} />
                 </td>
-                <td class="px-2 py-1">
-                  <input
-                    class="{inputClass} w-full text-right"
+                <td class="px-2 py-1.5">
+                  <Input
                     bind:value={it.priceText}
                     onblur={() => onPriceBlur(idx)}
                     placeholder="0,00"
+                    class="text-right"
                   />
                 </td>
                 {#if !settings?.isKleinunternehmer}
-                  <td class="px-2 py-1">
-                    <select bind:value={it.vatRate} class="{inputClass} w-full">
-                      <option value={0}>0</option>
-                      <option value={7}>7</option>
-                      <option value={19}>19</option>
-                    </select>
+                  <td class="px-2 py-1.5">
+                    <Select
+                      bind:value={
+                        () => String(it.vatRate),
+                        (v) => {
+                          it.vatRate = Number.parseInt(v, 10);
+                          items = [...items];
+                        }
+                      }
+                      items={vatItems}
+                    />
                   </td>
                 {/if}
-                <td class="px-2 py-1 text-right font-mono text-xs">
+                <td class="px-3 py-2 text-right font-mono text-xs">
                   {centsToEur(computeLineTotal(it))}
                 </td>
-                <td class="px-2 py-1 text-right">
+                <td class="px-2 py-1.5 text-right">
                   <button
                     type="button"
                     onclick={() => removeItem(idx)}
                     disabled={items.length === 1}
-                    class="text-xs text-red-600 hover:underline disabled:text-neutral-400"
+                    class="inline-flex items-center justify-center size-8 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30 disabled:pointer-events-none transition-colors"
                     title="Position entfernen"
                   >
-                    ✕
+                    <Trash2 class="size-4" />
                   </button>
                 </td>
               </tr>
             {/each}
           </tbody>
-          <tfoot class="bg-neutral-50 dark:bg-neutral-900 text-sm">
-            <tr class="border-t border-neutral-200 dark:border-neutral-800">
-              <td colspan={settings?.isKleinunternehmer ? 5 : 6} class="px-2 py-1.5 text-right text-neutral-500">Zwischensumme</td>
-              <td class="px-2 py-1.5 text-right font-mono">{centsToEur(totals.subtotal)}</td>
+          <tfoot class="bg-muted/40 text-sm">
+            <tr class="border-t">
+              <td colspan={settings?.isKleinunternehmer ? 5 : 6} class="px-3 py-2 text-right text-muted-foreground">
+                Zwischensumme
+              </td>
+              <td class="px-3 py-2 text-right font-mono">{centsToEur(totals.subtotal)}</td>
               <td></td>
             </tr>
             {#if !settings?.isKleinunternehmer}
               <tr>
-                <td colspan="6" class="px-2 py-1.5 text-right text-neutral-500">USt</td>
-                <td class="px-2 py-1.5 text-right font-mono">{centsToEur(totals.vatAmount)}</td>
+                <td colspan="6" class="px-3 py-2 text-right text-muted-foreground">USt</td>
+                <td class="px-3 py-2 text-right font-mono">{centsToEur(totals.vatAmount)}</td>
                 <td></td>
               </tr>
             {/if}
-            <tr class="border-t border-neutral-200 dark:border-neutral-800">
-              <td colspan={settings?.isKleinunternehmer ? 5 : 6} class="px-2 py-1.5 text-right font-semibold">Gesamtbetrag</td>
-              <td class="px-2 py-1.5 text-right font-mono font-semibold">{centsToEur(totals.total)}</td>
+            <tr class="border-t">
+              <td colspan={settings?.isKleinunternehmer ? 5 : 6} class="px-3 py-2 text-right font-semibold">
+                Gesamtbetrag
+              </td>
+              <td class="px-3 py-2 text-right font-mono font-semibold">{centsToEur(totals.total)}</td>
               <td></td>
             </tr>
           </tfoot>
         </table>
-      </div>
+      </Card>
     </section>
 
-    <section class="grid grid-cols-1 gap-3">
-      <label class="flex flex-col gap-1 text-sm">
-        Zahlungsbedingungen
-        <textarea rows="2" class={inputClass} bind:value={paymentTerms}></textarea>
-      </label>
-      <label class="flex flex-col gap-1 text-sm">
-        Notizen / Fußtext
-        <textarea rows="3" class={inputClass} bind:value={notes}></textarea>
-      </label>
-    </section>
+    <Card>
+      <CardContent class="space-y-4">
+        <div class="flex flex-col gap-1.5">
+          <Label>Zahlungsbedingungen</Label>
+          <Textarea rows={2} bind:value={paymentTerms} />
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <Label>Notizen / Fußtext</Label>
+          <Textarea rows={3} bind:value={notes} />
+        </div>
+      </CardContent>
+    </Card>
 
     <div class="flex items-center gap-3">
-      <button
-        type="submit"
-        disabled={saving}
-        class="px-4 py-2 rounded bg-neutral-900 text-white text-sm hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
-      >
+      <Button type="submit" disabled={saving}>
         {saving ? "Speichere…" : mode === "new" ? "Anlegen" : "Speichern"}
-      </button>
-      <a href="/invoices" use:link class="text-sm text-neutral-500 hover:underline">Abbrechen</a>
+      </Button>
+      <Button type="button" onclick={onCancel} variant="ghost">Abbrechen</Button>
       {#if error}
-        <span class="text-sm text-red-600">{error}</span>
+        <span class="text-sm text-destructive">{error}</span>
       {/if}
     </div>
   </form>

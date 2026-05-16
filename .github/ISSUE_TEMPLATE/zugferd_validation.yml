@@ -1,0 +1,40 @@
+name: ZUGFeRD/Factur-X Validierungsfehler
+description: Eine erzeugte Rechnung wird von einem Validator abgelehnt
+title: "[ZUGFeRD]: "
+labels: ["zugferd", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Wichtig:** Bitte keine echten Rechnungen mit personenbezogenen Daten anhängen. Anonymisierte Beispiele genügen.
+  - type: input
+    id: validator
+    attributes:
+      label: Verwendeter Validator
+      placeholder: erechnungs-validator.de, Mustang, KoSIT, ...
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Fehlermeldung des Validators
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: profile
+    attributes:
+      label: ZUGFeRD-Profil
+      placeholder: EN 16931
+  - type: textarea
+    id: payload
+    attributes:
+      label: Eingabe-Payload (anonymisiert)
+      description: Den JSON-Payload, mit dem die Rechnung erzeugt wurde, idealerweise minimiert.
+      render: json
+  - type: checkboxes
+    id: kleinunternehmer
+    attributes:
+      label: Kleinunternehmer?
+      options:
+        - label: Die Rechnung wurde im Kleinunternehmer-Modus (§19 UStG) erzeugt

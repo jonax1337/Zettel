@@ -1,14 +1,30 @@
 <script lang="ts">
-  import { link, push } from "svelte-spa-router";
+  import { push } from "svelte-spa-router";
   import { listCustomers } from "$lib/db/queries";
   import {
     dashboardStats,
+    monthlyRevenue,
     recentInvoices,
+    topCustomers,
     type InvoiceListRow,
+    type MonthlyRevenuePoint,
+    type TopCustomer,
   } from "$lib/db/invoices";
   import type { InvoiceStatus } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
+  import { Card, CardContent, Button, Badge } from "$lib/ui";
+  import RevenueChart from "$lib/components/RevenueChart.svelte";
+  import {
+    Users,
+    Clock,
+    CheckCircle2,
+    AlertTriangle,
+    Plus,
+    UserPlus,
+    Trophy,
+  } from "@lucide/svelte";
+  import { openCustomerForm, openInvoiceForm } from "$lib/window";
 
   let customerCount = $state(0);
   let stats = $state({
@@ -19,17 +35,42 @@
     overdueTotal: 0,
   });
   let recent = $state<InvoiceListRow[]>([]);
+  let revenue = $state<MonthlyRevenuePoint[]>([]);
+  let top = $state<TopCustomer[]>([]);
   let loading = $state(true);
 
+  async function reload() {
+    const [cs, s, r, rev, tc] = await Promise.all([
+      listCustomers(),
+      dashboardStats(),
+      recentInvoices(10),
+      monthlyRevenue(12),
+      topCustomers(5, 12),
+    ]);
+    customerCount = cs.length;
+    stats = s;
+    recent = r;
+    revenue = rev;
+    top = tc;
+    loading = false;
+  }
+
   $effect(() => {
-    Promise.all([listCustomers(), dashboardStats(), recentInvoices(10)])
-      .then(([cs, s, r]) => {
-        customerCount = cs.length;
-        stats = s;
-        recent = r;
-      })
-      .finally(() => (loading = false));
+    reload();
   });
+
+  async function newInvoice() {
+    const res = await openInvoiceForm();
+    if (res.saved) {
+      await reload();
+      if (res.data?.id) push(`/invoices/${res.data.id}`);
+    }
+  }
+
+  async function newCustomer() {
+    const res = await openCustomerForm();
+    if (res.saved) await reload();
+  }
 
   const statusLabel: Record<InvoiceStatus, string> = {
     draft: "Entwurf",
@@ -37,79 +78,179 @@
     paid: "Bezahlt",
     cancelled: "Storniert",
   };
+
+  const statusVariant: Record<InvoiceStatus, "secondary" | "warning" | "success" | "outline"> = {
+    draft: "secondary",
+    sent: "warning",
+    paid: "success",
+    cancelled: "outline",
+  };
+
+  const topMax = $derived(Math.max(1, ...top.map((c) => c.paidTotal)));
 </script>
 
-<header class="mb-6">
-  <h1 class="text-2xl font-semibold">Dashboard</h1>
-  <p class="text-sm text-neutral-500">Übersicht & Schnellzugriff</p>
+<header class="mb-6 flex items-end justify-between gap-4">
+  <div>
+    <h1 class="text-3xl font-semibold tracking-tight">Dashboard</h1>
+    <p class="text-sm text-muted-foreground mt-1">Übersicht & Schnellzugriff</p>
+  </div>
+  <div class="flex gap-2">
+    <Button onclick={newInvoice}>
+      <Plus />
+      Neue Rechnung
+    </Button>
+    <Button onclick={newCustomer} variant="outline">
+      <UserPlus />
+      Neuer Kunde
+    </Button>
+  </div>
 </header>
 
-<div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
-  <div class="border rounded p-4 border-neutral-200 dark:border-neutral-800">
-    <div class="text-xs text-neutral-500 uppercase">Kunden</div>
-    <div class="text-2xl font-semibold mt-1">{loading ? "…" : customerCount}</div>
-  </div>
-  <div class="border rounded p-4 border-neutral-200 dark:border-neutral-800">
-    <div class="text-xs text-neutral-500 uppercase">Offen</div>
-    <div class="text-2xl font-semibold mt-1">{loading ? "…" : centsToEur(stats.openTotal)}</div>
-    <div class="text-xs text-neutral-400 mt-1">{stats.openCount} Rechnung{stats.openCount === 1 ? "" : "en"}</div>
-  </div>
-  <div class="border rounded p-4 border-neutral-200 dark:border-neutral-800">
-    <div class="text-xs text-neutral-500 uppercase">Bezahlt {new Date().getFullYear()}</div>
-    <div class="text-2xl font-semibold mt-1">{loading ? "…" : centsToEur(stats.paidYtdTotal)}</div>
-  </div>
-  <div class="border rounded p-4 border-neutral-200 dark:border-neutral-800">
-    <div class="text-xs text-neutral-500 uppercase">Überfällig</div>
-    <div class="text-2xl font-semibold mt-1" class:text-red-600={stats.overdueCount > 0}>
-      {loading ? "…" : centsToEur(stats.overdueTotal)}
-    </div>
-    <div class="text-xs text-neutral-400 mt-1">{stats.overdueCount} Rechnung{stats.overdueCount === 1 ? "" : "en"}</div>
-  </div>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <Card>
+    <CardContent>
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-muted-foreground uppercase tracking-wider">Kunden</span>
+        <Users class="size-4 text-muted-foreground" />
+      </div>
+      <div class="text-2xl font-semibold mt-2 tabular-nums">{loading ? "…" : customerCount}</div>
+    </CardContent>
+  </Card>
+
+  <Card>
+    <CardContent>
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-muted-foreground uppercase tracking-wider">Offen</span>
+        <Clock class="size-4 text-warning" />
+      </div>
+      <div class="text-2xl font-semibold mt-2 tabular-nums">{loading ? "…" : centsToEur(stats.openTotal)}</div>
+      <div class="text-xs text-muted-foreground mt-1">
+        {stats.openCount} Rechnung{stats.openCount === 1 ? "" : "en"}
+      </div>
+    </CardContent>
+  </Card>
+
+  <Card>
+    <CardContent>
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-muted-foreground uppercase tracking-wider">
+          Bezahlt {new Date().getFullYear()}
+        </span>
+        <CheckCircle2 class="size-4 text-success" />
+      </div>
+      <div class="text-2xl font-semibold mt-2 tabular-nums">{loading ? "…" : centsToEur(stats.paidYtdTotal)}</div>
+    </CardContent>
+  </Card>
+
+  <Card>
+    <CardContent>
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-muted-foreground uppercase tracking-wider">Überfällig</span>
+        <AlertTriangle class={"size-4 " + (stats.overdueCount > 0 ? "text-destructive" : "text-muted-foreground")} />
+      </div>
+      <div class={"text-2xl font-semibold mt-2 tabular-nums " + (stats.overdueCount > 0 ? "text-destructive" : "")}>
+        {loading ? "…" : centsToEur(stats.overdueTotal)}
+      </div>
+      <div class="text-xs text-muted-foreground mt-1">
+        {stats.overdueCount} Rechnung{stats.overdueCount === 1 ? "" : "en"}
+      </div>
+    </CardContent>
+  </Card>
 </div>
 
-<div class="flex gap-3 mb-8">
-  <a
-    href="/invoices/new"
-    use:link
-    class="px-4 py-2 rounded bg-neutral-900 text-white text-sm hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
-  >
-    Neue Rechnung
-  </a>
-  <a
-    href="/customers/new"
-    use:link
-    class="px-4 py-2 rounded border border-neutral-300 dark:border-neutral-700 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
-  >
-    Neuer Kunde
-  </a>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+  <Card class="lg:col-span-2">
+    <CardContent>
+      {#if loading}
+        <div class="h-40 grid place-items-center text-sm text-muted-foreground">Lade…</div>
+      {:else}
+        <RevenueChart data={revenue} />
+      {/if}
+    </CardContent>
+  </Card>
+
+  <Card>
+    <CardContent>
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-xs text-muted-foreground uppercase tracking-wider">Top-Kunden</div>
+          <div class="text-xs text-muted-foreground mt-0.5">letzte 12 Monate</div>
+        </div>
+        <Trophy class="size-4 text-muted-foreground" />
+      </div>
+      {#if loading}
+        <div class="h-32 grid place-items-center text-sm text-muted-foreground">Lade…</div>
+      {:else if top.length === 0}
+        <div class="h-32 grid place-items-center text-sm text-muted-foreground text-center">
+          Noch keine bezahlten<br />Rechnungen.
+        </div>
+      {:else}
+        <ul class="flex flex-col gap-2.5">
+          {#each top as c, i (c.customerId)}
+            {@const pct = (c.paidTotal / topMax) * 100}
+            <li>
+              <button
+                type="button"
+                onclick={async () => {
+                  const res = await openCustomerForm(c.customerId);
+                  if (res.saved) await reload();
+                }}
+                class="w-full text-left group"
+              >
+                <div class="flex items-baseline justify-between gap-2 text-sm">
+                  <span class="flex items-baseline gap-2 min-w-0">
+                    <span class="text-muted-foreground tabular-nums w-4 shrink-0 text-xs">{i + 1}.</span>
+                    <span class="truncate group-hover:text-foreground transition-colors">{c.name}</span>
+                  </span>
+                  <span class="font-mono tabular-nums text-xs shrink-0">{centsToEur(c.paidTotal)}</span>
+                </div>
+                <div class="mt-1.5 ml-6 h-1 rounded-full bg-muted overflow-hidden">
+                  <div
+                    class="h-full bg-primary/70 group-hover:bg-primary transition-all"
+                    style="width: {pct}%"
+                  ></div>
+                </div>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </CardContent>
+  </Card>
 </div>
 
 <section>
-  <h2 class="text-sm font-semibold uppercase text-neutral-500 mb-2">Letzte Rechnungen</h2>
+  <h2 class="text-sm font-semibold uppercase text-muted-foreground tracking-wider mb-3">
+    Letzte Rechnungen
+  </h2>
   {#if loading}
-    <p class="text-sm text-neutral-500">Lade…</p>
+    <p class="text-sm text-muted-foreground">Lade…</p>
   {:else if recent.length === 0}
-    <div class="border rounded p-6 text-center border-dashed border-neutral-300 dark:border-neutral-700 text-sm text-neutral-500">
-      Noch keine Rechnungen.
-    </div>
+    <Card>
+      <CardContent class="py-10 text-center text-sm text-muted-foreground">
+        Noch keine Rechnungen.
+      </CardContent>
+    </Card>
   {:else}
-    <div class="border rounded overflow-hidden border-neutral-200 dark:border-neutral-800">
+    <Card class="overflow-hidden py-0">
       <table class="w-full text-sm">
         <tbody>
           {#each recent as inv (inv.id)}
             <tr
-              class="border-t border-neutral-200 dark:border-neutral-800 first:border-t-0 hover:bg-neutral-50 dark:hover:bg-neutral-900 cursor-pointer"
+              class="border-t first:border-t-0 hover:bg-muted/40 cursor-pointer transition-colors"
               onclick={() => push(`/invoices/${inv.id}`)}
             >
-              <td class="px-3 py-2 font-mono text-xs">{inv.number}</td>
-              <td class="px-3 py-2 text-neutral-500">{formatDate(inv.issueDate)}</td>
-              <td class="px-3 py-2">{inv.customerName}</td>
-              <td class="px-3 py-2 text-xs text-neutral-500">{statusLabel[inv.status]}</td>
-              <td class="px-3 py-2 text-right font-mono">{centsToEur(inv.total)}</td>
+              <td class="px-4 py-3 font-mono text-xs">{inv.number}</td>
+              <td class="px-4 py-3 text-muted-foreground">{formatDate(inv.issueDate)}</td>
+              <td class="px-4 py-3">{inv.customerName}</td>
+              <td class="px-4 py-3">
+                <Badge variant={statusVariant[inv.status]}>{statusLabel[inv.status]}</Badge>
+              </td>
+              <td class="px-4 py-3 text-right font-mono tabular-nums">{centsToEur(inv.total)}</td>
             </tr>
           {/each}
         </tbody>
       </table>
-    </div>
+    </Card>
   {/if}
 </section>

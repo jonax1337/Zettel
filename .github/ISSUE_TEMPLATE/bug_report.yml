@@ -1,0 +1,59 @@
+name: Bug Report
+description: Etwas funktioniert nicht wie erwartet
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke, dass du dir die Zeit nimmst, einen Bug zu melden! Bitte fülle die Felder so vollständig wie möglich aus.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Was ist passiert?
+      description: Beschreibe das Problem so konkret wie möglich.
+      placeholder: Beim Klick auf "PDF erzeugen" passiert nichts...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Erwartetes Verhalten
+      placeholder: Es sollte ein PDF im Standard-Verzeichnis erscheinen...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduktion
+      description: Schritt-für-Schritt-Anleitung, wie der Bug auftritt.
+      placeholder: |
+        1. Neue Rechnung anlegen
+        2. Kunden auswählen
+        3. Auf "PDF erzeugen" klicken
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Zettel-Version
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Betriebssystem
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Screenshots
+      description: Falls vorhanden, hänge Logs oder Screenshots an. Sidecar-Output landet auf stderr.

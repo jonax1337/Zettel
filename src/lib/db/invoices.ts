@@ -405,6 +405,94 @@ export async function dashboardStats(): Promise<{
   };
 }
 
+export type MonthlyRevenuePoint = {
+  year: number;
+  month: number; // 1-12
+  label: string; // "Mai" / "2026-05"
+  paidTotal: number; // cents (paid invoices only)
+};
+
+/**
+ * Paid invoice totals grouped by month of paid_at, for the last N months
+ * (including current). Months with no invoices are returned with 0 so the
+ * chart's x-axis stays contiguous.
+ */
+export async function monthlyRevenue(months = 12): Promise<MonthlyRevenuePoint[]> {
+  const now = new Date();
+  const startDate = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+  const startUnix = Math.floor(startDate.getTime() / 1000);
+
+  const rows = await select<{ ym: string; t: number }>(
+    `SELECT strftime('%Y-%m', paid_at, 'unixepoch') AS ym,
+            COALESCE(SUM(total), 0) AS t
+     FROM invoices
+     WHERE status = 'paid' AND paid_at >= ?
+     GROUP BY ym`,
+    [startUnix],
+  );
+
+  const byKey = new Map(rows.map((r) => [r.ym, r.t]));
+  const monthNames = [
+    "Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
+    "Jul", "Aug", "Sep", "Okt", "Nov", "Dez",
+  ];
+  const out: MonthlyRevenuePoint[] = [];
+  for (let i = 0; i < months; i++) {
+    const d = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1);
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    const key = `${y}-${String(m).padStart(2, "0")}`;
+    out.push({
+      year: y,
+      month: m,
+      label: monthNames[d.getMonth()],
+      paidTotal: byKey.get(key) ?? 0,
+    });
+  }
+  return out;
+}
+
+export type TopCustomer = {
+  customerId: number;
+  name: string;
+  customerNumber: string;
+  invoiceCount: number;
+  paidTotal: number; // cents
+};
+
+export async function topCustomers(limit = 5, months = 12): Promise<TopCustomer[]> {
+  const now = new Date();
+  const startDate = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+  const startUnix = Math.floor(startDate.getTime() / 1000);
+
+  const rows = await select<{
+    customer_id: number;
+    name: string;
+    customer_number: string;
+    count: number;
+    total: number;
+  }>(
+    `SELECT i.customer_id, c.name, c.customer_number,
+            COUNT(*) AS count,
+            COALESCE(SUM(i.total), 0) AS total
+     FROM invoices i
+     INNER JOIN customers c ON c.id = i.customer_id
+     WHERE i.status = 'paid' AND i.paid_at >= ?
+     GROUP BY i.customer_id
+     ORDER BY total DESC
+     LIMIT ?`,
+    [startUnix, limit],
+  );
+
+  return rows.map((r) => ({
+    customerId: r.customer_id,
+    name: r.name,
+    customerNumber: r.customer_number,
+    invoiceCount: r.count,
+    paidTotal: r.total,
+  }));
+}
+
 export async function recentInvoices(limit = 10): Promise<InvoiceListRow[]> {
   const rows = await select<InvoiceRow & { customer_name: string }>(
     `SELECT i.*, c.name AS customer_name

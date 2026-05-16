@@ -22,7 +22,7 @@ Zielgruppe: Freelancer, Solo-Selbstständige, Kleinunternehmer nach §19 UStG, d
 - **Kleinunternehmer-Modus (§19 UStG)** als First-Class-Feature: korrekte Hinweise, keine USt-Ausweisung
 - **Cross-Platform:** Windows (Priorität), macOS, Linux
 - **Schlank:** Bundle möglichst klein, schneller Start, niedriger RAM-Verbrauch
-- **Funktional > schön:** Bits UI Default-Behavior + minimales Tailwind. **Kein Custom-Design-System, keine Brand-Heroics** — wir bauen ein Tool, kein Portfolio-Piece.
+- **Funktional > schön, aber nicht hässlich:** Eigene schlanke UI-Schicht (`src/lib/ui/`) auf Bits-UI-Primitives, shadcn-Style, dezent. Keine Brand-Heroics, aber konsistentes Spacing, Light/Dark-Theme, Lucide-Icons.
 - **OSS-freundlich:** klare Struktur, dokumentiert, contributor-ready
 
 ---
@@ -47,7 +47,8 @@ Zielgruppe: Freelancer, Solo-Selbstständige, Kleinunternehmer nach §19 UStG, d
 - **TypeScript** (strict mode)
 - **Vite** — Build-Tool
 - **Tailwind v4** — Styling (minimal, funktional)
-- **Bits UI** — Headless Components, **Defaults verwenden, nicht custom stylen**
+- **Bits UI** — Headless-Primitives als Basis für eine eigene, schlanke Komponenten-Schicht unter `src/lib/ui/` (shadcn-Stil: Button, Card, Dialog, Dropdown, Input, Select, Textarea, Badge, Titlebar, Toaster). Tailwind-Tokens via `src/lib/theme.svelte.ts` (Light/Dark/System).
+- **Lucide Icons** (`@lucide/svelte`)
 - **svelte-spa-router** — Routing (lightweight, kein SvelteKit)
 - **Superforms + Zod** — Forms & Validation
 - **Sonner-Svelte** — Toasts
@@ -253,7 +254,7 @@ Zielgruppe: Freelancer, Solo-Selbstständige, Kleinunternehmer nach §19 UStG, d
 
 ## 8. UI / Pages
 
-**Wichtig:** Bits UI Default-Behavior, minimales Tailwind nur für Layout (Flex, Grid, Spacing, Borders). **Keine Custom-Komponenten, kein Design-System.** Wenn ein Bits UI Primitive sich „nackt" anfühlt — okay so. Funktionalität vor Optik.
+**Wichtig:** Eigene UI-Schicht unter `src/lib/ui/` (shadcn-Stil, Bits-UI-Primitives darunter). Konsistente Tokens via `theme.svelte.ts`, Lucide-Icons, Light/Dark/System. Layout via Tailwind v4. Funktionalität bleibt vor Optik — aber Optik ist nicht mehr „nackt".
 
 ### Routen
 
@@ -503,7 +504,7 @@ faktura/
 | PDF/A-3-Konformität schwer zu erreichen | Hoch | factur-x kümmert sich um Embedding; WeasyPrint-PDF zuerst manuell durch validator |
 | PyInstaller-Bundle wird zu groß | Mittel | Minimaler Python-Deps, ggf. UPX-Komprimierung |
 | Cross-Compile Sidecar von einer Plattform aus | Mittel | GitHub Actions Matrix: jede Plattform baut ihr eigenes Sidecar |
-| Bits UI Komponenten zu „nackt" | Niedrig | Akzeptieren, Phase-1-Designentscheidung. Wer's hübscher will, kann später contributen. |
+| UI-Schicht über Bits UI wächst zum eigenen Design-System | Niedrig | Bewusst akzeptiert; shadcn-Stil bleibt eng am Standard, keine Custom-Animationen oder Brand-Tokens. |
 | Rechtliche Unsicherheit ZUGFeRD-Details | Hoch | Disclaimer + Validator + Steuerberater-Hinweis |
 | Svelte-5-Tooling/AI-Support noch nicht so reif wie React | Niedrig | Bewusst akzeptiert, manueller Code-Review häufiger |
 

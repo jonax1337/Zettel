@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Fragen & Diskussionen
+    url: https://github.com/jonaslaux/zettel/discussions
+    about: Allgemeine Fragen, Ideen, Diskussionen → bitte zuerst hier.
+  - name: Disclaimer & Rechtliches
+    url: https://github.com/jonaslaux/zettel#disclaimer
+    about: Zettel ist keine Rechts- oder Steuerberatung. Eigenverantwortung des Nutzers.

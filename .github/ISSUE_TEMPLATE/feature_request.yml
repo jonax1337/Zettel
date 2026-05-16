@@ -1,0 +1,31 @@
+name: Feature Request
+description: Vorschlag für ein neues Feature oder eine Verbesserung
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Welches Problem löst das Feature?
+      placeholder: Aktuell muss ich jedes Mal manuell..., das ist mühsam, weil...
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Vorgeschlagene Lösung
+      placeholder: Eine Option in den Einstellungen, die...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativen, die du in Betracht gezogen hast
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Passt das in den Scope?
+      description: Zettel ist explizit kein Buchhaltungs-Tool. Siehe `PLAN.md` Abschnitt 3 (Non-Goals).
+      options:
+        - label: Ich habe die Non-Goals in `PLAN.md` gelesen und mein Vorschlag ist kein explizites Non-Goal.
+          required: true

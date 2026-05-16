@@ -28,7 +28,7 @@ Through **M5 (cross-platform builds)**: customer/invoice CRUD with status workfl
 - **Money:** always Cent (integer) in DB, format on display via `src/lib/utils/money.ts`.
 
 ## Conventions
-- **Bits UI defaults** — do NOT build a custom design system in M1. Functionality > polish.
+- **UI lives in `src/lib/ui/`** — thin shadcn-style wrappers over Bits UI primitives (Button, Card, Dialog, Dropdown, Input, Select, Textarea, Badge, Titlebar, Toaster). Theme tokens in `src/lib/theme.svelte.ts` (light/dark/system). Lucide icons via `@lucide/svelte`. Do not bypass these wrappers — extend them.
 - **Svelte 5 runes only** (`$state`, `$derived`, `$effect`, `$props`). No legacy stores in components, no `export let`. New components: `<script lang="ts">` with runes.
 - **German UI strings**, English code/identifiers/comments.
 - **No comments unless WHY is non-obvious.**

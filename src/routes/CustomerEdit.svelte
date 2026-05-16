@@ -6,12 +6,17 @@
     updateCustomer,
     type CustomerInput,
   } from "$lib/db/queries";
+  import { Button, Input, Textarea, Label, Card, CardContent, toast } from "$lib/ui";
+  import { ArrowLeft } from "@lucide/svelte";
+  import { isPopupWindow, emitSavedAndClose } from "$lib/window";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
 
   type Props = {
     mode: "new" | "edit";
     params?: { id?: string };
   };
   let { mode, params }: Props = $props();
+  const popup = isPopupWindow();
 
   const empty: CustomerInput = {
     name: "",
@@ -68,98 +73,118 @@
     saving = true;
     error = null;
     try {
+      let savedId: number;
       if (mode === "new") {
-        await createCustomer(form);
+        savedId = await createCustomer(form);
+        toast.success("Kunde angelegt");
       } else if (id !== null) {
         await updateCustomer(id, form);
+        toast.success("Änderungen gespeichert");
+        savedId = id;
+      } else {
+        throw new Error("Keine ID");
       }
-      push("/customers");
+      if (popup) {
+        await emitSavedAndClose("customer:saved", { id: savedId });
+      } else {
+        push("/customers");
+      }
     } catch (err) {
       error = String(err);
+      toast.error("Speichern fehlgeschlagen", String(err));
     } finally {
       saving = false;
     }
   }
 
-  const inputClass =
-    "border rounded px-2 py-1.5 border-neutral-300 dark:border-neutral-700 bg-transparent";
+  async function onCancel() {
+    if (popup) {
+      await getCurrentWindow().close();
+    } else {
+      push("/customers");
+    }
+  }
 </script>
 
-<header class="mb-6">
-  <a href="/customers" use:link class="text-sm text-neutral-500 hover:underline">
-    ← Kunden
-  </a>
-  <h1 class="text-2xl font-semibold mt-1">
-    {mode === "new" ? "Neuer Kunde" : "Kunde bearbeiten"}
-  </h1>
-</header>
+{#if !popup}
+  <header class="mb-6">
+    <a
+      href="/customers"
+      use:link
+      class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+    >
+      <ArrowLeft class="size-4" /> Kunden
+    </a>
+    <h1 class="text-3xl font-semibold tracking-tight mt-2">
+      {mode === "new" ? "Neuer Kunde" : "Kunde bearbeiten"}
+    </h1>
+  </header>
+{/if}
 
 {#if loading}
-  <p class="text-sm text-neutral-500">Lade…</p>
+  <p class="text-sm text-muted-foreground">Lade…</p>
 {:else}
-  <form onsubmit={onSubmit} class="max-w-2xl space-y-6">
-    <section class="grid grid-cols-2 gap-3">
-      <label class="col-span-2 flex flex-col gap-1 text-sm">
-        Name / Firma <span class="text-red-600">*</span>
-        <input class={inputClass} bind:value={form.name} required />
-      </label>
-      <label class="col-span-2 flex flex-col gap-1 text-sm">
-        Ansprechpartner:in
-        <input class={inputClass} bind:value={form.contactPerson} />
-      </label>
-    </section>
+  <form onsubmit={onSubmit}>
+    <Card>
+      <CardContent class="space-y-6">
+        <section class="grid grid-cols-2 gap-4">
+          <div class="col-span-2 flex flex-col gap-1.5">
+            <Label>Name / Firma <span class="text-destructive">*</span></Label>
+            <Input bind:value={form.name} required />
+          </div>
+          <div class="col-span-2 flex flex-col gap-1.5">
+            <Label>Ansprechpartner:in</Label>
+            <Input bind:value={form.contactPerson} />
+          </div>
+        </section>
 
-    <section class="grid grid-cols-3 gap-3">
-      <label class="col-span-3 flex flex-col gap-1 text-sm">
-        Straße & Nr.
-        <input class={inputClass} bind:value={form.street} />
-      </label>
-      <label class="flex flex-col gap-1 text-sm">
-        PLZ
-        <input class={inputClass} bind:value={form.postalCode} />
-      </label>
-      <label class="col-span-2 flex flex-col gap-1 text-sm">
-        Ort
-        <input class={inputClass} bind:value={form.city} />
-      </label>
-      <label class="flex flex-col gap-1 text-sm">
-        Land
-        <input class={inputClass} bind:value={form.country} />
-      </label>
-    </section>
+        <section class="grid grid-cols-3 gap-4">
+          <div class="col-span-3 flex flex-col gap-1.5">
+            <Label>Straße & Nr.</Label>
+            <Input bind:value={form.street} />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label>PLZ</Label>
+            <Input bind:value={form.postalCode} />
+          </div>
+          <div class="col-span-2 flex flex-col gap-1.5">
+            <Label>Ort</Label>
+            <Input bind:value={form.city} />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label>Land</Label>
+            <Input bind:value={form.country} />
+          </div>
+        </section>
 
-    <section class="grid grid-cols-2 gap-3">
-      <label class="flex flex-col gap-1 text-sm">
-        E-Mail
-        <input type="email" class={inputClass} bind:value={form.email} />
-      </label>
-      <label class="flex flex-col gap-1 text-sm">
-        Telefon
-        <input class={inputClass} bind:value={form.phone} />
-      </label>
-      <label class="col-span-2 flex flex-col gap-1 text-sm">
-        USt-IdNr.
-        <input class={inputClass} bind:value={form.vatId} />
-      </label>
-      <label class="col-span-2 flex flex-col gap-1 text-sm">
-        Notizen
-        <textarea rows="3" class={inputClass} bind:value={form.notes}></textarea>
-      </label>
-    </section>
+        <section class="grid grid-cols-2 gap-4">
+          <div class="flex flex-col gap-1.5">
+            <Label>E-Mail</Label>
+            <Input type="email" bind:value={form.email} />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label>Telefon</Label>
+            <Input bind:value={form.phone} />
+          </div>
+          <div class="col-span-2 flex flex-col gap-1.5">
+            <Label>USt-IdNr.</Label>
+            <Input bind:value={form.vatId} />
+          </div>
+          <div class="col-span-2 flex flex-col gap-1.5">
+            <Label>Notizen</Label>
+            <Textarea rows={3} bind:value={form.notes} />
+          </div>
+        </section>
+      </CardContent>
+    </Card>
 
-    <div class="flex items-center gap-3">
-      <button
-        type="submit"
-        disabled={saving}
-        class="px-4 py-2 rounded bg-neutral-900 text-white text-sm hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
-      >
+    <div class="flex items-center gap-3 mt-6">
+      <Button type="submit" disabled={saving}>
         {saving ? "Speichere…" : mode === "new" ? "Anlegen" : "Speichern"}
-      </button>
-      <a href="/customers" use:link class="text-sm text-neutral-500 hover:underline">
-        Abbrechen
-      </a>
+      </Button>
+      <Button type="button" onclick={onCancel} variant="ghost">Abbrechen</Button>
       {#if error}
-        <span class="text-sm text-red-600">{error}</span>
+        <span class="text-sm text-destructive">{error}</span>
       {/if}
     </div>
   </form>
