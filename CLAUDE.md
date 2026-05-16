@@ -4,66 +4,111 @@
 Offline-first invoice generator (Tauri 2 + Svelte 5 + Python sidecar) for German freelancers / Kleinunternehmer. ZUGFeRD/Factur-X PDF/A-3 output. Full plan in `PLAN.md`.
 
 ## Current state
-**v0.2 release-ready** on `release/v0.2`. All planned v0.2 features merged:
-- Reverse-Charge / intra-EU B2B (CategoryCode K) — toggle in `InvoiceEdit.svelte`, validated via both-parties-have-VAT-ID rule, ZUGFeRD `ExemptionReason "VAT exempt for EEA intra-community supply..."`, PDF hint "Steuerschuldnerschaft des Leistungsempfängers".
-- **BASIC + EXTENDED ZUGFeRD profiles** active (URN is parametrized via `{{ guideline_urn }}` in the template, picked in `zugferd.py:_PROFILE_URNS`).
-- **DATEV-Export** (`/export` route, `src/lib/export/datev.ts`): Buchungsstapel Format 700, SKR03/SKR04, one row per VAT-rate-group per invoice. Written via the Rust `save_text_file` command — avoids `plugin-fs` dep.
-- **Backup / Restore** (`src-tauri/src/backup.rs`): ZIP of SQLite snapshot (via `VACUUM INTO` over the live connection) + PDFs + `manifest.json`. Restore is **staged**: extracted to `<appdata>/pending_restore/` + marker file, then `apply_pending_restore_blocking()` runs in `lib.rs:run()` BEFORE the SQL plugin opens the DB.
-- **Recurring invoices** (`/recurring`, `src/lib/db/recurring.ts`): monthly/quarterly/yearly templates, "Jetzt erzeugen" creates a fresh draft via `createInvoice` + bumps `next_due_date`. No background scheduler — manual confirmation per invoice. Dashboard widget "Fällige Vorlagen" surfaces due ones.
-- `.gitattributes` pins LF for all code files — `include_str!` migrations must be byte-stable across platforms.
+**v0.5.0 released** on `main` (2026-05-16). Auto-Update aktiv ab v0.4.3. `release/v0.6` ist die nächste Entwicklungslinie.
 
-v0.1 status preserved on `main`: M1–M5 done, 5/5 invoices validated against erechnungs-validator.de, Windows MSI+NSIS shipped. Output path unchanged: `~/Documents/Zettel/Rechnungen/<RE-...>.pdf`.
+### v0.6.0 (in Arbeit) — Mahnwesen + OCR-Light
+- **Mahnungen als first-class Dokumente** (`reminders` Tabelle, eigener Nummernkreis `MA-...`, eigene PDF-Vorlage `reminder.html.j2`, Routen `/reminders` + `/reminders/new/:invoiceId`).
+- **OCR-Light** — Text-Layer-Extraktion aus Eingangsrechnungen ohne ZUGFeRD-XML via `pypdf`. Neuer Sidecar-Command `extract_text_pdf`, Heuristik-Parser für Datum / Betrag / Rechnungsnummer / Lieferantenname. Fallback in der `/expenses`-Drop-Zone wenn `extract_zugferd` `found: false` liefert. Kein Tesseract, kein Bundle-Bloat — reine Scans funktionieren nicht und sollen es auch nicht.
+
+### v0.5.0 (released) — „Buchhaltungs-Light"
+- **Eingangsrechnungen** (`/expenses`, Tabellen `expenses` + `expense_items`, Nummernkreis `EX-YYYY-NNNN`). Reverse-Charge als Leistungsempfänger, Kategorie-Autocomplete aus der Belegehistorie.
+- **Lieferanten** (`/vendors`, `L-NNNN`).
+- **ZUGFeRD-Drop-Zone** im Expense-Editor: `extract_zugferd` (Sidecar, `factur-x` + `lxml`) parsed BASIC/EN16931/EXTENDED defensiv. Vendor-Matching per USt-IdNr. (fallback Name). Original-PDF landet kollisionssicher unter `~/Documents/Zettel/Eingangsrechnungen/<vendor-slug>/`.
+- **DATEV-Export erweitert** (Erlöse + Aufwände + Stornos im selben Buchungsstapel, SKR03/SKR04, `expense_items.datev_account` als per-Position-Override).
+- **UStVA-Vorbereitung** (`/reports/ustva`) — Quartals-Aggregation der ELSTER-Kennzahlen 81/86/41/21/66. Reine Vorbereitungshilfe zum Abtippen, kein ELSTER-Upload.
+- **Dashboard** mit „Offene Eingangsrechnungen / Ausgaben YTD / Saldo YTD"-Cards. Sidebar in Gruppen sortiert.
+
+### v0.4.x (released)
+- **PDF-Themes** (classic / modern / minimal) via CSS-Variablen in einer einzigen `invoice.html.j2`. Gilt auch für Angebote.
+- **Reverse-Charge Drittland** — `reverse_charge_type = 'third_country'` zusätzlich zu `'intra_eu'`. ZUGFeRD `CategoryCode G` + `ExemptionReason "Export outside EU"`.
+- **Backup-Verschlüsselung** (AES-256-GCM um den ZIP-Stream, Argon2id-Key, Magic-Header `ZETTEL-ENC-1`, kein gespeichertes Master-Passwort).
+- **Granularer Restore** (Kunden / Rechnungen+PDFs / Settings unabhängig via `ATTACH DATABASE` + selektives `INSERT`).
+- **„Aus Rechnung Vorlage erstellen"** — Recurring-Template aus existierender Rechnung.
+- **PDF/A-3b für Angebote** (kein ZUGFeRD-XML, aber Archivierungs-konform via WeasyPrint 65.1 `pdf_variant="pdf/a-3b"`).
+- **Auto-Update** (Tauri Updater, Ed25519-signiert, statisches `latest.json` bei GitHub Releases). v0.4.3 ist das erste echte Update-fähige Release — v0.4.0-User müssen einmalig manuell upgraden.
+
+### v0.3.x (released) — Angebote + Stornos
+- **Angebote** (`/offers`, eigene Tabelle, Konvertierung zu Rechnung).
+- **Stornorechnungen** mit EN-16931-konformem CII-XML (`InvoiceReferencedDocument` an korrekter Schema-Position).
+
+### v0.2.0 (released)
+- **Reverse-Charge intra-EU B2B** (`CategoryCode K`, ExemptionReason "VAT exempt for EEA intra-community supply...", `<ram:SpecifiedTaxRegistration schemeID="VA">`).
+- **BASIC + EXTENDED ZUGFeRD-Profile** — URN parametrisiert via `{{ guideline_urn }}` in `zugferd-en16931.xml.j2`, gewählt in `zugferd.py:_PROFILE_URNS`.
+- **DATEV-Export** (`/export`, `src/lib/export/datev.ts`, Format 700, SKR03/SKR04, eine Zeile pro VAT-Gruppe pro Rechnung). Geschrieben via Rust-Command `save_text_file` — vermeidet `plugin-fs`-Dependency.
+- **Backup / Restore** (`src-tauri/src/backup.rs`): ZIP aus SQLite-Snapshot (`VACUUM INTO`) + PDFs + `manifest.json`. Restore ist **staged**: extrahiert nach `<appdata>/pending_restore/` + Marker-File, dann `apply_pending_restore_blocking()` in `lib.rs:run()` BEVOR das SQL-Plugin die DB öffnet.
+- **Recurring** (`/recurring`, monthly/quarterly/yearly, manuelle „Jetzt erzeugen"-Bestätigung pro Invoice, kein Background-Scheduler).
+- **`.gitattributes`** pinnt LF für alle Code-Files — `include_str!`-Migrationen müssen byte-stabil über Plattformen sein.
+
+### v0.1.0 (released)
+M1–M5 abgeschlossen, 5/5 manuell generierte Rechnungen gegen erechnungs-validator.de validiert, Windows MSI+NSIS shipped. Output-Pfad: `~/Documents/Zettel/Rechnungen/<RE-...>.pdf`.
 
 ## Sidecar
-- **Dev:** Python script at `sidecar/main.py`, spawned by Rust per command (`std::process::Command`), JSON over stdin/stdout. See `src-tauri/src/sidecar.rs` and `src/lib/sidecar/invoice.ts`.
-- **Release:** PyInstaller-bundled `zettel-sidecar(.exe)` shipped as a Tauri resource (`bundle.resources` in `tauri.conf.json` → `../sidecar/dist/zettel-sidecar` → `<resource_dir>/sidecar/`). `sidecar.rs` picks dev vs. release via `cfg!(debug_assertions)`.
-- Build the bundle: `cd sidecar && python build.py` (needs `pyinstaller==6.11.1` in the venv). On Windows, **every** `.dll` from the GTK3-Runtime install dir is copied next to the exe — different GTK builds version libs differently (gtk3-classic ships libffi-7/libtiff-5, official MSI ships -8/-6), so we don't maintain an allow-list.
-- Python interpreter resolution (dev only): `ZETTEL_PYTHON` env, `sidecar/.venv/Scripts/python.exe` (Win) or `.../bin/python` (Unix), then `python` from PATH.
-- GTK lookup (`main.py:_add_gtk_dll_path`): in frozen mode, the exe's own directory is searched first (since `build.py` co-locates the DLLs there), then `C:\Program Files\GTK3-Runtime Win64\…`, then msys64. Override with `ZETTEL_GTK_PATH`.
-- ZUGFeRD XML rendered from `sidecar/templates/zugferd-en16931.xml.j2` (Jinja with `autoescape=True` — `select_autoescape` doesn't match `.xml.j2` since it inspects only the last extension), then embedded into PDF/A-3 via `factur-x.generate_from_binary(level=payload.profile or "en16931")`. The `GuidelineSpecifiedDocumentContextParameter` URN is parametrized via `{{ guideline_urn }}` and picked from `zugferd.py:_PROFILE_URNS` per `payload.profile` (basic / en16931 / extended).
-- **Kleinunternehmer quirk** (BR-CO-26): if `company.vatId` is absent, the template emits `taxNumber` as `<ram:ID>` (BT-29) inside `<ram:SellerTradeParty>` so the seller-identification rule is satisfied even without a VAT-ID.
-- **Logo handling:** `pdf.py:_logo_data_uri` reads `company.logoPath` from disk and inlines it as a `data:` URI before rendering. Avoids WeasyPrint base-URL resolution against arbitrary user paths.
-- **Reverse-Charge:** when `invoice.isReverseCharge` is true, `CategoryCode K` + `ExemptionReason "VAT exempt for EEA intra-community supply of goods and services"` is written per line and in the document-level `ApplicableTradeTax`. Buyer-VAT-ID is in `<ram:SpecifiedTaxRegistration schemeID="VA">`.
+- **Dev:** Python script `sidecar/main.py`, vom Rust pro Command via `std::process::Command` gespawnt, JSON über stdin/stdout. Siehe `src-tauri/src/sidecar.rs` und `src/lib/sidecar/invoice.ts`.
+- **Release:** PyInstaller-Bundle `zettel-sidecar(.exe)` als Tauri-Resource (`bundle.resources` in `tauri.conf.json` → `../sidecar/dist/zettel-sidecar` → `<resource_dir>/sidecar/`). `sidecar.rs` wählt dev vs. release via `cfg!(debug_assertions)`.
+- **Build:** `cd sidecar && python build.py` (`pyinstaller==6.11.1` im venv). Auf Windows wird **jede** `.dll` aus dem GTK3-Runtime-Install-Dir neben die exe kopiert — verschiedene GTK-Builds versionieren Libs unterschiedlich (gtk3-classic ships libffi-7/libtiff-5, official MSI ships -8/-6), daher keine Allowlist.
+- **Python-Resolution (dev):** `ZETTEL_PYTHON` env → `sidecar/.venv/Scripts/python.exe` (Win) bzw. `.../bin/python` (Unix) → `python` aus PATH.
+- **GTK-Lookup** (`main.py:_add_gtk_dll_path`): frozen → exe-dir zuerst (build.py co-located DLLs), dann `C:\Program Files\GTK3-Runtime Win64\…`, dann msys64. Override: `ZETTEL_GTK_PATH`.
+
+### Commands
+| Command | Implementation | Purpose |
+|---|---|---|
+| `ping` | inline in `main.py` | Sidecar-Healthcheck |
+| `generate_invoice` | `invoice/pdf.py:render_invoice_pdf` | Rechnung-PDF/A-3 mit ZUGFeRD-XML |
+| `generate_offer` | `invoice/pdf.py:render_offer_pdf` | Angebot-PDF/A-3b (kein XML) |
+| `generate_reminder` | `invoice/pdf.py:render_reminder_pdf` (v0.6) | Mahnungs-PDF/A-3 (kein XML) |
+| `extract_zugferd` | `invoice/extract.py:extract_from_pdf` | Factur-X-XML aus eingehender PDF parsen |
+| `extract_text_pdf` | `invoice/text_extract.py:extract_text_heuristic` (v0.6) | Text-Layer-Heuristik via `pypdf`, regex-basiert |
+
+### Template-Quirks
+- ZUGFeRD-XML aus `sidecar/templates/zugferd-en16931.xml.j2` (Jinja, `autoescape=True` — `select_autoescape` matcht `.xml.j2` NICHT, weil es nur die letzte Extension prüft), eingebettet via `factur-x.generate_from_binary(level=payload.profile or "en16931")`. `GuidelineSpecifiedDocumentContextParameter` URN parametrisiert via `{{ guideline_urn }}`, gewählt aus `zugferd.py:_PROFILE_URNS`.
+- **Kleinunternehmer-Quirk** (BR-CO-26): wenn `company.vatId` fehlt, emittiert das Template `taxNumber` als `<ram:ID>` (BT-29) in `<ram:SellerTradeParty>`, damit die Seller-Identifications-Regel auch ohne USt-IdNr. erfüllt ist.
+- **Logo:** `pdf.py:_logo_data_uri` liest `company.logoPath` von Disk und inlined als `data:` URI — vermeidet WeasyPrint-Base-URL-Resolution gegen beliebige User-Pfade.
+- **Reverse-Charge:** wenn `invoice.isReverseCharge`, dann `CategoryCode K` (intra_eu) bzw. `G` (third_country) + `ExemptionReason` pro Zeile und im document-level `ApplicableTradeTax`. Buyer-USt-IdNr. in `<ram:SpecifiedTaxRegistration schemeID="VA">`.
 
 ## Rust-only modules (`src-tauri/src/`)
-- `sidecar.rs` — spawns the Python sidecar (dev vs. release-bundled).
-- `fs_export.rs` — `save_text_file(path, content)` for CSV exports without `plugin-fs`.
-- `backup.rs` — `snapshot_db_path`, `bundle_backup`, `stage_restore` Tauri commands + `apply_pending_restore_blocking()` that runs in `run()` BEFORE plugin init so the SQL plugin opens the freshly-restored DB. Uses `zip` (deflate), `walkdir`, `dirs`. App identifier is hardcoded as `digital.laux.zettel` because the pre-builder hook has no AppHandle.
+- `sidecar.rs` — spawnt Python-Sidecar (dev vs. release). Tauri-Commands: `generate_invoice`, `generate_offer`, `generate_reminder` (v0.6), `extract_zugferd`, `extract_text_pdf` (v0.6), `ping_sidecar`.
+- `fs_export.rs` — `save_text_file(path, content)` für CSV-Exports ohne `plugin-fs`. `import_expense_pdf` für Eingangsrechnungs-Ablage.
+- `backup.rs` — `snapshot_db_path`, `bundle_backup`, `stage_restore`, `apply_pending_partial_restore`. `apply_pending_restore_blocking()` läuft in `run()` BEVOR Plugin-Init, sodass das SQL-Plugin die frisch wiederhergestellte DB öffnet. App-Identifier ist hardcoded `digital.laux.zettel`, weil der Pre-Builder-Hook keinen AppHandle hat. Deps: `zip` (deflate), `walkdir`, `dirs`, `rusqlite` (für ATTACH DATABASE im Partial-Restore).
+- `crypto.rs` — AES-256-GCM + Argon2id für optionale Backup-Verschlüsselung.
 
 ## Cross-platform builds
-- `.github/workflows/build.yml` matrix: windows-latest, macos-14 (arm64), macos-13 (x86_64), ubuntu-22.04. Each runner installs Python+GTK+Tauri-deps, runs `python sidecar/build.py`, then `pnpm tauri build --target <triple>`. Artifacts uploaded; release job triggers on `v*` tag.
-- **Linux/macOS caveat:** WeasyPrint loads Pango/Cairo dynamically from the system. Users need `apt install libpango1.0-0 libcairo2 libgdk-pixbuf2.0-0` or `brew install pango cairo gdk-pixbuf`. Bundling those is a Phase-2 nice-to-have.
-- Local Windows install lands at `C:\Users\<user>\AppData\Local\zettel\` (NSIS user-scope).
+- `.github/workflows/build.yml` Matrix: windows-latest, macos-14 (arm64), macos-13 (x86_64), ubuntu-22.04. Jeder Runner installiert Python+GTK+Tauri-Deps, baut `python sidecar/build.py`, dann `pnpm tauri build --target <triple>`. Artefakte hochgeladen; Release-Job triggert auf `v*` Tag.
+- CI signiert via `TAURI_SIGNING_PRIVATE_KEY`, uploaded `.sig`-Files + generiertes `latest.json` an den Release (für Auto-Update). Tauri-2-Quirk: NSIS-Setup-Sig ist `-setup.exe.sig`, nicht `*.nsis.zip.sig`. `bundle.createUpdaterArtifacts` MUSS in `tauri.conf.json` gesetzt sein.
+- **Linux/macOS-caveat:** WeasyPrint lädt Pango/Cairo dynamisch vom System. User brauchen `apt install libpango1.0-0 libcairo2 libgdk-pixbuf2.0-0` bzw. `brew install pango cairo gdk-pixbuf`. Bundling wäre Phase-2.
+- Lokaler Windows-Install: `C:\Users\<user>\AppData\Local\zettel\` (NSIS user-scope).
 
 ## Stack quick-ref
 - **Frontend:** Svelte 5 (runes!), TypeScript strict, Vite, Tailwind v4, Bits UI
-- **Routing:** `svelte-spa-router` — hash-based, lightweight (no SvelteKit)
-- **Persistence:** `@tauri-apps/plugin-sql` (SQLite). Schema in `src/lib/db/schema.ts` (Drizzle, types only). Queries are raw parameterized SQL via `src/lib/db/client.ts` — Drizzle ORM is **not** wired up at runtime. Migrations live in `src/lib/db/migrations/*.sql` and are embedded at compile-time in `src-tauri/src/lib.rs`.
-- **Money:** always Cent (integer) in DB, format on display via `src/lib/utils/money.ts`.
+- **Routing:** `svelte-spa-router` — hash-based, lightweight (kein SvelteKit)
+- **Persistence:** `@tauri-apps/plugin-sql` (SQLite). Schema in `src/lib/db/schema.ts` (Drizzle, types only). Queries sind raw parameterized SQL via `src/lib/db/client.ts` — Drizzle ORM ist **nicht** zur Laufzeit gewired. Migrationen liegen in `src/lib/db/migrations/*.sql` und werden compile-time in `src-tauri/src/lib.rs` via `include_str!` eingebettet.
+- **Money:** immer Cent (integer) in DB, Display-Formatierung via `src/lib/utils/money.ts`.
 
 ## Conventions
-- **UI lives in `src/lib/ui/`** — thin shadcn-style wrappers over Bits UI primitives (Button, Card, Dialog, Dropdown, Input, Select, Textarea, Badge, Titlebar, Toaster). Theme tokens in `src/lib/theme.svelte.ts` (light/dark/system). Lucide icons via `@lucide/svelte`. Do not bypass these wrappers — extend them.
-- **Svelte 5 runes only** (`$state`, `$derived`, `$effect`, `$props`). No legacy stores in components, no `export let`. New components: `<script lang="ts">` with runes.
-- **German UI strings**, English code/identifiers/comments.
-- **No comments unless WHY is non-obvious.**
-- **Customer/Invoice numbers**: `K-0001`, `RE-2026-0001`. Format configurable in settings.
-- **DB column naming**: snake_case in SQL, mapped to camelCase in TS via `mapXxx()` helpers in `queries.ts` / `invoices.ts` / `recurring.ts`.
-- **Migrations are byte-sensitive.** They're embedded via Rust `include_str!`. `.gitattributes` pins LF for all `*.sql` (and other code) files; never change a migration's content after it has shipped — bump the version and add a new one.
+- **UI lives in `src/lib/ui/`** — thin shadcn-style wrappers über Bits UI primitives (Button, Card, Dialog, Dropdown, Input, Select, Textarea, Badge, Titlebar, Toaster). Theme tokens in `src/lib/theme.svelte.ts` (light/dark/system). Lucide icons via `@lucide/svelte`. Wrapper NICHT umgehen — extend them.
+- **Svelte 5 runes only** (`$state`, `$derived`, `$effect`, `$props`). Keine legacy stores in components, kein `export let`. Neue Komponenten: `<script lang="ts">` mit runes.
+- **Deutsche UI-Strings**, englische Code/Identifier/Comments.
+- **Keine Kommentare außer wenn WARUM nicht offensichtlich.**
+- **Nummern-Konventionen**: Kunden `K-0001`, Lieferanten `L-0001`, Rechnungen `RE-2026-0001`, Angebote `AN-2026-0001`, Ausgaben `EX-2026-0001`, Mahnungen `MA-2026-0001`. Format konfigurierbar in Settings.
+- **DB-Column-Naming**: snake_case in SQL, gemappt auf camelCase in TS via `mapXxx()` Helper in `queries.ts` / `invoices.ts` / `recurring.ts` / `expenses.ts` / `reminders.ts`.
+- **Migrationen sind byte-sensitiv.** Eingebettet via Rust `include_str!`. `.gitattributes` pinnt LF für alle `*.sql`. Niemals den Inhalt einer Migration nach dem Shipping ändern — neue Version, neue Migration.
+- **No popup windows:** alle Form-/Edit-Screens nutzen `push("/...")` In-App-Routing. Niemals separate Tauri WebviewWindow öffnen.
 
 ## Git workflow
-- Feature work lands in `release/vX.Y` branches via PRs. main = last shipped release.
-- Squash-merge PRs into the release branch; one consolidating PR `release/vX.Y → main` at release time.
-- Conventional commits (`feat`, `fix`, `chore`, `docs`).
-- All git/pnpm/gh/cargo commands run via PowerShell (Windows Tauri project). WSL bash is fine for `Read`/`Edit`/`Write` tools.
+- Feature-Arbeit landet in `release/vX.Y`-Branches via PR. main = letztes shipped Release.
+- Squash-merge PRs in den Release-Branch; ein konsolidierender PR `release/vX.Y → main` zum Release-Zeitpunkt.
+- Conventional Commits (`feat`, `fix`, `chore`, `docs`).
+- Alle git/pnpm/gh/cargo-Commands laufen via **PowerShell** (Windows Tauri project). WSL bash ist OK für `Read`/`Edit`/`Write`-Tools.
 
 ## Commands
 - `pnpm tauri:dev` — full app (Tauri + Vite)
-- `pnpm dev` — frontend only (no Tauri APIs available, DB calls fail)
-- `pnpm db:generate` — regenerate migrations from Drizzle schema
+- `pnpm dev` — frontend only (kein Tauri-API, DB-Calls schlagen fehl)
+- `pnpm db:generate` — Migrationen aus Drizzle-Schema regenerieren
 - `pnpm check` — svelte-check
 
 ## Don't
-- Don't add backend HTTP servers — everything is Tauri commands or direct SQLite.
-- Don't introduce React, SvelteKit, or styled-components.
-- Don't store money as float.
-- Don't add telemetry.
+- Keine Backend-HTTP-Server — alles ist Tauri-Commands oder direkt SQLite.
+- Kein React, SvelteKit, styled-components.
+- Money niemals als float speichern.
+- Keine Telemetrie.
+- Keine Tesseract-Dependency (Scan-OCR ist explizit Non-Goal für v0.6).
+- Keine ELSTER-Anbindung (Non-Goal, würde GoBD-Disclaimer aufweichen).

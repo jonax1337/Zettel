@@ -71,6 +71,12 @@ pub fn run() {
             sql: include_str!("../../src/lib/db/migrations/0009_expenses.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 11,
+            description: "reminders",
+            sql: include_str!("../../src/lib/db/migrations/0010_reminders.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -90,6 +96,8 @@ pub fn run() {
             sidecar::generate_offer,
             sidecar::ping_sidecar,
             sidecar::extract_zugferd,
+            sidecar::extract_text_pdf,
+            sidecar::generate_reminder,
             fs_export::save_text_file,
             fs_export::import_expense_pdf,
             backup::snapshot_db_path,

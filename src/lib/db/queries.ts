@@ -34,6 +34,17 @@ type SettingsRow = {
   vendor_number_counter: number | null;
   expense_number_format: string | null;
   expense_number_counter: number | null;
+  reminder_number_format: string | null;
+  reminder_number_counter: number | null;
+  reminder_days_l1: number | null;
+  reminder_days_l2: number | null;
+  reminder_days_l3: number | null;
+  reminder_fee_l1_cents: number | null;
+  reminder_fee_l2_cents: number | null;
+  reminder_fee_l3_cents: number | null;
+  reminder_text_l1: string | null;
+  reminder_text_l2: string | null;
+  reminder_text_l3: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -70,6 +81,17 @@ function mapSettings(r: SettingsRow): Settings {
     vendorNumberCounter: r.vendor_number_counter ?? 0,
     expenseNumberFormat: r.expense_number_format ?? "EX-{YYYY}-{NNNN}",
     expenseNumberCounter: r.expense_number_counter ?? 0,
+    reminderNumberFormat: r.reminder_number_format ?? "MA-{YYYY}-{NNNN}",
+    reminderNumberCounter: r.reminder_number_counter ?? 0,
+    reminderDaysL1: r.reminder_days_l1 ?? 14,
+    reminderDaysL2: r.reminder_days_l2 ?? 14,
+    reminderDaysL3: r.reminder_days_l3 ?? 14,
+    reminderFeeL1Cents: r.reminder_fee_l1_cents ?? 0,
+    reminderFeeL2Cents: r.reminder_fee_l2_cents ?? 500,
+    reminderFeeL3Cents: r.reminder_fee_l3_cents ?? 1000,
+    reminderTextL1: r.reminder_text_l1 ?? "",
+    reminderTextL2: r.reminder_text_l2 ?? "",
+    reminderTextL3: r.reminder_text_l3 ?? "",
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -118,6 +140,17 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       vendor_number_counter = ?,
       expense_number_format = ?,
       expense_number_counter = ?,
+      reminder_number_format = ?,
+      reminder_number_counter = ?,
+      reminder_days_l1 = ?,
+      reminder_days_l2 = ?,
+      reminder_days_l3 = ?,
+      reminder_fee_l1_cents = ?,
+      reminder_fee_l2_cents = ?,
+      reminder_fee_l3_cents = ?,
+      reminder_text_l1 = ?,
+      reminder_text_l2 = ?,
+      reminder_text_l3 = ?,
       updated_at = unixepoch()
     WHERE id = 1`,
     [
@@ -150,6 +183,17 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       s.vendorNumberCounter ?? 0,
       s.expenseNumberFormat ?? "EX-{YYYY}-{NNNN}",
       s.expenseNumberCounter ?? 0,
+      s.reminderNumberFormat ?? "MA-{YYYY}-{NNNN}",
+      s.reminderNumberCounter ?? 0,
+      s.reminderDaysL1 ?? 14,
+      s.reminderDaysL2 ?? 14,
+      s.reminderDaysL3 ?? 14,
+      s.reminderFeeL1Cents ?? 0,
+      s.reminderFeeL2Cents ?? 500,
+      s.reminderFeeL3Cents ?? 1000,
+      s.reminderTextL1 ?? "",
+      s.reminderTextL2 ?? "",
+      s.reminderTextL3 ?? "",
     ],
   );
 }

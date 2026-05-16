@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ reminder.levelLabel }} {{ reminder.number }}</title>
+</head>
+<body class="theme-{{ settings.pdf_theme if settings and settings.pdf_theme else 'classic' }}">
+
+  <header class="masthead">
+    <div class="brand">
+      {% if company.logoDataUri %}<img class="brand-logo" src="{{ company.logoDataUri }}" alt="" />{% endif %}
+      <div class="brand-name">{{ company.companyName }}</div>
+      {% if company.ownerName %}<div class="brand-owner">{{ company.ownerName }}</div>{% endif %}
+    </div>
+    <div class="title-block">
+      <div class="doctype">{{ reminder.levelLabel }}</div>
+      <div class="docnumber">{{ reminder.number }}</div>
+    </div>
+  </header>
+
+  <section class="parties">
+    <div class="addressee">
+      <div class="sender-line">
+        {{ company.companyName }}
+        {%- if company.street %} · {{ company.street }}{% endif %}
+        {%- if company.postalCode %} · {{ company.postalCode }} {{ company.city }}{% endif %}
+      </div>
+      <div class="addressee-name">{{ customer.name }}</div>
+      {% if customer.contactPerson %}<div>z. Hd. {{ customer.contactPerson }}</div>{% endif %}
+      <div>{{ customer.street }}</div>
+      <div>{{ customer.postalCode }} {{ customer.city }}</div>
+      {% if customer.country and customer.country != "DE" %}<div>{{ customer.country }}</div>{% endif %}
+    </div>
+
+    <div class="meta">
+      <div class="meta-row">
+        <span class="meta-label">{{ reminder.levelLabel }}-Nr.</span>
+        <span class="meta-value">{{ reminder.number }}</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Datum</span>
+        <span class="meta-value">{{ reminder.issueDate | date_unix }}</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Neue Frist</span>
+        <span class="meta-value">{{ reminder.dueDate | date_unix }}</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="intro">
+    <p>Sehr geehrte Damen und Herren,</p>
+    <p style="white-space: pre-wrap;">{{ reminder.bodyText }}</p>
+  </section>
+
+  <section class="reference">
+    <h3>Offener Posten</h3>
+    <table class="items">
+      <thead>
+        <tr>
+          <th>Beleg</th>
+          <th>Datum</th>
+          <th>Ursprünglich fällig</th>
+          <th class="num">Betrag</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Rechnung {{ invoice.invoiceNumber }}</td>
+          <td>{{ invoice.invoiceIssueDate | date_unix }}</td>
+          <td>{{ invoice.invoiceDueDate | date_unix }}</td>
+          <td class="num">{{ reminder.originalTotalCents | eur }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="totals">
+    <table class="totals-table">
+      <tbody>
+        <tr>
+          <td>Rechnungsbetrag</td>
+          <td class="num">{{ reminder.originalTotalCents | eur }}</td>
+        </tr>
+        {% if reminder.feeCents and reminder.feeCents > 0 %}
+        <tr>
+          <td>Mahngebühr</td>
+          <td class="num">{{ reminder.feeCents | eur }}</td>
+        </tr>
+        {% endif %}
+        {% if reminder.interestCents and reminder.interestCents > 0 %}
+        <tr>
+          <td>Verzugszinsen</td>
+          <td class="num">{{ reminder.interestCents | eur }}</td>
+        </tr>
+        {% endif %}
+        <tr class="grand">
+          <td>Zu zahlender Gesamtbetrag</td>
+          <td class="num">{{ reminder.totalDueCents | eur }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="payment">
+    <p>
+      Wir bitten um Überweisung auf folgendes Konto bis spätestens
+      <strong>{{ reminder.dueDate | date_unix }}</strong>:
+    </p>
+    {% if company.bankName or company.bankIban %}
+    <div class="bank">
+      {% if company.bankName %}<div>{{ company.bankName }}</div>{% endif %}
+      {% if company.bankIban %}<div>IBAN: {{ company.bankIban }}</div>{% endif %}
+      {% if company.bankBic %}<div>BIC: {{ company.bankBic }}</div>{% endif %}
+      <div>Verwendungszweck: {{ invoice.invoiceNumber }}</div>
+    </div>
+    {% endif %}
+    <p>Sollte sich diese Mahnung mit Ihrer Zahlung überschneiden, betrachten Sie dieses Schreiben bitte als gegenstandslos.</p>
+  </section>
+
+  <footer class="page-footer">
+    <div>{{ company.companyName }}{% if company.ownerName %} · {{ company.ownerName }}{% endif %}</div>
+    {% if company.taxNumber %}<div>Steuernr.: {{ company.taxNumber }}</div>{% endif %}
+    {% if company.vatId %}<div>USt-IdNr.: {{ company.vatId }}</div>{% endif %}
+  </footer>
+
+</body>
+</html>

@@ -1,7 +1,7 @@
 # Faktura — Project Plan
 
 > **Name:** Zettel
-> **Status:** v0.4.3 released · v0.5.0 in Planung („Buchhaltungs-Light")
+> **Status:** v0.6.0 released (Mahnwesen + OCR-Light) · v0.5.0 release: Buchhaltungs-Light
 > **Released:** v0.1.0 → v0.4.3 (alle 2026-05-16, Auto-Update aktiv ab v0.4.3)
 > **Lizenz:** MIT
 > **Owner:** Jonas Laux ([laux.digital](https://laux.digital))
@@ -485,7 +485,7 @@ faktura/
 
 ---
 
-### v0.5.0 🔲 — „Buchhaltungs-Light" (in Planung)
+### v0.5.0 ✅ — „Buchhaltungs-Light" (released 2026-05-16)
 
 **Roter Faden:** Bisher konnte Zettel nur Ausgangsbelege. v0.5 macht den Gegenpol auf — Eingangsrechnungen, Lieferanten, einfache Saldo-Übersicht. Detail-Spec in `Areas/Zettel/Features/v0.5.0-buchhaltung-light.md` (Obsidian).
 
@@ -514,13 +514,21 @@ faktura/
 - GoBD-zertifizierte Archivierung — Disclaimer wie immer
 - OCR für Nicht-ZUGFeRD-PDFs (v0.6+)
 
-### v0.6+ / Backlog (nicht für v0.5 geplant)
-- OCR für Eingangsrechnungen ohne ZUGFeRD-XML (Tesseract o.ä.)
+### v0.6.0 ✅ — Mahnwesen + OCR-Light (released 2026-05-17)
+- **Mahnungen als first-class Dokumente** (`/reminders`, `MA-YYYY-NNNN`, eigene `reminders`-Tabelle + PDF-Template). 3 Stufen: Zahlungserinnerung / Mahnung / Letzte Mahnung. Snapshot der Original-Rechnung, Mahngebühr + Verzugszinsen.
+- **Überfällige-Rechnungen-Widget** in `/reminders` + kontextsensitiver Mahn-Button in `InvoiceDetail`.
+- **OCR-Light für Eingangsrechnungen** (`extract_text_pdf` via pypdf-Text-Layer + Regex-Heuristik). Fallback wenn keine ZUGFeRD-XML vorhanden. **Kein Tesseract** — reine Scans bleiben manuell.
+- **Fix:** `CURRENT_SCHEMA` in `backup.rs` war seit v0.5 verzettelt auf 9 — auf 11 gezogen.
+
+### v0.7+ / Backlog (nicht für v0.6 geplant)
+- Tesseract-OCR für gescannte Eingangsrechnungen (würde Bundle um ~30 MB aufblähen — bewusst verschoben)
 - I18n (englische UI)
 - Mehrere PDF-Themes über die bestehenden 3 hinaus
-- Mahnwesen / Zahlungserinnerungen
+- Mahnwesen-Settings-UI (heute nur über DB-Defaults; Templates pro Mahnung im Editor änderbar)
+- Wiederkehrende Eingangsrechnungen (Hosting, Software-Abos)
 - ELSTER-Anbindung (würde Non-Goal aufweichen — explizit prüfen)
 - Backup-Cloud-Upload (S3-kompatibel)
+- Automatischer Mahn-Versand per SMTP (würde „offline-first" verwässern)
 
 ---
 
