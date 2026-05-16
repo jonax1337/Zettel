@@ -9,6 +9,7 @@
     FileInput,
     Repeat,
     Download,
+    BarChart3,
     Settings as SettingsIcon,
     Monitor,
     Sun,
@@ -39,6 +40,7 @@
     { href: "/invoices", label: "Rechnungen", icon: FileText },
     { href: "/expenses", label: "Eingangsrechnungen", icon: FileInput },
     { href: "/recurring", label: "Vorlagen", icon: Repeat },
+    { href: "/reports/ustva", label: "UStVA", icon: BarChart3 },
     { href: "/export", label: "Export", icon: Download },
     { href: "/settings", label: "Einstellungen", icon: SettingsIcon },
   ];

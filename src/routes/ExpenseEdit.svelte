@@ -1,5 +1,6 @@
 <script lang="ts">
   import { link, push } from "svelte-spa-router";
+  import { onMount } from "svelte";
   import { listVendors } from "$lib/db/queries";
   import {
     cancelExpense,
@@ -18,6 +19,13 @@
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import {
+    extractZugferd,
+    importExpensePdf,
+    type ExtractedInvoice,
+  } from "$lib/sidecar/extract";
+  import { open as openDialog } from "@tauri-apps/plugin-dialog";
+  import { getCurrentWebview } from "@tauri-apps/api/webview";
+  import {
     Button,
     Input,
     Textarea,
@@ -29,7 +37,7 @@
     ConfirmDialog,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2, Check, X } from "@lucide/svelte";
+  import { ArrowLeft, Plus, Trash2, Check, X, FileUp, Loader2 } from "@lucide/svelte";
 
   type Props = {
     mode: "new" | "edit";
@@ -68,6 +76,12 @@
 
   let confirmDeleteOpen = $state(false);
   let confirmCancelOpen = $state(false);
+
+  let importing = $state(false);
+  let dropHover = $state(false);
+  let pdfPath = $state<string | null>(null);
+  let importedNote = $state<string | null>(null);
+  let zugferdExtracted = $state(false);
 
   $effect(() => {
     Promise.all([listVendors(), listCategories()])
@@ -113,6 +127,7 @@
           dueDateIso = res.expense.dueDate ? toIsoDate(res.expense.dueDate) : "";
           notes = res.expense.notes ?? "";
           reverseCharge = res.expense.isReverseCharge;
+          pdfPath = res.expense.pdfPath;
           items = res.items.map((it) => ({
             description: it.description,
             category: it.category,
@@ -198,6 +213,135 @@
     cancelled: "outline",
   };
 
+  // --- ZUGFeRD-Import ---
+
+  function vendorSlug(v: Vendor | null): string | undefined {
+    if (!v) return undefined;
+    return `${v.vendorNumber}-${v.name}`
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60);
+  }
+
+  function matchVendor(seller: ExtractedInvoice["seller"]): Vendor | null {
+    if (seller.vatId) {
+      const byVat = vendors.find(
+        (v) => v.vatId && v.vatId.replace(/\s+/g, "").toUpperCase() ===
+          (seller.vatId ?? "").replace(/\s+/g, "").toUpperCase(),
+      );
+      if (byVat) return byVat;
+    }
+    if (seller.name) {
+      const sn = seller.name.toLowerCase().trim();
+      const byName = vendors.find((v) => v.name.toLowerCase().trim() === sn);
+      if (byName) return byName;
+    }
+    return null;
+  }
+
+  function applyExtract(data: ExtractedInvoice, matched: Vendor | null) {
+    if (matched) vendorIdStr = String(matched.id);
+    if (data.invoiceNumber) vendorNumber = data.invoiceNumber;
+    if (data.issueDate) issueDateIso = toIsoDate(data.issueDate);
+    if (data.dueDate) dueDateIso = toIsoDate(data.dueDate);
+    reverseCharge = data.reverseChargeType !== "none";
+    if (data.lineItems.length > 0) {
+      items = data.lineItems.map((li) => ({
+        description: li.description,
+        category: matched?.defaultCategory ?? null,
+        datevAccount: null,
+        quantity: li.quantity,
+        unit: li.unit,
+        unitPrice: li.unitPrice,
+        vatRate: li.vatRate,
+        priceText: (li.unitPrice / 100).toFixed(2).replace(".", ","),
+      }));
+    }
+  }
+
+  async function handleImport(srcPath: string) {
+    if (importing) return;
+    importing = true;
+    importedNote = null;
+    try {
+      const result = await extractZugferd(srcPath);
+      let matched: Vendor | null = null;
+      let foundXml = false;
+      if (result.success && result.found) {
+        foundXml = true;
+        zugferdExtracted = true;
+        matched = matchVendor(result.data.seller);
+        applyExtract(result.data, matched);
+      } else if (result.success === false) {
+        toast.error("ZUGFeRD-Extract fehlgeschlagen", result.error.message);
+      }
+      const dest = await importExpensePdf(srcPath, vendorSlug(matched));
+      pdfPath = dest;
+      if (foundXml) {
+        if (matched) {
+          toast.success("ZUGFeRD übernommen", `Lieferant „${matched.name}" automatisch zugeordnet.`);
+          importedNote = `PDF abgelegt unter ${dest}`;
+        } else {
+          toast.action(
+            "ZUGFeRD übernommen",
+            { label: "Lieferant anlegen", onClick: () => push("/vendors/new") },
+            { description: "Kein passender Lieferant — bitte vorher anlegen oder oben auswählen." },
+          );
+          importedNote = `PDF abgelegt unter ${dest}. Lieferant fehlt.`;
+        }
+      } else {
+        toast.warning(
+          "Keine ZUGFeRD-XML in der PDF",
+          "Bitte manuell erfassen. Die PDF wurde trotzdem abgelegt.",
+        );
+        importedNote = `PDF abgelegt unter ${dest}`;
+      }
+    } catch (e) {
+      toast.error("Import fehlgeschlagen", String(e));
+    } finally {
+      importing = false;
+    }
+  }
+
+  async function pickFile() {
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        directory: false,
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
+      });
+      if (typeof selected === "string") {
+        await handleImport(selected);
+      }
+    } catch (e) {
+      toast.error("Datei-Dialog fehlgeschlagen", String(e));
+    }
+  }
+
+  onMount(() => {
+    if (mode !== "new") return;
+    let unlisten: (() => void) | null = null;
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === "over") {
+          dropHover = true;
+        } else if (event.payload.type === "leave") {
+          dropHover = false;
+        } else if (event.payload.type === "drop") {
+          dropHover = false;
+          const paths = event.payload.paths.filter((p) => p.toLowerCase().endsWith(".pdf"));
+          if (paths.length > 0) {
+            void handleImport(paths[0]);
+          } else if (event.payload.paths.length > 0) {
+            toast.warning("Nur PDF-Dateien werden unterstützt.");
+          }
+        }
+      })
+      .then((u) => (unlisten = u));
+    return () => unlisten?.();
+  });
+
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     if (!editable) return;
@@ -213,7 +357,7 @@
         dueDate: dueDateIso ? fromIsoDate(dueDateIso) : null,
         notes: notes.trim() || null,
         reverseChargeType: reverseCharge ? "intra_eu" : "none",
-        pdfPath: existing?.pdfPath ?? null,
+        pdfPath: pdfPath ?? existing?.pdfPath ?? null,
         items: items.map((it) => ({
           description: it.description,
           category: it.category?.trim() || null,
@@ -225,7 +369,7 @@
         })),
       };
       if (mode === "new") {
-        await createExpense(input);
+        await createExpense(input, { zugferdExtracted });
         toast.success("Eingangsrechnung erfasst");
       } else if (id !== null) {
         await updateExpense(id, input);
@@ -312,6 +456,44 @@
 {#if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else}
+  {#if mode === "new"}
+    <div
+      class={"mb-6 rounded-lg border-2 border-dashed p-6 text-center transition-colors " +
+        (dropHover
+          ? "border-primary bg-primary/5"
+          : importing
+            ? "border-muted bg-muted/30"
+            : "border-muted-foreground/25 hover:border-muted-foreground/50")}
+    >
+      {#if importing}
+        <div class="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 class="size-4 animate-spin" />
+          <span>ZUGFeRD-Daten werden gelesen…</span>
+        </div>
+      {:else}
+        <div class="flex flex-col items-center gap-3">
+          <FileUp class="size-8 text-muted-foreground" />
+          <div class="text-sm">
+            <span class="font-medium">PDF hierher ziehen</span>
+            <span class="text-muted-foreground"> oder </span>
+            <button
+              type="button"
+              onclick={pickFile}
+              class="font-medium text-primary hover:underline"
+            >
+              Datei auswählen
+            </button>
+          </div>
+          <p class="text-xs text-muted-foreground">
+            ZUGFeRD/Factur-X-Daten werden automatisch übernommen.
+          </p>
+        </div>
+      {/if}
+    </div>
+    {#if importedNote}
+      <p class="mb-4 text-xs text-muted-foreground">{importedNote}</p>
+    {/if}
+  {/if}
   <form onsubmit={onSubmit}>
     <Card>
       <CardContent class="space-y-6">

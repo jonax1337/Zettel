@@ -17,6 +17,7 @@
   import VendorEdit from "./routes/VendorEdit.svelte";
   import ExpensesList from "./routes/ExpensesList.svelte";
   import ExpenseEdit from "./routes/ExpenseEdit.svelte";
+  import UstvaReport from "./routes/UstvaReport.svelte";
   import Settings from "./routes/Settings.svelte";
   import Export from "./routes/Export.svelte";
   import NotFound from "./routes/NotFound.svelte";
@@ -106,6 +107,7 @@
       component: ExpenseEdit as unknown as never,
       props: { mode: "edit" },
     }),
+    "/reports/ustva": UstvaReport,
     "/settings": Settings,
     "/export": Export,
     "*": NotFound,
