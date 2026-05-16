@@ -88,11 +88,13 @@ def _render_offer_html_pdf(payload: dict[str, Any]) -> bytes:
     template = env.get_template("offer.html.j2")
     company = dict(payload["company"])
     company["logoDataUri"] = _logo_data_uri(company.get("logoPath"))
+    settings = payload.get("settings") or {"pdf_theme": "classic"}
     html_str = template.render(
         offer=payload["offer"],
         items=payload["items"],
         company=company,
         customer=payload["customer"],
+        settings=settings,
     )
     css_path = Path(template.environment.loader.searchpath[0]) / "invoice.css"
     stylesheets = [CSS(filename=str(css_path))] if css_path.exists() else []

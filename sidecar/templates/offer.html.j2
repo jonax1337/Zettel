@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>Angebot {{ offer.number }}</title>
 </head>
-<body>
+<body class="theme-{{ settings.pdf_theme if settings and settings.pdf_theme else 'classic' }}">
 
   <header class="masthead">
     <div class="brand">
