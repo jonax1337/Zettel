@@ -31,8 +31,24 @@ const APP_IDENTIFIER: &str = "digital.laux.zettel";
 const MANIFEST_NAME: &str = "manifest.json";
 const DB_ENTRY: &str = "zettel.db";
 const PDF_DIR_ENTRY: &str = "Rechnungen";
+const OFFER_PDF_DIR_ENTRY: &str = "Angebote";
 const PENDING_DIR: &str = "pending_restore";
 const PENDING_MARKER: &str = "RESTORE_PENDING";
+const RESTORE_MODE_FILE: &str = "restore_mode.json";
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct PartialRestoreSections {
+    pub customers: bool,
+    pub invoices: bool,
+    pub settings: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "lowercase")]
+enum RestoreMode {
+    Full,
+    Partial { sections: PartialRestoreSections },
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct BackupManifest {
@@ -116,9 +132,13 @@ pub async fn bundle_backup(
         .map_err(|e| e.to_string())?;
     zip.write_all(&db_bytes).map_err(|e| e.to_string())?;
 
-    // 3) PDFs (optional — directory may not exist)
-    let pdf_root = documents_zettel_dir(&app)?.join("Rechnungen");
-    if pdf_root.is_dir() {
+    // 3) PDFs (optional — directories may not exist)
+    let zettel_root = documents_zettel_dir(&app)?;
+    for sub in [PDF_DIR_ENTRY, OFFER_PDF_DIR_ENTRY] {
+        let pdf_root = zettel_root.join(sub);
+        if !pdf_root.is_dir() {
+            continue;
+        }
         for entry in WalkDir::new(&pdf_root).into_iter().filter_map(|e| e.ok()) {
             let p = entry.path();
             if !p.is_file() {
@@ -128,7 +148,7 @@ pub async fn bundle_backup(
                 Ok(r) => r,
                 Err(_) => continue,
             };
-            let entry_name = format!("{}/{}", PDF_DIR_ENTRY, rel.to_string_lossy().replace('\\', "/"));
+            let entry_name = format!("{}/{}", sub, rel.to_string_lossy().replace('\\', "/"));
             zip.start_file(entry_name, opts).map_err(|e| e.to_string())?;
             let mut buf = Vec::new();
             File::open(p)
@@ -145,7 +165,11 @@ pub async fn bundle_backup(
 }
 
 #[tauri::command]
-pub async fn stage_restore(app: AppHandle, source_zip: String) -> Result<String, String> {
+pub async fn stage_restore(
+    app: AppHandle,
+    source_zip: String,
+    sections: Option<PartialRestoreSections>,
+) -> Result<String, String> {
     let src = PathBuf::from(&source_zip);
     if !src.is_file() {
         return Err(format!("ZIP missing: {}", source_zip));
@@ -205,10 +229,31 @@ pub async fn stage_restore(app: AppHandle, source_zip: String) -> Result<String,
         return Err("Keine zettel.db im Backup gefunden.".into());
     }
 
+    // Restore-Modus festhalten. Volle Wiederherstellung (alle Sections oder keine Angabe)
+    // läuft pre-init und ersetzt die DB-Datei; partielle Wiederherstellung läuft
+    // post-init über ATTACH + section-weises Kopieren, weil das SQL-Plugin die DB
+    // währenddessen geöffnet halten darf.
+    let mode = match sections {
+        None => RestoreMode::Full,
+        Some(s) if s.customers && s.invoices && s.settings => RestoreMode::Full,
+        Some(s) => RestoreMode::Partial { sections: s },
+    };
+    let mode_json = serde_json::to_string_pretty(&mode).map_err(|e| e.to_string())?;
+    fs::write(app_data_dir(&app)?.join(RESTORE_MODE_FILE), mode_json.as_bytes())
+        .map_err(|e| e.to_string())?;
+
     // Marker schreiben
     fs::write(app_data_dir(&app)?.join(PENDING_MARKER), b"pending")
         .map_err(|e| e.to_string())?;
     Ok(pending_root.to_string_lossy().into_owned())
+}
+
+fn read_restore_mode(data_dir: &std::path::Path) -> RestoreMode {
+    let path = data_dir.join(RESTORE_MODE_FILE);
+    match fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str::<RestoreMode>(&s).unwrap_or(RestoreMode::Full),
+        Err(_) => RestoreMode::Full,
+    }
 }
 
 /// Called at startup, BEFORE the SQL plugin opens the DB. Runs without an
@@ -229,7 +274,14 @@ pub fn apply_pending_restore_blocking() {
     let pending_root = data_dir.join(PENDING_DIR);
     if !pending_root.is_dir() {
         let _ = fs::remove_file(&marker);
+        let _ = fs::remove_file(data_dir.join(RESTORE_MODE_FILE));
         return;
+    }
+
+    // Partial-Restore wird post-init im Frontend angestoßen — hier nichts tun.
+    match read_restore_mode(&data_dir) {
+        RestoreMode::Partial { .. } => return,
+        RestoreMode::Full => {}
     }
 
     let pending_db = pending_root.join(DB_ENTRY);
@@ -246,10 +298,13 @@ pub fn apply_pending_restore_blocking() {
         }
     }
 
-    let pending_pdfs = pending_root.join(PDF_DIR_ENTRY);
-    if pending_pdfs.is_dir() {
-        if let Some(zettel_dir) = documents_zettel_dir_static() {
-            let target_root = zettel_dir.join("Rechnungen");
+    if let Some(zettel_dir) = documents_zettel_dir_static() {
+        for sub in [PDF_DIR_ENTRY, OFFER_PDF_DIR_ENTRY] {
+            let pending_pdfs = pending_root.join(sub);
+            if !pending_pdfs.is_dir() {
+                continue;
+            }
+            let target_root = zettel_dir.join(sub);
             let _ = fs::create_dir_all(&target_root);
             for entry in WalkDir::new(&pending_pdfs).into_iter().filter_map(|e| e.ok()) {
                 let p = entry.path();
@@ -271,6 +326,123 @@ pub fn apply_pending_restore_blocking() {
 
     let _ = fs::remove_dir_all(&pending_root);
     let _ = fs::remove_file(&marker);
+    let _ = fs::remove_file(data_dir.join(RESTORE_MODE_FILE));
+}
+
+/// Post-init partial restore. Runs after the SQL plugin opened the DB — opens a
+/// second `rusqlite` connection to the same file (SQLite handles concurrent
+/// connections via WAL/locks), attaches the staged backup DB, and copies only
+/// the chosen sections inside a single transaction.
+#[tauri::command]
+pub async fn apply_pending_partial_restore(app: AppHandle) -> Result<(), String> {
+    let data_dir = app_data_dir(&app)?;
+    let marker = data_dir.join(PENDING_MARKER);
+    let pending_root = data_dir.join(PENDING_DIR);
+    let mode_path = data_dir.join(RESTORE_MODE_FILE);
+
+    if !marker.exists() || !pending_root.is_dir() {
+        return Err("Keine ausstehende Wiederherstellung gefunden.".into());
+    }
+    let sections = match read_restore_mode(&data_dir) {
+        RestoreMode::Partial { sections } => sections,
+        RestoreMode::Full => {
+            return Err("Volle Wiederherstellung — bitte App neu starten.".into());
+        }
+    };
+
+    let live_db = data_dir.join("zettel.db");
+    let staged_db = pending_root.join(DB_ENTRY);
+    if !staged_db.is_file() {
+        return Err("Backup-Datenbank fehlt im pending-Ordner.".into());
+    }
+
+    let conn = rusqlite::Connection::open(&live_db).map_err(|e| e.to_string())?;
+    conn.execute_batch(&format!(
+        "ATTACH DATABASE '{}' AS bak;",
+        staged_db.to_string_lossy().replace('\'', "''")
+    ))
+    .map_err(|e| e.to_string())?;
+
+    let mut tables: Vec<&str> = Vec::new();
+    if sections.customers {
+        tables.push("customers");
+    }
+    if sections.invoices {
+        tables.extend([
+            "invoice_items",
+            "invoices",
+            "offer_items",
+            "offers",
+            "recurring_invoice_items",
+            "recurring_invoices",
+        ]);
+    }
+    if sections.settings {
+        tables.push("settings");
+    }
+
+    let result: Result<(), String> = (|| {
+        conn.execute_batch("BEGIN; PRAGMA foreign_keys=OFF;")
+            .map_err(|e| e.to_string())?;
+        // Delete in dependency-safe order (children first); the table list above
+        // already lists items-tables before their parents.
+        for t in &tables {
+            conn.execute_batch(&format!("DELETE FROM main.{};", t))
+                .map_err(|e| e.to_string())?;
+        }
+        // Insert parents before children — reverse the deletion order.
+        for t in tables.iter().rev() {
+            conn.execute_batch(&format!(
+                "INSERT INTO main.{t} SELECT * FROM bak.{t};",
+                t = t
+            ))
+            .map_err(|e| e.to_string())?;
+        }
+        conn.execute_batch("PRAGMA foreign_keys=ON; COMMIT;")
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })();
+
+    if let Err(e) = result {
+        let _ = conn.execute_batch("ROLLBACK;");
+        let _ = conn.execute_batch("DETACH DATABASE bak;");
+        return Err(e);
+    }
+    let _ = conn.execute_batch("DETACH DATABASE bak;");
+    drop(conn);
+
+    if sections.invoices {
+        if let Ok(zettel_dir) = documents_zettel_dir(&app) {
+            for sub in [PDF_DIR_ENTRY, OFFER_PDF_DIR_ENTRY] {
+                let pending_pdfs = pending_root.join(sub);
+                if !pending_pdfs.is_dir() {
+                    continue;
+                }
+                let target_root = zettel_dir.join(sub);
+                fs::create_dir_all(&target_root).map_err(|e| e.to_string())?;
+                for entry in WalkDir::new(&pending_pdfs).into_iter().filter_map(|e| e.ok()) {
+                    let p = entry.path();
+                    if !p.is_file() {
+                        continue;
+                    }
+                    let rel = match p.strip_prefix(&pending_pdfs) {
+                        Ok(r) => r,
+                        Err(_) => continue,
+                    };
+                    let dest = target_root.join(rel);
+                    if let Some(parent) = dest.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    let _ = fs::copy(p, dest);
+                }
+            }
+        }
+    }
+
+    let _ = fs::remove_dir_all(&pending_root);
+    let _ = fs::remove_file(&marker);
+    let _ = fs::remove_file(&mode_path);
+    Ok(())
 }
 
 fn chrono_like_now() -> String {

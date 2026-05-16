@@ -72,6 +72,7 @@ pub fn run() {
             backup::snapshot_db_path,
             backup::bundle_backup,
             backup::stage_restore,
+            backup::apply_pending_partial_restore,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
