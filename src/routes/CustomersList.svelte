@@ -12,7 +12,7 @@
     toast,
   } from "$lib/ui";
   import { Plus, MoreHorizontal, Pencil, Trash2, Search } from "@lucide/svelte";
-  import { openCustomerForm } from "$lib/window";
+  import { push } from "svelte-spa-router";
 
   let search = $state("");
   let customers = $state<Customer[]>([]);
@@ -39,14 +39,12 @@
     reload();
   });
 
-  async function newCustomer() {
-    const res = await openCustomerForm();
-    if (res.saved) await reload();
+  function newCustomer() {
+    push("/customers/new");
   }
 
-  async function editCustomer(c: Customer) {
-    const res = await openCustomerForm(c.id);
-    if (res.saved) await reload();
+  function editCustomer(c: Customer) {
+    push(`/customers/${c.id}`);
   }
 
   function askDelete(c: Customer) {

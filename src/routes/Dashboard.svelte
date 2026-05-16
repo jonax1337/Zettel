@@ -28,7 +28,6 @@
     FileSignature,
   } from "@lucide/svelte";
   import { openOffersStats, expireDueOffers } from "$lib/db/offers";
-  import { openCustomerForm, openInvoiceForm } from "$lib/window";
   import {
     dueRecurring,
     generateInvoiceFromRecurring,
@@ -86,17 +85,12 @@
     reload();
   });
 
-  async function newInvoice() {
-    const res = await openInvoiceForm();
-    if (res.saved) {
-      await reload();
-      if (res.data?.id) push(`/invoices/${res.data.id}`);
-    }
+  function newInvoice() {
+    push("/invoices/new");
   }
 
-  async function newCustomer() {
-    const res = await openCustomerForm();
-    if (res.saved) await reload();
+  function newCustomer() {
+    push("/customers/new");
   }
 
   const statusLabel: Record<InvoiceStatus, string> = {
@@ -236,10 +230,7 @@
             <li>
               <button
                 type="button"
-                onclick={async () => {
-                  const res = await openCustomerForm(c.customerId);
-                  if (res.saved) await reload();
-                }}
+                onclick={() => push(`/customers/${c.customerId}`)}
                 class="w-full text-left group"
               >
                 <div class="flex items-baseline justify-between gap-2 text-sm">

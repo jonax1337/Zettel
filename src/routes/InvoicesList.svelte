@@ -13,7 +13,6 @@
   import { formatDate } from "$lib/utils/date";
   import { Button, Card, Input, Select, Badge, Label } from "$lib/ui";
   import { Plus, Search } from "@lucide/svelte";
-  import { openInvoiceForm } from "$lib/window";
 
   let invoices = $state<InvoiceListRow[]>([]);
   let customers = $state<Customer[]>([]);
@@ -60,12 +59,8 @@
     reload();
   });
 
-  async function newInvoice() {
-    const res = await openInvoiceForm();
-    if (res.saved && res.data?.id) {
-      await reload();
-      push(`/invoices/${res.data.id}`);
-    }
+  function newInvoice() {
+    push("/invoices/new");
   }
 
   const statusLabel: Record<InvoiceStatus, string> = {

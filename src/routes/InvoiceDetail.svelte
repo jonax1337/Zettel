@@ -45,8 +45,6 @@
     MoreHorizontal,
     AlertTriangle,
   } from "@lucide/svelte";
-  import { openInvoiceForm } from "$lib/window";
-
   type Props = { params?: { id?: string } };
   let { params }: Props = $props();
 
@@ -312,10 +310,7 @@
       {#if invoice.status === "draft"}
         <Button
           variant="outline"
-          onclick={async () => {
-            const res = await openInvoiceForm(invoice!.id);
-            if (res.saved) await load();
-          }}
+          onclick={() => push(`/invoices/${invoice!.id}/edit`)}
         >
           <Pencil />
           Bearbeiten

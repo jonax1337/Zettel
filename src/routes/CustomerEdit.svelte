@@ -8,15 +8,11 @@
   } from "$lib/db/queries";
   import { Button, Input, Textarea, Label, Card, CardContent, toast } from "$lib/ui";
   import { ArrowLeft } from "@lucide/svelte";
-  import { isPopupWindow, emitSavedAndClose } from "$lib/window";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
-
   type Props = {
     mode: "new" | "edit";
     params?: { id?: string };
   };
   let { mode, params }: Props = $props();
-  const popup = isPopupWindow();
 
   const empty: CustomerInput = {
     name: "",
@@ -73,22 +69,16 @@
     saving = true;
     error = null;
     try {
-      let savedId: number;
       if (mode === "new") {
-        savedId = await createCustomer(form);
+        await createCustomer(form);
         toast.success("Kunde angelegt");
       } else if (id !== null) {
         await updateCustomer(id, form);
         toast.success("Änderungen gespeichert");
-        savedId = id;
       } else {
         throw new Error("Keine ID");
       }
-      if (popup) {
-        await emitSavedAndClose("customer:saved", { id: savedId });
-      } else {
-        push("/customers");
-      }
+      push("/customers");
     } catch (err) {
       error = String(err);
       toast.error("Speichern fehlgeschlagen", String(err));
@@ -97,29 +87,23 @@
     }
   }
 
-  async function onCancel() {
-    if (popup) {
-      await getCurrentWindow().close();
-    } else {
-      push("/customers");
-    }
+  function onCancel() {
+    push("/customers");
   }
 </script>
 
-{#if !popup}
-  <header class="mb-6">
-    <a
-      href="/customers"
-      use:link
-      class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-    >
-      <ArrowLeft class="size-4" /> Kunden
-    </a>
-    <h1 class="text-3xl font-semibold tracking-tight mt-2">
-      {mode === "new" ? "Neuer Kunde" : "Kunde bearbeiten"}
-    </h1>
-  </header>
-{/if}
+<header class="mb-6">
+  <a
+    href="/customers"
+    use:link
+    class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+  >
+    <ArrowLeft class="size-4" /> Kunden
+  </a>
+  <h1 class="text-3xl font-semibold tracking-tight mt-2">
+    {mode === "new" ? "Neuer Kunde" : "Kunde bearbeiten"}
+  </h1>
+</header>
 
 {#if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>

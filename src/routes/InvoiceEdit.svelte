@@ -29,15 +29,12 @@
     toast,
   } from "$lib/ui";
   import { ArrowLeft, Plus, Trash2, AlertTriangle } from "@lucide/svelte";
-  import { isPopupWindow, emitSavedAndClose } from "$lib/window";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
 
   type Props = {
     mode: "new" | "edit";
     params?: { id?: string };
   };
   let { mode, params }: Props = $props();
-  const popup = isPopupWindow();
 
   let customers = $state<Customer[]>([]);
   let settings = $state<Settings | null>(null);
@@ -232,11 +229,7 @@
       } else {
         throw new Error("Keine ID");
       }
-      if (popup) {
-        await emitSavedAndClose("invoice:saved", { id: savedId });
-      } else {
-        push(`/invoices/${savedId}`);
-      }
+      push(`/invoices/${savedId}`);
     } catch (err) {
       error = String(err);
       toast.error("Speichern fehlgeschlagen", String(err));
@@ -245,12 +238,8 @@
     }
   }
 
-  async function onCancel() {
-    if (popup) {
-      await getCurrentWindow().close();
-    } else {
-      push("/invoices");
-    }
+  function onCancel() {
+    push("/invoices");
   }
 
   const vatItems = [
@@ -260,26 +249,24 @@
   ];
 </script>
 
-{#if !popup}
-  <header class="mb-6">
-    <a
-      href="/invoices"
-      use:link
-      class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-    >
-      <ArrowLeft class="size-4" /> Rechnungen
-    </a>
-    <h1 class="text-3xl font-semibold tracking-tight mt-2">
-      {#if isCreditNote}
-        Stornorechnung bearbeiten
-      {:else if mode === "new"}
-        Neue Rechnung
-      {:else}
-        Rechnung bearbeiten
-      {/if}
-    </h1>
-  </header>
-{/if}
+<header class="mb-6">
+  <a
+    href="/invoices"
+    use:link
+    class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+  >
+    <ArrowLeft class="size-4" /> Rechnungen
+  </a>
+  <h1 class="text-3xl font-semibold tracking-tight mt-2">
+    {#if isCreditNote}
+      Stornorechnung bearbeiten
+    {:else if mode === "new"}
+      Neue Rechnung
+    {:else}
+      Rechnung bearbeiten
+    {/if}
+  </h1>
+</header>
 
 {#if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
