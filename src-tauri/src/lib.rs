@@ -1,5 +1,6 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod fs_export;
 mod sidecar;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -44,6 +45,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             sidecar::generate_invoice,
             sidecar::ping_sidecar,
+            fs_export::save_text_file,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())

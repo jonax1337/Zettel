@@ -9,6 +9,7 @@
   import InvoiceEdit from "./routes/InvoiceEdit.svelte";
   import InvoiceDetail from "./routes/InvoiceDetail.svelte";
   import Settings from "./routes/Settings.svelte";
+  import Export from "./routes/Export.svelte";
   import NotFound from "./routes/NotFound.svelte";
 
   // svelte-spa-router's TS types are still Svelte 4-shaped; Svelte 5 Component<>
@@ -35,6 +36,7 @@
     }),
     "/invoices/:id": InvoiceDetail,
     "/settings": Settings,
+    "/export": Export,
     "*": NotFound,
   } as never;
 </script>
