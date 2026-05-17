@@ -186,6 +186,11 @@
     </ram:ApplicableHeaderTradeAgreement>
 
     <ram:ApplicableHeaderTradeDelivery>
+      <ram:ShipToTradeParty>
+        <ram:PostalTradeAddress>
+          <ram:CountryID>DE</ram:CountryID>
+        </ram:PostalTradeAddress>
+      </ram:ShipToTradeParty>
       <ram:ActualDeliverySupplyChainEvent>
         <ram:OccurrenceDateTime>
           <udt:DateTimeString format="102">20250516</udt:DateTimeString>

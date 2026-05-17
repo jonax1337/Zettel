@@ -311,7 +311,7 @@
       <CardContent>
         <div class="grid grid-cols-2 gap-4">
           <div class="col-span-2 flex flex-col gap-1.5">
-            <Label>Firmenname</Label>
+            <Label>Firmenname <span class="text-destructive">*</span></Label>
             <Input bind:value={s.companyName} required />
           </div>
           <div class="flex flex-col gap-1.5">
@@ -341,21 +341,24 @@
       <CardContent>
         <div class="grid grid-cols-3 gap-4">
           <div class="col-span-3 flex flex-col gap-1.5">
-            <Label>Straße & Nr.</Label>
-            <Input bind:value={s.street} />
+            <Label>Straße & Nr. <span class="text-destructive">*</span></Label>
+            <Input bind:value={s.street} required />
           </div>
           <div class="flex flex-col gap-1.5">
-            <Label>PLZ</Label>
-            <Input bind:value={s.postalCode} />
+            <Label>PLZ <span class="text-destructive">*</span></Label>
+            <Input bind:value={s.postalCode} required />
           </div>
           <div class="col-span-2 flex flex-col gap-1.5">
-            <Label>Ort</Label>
-            <Input bind:value={s.city} />
+            <Label>Ort <span class="text-destructive">*</span></Label>
+            <Input bind:value={s.city} required />
           </div>
           <div class="flex flex-col gap-1.5">
-            <Label>Land</Label>
-            <Input bind:value={s.country} />
+            <Label>Land <span class="text-destructive">*</span></Label>
+            <Input bind:value={s.country} required maxlength={2} placeholder="DE" />
           </div>
+          <p class="col-span-3 text-xs text-muted-foreground -mt-2">
+            Pflichtfelder für EN16931-konforme E-Rechnungen. Land als ISO-2-Code.
+          </p>
         </div>
       </CardContent>
     </Card>
@@ -367,13 +370,23 @@
       <CardContent>
         <div class="grid grid-cols-2 gap-4">
           <div class="flex flex-col gap-1.5">
-            <Label>Steuernummer</Label>
-            <Input bind:value={s.taxNumber} />
+            <Label>
+              Steuernummer
+              {#if !s.vatId}<span class="text-destructive">*</span>{/if}
+            </Label>
+            <Input bind:value={s.taxNumber} required={!s.vatId} />
           </div>
           <div class="flex flex-col gap-1.5">
-            <Label>USt-IdNr. (optional)</Label>
-            <Input bind:value={s.vatId} />
+            <Label>
+              USt-IdNr.
+              {#if !s.taxNumber}<span class="text-destructive">*</span>{/if}
+            </Label>
+            <Input bind:value={s.vatId} required={!s.taxNumber} />
           </div>
+          <p class="col-span-2 text-xs text-muted-foreground -mt-2">
+            EN16931 (BR-CO-26) verlangt mindestens eine der beiden Identifikationen.
+            Kleinunternehmer:innen geben die Steuernummer an.
+          </p>
           <label class="col-span-2 flex items-center gap-2.5 text-sm mt-1 cursor-pointer select-none">
             <Checkbox bind:checked={s.isKleinunternehmer} />
             Kleinunternehmer:in nach §19 UStG (keine USt-Ausweisung)

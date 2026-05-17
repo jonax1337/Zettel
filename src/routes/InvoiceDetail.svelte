@@ -47,7 +47,10 @@
     AlertTriangle,
     Repeat,
     FileWarning,
+    ShieldCheck,
   } from "@lucide/svelte";
+  import { execute } from "$lib/db/client";
+  import { validatePdf } from "$lib/validator";
   import { listRemindersForInvoice } from "$lib/db/reminders";
   import type { ReminderLevel } from "$lib/db/schema";
   type Props = { params?: { id?: string } };
@@ -66,6 +69,7 @@
   let confirmDeleteOpen = $state(false);
   let confirmCreditNoteOpen = $state(false);
   let creatingCreditNote = $state(false);
+  let revalidating = $state(false);
 
   const customer = $derived.by(() => {
     if (!invoice) return null;
@@ -152,6 +156,31 @@
       toast.error("Stornorechnung fehlgeschlagen", String(e));
     } finally {
       creatingCreditNote = false;
+    }
+  }
+
+  async function onRevalidate() {
+    if (!invoice || !lastPdfPath || revalidating) return;
+    revalidating = true;
+    try {
+      const report = await validatePdf(lastPdfPath);
+      await execute(
+        "UPDATE invoices SET last_validation_status = ?, last_validated_at = unixepoch(), last_validation_findings_count = ? WHERE id = ?",
+        [report.valid ? "valid" : "invalid", report.findings.length, invoice.id],
+      );
+      await load();
+      if (report.valid) {
+        toast.success("Validierung bestanden", `Szenario: ${report.scenario ?? "—"}`);
+      } else {
+        toast.warning(
+          `${report.findings.length} Findings`,
+          report.findings[0]?.message ?? "Details unter /validate",
+        );
+      }
+    } catch (e) {
+      toast.error("Validierung fehlgeschlagen", String(e));
+    } finally {
+      revalidating = false;
     }
   }
 
@@ -361,6 +390,15 @@
         <Button variant="outline" onclick={onOpenExisting}>
           <FileText />
           Öffnen
+        </Button>
+        <Button
+          variant="outline"
+          onclick={onRevalidate}
+          disabled={revalidating}
+          aria-label="Erneut gegen KoSIT validieren"
+        >
+          <ShieldCheck />
+          {revalidating ? "Prüfe…" : "Validieren"}
         </Button>
         <Button variant="outline" size="icon" onclick={onRevealInExplorer} aria-label="Im Explorer zeigen">
           <FolderOpen />

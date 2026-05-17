@@ -105,6 +105,11 @@
     </ram:ApplicableHeaderTradeAgreement>
 
     <ram:ApplicableHeaderTradeDelivery>
+      <ram:ShipToTradeParty>
+        <ram:PostalTradeAddress>
+          <ram:CountryID>DE</ram:CountryID>
+        </ram:PostalTradeAddress>
+      </ram:ShipToTradeParty>
     </ram:ApplicableHeaderTradeDelivery>
 
     <ram:ApplicableHeaderTradeSettlement>

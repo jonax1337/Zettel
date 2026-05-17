@@ -96,12 +96,6 @@ def test_sidecar_xml_passes_kosit(payloads, payload_name, tmp_path):
     )
 
 
-@pytest.mark.xfail(
-    reason="reverse-charge intra-EU XML currently fails one Schematron rule — "
-    "tracked under v0.8 follow-up. Cross-test stays to surface the regression "
-    "the day we fix it.",
-    strict=False,
-)
 def test_reverse_charge_intra_eu_passes_kosit(payloads, tmp_path):
     payload = payloads("05-reverse-charge.json")
     payload["invoice"]["reverseChargeType"] = "intra_eu"
