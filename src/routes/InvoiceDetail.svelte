@@ -43,11 +43,12 @@
     Undo2,
     Ban,
     Trash2,
-    MoreHorizontal,
     AlertTriangle,
     Repeat,
     FileWarning,
     ShieldCheck,
+    ChevronDown,
+    Loader2,
   } from "@lucide/svelte";
   import { execute } from "$lib/db/client";
   import { validatePdf } from "$lib/validator";
@@ -356,134 +357,13 @@
     </Card>
   {/if}
 
-  <div class="flex items-start justify-between gap-4 mb-6">
-    <div>
-      <div class="flex items-center gap-3">
-        <h1 class="text-3xl font-semibold tracking-tight font-mono">
-          {invoice.isCreditNote ? "Storno " : ""}{invoice.number}
-        </h1>
-        <Badge variant={statusVariant[invoice.status]}>{statusLabel[invoice.status]}</Badge>
-        {#if invoice.isCreditNote}
-          <Badge variant="destructive">Stornorechnung</Badge>
-        {/if}
-        {#if invoice.lastValidationStatus || lastPdfPath}
-          <ValidationBadge
-            status={invoice.lastValidationStatus}
-            findingsCount={invoice.lastValidationFindingsCount}
-          />
-        {/if}
-      </div>
-      <p class="text-sm text-muted-foreground mt-1.5">
-        {customer.name} · {formatDate(invoice.issueDate)}
-        {#if invoice.lastValidatedAt}
-          · validiert {new Date(invoice.lastValidatedAt * 1000).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-        {/if}
-      </p>
-    </div>
-    <div class="flex flex-wrap gap-2">
-      <Button disabled={generating} onclick={onGeneratePdf}>
-        <FileDown />
-        {generating ? "Erzeuge…" : lastPdfPath ? "PDF neu erzeugen" : "PDF erzeugen"}
-      </Button>
-
-      {#if lastPdfPath}
-        <Button variant="outline" onclick={onOpenExisting}>
-          <FileText />
-          Öffnen
-        </Button>
-        <Button
-          variant="outline"
-          onclick={onRevalidate}
-          disabled={revalidating}
-          aria-label="Erneut gegen KoSIT validieren"
-        >
-          <ShieldCheck />
-          {revalidating ? "Prüfe…" : "Validieren"}
-        </Button>
-        <Button variant="outline" size="icon" onclick={onRevealInExplorer} aria-label="Im Explorer zeigen">
-          <FolderOpen />
-        </Button>
-      {/if}
-
-      {#if invoice.status === "draft"}
-        <Button
-          variant="outline"
-          onclick={() => push(`/invoices/${invoice!.id}/edit`)}
-        >
-          <Pencil />
-          Bearbeiten
-        </Button>
-        <Button disabled={busy} onclick={() => action("Als versendet markiert", () => markSent(invoice!.id))}>
-          <Send />
-          Versenden
-        </Button>
-      {/if}
-      {#if invoice.status === "sent"}
-        <Button disabled={busy} onclick={() => action("Als bezahlt markiert", () => markPaid(invoice!.id))}>
-          <CheckCircle2 />
-          Bezahlt
-        </Button>
-      {/if}
-
-      {#if canCreateReminder}
-        <Button
-          variant="outline"
-          onclick={() => push(`/reminders/new/${invoice!.id}/${nextReminderLevel}`)}
-        >
-          <FileWarning />
-          {nextReminderLevel === 1
-            ? "Erinnerung erstellen"
-            : nextReminderLevel === 2
-              ? "Mahnung erstellen"
-              : "Letzte Mahnung erstellen"}
-        </Button>
-      {/if}
-
-      {#if canCreateCreditNote}
-        <Button
-          variant="outline"
-          disabled={creatingCreditNote}
-          onclick={() => (confirmCreditNoteOpen = true)}
-        >
-          <Ban />
-          Stornorechnung erstellen
-        </Button>
-      {/if}
-
-      <DropdownMenu>
-        {#snippet trigger()}
-          <button
-            type="button"
-            class="inline-flex items-center justify-center size-9 rounded-md border border-border hover:bg-accent transition-colors"
-            aria-label="Weitere Aktionen"
-          >
-            <MoreHorizontal class="size-4" />
-          </button>
-        {/snippet}
-
-        {#if !invoice.isCreditNote}
-          <DropdownItem onSelect={() => push(`/recurring/new?fromInvoice=${invoice!.id}`)}>
-            <Repeat /> Als Vorlage speichern
-          </DropdownItem>
-        {/if}
-        {#if invoice.status === "sent"}
-          <DropdownItem onSelect={() => action("Zurück zu Entwurf", () => reopenDraft(invoice!.id))}>
-            <Undo2 /> Zurück zu Entwurf
-          </DropdownItem>
-        {/if}
-        {#if invoice.status !== "cancelled" && invoice.status !== "paid"}
-          <DropdownItem onSelect={() => action("Storniert", () => cancelInvoice(invoice!.id))}>
-            <Ban /> Stornieren
-          </DropdownItem>
-        {/if}
-        {#if invoice.status === "draft" || invoice.status === "cancelled"}
-          <DropdownSeparator />
-          <DropdownItem destructive onSelect={() => (confirmDeleteOpen = true)}>
-            <Trash2 /> Löschen
-          </DropdownItem>
-        {/if}
-      </DropdownMenu>
-    </div>
+  <div class="mb-6">
+    <h1 class="text-3xl font-semibold tracking-tight font-mono">
+      {invoice.isCreditNote ? "Storno " : ""}{invoice.number}
+    </h1>
+    <p class="text-sm text-muted-foreground mt-1.5">
+      {customer.name} · {formatDate(invoice.issueDate)}
+    </p>
   </div>
 
   {#if pdfError}
@@ -502,10 +382,9 @@
       </CardContent>
     </Card>
   {/if}
-  {#if lastPdfPath && !pdfError}
-    <p class="text-xs text-muted-foreground mb-4 font-mono">PDF: {lastPdfPath}</p>
-  {/if}
 
+  <div class="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
+   <div class="min-w-0">
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
     <Card>
       <CardContent>
@@ -624,6 +503,177 @@
       <p class="text-sm whitespace-pre-line">{invoice.notes}</p>
     </section>
   {/if}
+   </div>
+
+   <aside class="space-y-5 lg:sticky lg:top-4 lg:self-start">
+      <section>
+        <h3 class="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider mb-2">
+          Status
+        </h3>
+        <DropdownMenu>
+          {#snippet trigger()}
+            <button
+              type="button"
+              disabled={busy || invoice!.status === "paid" || invoice!.status === "cancelled"}
+              class="w-full inline-flex items-center justify-between gap-2 rounded-md border border-border bg-card px-3 h-9 text-sm hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <span class="inline-flex items-center gap-2">
+                <Badge variant={statusVariant[invoice!.status]}>{statusLabel[invoice!.status]}</Badge>
+                {#if invoice!.isCreditNote}
+                  <Badge variant="destructive" class="text-[10px]">Storno</Badge>
+                {/if}
+              </span>
+              <ChevronDown class="size-4 text-muted-foreground" />
+            </button>
+          {/snippet}
+          {#if invoice.status === "draft"}
+            <DropdownItem onSelect={() => action("Als versendet markiert", () => markSent(invoice!.id))}>
+              <Send /> Als versendet markieren
+            </DropdownItem>
+            <DropdownItem onSelect={() => action("Storniert", () => cancelInvoice(invoice!.id))}>
+              <Ban /> Stornieren
+            </DropdownItem>
+          {:else if invoice.status === "sent"}
+            <DropdownItem onSelect={() => action("Als bezahlt markiert", () => markPaid(invoice!.id))}>
+              <CheckCircle2 /> Als bezahlt markieren
+            </DropdownItem>
+            <DropdownItem onSelect={() => action("Zurück zu Entwurf", () => reopenDraft(invoice!.id))}>
+              <Undo2 /> Zurück zu Entwurf
+            </DropdownItem>
+            <DropdownSeparator />
+            <DropdownItem onSelect={() => action("Storniert", () => cancelInvoice(invoice!.id))}>
+              <Ban /> Stornieren
+            </DropdownItem>
+          {/if}
+        </DropdownMenu>
+      </section>
+
+      {#if invoice.lastValidationStatus || lastPdfPath}
+        <section>
+          <h3 class="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider mb-2">
+            Validierung
+          </h3>
+          <div class="space-y-2">
+            <ValidationBadge
+              status={invoice.lastValidationStatus}
+              findingsCount={invoice.lastValidationFindingsCount}
+            />
+            {#if invoice.lastValidatedAt}
+              <p class="text-[11px] text-muted-foreground">
+                {new Date(invoice.lastValidatedAt * 1000).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </p>
+            {/if}
+            {#if lastPdfPath}
+              <Button
+                variant="outline"
+                size="sm"
+                class="w-full"
+                onclick={onRevalidate}
+                disabled={revalidating}
+              >
+                {#if revalidating}<Loader2 class="animate-spin" />{:else}<ShieldCheck />{/if}
+                {revalidating ? "Prüfe…" : "Erneut prüfen"}
+              </Button>
+            {/if}
+          </div>
+        </section>
+      {/if}
+
+      <section>
+        <h3 class="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider mb-2">
+          PDF
+        </h3>
+        <div class="space-y-2">
+          {#if lastPdfPath}
+            <p class="text-[11px] text-muted-foreground font-mono break-all line-clamp-2" title={lastPdfPath}>
+              {lastPdfPath.split(/[\\/]/).pop()}
+            </p>
+            <Button variant="default" size="sm" class="w-full" onclick={onOpenExisting}>
+              <FileText /> Öffnen
+            </Button>
+            <Button variant="outline" size="sm" class="w-full" onclick={onGeneratePdf} disabled={generating}>
+              {#if generating}<Loader2 class="animate-spin" />{:else}<FileDown />{/if}
+              {generating ? "Erzeuge…" : "Neu erzeugen"}
+            </Button>
+            <Button variant="outline" size="sm" class="w-full" onclick={onRevealInExplorer}>
+              <FolderOpen /> Im Explorer
+            </Button>
+          {:else}
+            <Button class="w-full" onclick={onGeneratePdf} disabled={generating}>
+              {#if generating}<Loader2 class="animate-spin" />{:else}<FileDown />{/if}
+              {generating ? "Erzeuge…" : "PDF erzeugen"}
+            </Button>
+          {/if}
+        </div>
+      </section>
+
+      {#if invoice.status === "draft" || canCreateReminder || canCreateCreditNote || !invoice.isCreditNote}
+        <section>
+          <h3 class="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider mb-2">
+            Aktionen
+          </h3>
+          <div class="space-y-2">
+            {#if invoice.status === "draft"}
+              <Button
+                variant="outline"
+                size="sm"
+                class="w-full"
+                onclick={() => push(`/invoices/${invoice!.id}/edit`)}
+              >
+                <Pencil /> Bearbeiten
+              </Button>
+            {/if}
+            {#if canCreateReminder}
+              <Button
+                variant="outline"
+                size="sm"
+                class="w-full"
+                onclick={() => push(`/reminders/new/${invoice!.id}/${nextReminderLevel}`)}
+              >
+                <FileWarning />
+                {nextReminderLevel === 1
+                  ? "Erinnerung"
+                  : nextReminderLevel === 2
+                    ? "Mahnung"
+                    : "Letzte Mahnung"}
+              </Button>
+            {/if}
+            {#if canCreateCreditNote}
+              <Button
+                variant="outline"
+                size="sm"
+                class="w-full"
+                disabled={creatingCreditNote}
+                onclick={() => (confirmCreditNoteOpen = true)}
+              >
+                <Ban /> Stornorechnung
+              </Button>
+            {/if}
+            {#if !invoice.isCreditNote}
+              <Button
+                variant="outline"
+                size="sm"
+                class="w-full"
+                onclick={() => push(`/recurring/new?fromInvoice=${invoice!.id}`)}
+              >
+                <Repeat /> Als Vorlage
+              </Button>
+            {/if}
+            {#if invoice.status === "draft" || invoice.status === "cancelled"}
+              <Button
+                variant="outline"
+                size="sm"
+                class="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+                onclick={() => (confirmDeleteOpen = true)}
+              >
+                <Trash2 /> Löschen
+              </Button>
+            {/if}
+          </div>
+        </section>
+      {/if}
+    </aside>
+  </div>
 
   <ConfirmDialog
     bind:open={confirmDeleteOpen}
