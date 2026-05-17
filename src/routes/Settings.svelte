@@ -16,11 +16,26 @@
     CardContent,
     ConfirmDialog,
     Select,
+    Checkbox,
     toast,
   } from "$lib/ui";
-  import { Image, X, Download, Upload, RefreshCw } from "@lucide/svelte";
+  import { Image, X, Download, Upload, RefreshCw, Check, MonitorCog } from "@lucide/svelte";
   import { version as appVersion } from "../../package.json";
   import { checkForUpdate } from "$lib/updater";
+  import { accent, ACCENT_PRESETS, type AccentKey } from "$lib/accent.svelte";
+  import { theme } from "$lib/theme.svelte";
+
+  const accentKeys: AccentKey[] = [
+    "system",
+    "slate",
+    "indigo",
+    "violet",
+    "rose",
+    "emerald",
+    "amber",
+    "sky",
+  ];
+  const accentLabel = (k: AccentKey) => (k === "system" ? "System" : ACCENT_PRESETS[k].label);
 
   // aktueller DB-Schema-Stand (siehe src-tauri/src/lib.rs Migrations-Vektor)
   const CURRENT_DB_SCHEMA_VERSION = 11;
@@ -360,11 +375,7 @@
             <Input bind:value={s.vatId} />
           </div>
           <label class="col-span-2 flex items-center gap-2.5 text-sm mt-1 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              bind:checked={s.isKleinunternehmer}
-              class="size-4 rounded border-border accent-primary"
-            />
+            <Checkbox bind:checked={s.isKleinunternehmer} />
             Kleinunternehmer:in nach §19 UStG (keine USt-Ausweisung)
           </label>
           {#if s.isKleinunternehmer}
@@ -505,6 +516,46 @@
 
     <Card>
       <CardHeader>
+        <CardTitle>Darstellung</CardTitle>
+        <CardDescription>
+          Akzentfarbe der Oberfläche. Beeinflusst nur die App — Rechnungs-PDFs bleiben unverändert.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div class="flex flex-wrap items-center gap-2">
+          {#each accentKeys as k (k)}
+            {@const active = accent.key === k}
+            {@const swatch = k === "system" ? null : ACCENT_PRESETS[k].swatch}
+            <button
+              type="button"
+              onclick={() => accent.set(k, theme.resolved)}
+              title={accentLabel(k)}
+              class={[
+                "group relative grid size-10 place-items-center rounded-full border transition-all duration-150 active:scale-90",
+                active
+                  ? "border-foreground/60 ring-2 ring-ring/40 ring-offset-2 ring-offset-background"
+                  : "border-border hover:border-foreground/40",
+              ].join(" ")}
+              style={swatch ? `background-color: ${swatch};` : undefined}
+              aria-label={accentLabel(k)}
+              aria-pressed={active}
+            >
+              {#if k === "system"}
+                <MonitorCog class="size-4 text-muted-foreground" />
+              {:else if active}
+                <Check class="size-4 text-white drop-shadow-sm" />
+              {/if}
+            </button>
+          {/each}
+        </div>
+        <p class="text-xs text-muted-foreground mt-3">
+          „System" übernimmt deine Windows-Akzentfarbe. Auf macOS/Linux fällt das auf das Standard-Preset zurück, bis Plattform-APIs ergänzt sind.
+        </p>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
         <CardTitle>Backup & Wiederherstellung</CardTitle>
         <CardDescription>
           Sichert die Datenbank und alle erzeugten Rechnungs-PDFs in eine ZIP-Datei.
@@ -514,11 +565,7 @@
       <CardContent>
         <div class="mb-4 space-y-3">
           <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
-            <input
-              type="checkbox"
-              bind:checked={backupEncrypt}
-              class="size-4 rounded border-border accent-primary"
-            />
+            <Checkbox bind:checked={backupEncrypt} />
             Backup verschlüsseln (AES-256-GCM)
           </label>
           {#if backupEncrypt}
@@ -557,27 +604,15 @@
             <div class="text-sm font-medium">Welche Bereiche wiederherstellen?</div>
             <div class="flex flex-col gap-2">
               <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  bind:checked={restoreSectionCustomers}
-                  class="size-4 rounded border-border accent-primary"
-                />
+                <Checkbox bind:checked={restoreSectionCustomers} />
                 Kunden
               </label>
               <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  bind:checked={restoreSectionInvoices}
-                  class="size-4 rounded border-border accent-primary"
-                />
+                <Checkbox bind:checked={restoreSectionInvoices} />
                 Rechnungen + PDFs <span class="text-muted-foreground">(inkl. Angebote, wiederkehrende Rechnungen)</span>
               </label>
               <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  bind:checked={restoreSectionSettings}
-                  class="size-4 rounded border-border accent-primary"
-                />
+                <Checkbox bind:checked={restoreSectionSettings} />
                 Einstellungen
               </label>
             </div>

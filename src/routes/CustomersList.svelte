@@ -110,7 +110,7 @@
           <th class="px-4 py-3 font-medium w-12"></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody class="stagger">
         {#each customers as c (c.id)}
           <tr class="border-t hover:bg-muted/30 transition-colors">
             <td class="px-4 py-3 font-mono text-xs text-muted-foreground">{c.customerNumber}</td>

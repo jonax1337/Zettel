@@ -1,3 +1,5 @@
+import { accent } from "./accent.svelte";
+
 export type ThemeMode = "system" | "light" | "dark";
 
 const STORAGE_KEY = "zettel.theme";
@@ -19,6 +21,8 @@ function resolve(mode: ThemeMode): "light" | "dark" {
 function apply(resolved: "light" | "dark") {
   if (typeof document === "undefined") return;
   document.documentElement.setAttribute("data-theme", resolved);
+  // accent depends on the resolved light/dark mode for its lightness curve
+  void accent.refresh(resolved);
 }
 
 class ThemeStore {

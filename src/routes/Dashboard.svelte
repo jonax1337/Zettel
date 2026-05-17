@@ -137,7 +137,7 @@
   </div>
 </header>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6 stagger">
   <Card>
     <CardContent>
       <div class="flex items-center justify-between">
@@ -149,7 +149,7 @@
   </Card>
 
   <Card
-    class="cursor-pointer hover:bg-muted/30 transition-colors"
+    class="cursor-pointer hover:bg-muted/30 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
     onclick={() => push("/offers")}
   >
     <CardContent>
@@ -207,9 +207,9 @@
   </Card>
 </div>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 stagger">
   <Card
-    class="cursor-pointer hover:bg-muted/30 transition-colors"
+    class="cursor-pointer hover:bg-muted/30 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
     onclick={() => push("/expenses")}
   >
     <CardContent>
@@ -333,7 +333,7 @@
     </div>
     <Card class="overflow-hidden py-0">
       <table class="w-full text-sm">
-        <tbody>
+        <tbody class="stagger">
           {#each due as tmpl (tmpl.id)}
             <tr class="border-t first:border-t-0">
               <td class="px-4 py-3 font-medium">{tmpl.name}</td>
@@ -370,7 +370,7 @@
   {:else}
     <Card class="overflow-hidden py-0">
       <table class="w-full text-sm">
-        <tbody>
+        <tbody class="stagger">
           {#each recent as inv (inv.id)}
             <tr
               class="border-t first:border-t-0 hover:bg-muted/40 cursor-pointer transition-colors"

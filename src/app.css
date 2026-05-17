@@ -80,7 +80,9 @@
   --radius-xl: calc(var(--radius) + 4px);
 
   --font-sans:
-    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono:
+    "Geist Mono Variable", ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
 }
 
 @layer base {
@@ -151,5 +153,62 @@
   h3 {
     font-size: 1rem;
     line-height: 1.5rem;
+  }
+}
+
+@layer utilities {
+  @keyframes enter-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes route-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .animate-enter {
+    animation: enter-fade-up 220ms ease-out both;
+  }
+  .animate-route {
+    animation: route-fade-in 180ms ease-out both;
+  }
+  .stagger > * {
+    animation: enter-fade-up 220ms ease-out both;
+  }
+  .stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger > *:nth-child(2) { animation-delay: 30ms; }
+  .stagger > *:nth-child(3) { animation-delay: 60ms; }
+  .stagger > *:nth-child(4) { animation-delay: 90ms; }
+  .stagger > *:nth-child(5) { animation-delay: 120ms; }
+  .stagger > *:nth-child(6) { animation-delay: 150ms; }
+  .stagger > *:nth-child(7) { animation-delay: 180ms; }
+  .stagger > *:nth-child(8) { animation-delay: 210ms; }
+  .stagger > *:nth-child(9) { animation-delay: 230ms; }
+  .stagger > *:nth-child(10) { animation-delay: 250ms; }
+  .stagger > *:nth-child(n+11) { animation-delay: 270ms; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-enter,
+    .animate-route,
+    .stagger > * {
+      animation: none !important;
+    }
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
   }
 }

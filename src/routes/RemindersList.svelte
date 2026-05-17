@@ -75,7 +75,7 @@
               <th class="px-4 py-3 font-medium"></th>
             </tr>
           </thead>
-          <tbody>
+          <tbody class="stagger">
             {#each overdue as o (o.invoice.id)}
               {@const lvl = suggestedLevel(o.existingReminderLevels)}
               <tr class="border-t hover:bg-muted/30 transition-colors">
@@ -135,7 +135,7 @@
               <th class="px-4 py-3 font-medium">Status</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody class="stagger">
             {#each reminders as r (r.id)}
               <tr
                 class="border-t hover:bg-muted/30 cursor-pointer transition-colors"

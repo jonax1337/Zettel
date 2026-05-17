@@ -112,7 +112,7 @@
           <th class="px-3 py-2 font-medium text-right w-px">Aktionen</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody class="stagger">
         {#each rows as row (row.id)}
           <tr class="border-t">
             <td class="px-3 py-2">

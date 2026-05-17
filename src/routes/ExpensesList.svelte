@@ -151,7 +151,7 @@
           <th class="px-4 py-3 font-medium">Fällig</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody class="stagger">
         {#each expenses as e (e.id)}
           <tr
             class="border-t hover:bg-muted/30 cursor-pointer transition-colors"

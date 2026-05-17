@@ -6,6 +6,23 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-05-17
+
+> **UI-Polish.** Reine Oberflächen-Iteration: dezente Bewegung, Geist als App-Font, frei wählbare Akzentfarbe (inkl. Windows-System-Akzent), und der letzte native Form-Primitive ist weg.
+
+### Added
+- **Geist + Geist Mono** als App-Font (self-hosted via `@fontsource-variable/*`). Ersetzt Inter, das vorher nur als CSS-Name geführt und auf Windows-Systemen ohne Inter-Install still auf Segoe UI zurückfiel — jetzt konsistent über alle Plattformen. Tabular-Zahlen (Rechnungsnummern, Beträge, IBAN, Daten) ziehen automatisch über die existierenden `font-mono`-Klassen Geist Mono. PDF-Templates sind bewusst nicht angefasst.
+- **Akzentfarbe konfigurierbar** in Settings → Darstellung. Sieben Presets (Schiefer/Indigo/Violett/Rosé/Smaragd/Bernstein/Himmel) mit jeweils light- und dark-tauglichen oklch-Werten, plus **„System"-Option**, die auf Windows die DWM-Akzentfarbe aus der Registry zieht (`HKCU\Software\Microsoft\Windows\DWM\AccentColor`). macOS/Linux fallen auf das Slate-Default zurück, bis Plattform-APIs ergänzt sind. Wechsel ist instant, ohne Save-Knopf; Persistenz via localStorage (analog zum Theme).
+- **Dezente Animationen** durchgängig: 180-ms-Fade auf Routenwechsel, gestaffeltes Card-/Row-Entry auf Dashboard und allen Listen-Tabellen, animiertes Active-Indicator-Bar in der Sidebar, leichter Hover-Lift auf klickbaren Cards, `active:scale`-Feedback auf Buttons und Checkboxen. `prefers-reduced-motion` schaltet alles auf 0.01 ms.
+- **Eigener `Checkbox`-Wrapper** in `src/lib/ui/` über Bits UI mit shadcn-Styling, Indeterminate-State und Active-Press-Feedback. Ersetzt 13 native `<input type="checkbox">` quer durch den Code — damit nutzt jedes Form-Element jetzt unsere UI-Schicht.
+
+### Changed
+- `--primary`, `--primary-foreground` und `--ring` werden jetzt zur Laufzeit überschrieben statt nur über `data-theme="dark"` gemappt. Erlaubt Live-Switch der Akzentfarbe ohne Reload.
+
+### Notes
+- Kein Schema-Migration, keine Backend-Änderung. Sidecar + PDF-Pipeline sind unangetastet — v0.7 ist garantiert byte-identische PDFs gegenüber v0.6.
+- Windows-only neue Dependency: `winreg` als `cfg(windows)`-Target-Dep. Andere Plattformen ziehen das nicht.
+
 ## [0.6.0] — 2026-05-17
 
 > **Mahnwesen + OCR-Light.** v0.6 schließt zwei der offensichtlichsten Lücken im Workflow: überfällige Rechnungen können jetzt sauber gemahnt werden, und Eingangsrechnungen ohne ZUGFeRD-XML werden per Text-Heuristik vorbefüllt statt komplett manuell.
