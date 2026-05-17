@@ -69,5 +69,15 @@ jobs:
       - run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev
+      # tauri-build verifies every bundle.resources path at compile time, even
+      # for `cargo test --lib`. Stub them out so the test job doesn't depend on
+      # the full PyInstaller + jlink pipeline that lives in build.yml.
+      - name: Stub bundle resources
+        run: |
+          mkdir -p sidecar/dist tools/kosit-validator tools/jre/bin
+          touch sidecar/dist/zettel-sidecar
+          touch tools/kosit-validator/validator.jar
+          touch tools/kosit-validator/scenarios.xml
+          touch tools/jre/bin/java
       - working-directory: src-tauri
         run: cargo test --lib
