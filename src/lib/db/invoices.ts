@@ -34,6 +34,9 @@ type InvoiceRow = {
   updated_at: number;
   sent_at: number | null;
   paid_at: number | null;
+  last_validation_status: string | null;
+  last_validated_at: number | null;
+  last_validation_findings_count: number | null;
 };
 
 type InvoiceItemRow = {
@@ -73,6 +76,9 @@ function mapInvoice(r: InvoiceRow): Invoice {
     updatedAt: r.updated_at,
     sentAt: r.sent_at,
     paidAt: r.paid_at,
+    lastValidationStatus: r.last_validation_status as Invoice["lastValidationStatus"],
+    lastValidatedAt: r.last_validated_at,
+    lastValidationFindingsCount: r.last_validation_findings_count,
   };
 }
 

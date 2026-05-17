@@ -1,0 +1,83 @@
+name: Test
+
+on:
+  push:
+    branches: [main, 'release/**']
+    paths-ignore:
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+      - 'LICENSE'
+  pull_request:
+    branches: [main, 'release/**']
+    paths-ignore:
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+      - 'LICENSE'
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    name: Frontend (vitest)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm check
+
+  sidecar:
+    name: Sidecar (pytest)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install KoSIT validator
+        run: tools/download-validator.sh
+      - working-directory: sidecar
+        run: |
+          pip install -r requirements.txt
+          pip install 'pytest>=8.0' 'pytest-cov>=5.0'
+          pytest -ra
+
+  rust:
+    name: Rust (cargo test)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      # Tauri Linux build deps — required even for lib tests because tauri-build
+      # links against system libs at compile-time.
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev
+      # tauri-build verifies every bundle.resources path at compile time, even
+      # for `cargo test --lib`. Stub them out so the test job doesn't depend on
+      # the full PyInstaller + jlink pipeline that lives in build.yml.
+      - name: Stub bundle resources
+        run: |
+          mkdir -p sidecar/dist tools/kosit-validator tools/jre/bin
+          touch sidecar/dist/zettel-sidecar
+          touch tools/kosit-validator/validator.jar
+          touch tools/kosit-validator/scenarios.xml
+          touch tools/jre/bin/java
+      - working-directory: src-tauri
+        run: cargo test --lib

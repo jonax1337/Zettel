@@ -142,6 +142,11 @@ export const invoices = sqliteTable("invoices", {
     .default(sql`(unixepoch())`),
   sentAt: integer("sent_at"),
   paidAt: integer("paid_at"),
+  lastValidationStatus: text("last_validation_status", {
+    enum: ["valid", "invalid", "unavailable"],
+  }),
+  lastValidatedAt: integer("last_validated_at"),
+  lastValidationFindingsCount: integer("last_validation_findings_count"),
 });
 
 export const invoiceItems = sqliteTable("invoice_items", {
@@ -299,6 +304,11 @@ export const expenses = sqliteTable("expenses", {
   notes: text("notes"),
   createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
   updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+  lastValidationStatus: text("last_validation_status", {
+    enum: ["valid", "invalid", "unavailable"],
+  }),
+  lastValidatedAt: integer("last_validated_at"),
+  lastValidationFindingsCount: integer("last_validation_findings_count"),
 });
 
 export const expenseItems = sqliteTable("expense_items", {

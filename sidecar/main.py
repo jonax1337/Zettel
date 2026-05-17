@@ -146,6 +146,30 @@ def handle(req: dict) -> dict:
         except Exception as e:
             return _err("EXTRACT_FAILED", str(e), traceback.format_exc())
 
+    if command == "extract_xml_only":
+        # Returns raw Factur-X XML as a string. Used by the validator command
+        # to feed the bundled KoSIT validator without re-parsing.
+        try:
+            import facturx
+            from pathlib import Path as _P
+            pdf_path = payload.get("pdfPath")
+            if not pdf_path:
+                return _err("MISSING_FIELD", "payload.pdfPath is required")
+            p = _P(pdf_path)
+            if not p.is_file():
+                return _err("PDF_NOT_FOUND", f"PDF not found: {pdf_path}")
+            xml_filename, xml_bytes = facturx.get_xml_from_pdf(p.read_bytes())
+            if not xml_bytes:
+                return {"success": True, "found": False}
+            return {
+                "success": True,
+                "found": True,
+                "xmlFilename": xml_filename,
+                "xml": xml_bytes.decode("utf-8"),
+            }
+        except Exception as e:
+            return _err("EXTRACT_FAILED", str(e), traceback.format_exc())
+
     if command == "extract_text_pdf":
         try:
             pdf_path = payload.get("pdfPath")

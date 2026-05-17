@@ -29,6 +29,9 @@ type ExpenseRow = {
   notes: string | null;
   created_at: number;
   updated_at: number;
+  last_validation_status: string | null;
+  last_validated_at: number | null;
+  last_validation_findings_count: number | null;
 };
 
 type ExpenseItemRow = {
@@ -67,6 +70,9 @@ function mapExpense(r: ExpenseRow): Expense {
     notes: r.notes,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    lastValidationStatus: r.last_validation_status as Expense["lastValidationStatus"],
+    lastValidatedAt: r.last_validated_at,
+    lastValidationFindingsCount: r.last_validation_findings_count,
   };
 }
 

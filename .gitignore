@@ -39,3 +39,8 @@ zettel-wt-*/
 # Claude Code runtime state
 .claude/
 test-output*.pdf
+
+# KoSIT validator runtime (downloaded via tools/download-validator.sh)
+tools/kosit-validator/
+# jlink-minimized JRE (built via tools/build-jre.sh, ~56 MB)
+tools/jre/

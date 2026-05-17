@@ -4,12 +4,15 @@ import { execute } from "$lib/db/client";
 import { getInvoice } from "$lib/db/invoices";
 import { loadSettings } from "$lib/db/queries";
 import type { CustomerSnapshot, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
+import { validatePdf, type ValidationReport } from "$lib/validator";
 
 export type SidecarSuccess = {
   success: true;
   pdfPath: string;
   validationWarnings: string[];
   validationErrors: string[];
+  /** KoSIT report. null = validator unavailable (Java/jar missing). */
+  kositReport?: ValidationReport | null;
 };
 
 export type SidecarError = {
@@ -129,10 +132,24 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
   const response = (await invoke<SidecarResponse>("generate_invoice", { payload })) as SidecarResponse;
 
   if (response.success) {
-    await execute("UPDATE invoices SET pdf_path = ?, updated_at = unixepoch() WHERE id = ?", [
-      response.pdfPath,
-      invoiceId,
-    ]);
+    // Soft-gate: validate the freshly written PDF against KoSIT and persist
+    // outcome. We never block PDF release on validator unavailability — but
+    // we record it, so the UI can surface it.
+    let report: ValidationReport | null = null;
+    let status: "valid" | "invalid" | "unavailable" = "unavailable";
+    let findingsCount: number | null = null;
+    try {
+      report = await validatePdf(response.pdfPath);
+      status = report.valid ? "valid" : "invalid";
+      findingsCount = report.findings.length;
+    } catch {
+      // Validator missing, Java missing, no XML in PDF — leave as "unavailable".
+    }
+    response.kositReport = report;
+    await execute(
+      "UPDATE invoices SET pdf_path = ?, last_validation_status = ?, last_validated_at = unixepoch(), last_validation_findings_count = ?, updated_at = unixepoch() WHERE id = ?",
+      [response.pdfPath, status, findingsCount, invoiceId],
+    );
   }
   return response;
 }

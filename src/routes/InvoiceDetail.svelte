@@ -31,6 +31,7 @@
     DropdownSeparator,
     toast,
   } from "$lib/ui";
+  import ValidationBadge from "$lib/components/ValidationBadge.svelte";
   import {
     ArrowLeft,
     FileDown,
@@ -46,7 +47,11 @@
     AlertTriangle,
     Repeat,
     FileWarning,
+    ShieldCheck,
+    ChevronDown,
   } from "@lucide/svelte";
+  import { execute } from "$lib/db/client";
+  import { validatePdf } from "$lib/validator";
   import { listRemindersForInvoice } from "$lib/db/reminders";
   import type { ReminderLevel } from "$lib/db/schema";
   type Props = { params?: { id?: string } };
@@ -65,6 +70,7 @@
   let confirmDeleteOpen = $state(false);
   let confirmCreditNoteOpen = $state(false);
   let creatingCreditNote = $state(false);
+  let revalidating = $state(false);
 
   const customer = $derived.by(() => {
     if (!invoice) return null;
@@ -154,6 +160,31 @@
     }
   }
 
+  async function onRevalidate() {
+    if (!invoice || !lastPdfPath || revalidating) return;
+    revalidating = true;
+    try {
+      const report = await validatePdf(lastPdfPath);
+      await execute(
+        "UPDATE invoices SET last_validation_status = ?, last_validated_at = unixepoch(), last_validation_findings_count = ? WHERE id = ?",
+        [report.valid ? "valid" : "invalid", report.findings.length, invoice.id],
+      );
+      await load();
+      if (report.valid) {
+        toast.success("Validierung bestanden", `Szenario: ${report.scenario ?? "—"}`);
+      } else {
+        toast.warning(
+          `${report.findings.length} Findings`,
+          report.findings[0]?.message ?? "Details unter /validate",
+        );
+      }
+    } catch (e) {
+      toast.error("Validierung fehlgeschlagen", String(e));
+    } finally {
+      revalidating = false;
+    }
+  }
+
   async function onGeneratePdf() {
     if (!invoice) return;
     generating = true;
@@ -162,8 +193,25 @@
       const res = await generateInvoicePdf(invoice.id);
       if (res.success) {
         lastPdfPath = res.pdfPath;
-        toast.success("PDF erstellt");
-        await openPath(res.pdfPath);
+        await load(); // refresh validation badge
+        const pdfPath = res.pdfPath;
+        if (res.kositReport && !res.kositReport.valid) {
+          toast.action(
+            `PDF erstellt · ${res.kositReport.findings.length} KoSIT-Findings`,
+            { label: "Öffnen", onClick: () => openPath(pdfPath) },
+            { description: "Versand erst nach Korrektur empfohlen." },
+          );
+        } else if (res.kositReport?.valid) {
+          toast.action(
+            "PDF erstellt · ZUGFeRD-konform",
+            { label: "Öffnen", onClick: () => openPath(pdfPath) },
+          );
+        } else {
+          toast.action(
+            "PDF erstellt",
+            { label: "Öffnen", onClick: () => openPath(pdfPath) },
+          );
+        }
       } else {
         pdfError = `${res.error.code}: ${res.error.message}`;
         toast.error("PDF-Generierung fehlgeschlagen", res.error.message);
@@ -322,13 +370,21 @@
         <h1 class="text-3xl font-semibold tracking-tight font-mono">
           {invoice.isCreditNote ? "Storno " : ""}{invoice.number}
         </h1>
-        <Badge variant={statusVariant[invoice.status]}>{statusLabel[invoice.status]}</Badge>
-        {#if invoice.isCreditNote}
-          <Badge variant="destructive">Stornorechnung</Badge>
+        <Badge variant={invoice.isCreditNote ? "destructive" : statusVariant[invoice.status]}>
+          {invoice.isCreditNote ? `Storno · ${statusLabel[invoice.status]}` : statusLabel[invoice.status]}
+        </Badge>
+        {#if invoice.lastValidationStatus || lastPdfPath}
+          <ValidationBadge
+            status={invoice.lastValidationStatus}
+            findingsCount={invoice.lastValidationFindingsCount}
+          />
         {/if}
       </div>
       <p class="text-sm text-muted-foreground mt-1.5">
         {customer.name} · {formatDate(invoice.issueDate)}
+        {#if invoice.lastValidatedAt}
+          · validiert {new Date(invoice.lastValidatedAt * 1000).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+        {/if}
       </p>
     </div>
     <div class="flex flex-wrap gap-2">
@@ -338,57 +394,44 @@
       </Button>
 
       {#if lastPdfPath}
-        <Button variant="outline" onclick={onOpenExisting}>
-          <FileText />
-          Öffnen
-        </Button>
-        <Button variant="outline" size="icon" onclick={onRevealInExplorer} aria-label="Im Explorer zeigen">
-          <FolderOpen />
-        </Button>
+        {#snippet openSecondaryTrigger()}
+          <button
+            type="button"
+            class="inline-flex items-center justify-center w-7 h-9 rounded-l-none rounded-r-md border border-l-0 border-input bg-background hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:hover:bg-input/50 transition-colors cursor-pointer shadow-xs"
+            aria-label="Weitere Dokument-Aktionen"
+          >
+            <ChevronDown class="size-4" />
+          </button>
+        {/snippet}
+        <div class="inline-flex">
+          <Button
+            variant="outline"
+            onclick={onOpenExisting}
+            class="rounded-r-none"
+          >
+            <FileText />
+            Öffnen
+          </Button>
+          <DropdownMenu trigger={openSecondaryTrigger}>
+            <DropdownItem onSelect={onRevalidate} disabled={revalidating}>
+              <ShieldCheck /> {revalidating ? "Prüfe…" : "Validieren"}
+            </DropdownItem>
+            <DropdownItem onSelect={onRevealInExplorer}>
+              <FolderOpen /> Im Explorer zeigen
+            </DropdownItem>
+          </DropdownMenu>
+        </div>
       {/if}
 
       {#if invoice.status === "draft"}
-        <Button
-          variant="outline"
-          onclick={() => push(`/invoices/${invoice!.id}/edit`)}
-        >
-          <Pencil />
-          Bearbeiten
-        </Button>
         <Button disabled={busy} onclick={() => action("Als versendet markiert", () => markSent(invoice!.id))}>
           <Send />
           Versenden
         </Button>
-      {/if}
-      {#if invoice.status === "sent"}
+      {:else if invoice.status === "sent"}
         <Button disabled={busy} onclick={() => action("Als bezahlt markiert", () => markPaid(invoice!.id))}>
           <CheckCircle2 />
           Bezahlt
-        </Button>
-      {/if}
-
-      {#if canCreateReminder}
-        <Button
-          variant="outline"
-          onclick={() => push(`/reminders/new/${invoice!.id}/${nextReminderLevel}`)}
-        >
-          <FileWarning />
-          {nextReminderLevel === 1
-            ? "Erinnerung erstellen"
-            : nextReminderLevel === 2
-              ? "Mahnung erstellen"
-              : "Letzte Mahnung erstellen"}
-        </Button>
-      {/if}
-
-      {#if canCreateCreditNote}
-        <Button
-          variant="outline"
-          disabled={creatingCreditNote}
-          onclick={() => (confirmCreditNoteOpen = true)}
-        >
-          <Ban />
-          Stornorechnung erstellen
         </Button>
       {/if}
 
@@ -396,19 +439,43 @@
         {#snippet trigger()}
           <button
             type="button"
-            class="inline-flex items-center justify-center size-9 rounded-md border border-border hover:bg-accent transition-colors"
+            class="inline-flex items-center justify-center size-9 rounded-md border border-border hover:bg-accent transition-colors cursor-pointer"
             aria-label="Weitere Aktionen"
           >
             <MoreHorizontal class="size-4" />
           </button>
         {/snippet}
 
+        {#if invoice.status === "draft"}
+          <DropdownItem onSelect={() => push(`/invoices/${invoice!.id}/edit`)}>
+            <Pencil /> Bearbeiten
+          </DropdownItem>
+        {/if}
+        {#if canCreateReminder}
+          <DropdownItem onSelect={() => push(`/reminders/new/${invoice!.id}/${nextReminderLevel}`)}>
+            <FileWarning />
+            {nextReminderLevel === 1
+              ? "Erinnerung erstellen"
+              : nextReminderLevel === 2
+                ? "Mahnung erstellen"
+                : "Letzte Mahnung erstellen"}
+          </DropdownItem>
+        {/if}
+        {#if canCreateCreditNote}
+          <DropdownItem
+            disabled={creatingCreditNote}
+            onSelect={() => (confirmCreditNoteOpen = true)}
+          >
+            <Ban /> Stornorechnung erstellen
+          </DropdownItem>
+        {/if}
         {#if !invoice.isCreditNote}
           <DropdownItem onSelect={() => push(`/recurring/new?fromInvoice=${invoice!.id}`)}>
             <Repeat /> Als Vorlage speichern
           </DropdownItem>
         {/if}
         {#if invoice.status === "sent"}
+          <DropdownSeparator />
           <DropdownItem onSelect={() => action("Zurück zu Entwurf", () => reopenDraft(invoice!.id))}>
             <Undo2 /> Zurück zu Entwurf
           </DropdownItem>

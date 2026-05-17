@@ -130,6 +130,18 @@
     </ram:ApplicableHeaderTradeAgreement>
 
     <ram:ApplicableHeaderTradeDelivery>
+      {# BT-80 (Deliver-to country): mandatory for BR-IC-12 when CategoryCode K
+         (intra-community supply) is used. Optional otherwise, but emitting
+         buyer country here is always safe — EN16931 treats it as "ship-to" =
+         buyer if not stated separately. Schema order: ShipToTradeParty must
+         precede ActualDeliverySupplyChainEvent. #}
+      {% if invoice.reverseChargeType == 'intra_eu' or customer.country %}
+      <ram:ShipToTradeParty>
+        <ram:PostalTradeAddress>
+          <ram:CountryID>{{ customer.country or "DE" }}</ram:CountryID>
+        </ram:PostalTradeAddress>
+      </ram:ShipToTradeParty>
+      {% endif %}
       {% if invoice.deliveryDate %}
       <ram:ActualDeliverySupplyChainEvent>
         <ram:OccurrenceDateTime>

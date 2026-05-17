@@ -66,6 +66,15 @@
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
+    // Belt-and-suspenders: HTML `required` catches empty strings, but we also
+    // explicitly trim whitespace-only inputs that browsers would accept.
+    const trimmed = form.country?.trim().toUpperCase() ?? "";
+    if (trimmed.length !== 2) {
+      error = "Land muss ein zweistelliger ISO-Code sein (z. B. DE, AT, CH).";
+      toast.error("Land ungültig", error);
+      return;
+    }
+    form.country = trimmed;
     saving = true;
     error = null;
     try {
@@ -124,21 +133,24 @@
 
         <section class="grid grid-cols-3 gap-4">
           <div class="col-span-3 flex flex-col gap-1.5">
-            <Label>Straße & Nr.</Label>
-            <Input bind:value={form.street} />
+            <Label>Straße & Nr. <span class="text-destructive">*</span></Label>
+            <Input bind:value={form.street} required />
           </div>
           <div class="flex flex-col gap-1.5">
-            <Label>PLZ</Label>
-            <Input bind:value={form.postalCode} />
+            <Label>PLZ <span class="text-destructive">*</span></Label>
+            <Input bind:value={form.postalCode} required />
           </div>
           <div class="col-span-2 flex flex-col gap-1.5">
-            <Label>Ort</Label>
-            <Input bind:value={form.city} />
+            <Label>Ort <span class="text-destructive">*</span></Label>
+            <Input bind:value={form.city} required />
           </div>
           <div class="flex flex-col gap-1.5">
-            <Label>Land</Label>
-            <Input bind:value={form.country} />
+            <Label>Land <span class="text-destructive">*</span></Label>
+            <Input bind:value={form.country} required maxlength={2} placeholder="DE" />
           </div>
+          <p class="col-span-3 text-xs text-muted-foreground -mt-2">
+            Pflichtfelder für EN16931-konforme E-Rechnungen. Land als ISO-2-Code (DE, AT, FR…).
+          </p>
         </section>
 
         <section class="grid grid-cols-2 gap-4">

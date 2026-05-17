@@ -5,6 +5,7 @@ mod backup;
 mod crypto;
 mod fs_export;
 mod sidecar;
+mod validator;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -78,6 +79,12 @@ pub fn run() {
             sql: include_str!("../../src/lib/db/migrations/0010_reminders.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 12,
+            description: "validation_status",
+            sql: include_str!("../../src/lib/db/migrations/0011_validation_status.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -106,6 +113,9 @@ pub fn run() {
             backup::stage_restore,
             backup::apply_pending_partial_restore,
             accent::get_system_accent_color,
+            validator::validator_status,
+            validator::validate_einvoice_xml,
+            validator::validate_einvoice_pdf,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())

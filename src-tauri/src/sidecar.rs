@@ -162,6 +162,16 @@ pub async fn extract_zugferd(app: AppHandle, pdf_path: String) -> Result<Value, 
     run_sidecar(&app, &request)
 }
 
+/// Returns the raw Factur-X XML for a given PDF path, or `{found: false}`.
+/// Used by `validator::validate_einvoice_pdf` to feed the KoSIT validator.
+pub fn extract_xml_only(app: &AppHandle, pdf_path: &str) -> Result<Value, String> {
+    let request = serde_json::json!({
+        "command": "extract_xml_only",
+        "payload": { "pdfPath": pdf_path },
+    });
+    run_sidecar(app, &request)
+}
+
 #[tauri::command]
 pub async fn extract_text_pdf(app: AppHandle, pdf_path: String) -> Result<Value, String> {
     let request = serde_json::json!({
