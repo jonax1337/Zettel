@@ -87,6 +87,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust-target }}
@@ -106,6 +111,16 @@ jobs:
       - name: Build sidecar (PyInstaller)
         working-directory: sidecar
         run: python build.py
+
+      # ---------- Build bundled validator + JRE ----------
+
+      - name: Download KoSIT validator
+        shell: bash
+        run: tools/download-validator.sh
+
+      - name: Build jlink-minimized JRE
+        shell: bash
+        run: tools/build-jre.sh
 
       # ---------- Build frontend + Tauri ----------
 

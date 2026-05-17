@@ -48,7 +48,6 @@ fn appdata_validator_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn workspace_validator_dir() -> PathBuf {
-    // src-tauri/ → workspace root → tools/kosit-validator
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     p.pop();
     p.push("tools");
@@ -56,18 +55,53 @@ fn workspace_validator_dir() -> PathBuf {
     p
 }
 
+fn workspace_jre_dir() -> PathBuf {
+    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    p.pop();
+    p.push("tools");
+    p.push("jre");
+    p
+}
+
 fn resolve_validator_dir(app: &AppHandle) -> PathBuf {
+    // Dev: workspace tools/ first if it exists. Prod: shipped resources.
     if cfg!(debug_assertions) {
         let dev = workspace_validator_dir();
         if dev.join("validator.jar").exists() {
             return dev;
         }
     }
+    if let Ok(res) = app.path().resource_dir() {
+        let bundled = res.join("kosit-validator");
+        if bundled.join("validator.jar").exists() {
+            return bundled;
+        }
+    }
     appdata_validator_dir(app).unwrap_or_else(|_| PathBuf::from("validator"))
 }
 
-fn detect_java() -> Option<String> {
-    let out = Command::new("java").arg("-version").output().ok()?;
+/// Returns the path to a Java executable. Prefers bundled JRE
+/// (shipped in resources/jre/), falls back to system `java` on PATH.
+fn resolve_java(app: &AppHandle) -> PathBuf {
+    let exe = if cfg!(windows) { "java.exe" } else { "java" };
+
+    if cfg!(debug_assertions) {
+        let dev = workspace_jre_dir().join("bin").join(exe);
+        if dev.exists() {
+            return dev;
+        }
+    }
+    if let Ok(res) = app.path().resource_dir() {
+        let bundled = res.join("jre").join("bin").join(exe);
+        if bundled.exists() {
+            return bundled;
+        }
+    }
+    PathBuf::from("java")
+}
+
+fn detect_java_at(java: &Path) -> Option<String> {
+    let out = Command::new(java).arg("-version").output().ok()?;
     // `java -version` writes to stderr.
     let combined = format!(
         "{}{}",
@@ -81,7 +115,8 @@ fn detect_java() -> Option<String> {
 pub async fn validator_status(app: AppHandle) -> Result<ValidatorStatus, String> {
     let dir = resolve_validator_dir(&app);
     let installed = dir.join("validator.jar").exists() && dir.join("scenarios.xml").exists();
-    let java = detect_java();
+    let java_path = resolve_java(&app);
+    let java = detect_java_at(&java_path);
     Ok(ValidatorStatus {
         installed,
         validator_dir: dir.to_string_lossy().into_owned(),
@@ -139,7 +174,8 @@ pub async fn validate_einvoice_xml(
     let tmp = std::env::temp_dir().join("zettel-validator");
     std::fs::create_dir_all(&tmp).map_err(|e| format!("tmpdir: {}", e))?;
 
-    let output = Command::new("java")
+    let java = resolve_java(&app);
+    let output = Command::new(&java)
         .arg("-jar")
         .arg(&jar)
         .arg("-s")

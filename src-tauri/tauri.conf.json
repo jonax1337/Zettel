@@ -38,7 +38,9 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../sidecar/dist/zettel-sidecar": "sidecar"
+      "../sidecar/dist/zettel-sidecar": "sidecar",
+      "../tools/kosit-validator": "kosit-validator",
+      "../tools/jre": "jre"
     },
     "category": "Business",
     "shortDescription": "Offline-first invoice generator",
