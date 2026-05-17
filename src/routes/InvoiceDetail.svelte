@@ -31,6 +31,7 @@
     DropdownSeparator,
     toast,
   } from "$lib/ui";
+  import ValidationBadge from "$lib/components/ValidationBadge.svelte";
   import {
     ArrowLeft,
     FileDown,
@@ -162,7 +163,17 @@
       const res = await generateInvoicePdf(invoice.id);
       if (res.success) {
         lastPdfPath = res.pdfPath;
-        toast.success("PDF erstellt");
+        await load(); // refresh validation badge
+        if (res.kositReport && !res.kositReport.valid) {
+          toast.warning(
+            `PDF erstellt — KoSIT-Validierung schlug fehl (${res.kositReport.findings.length} Findings)`,
+            "Details unter /validate. Versand erst nach Korrektur empfohlen.",
+          );
+        } else if (res.kositReport?.valid) {
+          toast.success("PDF erstellt · ZUGFeRD-konform (KoSIT)");
+        } else {
+          toast.success("PDF erstellt");
+        }
         await openPath(res.pdfPath);
       } else {
         pdfError = `${res.error.code}: ${res.error.message}`;
@@ -326,9 +337,18 @@
         {#if invoice.isCreditNote}
           <Badge variant="destructive">Stornorechnung</Badge>
         {/if}
+        {#if invoice.lastValidationStatus || lastPdfPath}
+          <ValidationBadge
+            status={invoice.lastValidationStatus}
+            findingsCount={invoice.lastValidationFindingsCount}
+          />
+        {/if}
       </div>
       <p class="text-sm text-muted-foreground mt-1.5">
         {customer.name} · {formatDate(invoice.issueDate)}
+        {#if invoice.lastValidatedAt}
+          · validiert {new Date(invoice.lastValidatedAt * 1000).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+        {/if}
       </p>
     </div>
     <div class="flex flex-wrap gap-2">

@@ -79,6 +79,12 @@ pub fn run() {
             sql: include_str!("../../src/lib/db/migrations/0010_reminders.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 12,
+            description: "validation_status",
+            sql: include_str!("../../src/lib/db/migrations/0011_validation_status.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

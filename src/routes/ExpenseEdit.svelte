@@ -25,6 +25,8 @@
     type ExtractedInvoice,
     type ExtractedText,
   } from "$lib/sidecar/extract";
+  import { validatePdf } from "$lib/validator";
+  import ValidationBadge from "$lib/components/ValidationBadge.svelte";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import {
@@ -40,7 +42,18 @@
     ConfirmDialog,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2, Check, X, FileUp, Loader2 } from "@lucide/svelte";
+  import {
+    ArrowLeft,
+    Plus,
+    Trash2,
+    Check,
+    X,
+    FileUp,
+    Loader2,
+    ShieldCheck,
+    ShieldAlert,
+    Shield,
+  } from "@lucide/svelte";
 
   type Props = {
     mode: "new" | "edit";
@@ -85,6 +98,8 @@
   let pdfPath = $state<string | null>(null);
   let importedNote = $state<string | null>(null);
   let zugferdExtracted = $state(false);
+  let validationStatus = $state<"valid" | "invalid" | "unavailable" | null>(null);
+  let validationFindingsCount = $state<number | null>(null);
 
   $effect(() => {
     Promise.all([listVendors(), listCategories()])
@@ -333,6 +348,24 @@
       }
       const dest = await importExpensePdf(srcPath, vendorSlug(matched));
       pdfPath = dest;
+
+      // Validate the supplier's ZUGFeRD XML against KoSIT — if it's wrong,
+      // we want to know before booking it. Silent fallback if validator
+      // unavailable; UI shows "nicht validiert" then.
+      if (foundXml) {
+        try {
+          const report = await validatePdf(dest);
+          validationStatus = report.valid ? "valid" : "invalid";
+          validationFindingsCount = report.findings.length;
+        } catch {
+          validationStatus = "unavailable";
+          validationFindingsCount = null;
+        }
+      } else {
+        validationStatus = null;
+        validationFindingsCount = null;
+      }
+
       if (foundXml) {
         if (matched) {
           toast.success("ZUGFeRD übernommen", `Lieferant „${matched.name}" automatisch zugeordnet.`);
@@ -431,12 +464,24 @@
           vatRate: it.vatRate,
         })),
       };
+      let newId: number | null = id;
       if (mode === "new") {
-        await createExpense(input, { zugferdExtracted });
+        newId = await createExpense(input, { zugferdExtracted });
         toast.success("Eingangsrechnung erfasst");
       } else if (id !== null) {
         await updateExpense(id, input);
         toast.success("Änderungen gespeichert");
+      }
+      if (newId !== null && validationStatus !== null) {
+        try {
+          const { execute } = await import("$lib/db/client");
+          await execute(
+            "UPDATE expenses SET last_validation_status = ?, last_validated_at = unixepoch(), last_validation_findings_count = ? WHERE id = ?",
+            [validationStatus, validationFindingsCount, newId],
+          );
+        } catch {
+          // Non-fatal — validation is metadata, not core data.
+        }
       }
       push("/expenses");
     } catch (err) {
@@ -555,6 +600,16 @@
     </div>
     {#if importedNote}
       <p class="mb-4 text-xs text-muted-foreground">{importedNote}</p>
+    {/if}
+    {#if validationStatus}
+      <div class="mb-4 flex items-center gap-2">
+        <ValidationBadge status={validationStatus} findingsCount={validationFindingsCount} />
+        {#if validationStatus === "invalid"}
+          <span class="text-xs text-destructive">
+            Lieferanten-XML entspricht nicht der EN16931-Norm.
+          </span>
+        {/if}
+      </div>
     {/if}
   {/if}
   <form onsubmit={onSubmit}>
