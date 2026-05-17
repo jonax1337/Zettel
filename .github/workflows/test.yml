@@ -43,6 +43,12 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install KoSIT validator
+        run: tools/download-validator.sh
       - working-directory: sidecar
         run: |
           pip install -r requirements.txt

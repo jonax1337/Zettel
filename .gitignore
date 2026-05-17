@@ -39,3 +39,6 @@ zettel-wt-*/
 # Claude Code runtime state
 .claude/
 test-output*.pdf
+
+# KoSIT validator runtime (downloaded via tools/download-validator.sh)
+tools/kosit-validator/
