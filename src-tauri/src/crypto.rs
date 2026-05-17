@@ -84,3 +84,73 @@ pub fn decrypt(blob: &[u8], password: &mut String) -> Result<Vec<u8>, String> {
     key_bytes.zeroize();
     Ok(pt)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roundtrip_recovers_plaintext() {
+        let plaintext = b"hello world, this is a backup zip";
+        let mut pw = String::from("correct horse battery staple");
+        let blob = encrypt(plaintext, &mut pw).unwrap();
+        assert!(pw.is_empty(), "password must be zeroized after encrypt");
+
+        let mut pw2 = String::from("correct horse battery staple");
+        let recovered = decrypt(&blob, &mut pw2).unwrap();
+        assert_eq!(recovered, plaintext);
+    }
+
+    #[test]
+    fn wrong_password_fails() {
+        let mut pw = String::from("real-password");
+        let blob = encrypt(b"data", &mut pw).unwrap();
+        let mut wrong = String::from("wrong-password");
+        let err = decrypt(&blob, &mut wrong).unwrap_err();
+        assert!(err.contains("Falsches Passwort") || err.contains("beschädigt"));
+    }
+
+    #[test]
+    fn magic_header_present() {
+        let mut pw = String::from("x");
+        let blob = encrypt(b"data", &mut pw).unwrap();
+        assert_eq!(&blob[..MAGIC.len()], MAGIC);
+        assert!(is_encrypted(&blob));
+    }
+
+    #[test]
+    fn non_encrypted_blob_rejected() {
+        let mut pw = String::from("x");
+        let err = decrypt(b"PK\x03\x04 plain zip", &mut pw).unwrap_err();
+        assert!(err.contains("not an encrypted"));
+    }
+
+    #[test]
+    fn truncated_blob_rejected() {
+        let mut pw = String::from("x");
+        let mut blob = MAGIC.to_vec();
+        blob.push(0x00);
+        let err = decrypt(&blob, &mut pw).unwrap_err();
+        assert!(err.contains("truncated"));
+    }
+
+    #[test]
+    fn distinct_nonces_per_encrypt() {
+        let mut pw1 = String::from("same-password");
+        let mut pw2 = String::from("same-password");
+        let a = encrypt(b"same plaintext", &mut pw1).unwrap();
+        let b = encrypt(b"same plaintext", &mut pw2).unwrap();
+        assert_ne!(a, b, "salt/nonce randomness must produce distinct ciphertexts");
+    }
+
+    #[test]
+    fn tampered_ciphertext_fails_auth() {
+        let mut pw = String::from("password");
+        let mut blob = encrypt(b"secret", &mut pw).unwrap();
+        let last = blob.len() - 1;
+        blob[last] ^= 0x01;
+        let mut pw2 = String::from("password");
+        assert!(decrypt(&blob, &mut pw2).is_err());
+    }
+}
+
