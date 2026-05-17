@@ -382,29 +382,31 @@
       </p>
     </div>
     <div class="flex flex-wrap gap-2">
+      <Button disabled={generating} onclick={onGeneratePdf}>
+        <FileDown />
+        {generating ? "Erzeuge…" : lastPdfPath ? "PDF neu erzeugen" : "PDF erzeugen"}
+      </Button>
+
       {#if lastPdfPath}
-        {#snippet pdfSecondaryTrigger()}
+        {#snippet openSecondaryTrigger()}
           <button
             type="button"
-            class="inline-flex items-center justify-center w-7 h-9 rounded-l-none rounded-r-md bg-primary text-primary-foreground border-l border-primary-foreground/20 hover:bg-primary/90 transition-colors cursor-pointer"
-            aria-label="Weitere PDF-Aktionen"
+            class="inline-flex items-center justify-center w-7 h-9 rounded-l-none rounded-r-md border border-l-0 border-input bg-background hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:hover:bg-input/50 transition-colors cursor-pointer shadow-xs"
+            aria-label="Weitere Dokument-Aktionen"
           >
             <ChevronDown class="size-4" />
           </button>
         {/snippet}
         <div class="inline-flex">
           <Button
-            disabled={generating}
-            onclick={onGeneratePdf}
+            variant="outline"
+            onclick={onOpenExisting}
             class="rounded-r-none"
           >
-            <FileDown />
-            {generating ? "Erzeuge…" : "PDF neu erzeugen"}
+            <FileText />
+            Öffnen
           </Button>
-          <DropdownMenu trigger={pdfSecondaryTrigger}>
-            <DropdownItem onSelect={onOpenExisting}>
-              <FileText /> Öffnen
-            </DropdownItem>
+          <DropdownMenu trigger={openSecondaryTrigger}>
             <DropdownItem onSelect={onRevalidate} disabled={revalidating}>
               <ShieldCheck /> {revalidating ? "Prüfe…" : "Validieren"}
             </DropdownItem>
@@ -413,11 +415,6 @@
             </DropdownItem>
           </DropdownMenu>
         </div>
-      {:else}
-        <Button disabled={generating} onclick={onGeneratePdf}>
-          <FileDown />
-          {generating ? "Erzeuge…" : "PDF erzeugen"}
-        </Button>
       {/if}
 
       {#if invoice.status === "draft"}
