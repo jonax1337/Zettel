@@ -109,13 +109,14 @@
                   href={item.href}
                   use:link
                   class={cn(
-                    "group relative flex items-center gap-2.5 rounded-md px-3 h-9 text-sm font-medium transition-colors",
+                    "group relative flex items-center gap-2.5 rounded-md px-3 h-9 text-sm font-medium transition-all duration-200",
+                    "before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-[3px] before:rounded-r-full before:bg-primary before:transition-all before:duration-300",
                     active
-                      ? "bg-accent text-accent-foreground"
-                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                      ? "bg-accent text-accent-foreground before:h-5 before:opacity-100"
+                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground before:h-0 before:opacity-0",
                   )}
                 >
-                  <item.icon class="size-4 shrink-0" />
+                  <item.icon class={cn("size-4 shrink-0 transition-transform duration-200", active && "scale-110")} />
                   <span>{item.label}</span>
                 </a>
               {/each}
@@ -164,7 +165,11 @@
 
     <main class="flex-1 overflow-auto">
       <div class="mx-auto max-w-6xl px-8 py-8">
-        {@render children?.()}
+        {#key router.location}
+          <div class="animate-route">
+            {@render children?.()}
+          </div>
+        {/key}
       </div>
     </main>
   </div>

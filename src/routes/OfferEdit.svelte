@@ -26,6 +26,7 @@
     Card,
     CardContent,
     Select,
+    Checkbox,
     toast,
   } from "$lib/ui";
   import { ArrowLeft, Plus, Trash2 } from "@lucide/svelte";
@@ -317,12 +318,11 @@
             </div>
             {#if settings && !settings.isKleinunternehmer}
               <div class="col-span-2 flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
-                <input
+                <Checkbox
                   id="reverse-charge"
-                  type="checkbox"
                   bind:checked={isReverseCharge}
                   disabled={!canReverseCharge || readOnly}
-                  class="mt-0.5 size-4 rounded border-input accent-primary disabled:opacity-40"
+                  class="mt-0.5"
                 />
                 <div class="flex-1 text-sm">
                   <label for="reverse-charge" class="font-medium cursor-pointer">

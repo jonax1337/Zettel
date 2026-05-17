@@ -1,6 +1,6 @@
 [package]
 name = "zettel"
-version = "0.6.0"
+version = "0.7.0"
 description = "Zettel — Offline-first invoice generator"
 authors = ["Jonas Laux"]
 edition = "2021"
@@ -32,6 +32,9 @@ aes-gcm = "0.10"
 argon2 = "0.5"
 rand = "0.8"
 zeroize = "1.7"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
 
 [profile.release]
 panic = "abort"

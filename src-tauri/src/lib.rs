@@ -1,5 +1,6 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod accent;
 mod backup;
 mod crypto;
 mod fs_export;
@@ -104,6 +105,7 @@ pub fn run() {
             backup::bundle_backup,
             backup::stage_restore,
             backup::apply_pending_partial_restore,
+            accent::get_system_accent_color,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())

@@ -159,7 +159,7 @@
           <th class="px-4 py-3 font-medium">Gültig bis</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody class="stagger">
         {#each offers as off (off.id)}
           <tr
             class="border-t hover:bg-muted/30 cursor-pointer transition-colors"

@@ -36,6 +36,7 @@
     CardContent,
     Select,
     Badge,
+    Checkbox,
     ConfirmDialog,
     toast,
   } from "$lib/ui";
@@ -587,12 +588,7 @@
             <Input type="date" bind:value={dueDateIso} />
           </div>
           <div class="col-span-2 flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="rc"
-              bind:checked={reverseCharge}
-              class="size-4 rounded border-input accent-primary"
-            />
+            <Checkbox id="rc" bind:checked={reverseCharge} />
             <label for="rc" class="text-sm cursor-pointer select-none">
               Reverse-Charge (Steuerschuldnerschaft des Leistungsempfängers)
             </label>

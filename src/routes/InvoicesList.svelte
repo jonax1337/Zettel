@@ -11,7 +11,7 @@
   import type { Customer } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
-  import { Button, Card, Input, Select, Badge, Label } from "$lib/ui";
+  import { Button, Card, Input, Select, Badge, Label, Checkbox } from "$lib/ui";
   import { Plus, Search } from "@lucide/svelte";
 
   let invoices = $state<InvoiceListRow[]>([]);
@@ -132,11 +132,7 @@
 </div>
 
 <label class="inline-flex items-center gap-2 mb-5 text-sm text-muted-foreground cursor-pointer select-none">
-  <input
-    type="checkbox"
-    bind:checked={onlyCreditNotes}
-    class="size-4 rounded border-input accent-primary"
-  />
+  <Checkbox bind:checked={onlyCreditNotes} />
   Nur Stornorechnungen
 </label>
 
@@ -163,7 +159,7 @@
           <th class="px-4 py-3 font-medium">Fällig</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody class="stagger">
         {#each invoices as inv (inv.id)}
           <tr
             class="border-t hover:bg-muted/30 cursor-pointer transition-colors"

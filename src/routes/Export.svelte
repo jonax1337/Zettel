@@ -12,6 +12,7 @@
     Input,
     Label,
     Select,
+    Checkbox,
     toast,
   } from "$lib/ui";
   import { loadInvoicesForExport } from "$lib/db/invoices";
@@ -151,28 +152,15 @@
 
       <div class="grid grid-cols-1 gap-2 rounded-md border border-border bg-muted/20 p-3">
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <input
-            type="checkbox"
-            bind:checked={includeInvoices}
-            class="size-4 rounded border-input accent-primary"
-          />
+          <Checkbox bind:checked={includeInvoices} />
           Rechnungen (Erlöse — Status „Versandt" oder „Bezahlt")
         </label>
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <input
-            type="checkbox"
-            bind:checked={includeExpenses}
-            class="size-4 rounded border-input accent-primary"
-          />
+          <Checkbox bind:checked={includeExpenses} />
           Eingangsrechnungen (Aufwände — Status „Offen" oder „Bezahlt")
         </label>
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none pl-6 text-muted-foreground">
-          <input
-            type="checkbox"
-            bind:checked={includeCancelled}
-            disabled={!includeExpenses}
-            class="size-4 rounded border-input accent-primary"
-          />
+          <Checkbox bind:checked={includeCancelled} disabled={!includeExpenses} />
           Stornierte Eingangsrechnungen mit aufnehmen
         </label>
       </div>
