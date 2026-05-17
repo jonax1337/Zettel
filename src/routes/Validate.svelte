@@ -24,7 +24,6 @@
     FileSearch,
     Upload,
     AlertCircle,
-    CheckCircle2,
   } from "@lucide/svelte";
 
   let status = $state<ValidatorStatus | null>(null);
@@ -81,46 +80,29 @@
     </p>
   </div>
 
-  <Card>
-    <CardHeader>
-      <CardTitle class="text-base">Validator-Status</CardTitle>
-      <CardDescription>
-        KoSIT-Validator + XRechnung-Szenarien · Java-Runtime erforderlich
-      </CardDescription>
-    </CardHeader>
-    <CardContent class="flex flex-col gap-2 text-sm">
-      <div class="flex items-center gap-2">
-        {#if status?.installed}
-          <CheckCircle2 class="size-4 text-emerald-500" />
-          <span>Validator installiert</span>
-          <span class="text-muted-foreground text-xs ml-auto truncate max-w-xs" title={status.validatorDir}>
-            {status.validatorDir}
-          </span>
-        {:else}
+  {#if status && !canValidate}
+    <Card class="border-amber-500/40 bg-amber-500/5">
+      <CardHeader>
+        <CardTitle class="flex items-center gap-2 text-base">
           <AlertCircle class="size-4 text-amber-500" />
-          <span>Validator nicht installiert</span>
-          <span class="text-muted-foreground text-xs ml-auto">
-            tools/download-validator.sh ausführen
-          </span>
-        {/if}
-      </div>
-      <div class="flex items-center gap-2">
-        {#if status?.hasJava}
-          <CheckCircle2 class="size-4 text-emerald-500" />
-          <span>Java verfügbar</span>
-          <span class="text-muted-foreground text-xs ml-auto truncate max-w-xs">
-            {status.javaVersion ?? ""}
-          </span>
-        {:else}
-          <AlertCircle class="size-4 text-amber-500" />
-          <span>Java nicht gefunden</span>
-          <span class="text-muted-foreground text-xs ml-auto">
-            JRE/JDK 11+ erforderlich
-          </span>
-        {/if}
-      </div>
-    </CardContent>
-  </Card>
+          Validator nicht einsatzbereit
+        </CardTitle>
+        <CardDescription>
+          {#if !status.installed && !status.hasJava}
+            Validator-Dateien und Java-Runtime fehlen. Dev-Setup:
+            <code class="text-xs">tools/download-validator.sh</code> +
+            <code class="text-xs">tools/build-jre.sh</code>.
+          {:else if !status.installed}
+            KoSIT-Dateien fehlen unter <code class="text-xs">{status.validatorDir}</code>.
+            Setup: <code class="text-xs">tools/download-validator.sh</code>.
+          {:else}
+            Java-Runtime nicht gefunden. Sollte mit dem Installer ausgeliefert
+            werden — ggf. Installer neu ausführen.
+          {/if}
+        </CardDescription>
+      </CardHeader>
+    </Card>
+  {/if}
 
   <Card>
     <CardHeader>

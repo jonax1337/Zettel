@@ -11,7 +11,6 @@
     Repeat,
     Download,
     BarChart3,
-    ShieldCheck,
     Settings as SettingsIcon,
     Monitor,
     Sun,
@@ -67,7 +66,6 @@
       items: [
         { href: "/reports/ustva", label: "UStVA", icon: BarChart3 },
         { href: "/export", label: "DATEV-Export", icon: Download },
-        { href: "/validate", label: "Validieren", icon: ShieldCheck },
       ],
     },
     {

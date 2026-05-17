@@ -194,17 +194,24 @@
       if (res.success) {
         lastPdfPath = res.pdfPath;
         await load(); // refresh validation badge
+        const pdfPath = res.pdfPath;
         if (res.kositReport && !res.kositReport.valid) {
-          toast.warning(
-            `PDF erstellt — KoSIT-Validierung schlug fehl (${res.kositReport.findings.length} Findings)`,
-            "Details unter /validate. Versand erst nach Korrektur empfohlen.",
+          toast.action(
+            `PDF erstellt · ${res.kositReport.findings.length} KoSIT-Findings`,
+            { label: "Öffnen", onClick: () => openPath(pdfPath) },
+            { description: "Versand erst nach Korrektur empfohlen." },
           );
         } else if (res.kositReport?.valid) {
-          toast.success("PDF erstellt · ZUGFeRD-konform (KoSIT)");
+          toast.action(
+            "PDF erstellt · ZUGFeRD-konform",
+            { label: "Öffnen", onClick: () => openPath(pdfPath) },
+          );
         } else {
-          toast.success("PDF erstellt");
+          toast.action(
+            "PDF erstellt",
+            { label: "Öffnen", onClick: () => openPath(pdfPath) },
+          );
         }
-        await openPath(res.pdfPath);
       } else {
         pdfError = `${res.error.code}: ${res.error.message}`;
         toast.error("PDF-Generierung fehlgeschlagen", res.error.message);
@@ -363,10 +370,9 @@
         <h1 class="text-3xl font-semibold tracking-tight font-mono">
           {invoice.isCreditNote ? "Storno " : ""}{invoice.number}
         </h1>
-        <Badge variant={statusVariant[invoice.status]}>{statusLabel[invoice.status]}</Badge>
-        {#if invoice.isCreditNote}
-          <Badge variant="destructive">Stornorechnung</Badge>
-        {/if}
+        <Badge variant={invoice.isCreditNote ? "destructive" : statusVariant[invoice.status]}>
+          {invoice.isCreditNote ? `Storno · ${statusLabel[invoice.status]}` : statusLabel[invoice.status]}
+        </Badge>
         {#if invoice.lastValidationStatus || lastPdfPath}
           <ValidationBadge
             status={invoice.lastValidationStatus}
