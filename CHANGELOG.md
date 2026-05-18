@@ -6,6 +6,35 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-05-18
+
+> **Steuer-Rücklage.** Eine fokussierte Story — Zettel sagt dir jetzt im Dashboard, wieviel Geld du von deinem YTD-Gewinn für die Einkommensteuer am Jahresende zurücklegen solltest. Hybrid-Tarif: BMF-Lohnsteuer-Rechner live wenn online (autoritativ, immer aktuell), § 32a-Formel mit 2024er-Konstanten als Offline-Fallback.
+
+### Added
+- **Steuerprofil in Settings.** Neue Card mit Rechtsform (Freiberufler / Gewerbetreibender), Hebesatz für Gewerbe-Steuer (Default 400 % = Bundesdurchschnitt, nur bei Gewerbe sichtbar), Kirchensteuersatz (0 / 8 / 9 %), Familienstand (ledig / verheiratet-Splittingtarif) und 4× Quartals-Vorauszahlungen (Q1-Q4). Klar gelabelt als Vorhersage, keine Steuerberatung. (#64)
+- **Tarif-Library** in `src/lib/tax/` — pure Functions, voll testbar:
+  - `income.ts` — § 32a EStG mit 5-Zonen-Formel, Splittingtarif für `married`, Soli mit Milderungszone (§ 4 Abs. 2 SolzG), KiSt 0/8/9 %. Konstanten in `TARIF_2024` ausgelagert, Update-Pfad dokumentiert.
+  - `trade.ts` — Gewerbesteuer (Freibetrag 24.500 €, Messzahl 3,5 %, Hebesatz), § 35 EStG Anrechnung auf ESt (3,8 × Messbetrag, gedeckelt). Freiberufler-Pfad: sofort 0.
+  - 23 Vitest-Tests gegen amtliche BMF-Tarifrechner-Werte (Grundtarif + Splittingtarif × 6 Einkommensstufen, Soli-Freigrenze + Milderungszone + voller Satz, KiSt 8/9, GewSt-Freibetrag, ESt-Anrechnung bei niedrigem vs. hohem Hebesatz). (#65)
+- **BMF-Live-Anbindung.** Rust-Command `fetch_bmf_income_tax` ruft das offizielle `bmf-steuerrechner.de/interface/<JAHR>Version1.xhtml` an (ureq blocking, 8 s Timeout, XML-Response via Substring-Match). TS-Wrapper in `src/lib/tax/bmf.ts` cached 24 h pro `(year, status, zvE)` in localStorage. `estimateIncomeTax` async: versucht BMF zuerst, fällt bei Offline/API-Fehler auf den lokalen Tarif zurück. UI-Badge zeigt `BMF live` oder `lokale Schätzung`. (#65)
+- **Dashboard-Card „Steuer-Rücklage".** Kompakt unter den KPI-Cards, vor Aging/Wiedervorlage. Headline-Betrag + ein-Zeilen-Aufschlüsselung (ESt+Soli+KiSt · GewSt · USt · Vorauszahlungen). Klick → Detail-Route. (#66)
+- **Detail-Route `/reports/taxes`** (neue Komponente `TaxReport.svelte`):
+  - Headline mit empfohlener Rücklage
+  - Datenquellen-Card (BMF live / lokal + Jahresangabe)
+  - Hochrechnungs-Card mit Was-wenn-Input („Restjahres-Gewinn (€)") für Szenarien
+  - Aufschlüsselungs-Tabelle inkl. § 35 EStG-Anrechnung sichtbar
+  - Drei Disclaimer-Absätze: keine Steuerberatung, USt-Approximation, kein ELSTER
+
+### Migration
+- `0014_v0.11_tax_profile.sql` — `user_version = 15`. Erweitert `settings` um `legal_form`, `trade_tax_rate`, `church_tax_rate`, `tax_filing_status`, `est_prepayment_q1..q4_cent`. Default `freelancer` / Hebesatz 400 % / keine KiSt / `single` / 0 € Vorauszahlungen — Bestandsuser sehen die Card direkt nutzbar ohne Konfigurations-Pflicht.
+- `CURRENT_SCHEMA` in `backup.rs` auf 15, `CURRENT_DB_SCHEMA_VERSION` in `Settings.svelte` synchron.
+
+### Notes
+- **Phase 4 (Pauschal-Modus „30 % von jeder Einnahme zurücklegen") wurde aus v0.11-Scope entfernt** — überlappt mit der Detail-Card, würde zwei Wahrheiten zur selben Frage liefern. Falls echter Bedarf entsteht: separates Folge-Issue.
+- **Tax-Year 2024-Konstanten im lokalen Fallback** sind bewusst gewählt (verifizierbar gegen offizielle BMF-Beispiele). Solange BMF-Live erreichbar ist, ist das egal; der Fallback wird nur bei Offline-Modus genutzt. Beim Jahres-Tarif-Update Anfang 2027 wird `TARIF_2024` durch eine versionierte Struktur ersetzt.
+- **USt-Schuld YTD im Tax-Report ist eine Approximation** (Rechnungs-USt − Vorsteuer ohne RC). Für die echte UStVA bleibt `/reports/ustva` der maßgebliche Workflow.
+- **Kein ELSTER, kein EÜR-Export, kein AfA, kein Bankabgleich, kein Krankenversicherungs-Rechner** — alles als Roadmap-Kandidaten dokumentiert, keiner davon in v0.11.
+
 ## [0.10.0] — 2026-05-18
 
 > **Flexibilität & Datenpflege.** Sechs Module, die das Tagesgeschäft flexibler machen und den wachsenden Datenbestand handhabbar halten — kein Funktions-Sprung, sondern gezielte UX-Aufwertung. Plus ein neuer Sidecar-Pfad für PDF-Anhänge an Rechnungen und ein dev/bundle-Config-Split, der Cargo-Build-Probleme auf Windows behebt.
