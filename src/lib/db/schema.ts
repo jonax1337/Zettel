@@ -83,6 +83,10 @@ export const settings = sqliteTable("settings", {
   estPrepaymentQ2Cent: integer("est_prepayment_q2_cent").notNull().default(0),
   estPrepaymentQ3Cent: integer("est_prepayment_q3_cent").notNull().default(0),
   estPrepaymentQ4Cent: integer("est_prepayment_q4_cent").notNull().default(0),
+  usePauschalTaxReserve: integer("use_pauschal_tax_reserve", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  pauschalTaxPercent: real("pauschal_tax_percent").notNull().default(30.0),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),

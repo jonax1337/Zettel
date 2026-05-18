@@ -53,7 +53,7 @@
   const accentLabel = (k: AccentKey) => (k === "system" ? "System" : ACCENT_PRESETS[k].label);
 
   // aktueller DB-Schema-Stand (siehe src-tauri/src/lib.rs Migrations-Vektor)
-  const CURRENT_DB_SCHEMA_VERSION = 15;
+  const CURRENT_DB_SCHEMA_VERSION = 16;
 
   let s = $state<Settings | null>(null);
   let loading = $state(true);
@@ -526,6 +526,39 @@
             <p class="text-xs text-muted-foreground mt-1.5">
               Bereits ans Finanzamt überwiesene ESt-Vorauszahlungen. Werden von der empfohlenen Rücklage abgezogen.
             </p>
+          </div>
+
+          <div class="col-span-2 border-t pt-4 mt-2">
+            <label class="flex items-start gap-2.5 text-sm cursor-pointer select-none">
+              <Checkbox bind:checked={s.usePauschalTaxReserve} />
+              <span>
+                <span class="font-medium">Pauschal-Modus zusätzlich anzeigen</span>
+                <span class="block text-xs text-muted-foreground mt-0.5">
+                  Statt der detaillierten Tarif-Rechnung einfach „X % vom Umsatz brutto zurücklegen". Wird neben der Detail-Rücklage angezeigt — du entscheidest, welcher Wert dir besser dient.
+                </span>
+              </span>
+            </label>
+            {#if s.usePauschalTaxReserve}
+              <div class="mt-3 ml-7 flex items-center gap-3">
+                <Label class="text-xs">Prozentsatz vom Brutto-Umsatz</Label>
+                <div class="flex items-center gap-1">
+                  <Input
+                    type="number"
+                    min="0"
+                    max="50"
+                    step="1"
+                    value={Math.round(s.pauschalTaxPercent)}
+                    oninput={(e) => {
+                      const n = Number.parseInt((e.currentTarget as HTMLInputElement).value, 10);
+                      if (!Number.isNaN(n)) s!.pauschalTaxPercent = Math.max(0, Math.min(50, n));
+                    }}
+                    class="w-20"
+                  />
+                  <span class="text-sm text-muted-foreground">%</span>
+                </div>
+                <span class="text-xs text-muted-foreground">Daumenwert für Solo-Selbstständige: 30 %.</span>
+              </div>
+            {/if}
           </div>
         </div>
       </CardContent>

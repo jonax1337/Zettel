@@ -153,6 +153,55 @@
     </CardContent>
   </Card>
 
+  {#if result.flags.usePauschal}
+    <Card class="mb-6">
+      <CardHeader>
+        <CardTitle>Detail vs. Pauschal</CardTitle>
+        <CardDescription>
+          Detailmodus rechnet ESt+Soli+KiSt+GewSt+USt aus dem hochgerechneten Gewinn.
+          Pauschalmodus nimmt schlicht {result.flags.pauschalPercent} % vom Brutto-Umsatz YTD.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <div class="text-xs text-muted-foreground uppercase tracking-wider">Detail-Rücklage</div>
+            <div class="text-2xl font-semibold tabular-nums mt-1">
+              {centsToEur(result.recommendedReserveCent)}
+            </div>
+            <div class="text-xs text-muted-foreground mt-0.5">aus dem Tarif</div>
+          </div>
+          <div>
+            <div class="text-xs text-muted-foreground uppercase tracking-wider">
+              Pauschal {result.flags.pauschalPercent} %
+            </div>
+            <div class="text-2xl font-semibold tabular-nums mt-1">
+              {centsToEur(result.pauschalReserveCent)}
+            </div>
+            <div class="text-xs text-muted-foreground mt-0.5">
+              {result.flags.pauschalPercent} % × {centsToEur(result.revenueYtdGrossCent)} Brutto-Umsatz
+            </div>
+          </div>
+          <div>
+            <div class="text-xs text-muted-foreground uppercase tracking-wider">Differenz</div>
+            <div class="text-2xl font-semibold tabular-nums mt-1 {result.pauschalDeltaCent >= 0 ? 'text-foreground' : 'text-muted-foreground'}">
+              {result.pauschalDeltaCent >= 0 ? "+" : ""}{centsToEur(result.pauschalDeltaCent)}
+            </div>
+            <div class="text-xs text-muted-foreground mt-0.5">
+              {#if result.pauschalDeltaCent > 0}
+                Detail höher — Pauschal unterschätzt
+              {:else if result.pauschalDeltaCent < 0}
+                Pauschal höher — du legst zu viel zurück
+              {:else}
+                identisch
+              {/if}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  {/if}
+
   <Card class="mb-6">
     <CardHeader>
       <CardTitle>Aufschlüsselung</CardTitle>

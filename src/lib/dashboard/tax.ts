@@ -17,27 +17,36 @@ export interface TaxRücklageResult {
   daysElapsed: number;
   profitYtdCent: number;
   projectedAnnualProfitCent: number;
+  /** Umsatz YTD brutto (Cent) — Basis für den Pauschal-Modus. */
+  revenueYtdGrossCent: number;
   /** USt-Schuld YTD (Cent). 0 bei Kleinunternehmer. */
   ustSchuldYtdCent: number;
   /** ESt + Soli + KiSt-Schätzung für den hochgerechneten Jahresgewinn. */
   income: IncomeTaxWithSource;
   /** GewSt-Schätzung. */
   trade: TradeTaxResult;
-  /** Summe aller Steuer-Lasten. */
+  /** Summe aller Steuer-Lasten (Detail-Berechnung). */
   totalTaxBurdenCent: number;
   prepaymentsCent: number;
-  /** Empfohlene Rücklage (untere Schranke 0). */
+  /** Detail-Rücklage = totalTaxBurden − Vorauszahlungen, unten geclamped. */
   recommendedReserveCent: number;
-  /** Profil-Echo für UI-Anzeige (Quelle, Kleinunternehmer-Hinweis, etc.). */
+  /** Pauschal-Wert: `revenueYtdGrossCent × pauschal_tax_percent / 100`. */
+  pauschalReserveCent: number;
+  /** Differenz (Detail − Pauschal). Positiv = Detail höher. */
+  pauschalDeltaCent: number;
+  /** Profil-Echo für UI-Anzeige. */
   flags: {
     isFreelancer: boolean;
     isKleinunternehmer: boolean;
     estSource: "bmf" | "local";
+    usePauschal: boolean;
+    pauschalPercent: number;
   };
 }
 
 interface YearAggRow {
   revenue: number;
+  revenueGross: number;
   stornos: number;
   expense: number;
   invoiceVat: number;
@@ -51,12 +60,14 @@ async function loadYearAgg(yearStart: number, now: number): Promise<YearAggRow> 
   // Vorsteuer, daher gefiltert.
   const inv = await select<{
     revenue: number;
+    revenue_gross: number;
     stornos: number;
     invoice_vat: number;
     storno_vat: number;
   }>(
     `SELECT
        COALESCE(SUM(CASE WHEN is_credit_note = 1 THEN 0 ELSE subtotal END), 0) AS revenue,
+       COALESCE(SUM(CASE WHEN is_credit_note = 1 THEN -total ELSE total END), 0) AS revenue_gross,
        COALESCE(SUM(CASE WHEN is_credit_note = 1 THEN subtotal ELSE 0 END), 0) AS stornos,
        COALESCE(SUM(CASE WHEN is_credit_note = 1 THEN 0 ELSE vat_amount END), 0) AS invoice_vat,
        COALESCE(SUM(CASE WHEN is_credit_note = 1 THEN vat_amount ELSE 0 END), 0) AS storno_vat
@@ -76,6 +87,7 @@ async function loadYearAgg(yearStart: number, now: number): Promise<YearAggRow> 
   );
   return {
     revenue: inv[0]?.revenue ?? 0,
+    revenueGross: inv[0]?.revenue_gross ?? 0,
     stornos: inv[0]?.stornos ?? 0,
     expense: exp[0]?.expense ?? 0,
     invoiceVat: inv[0]?.invoice_vat ?? 0,
@@ -129,21 +141,33 @@ export async function computeTaxRücklage(
 
   const recommendedReserveCent = Math.max(0, totalTaxBurdenCent - prepaymentsCent);
 
+  const pauschalPercent = Math.max(0, Math.min(50, settings.pauschalTaxPercent));
+  const pauschalReserveCent = Math.max(
+    0,
+    Math.round((agg.revenueGross * pauschalPercent) / 100),
+  );
+  const pauschalDeltaCent = recommendedReserveCent - pauschalReserveCent;
+
   return {
     year,
     daysElapsed,
     profitYtdCent,
     projectedAnnualProfitCent,
+    revenueYtdGrossCent: agg.revenueGross,
     ustSchuldYtdCent,
     income,
     trade,
     totalTaxBurdenCent,
     prepaymentsCent,
     recommendedReserveCent,
+    pauschalReserveCent,
+    pauschalDeltaCent,
     flags: {
       isFreelancer: settings.legalForm === "freelancer",
       isKleinunternehmer: settings.isKleinunternehmer,
       estSource: income.source,
+      usePauschal: settings.usePauschalTaxReserve,
+      pauschalPercent,
     },
   };
 }

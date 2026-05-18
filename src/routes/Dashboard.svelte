@@ -388,8 +388,16 @@
                 Steuer-Rücklage {taxRücklage.year} ·
                 {#if taxRücklage.flags.estSource === "bmf"}BMF live{:else}lokale Schätzung{/if}
               </div>
-              <div class="text-2xl font-semibold tabular-nums mt-0.5">
-                {centsToEur(taxRücklage.recommendedReserveCent)}
+              <div class="flex items-baseline gap-4 mt-0.5">
+                <div class="text-2xl font-semibold tabular-nums">
+                  {centsToEur(taxRücklage.recommendedReserveCent)}
+                </div>
+                {#if taxRücklage.flags.usePauschal}
+                  <div class="text-sm text-muted-foreground tabular-nums">
+                    pauschal {taxRücklage.flags.pauschalPercent}%:
+                    <span class="font-medium">{centsToEur(taxRücklage.pauschalReserveCent)}</span>
+                  </div>
+                {/if}
               </div>
               <div class="text-xs text-muted-foreground mt-1 truncate">
                 {#if taxRücklage.totalTaxBurdenCent === 0}

@@ -24,13 +24,14 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
   - Hochrechnungs-Card mit Was-wenn-Input („Restjahres-Gewinn (€)") für Szenarien
   - Aufschlüsselungs-Tabelle inkl. § 35 EStG-Anrechnung sichtbar
   - Drei Disclaimer-Absätze: keine Steuerberatung, USt-Approximation, kein ELSTER
+- **Pauschal-Modus (optional).** Settings-Toggle „Pauschal-Modus zusätzlich anzeigen" + Prozent-Input (Default 30 %, Range 0-50 %). Wenn aktiv: Dashboard-Card zeigt den Pauschal-Wert (`% × Brutto-Umsatz YTD`) neben der Detail-Rücklage; Detail-Route hat eine zusätzliche „Detail vs. Pauschal"-Card mit Differenz-Sublabel („Detail höher — Pauschal unterschätzt" o. ä.). Lernhilfe für User, die ihren Daumen-Wert kalibrieren wollen. (#67)
 
 ### Migration
 - `0014_v0.11_tax_profile.sql` — `user_version = 15`. Erweitert `settings` um `legal_form`, `trade_tax_rate`, `church_tax_rate`, `tax_filing_status`, `est_prepayment_q1..q4_cent`. Default `freelancer` / Hebesatz 400 % / keine KiSt / `single` / 0 € Vorauszahlungen — Bestandsuser sehen die Card direkt nutzbar ohne Konfigurations-Pflicht.
-- `CURRENT_SCHEMA` in `backup.rs` auf 15, `CURRENT_DB_SCHEMA_VERSION` in `Settings.svelte` synchron.
+- `0015_v0.11_pauschal_mode.sql` — `user_version = 16`. `use_pauschal_tax_reserve` (Bool, Default off) + `pauschal_tax_percent` (Real, Default 30).
+- `CURRENT_SCHEMA` in `backup.rs` auf 16, `CURRENT_DB_SCHEMA_VERSION` in `Settings.svelte` synchron.
 
 ### Notes
-- **Phase 4 (Pauschal-Modus „30 % von jeder Einnahme zurücklegen") wurde aus v0.11-Scope entfernt** — überlappt mit der Detail-Card, würde zwei Wahrheiten zur selben Frage liefern. Falls echter Bedarf entsteht: separates Folge-Issue.
 - **Tax-Year 2024-Konstanten im lokalen Fallback** sind bewusst gewählt (verifizierbar gegen offizielle BMF-Beispiele). Solange BMF-Live erreichbar ist, ist das egal; der Fallback wird nur bei Offline-Modus genutzt. Beim Jahres-Tarif-Update Anfang 2027 wird `TARIF_2024` durch eine versionierte Struktur ersetzt.
 - **USt-Schuld YTD im Tax-Report ist eine Approximation** (Rechnungs-USt − Vorsteuer ohne RC). Für die echte UStVA bleibt `/reports/ustva` der maßgebliche Workflow.
 - **Kein ELSTER, kein EÜR-Export, kein AfA, kein Bankabgleich, kein Krankenversicherungs-Rechner** — alles als Roadmap-Kandidaten dokumentiert, keiner davon in v0.11.

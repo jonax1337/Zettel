@@ -102,6 +102,12 @@ fn build_migrations() -> Vec<Migration> {
             sql: include_str!("../../src/lib/db/migrations/0014_v0.11_tax_profile.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 16,
+            description: "v0.11_pauschal_mode",
+            sql: include_str!("../../src/lib/db/migrations/0015_v0.11_pauschal_mode.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
