@@ -131,6 +131,11 @@ export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
     updated_at: number;
     sent_at: number | null;
     paid_at: number | null;
+    currency: string | null;
+    exchange_rate: string | null;
+    eur_total_cent: number | null;
+    notes_internal: string | null;
+    follow_up_date: number | null;
     customer_name: string | null;
   }>(
     `SELECT i.*, c.name AS customer_name
@@ -185,6 +190,11 @@ export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
       lastValidationStatus: null,
       lastValidatedAt: null,
       lastValidationFindingsCount: null,
+      currency: r.currency ?? "EUR",
+      exchangeRate: r.exchange_rate,
+      eurTotalCent: r.eur_total_cent,
+      notesInternal: r.notes_internal,
+      followUpDate: r.follow_up_date,
     },
     customerName: r.customer_name ?? "—",
     daysOverdue: Math.max(0, Math.floor((now - r.due_date) / 86400)),

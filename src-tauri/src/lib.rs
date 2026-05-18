@@ -82,6 +82,12 @@ fn build_migrations() -> Vec<Migration> {
             sql: include_str!("../../src/lib/db/migrations/0011_validation_status.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 13,
+            description: "v0.10_flexibility",
+            sql: include_str!("../../src/lib/db/migrations/0012_v0.10_flexibility.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

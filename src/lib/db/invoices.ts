@@ -37,6 +37,11 @@ type InvoiceRow = {
   last_validation_status: string | null;
   last_validated_at: number | null;
   last_validation_findings_count: number | null;
+  currency: string;
+  exchange_rate: string | null;
+  eur_total_cent: number | null;
+  notes_internal: string | null;
+  follow_up_date: number | null;
 };
 
 type InvoiceItemRow = {
@@ -79,6 +84,11 @@ function mapInvoice(r: InvoiceRow): Invoice {
     lastValidationStatus: r.last_validation_status as Invoice["lastValidationStatus"],
     lastValidatedAt: r.last_validated_at,
     lastValidationFindingsCount: r.last_validation_findings_count,
+    currency: r.currency ?? "EUR",
+    exchangeRate: r.exchange_rate,
+    eurTotalCent: r.eur_total_cent,
+    notesInternal: r.notes_internal,
+    followUpDate: r.follow_up_date,
   };
 }
 
@@ -119,6 +129,11 @@ export type InvoiceFormInput = {
   isCreditNote?: boolean;
   correctsInvoiceId?: number | null;
   items: InvoiceItemInput[];
+  currency?: string;
+  exchangeRate?: string | null;
+  eurTotalCent?: number | null;
+  notesInternal?: string | null;
+  followUpDate?: number | null;
 };
 
 // --- Totals ---
@@ -317,8 +332,9 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
     `INSERT INTO invoices
       (number, customer_id, customer_snapshot, issue_date, delivery_date, due_date,
        status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
-       reverse_charge_type, notes, payment_terms, is_credit_note, corrects_invoice_id)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       reverse_charge_type, notes, payment_terms, is_credit_note, corrects_invoice_id,
+       currency, exchange_rate, eur_total_cent, notes_internal, follow_up_date)
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.customerId,
@@ -336,6 +352,11 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
       input.paymentTerms,
       input.isCreditNote ? 1 : 0,
       input.correctsInvoiceId ?? null,
+      input.currency ?? "EUR",
+      input.exchangeRate ?? null,
+      input.eurTotalCent ?? null,
+      input.notesInternal ?? null,
+      input.followUpDate ?? null,
     ],
   );
   const id = Number(res.lastInsertId ?? 0);
@@ -371,7 +392,10 @@ export async function updateInvoice(
       issue_date = ?, delivery_date = ?, due_date = ?,
       subtotal = ?, vat_amount = ?, total = ?,
       is_reverse_charge = ?, reverse_charge_type = ?,
-      notes = ?, payment_terms = ?, updated_at = unixepoch()
+      notes = ?, payment_terms = ?,
+      currency = ?, exchange_rate = ?, eur_total_cent = ?,
+      notes_internal = ?, follow_up_date = ?,
+      updated_at = unixepoch()
      WHERE id = ?`,
     [
       input.customerId,
@@ -386,6 +410,11 @@ export async function updateInvoice(
       input.reverseChargeType,
       input.notes,
       input.paymentTerms,
+      input.currency ?? existing.invoice.currency ?? "EUR",
+      input.exchangeRate ?? existing.invoice.exchangeRate ?? null,
+      input.eurTotalCent ?? existing.invoice.eurTotalCent ?? null,
+      input.notesInternal ?? existing.invoice.notesInternal ?? null,
+      input.followUpDate ?? existing.invoice.followUpDate ?? null,
       id,
     ],
   );

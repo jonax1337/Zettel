@@ -92,6 +92,11 @@ export const customers = sqliteTable("customers", {
   phone: text("phone"),
   vatId: text("vat_id"),
   notes: text("notes"),
+  creditStatus: text("credit_status", { enum: ["good", "watch", "blocked"] })
+    .notNull()
+    .default("good"),
+  creditNote: text("credit_note"),
+  followUpDate: integer("follow_up_date"),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),
@@ -147,6 +152,11 @@ export const invoices = sqliteTable("invoices", {
   }),
   lastValidatedAt: integer("last_validated_at"),
   lastValidationFindingsCount: integer("last_validation_findings_count"),
+  currency: text("currency").notNull().default("EUR"),
+  exchangeRate: text("exchange_rate"),
+  eurTotalCent: integer("eur_total_cent"),
+  notesInternal: text("notes_internal"),
+  followUpDate: integer("follow_up_date"),
 });
 
 export const invoiceItems = sqliteTable("invoice_items", {
@@ -232,6 +242,8 @@ export const offers = sqliteTable("offers", {
   sentAt: integer("sent_at"),
   acceptedAt: integer("accepted_at"),
   rejectedAt: integer("rejected_at"),
+  currency: text("currency").notNull().default("EUR"),
+  exchangeRate: text("exchange_rate"),
 });
 
 export const offerItems = sqliteTable("offer_items", {
@@ -382,6 +394,19 @@ export type VendorSnapshot = {
   email: string | null;
   vatId: string | null;
 };
+
+export const invoiceAttachments = sqliteTable("invoice_attachments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  invoiceId: integer("invoice_id").notNull(),
+  filename: text("filename").notNull(),
+  contentHash: text("content_hash").notNull(),
+  mimeType: text("mime_type").notNull(),
+  fileSize: integer("file_size").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+
+export type InvoiceAttachment = typeof invoiceAttachments.$inferSelect;
+export type InvoiceAttachmentInsert = typeof invoiceAttachments.$inferInsert;
 
 export type CustomerSnapshot = {
   customerNumber: string;
