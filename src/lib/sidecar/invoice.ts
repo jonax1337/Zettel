@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
 import { execute } from "$lib/db/client";
 import { getInvoice, isDraftNumber, issueInvoice } from "$lib/db/invoices";
+import { attachmentStoredPath, listAttachments } from "$lib/db/attachments";
 import { loadSettings } from "$lib/db/queries";
 import type { CustomerSnapshot, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
 import { validatePdf, type ValidationReport } from "$lib/validator";
@@ -38,8 +39,9 @@ function buildPayload(opts: {
   company: Settings;
   outputPath: string;
   correctsInvoice?: { number: string; issueDate: number } | null;
+  attachments?: string[];
 }) {
-  const { invoice, items, customer, company, outputPath, correctsInvoice } = opts;
+  const { invoice, items, customer, company, outputPath, correctsInvoice, attachments } = opts;
   return {
     invoice: {
       number: invoice.number,
@@ -95,6 +97,7 @@ function buildPayload(opts: {
       vatId: customer.vatId,
     },
     outputPath,
+    attachments: attachments ?? [],
     profile: company.zugferdProfile ?? "en16931",
     settings: {
       pdf_theme: company.pdfTheme ?? "classic",
@@ -127,6 +130,18 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
       correctsInvoice = { number: orig.invoice.number, issueDate: orig.invoice.issueDate };
     }
   }
+  // PDF attachments: merged into the body before factur-x XML embed.
+  // Storno-Rechnungen erben keine Anhänge — die bleiben am Original.
+  let attachments: string[] = [];
+  if (!data.invoice.isCreditNote) {
+    const rows = await listAttachments(data.invoice.id);
+    attachments = await Promise.all(
+      rows
+        .filter((r) => r.mimeType === "application/pdf")
+        .map((r) => attachmentStoredPath(data.invoice.number, r.filename, r.contentHash)),
+    );
+  }
+
   const payload = buildPayload({
     invoice: data.invoice,
     items: data.items,
@@ -134,6 +149,7 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
     company,
     outputPath,
     correctsInvoice,
+    attachments,
   });
 
   const response = (await invoke<SidecarResponse>("generate_invoice", { payload })) as SidecarResponse;
