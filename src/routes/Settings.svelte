@@ -44,6 +44,34 @@
   let loading = $state(true);
   let saving = $state(false);
   let error = $state<string | null>(null);
+  let sandbox = $state(false);
+  let sandboxBusy = $state(false);
+  let confirmSandboxToggleOpen = $state(false);
+  let pendingSandbox = $state(false);
+
+  $effect(() => {
+    invoke<boolean>("is_sandbox")
+      .then((v) => (sandbox = v))
+      .catch(() => {});
+  });
+
+  function requestSandboxToggle(enabled: boolean) {
+    pendingSandbox = enabled;
+    confirmSandboxToggleOpen = true;
+  }
+
+  async function applySandboxToggle() {
+    sandboxBusy = true;
+    try {
+      await invoke("set_sandbox", { enabled: pendingSandbox });
+      const { relaunch } = await import("@tauri-apps/plugin-process");
+      await relaunch();
+    } catch (e) {
+      toast.error("Sandbox konnte nicht umgeschaltet werden", String(e));
+    } finally {
+      sandboxBusy = false;
+    }
+  }
 
   async function pickLogo() {
     if (!s) return;
@@ -569,6 +597,25 @@
 
     <Card>
       <CardHeader>
+        <CardTitle>Sandbox</CardTitle>
+        <CardDescription>
+          Zum gefahrlosen Testen. Daten werden getrennt gespeichert, deine echte Buchhaltung bleibt unberührt. Die App startet beim Umschalten neu.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button
+          type="button"
+          variant={sandbox ? "destructive" : "outline"}
+          disabled={sandboxBusy}
+          onclick={() => requestSandboxToggle(!sandbox)}
+        >
+          {sandbox ? "Sandbox verlassen" : "Sandbox aktivieren"}
+        </Button>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
         <CardTitle>Backup & Wiederherstellung</CardTitle>
         <CardDescription>
           Sichert die Datenbank und alle erzeugten Rechnungs-PDFs in eine ZIP-Datei.
@@ -684,6 +731,17 @@
       {/if}
     </div>
   </form>
+
+  <ConfirmDialog
+    bind:open={confirmSandboxToggleOpen}
+    title={pendingSandbox ? "Sandbox aktivieren?" : "Sandbox verlassen?"}
+    description={pendingSandbox
+      ? "Die App startet neu. Du wechselst in einen Testbereich – deine echten Daten bleiben unverändert."
+      : "Die App startet neu und zeigt wieder deine echte Buchhaltung. Test-Daten bleiben gespeichert."}
+    confirmLabel="Neu starten"
+    cancelLabel="Abbrechen"
+    onConfirm={applySandboxToggle}
+  />
 
   <ConfirmDialog
     bind:open={confirmRestoreOpen}

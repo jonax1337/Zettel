@@ -36,6 +36,7 @@
     Label,
     Card,
     CardContent,
+    DatePicker,
     Select,
     Badge,
     Checkbox,
@@ -636,11 +637,11 @@
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>Rechnungsdatum <span class="text-destructive">*</span></Label>
-            <Input type="date" bind:value={issueDateIso} required />
+            <DatePicker bind:value={issueDateIso} required />
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>Fällig am</Label>
-            <Input type="date" bind:value={dueDateIso} />
+            <DatePicker bind:value={dueDateIso} />
           </div>
           <div class="col-span-2 flex items-center gap-2">
             <Checkbox id="rc" bind:checked={reverseCharge} />

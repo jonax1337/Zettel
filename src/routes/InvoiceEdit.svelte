@@ -26,6 +26,7 @@
     Label,
     Card,
     CardContent,
+    DatePicker,
     Select,
     toast,
   } from "$lib/ui";
@@ -338,17 +339,17 @@
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>{isCreditNote ? "Stornodatum" : "Rechnungsdatum"}</Label>
-            <Input type="date" bind:value={issueDateIso} required />
+            <DatePicker bind:value={issueDateIso} required />
           </div>
           {#if !isCreditNote}
             <div class="flex flex-col gap-1.5">
               <Label>Fällig am</Label>
-              <Input type="date" bind:value={dueDateIso} required />
+              <DatePicker bind:value={dueDateIso} required />
             </div>
           {/if}
           <div class="flex flex-col gap-1.5 col-span-2">
             <Label>Liefer-/Leistungsdatum</Label>
-            <Input type="date" bind:value={deliveryDateIso} />
+            <DatePicker bind:value={deliveryDateIso} />
           </div>
           {#if settings && !settings.isKleinunternehmer && !isCreditNote}
             <div class="col-span-2 flex flex-col gap-1.5">

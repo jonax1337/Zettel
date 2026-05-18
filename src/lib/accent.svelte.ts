@@ -65,10 +65,10 @@ export const ACCENT_PRESETS: Record<Exclude<AccentKey, "system">, Palette & { la
 const STORAGE_KEY = "zettel.accent";
 
 function readStored(): AccentKey {
-  if (typeof localStorage === "undefined") return "system";
+  if (typeof localStorage === "undefined") return "indigo";
   const v = localStorage.getItem(STORAGE_KEY);
   if (v && (v === "system" || v in ACCENT_PRESETS)) return v as AccentKey;
-  return "system";
+  return "indigo";
 }
 
 function isTauri(): boolean {

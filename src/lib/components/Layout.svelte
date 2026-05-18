@@ -22,6 +22,14 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import { version as appVersion } from "../../../package.json";
+  import { isSandboxActive } from "$lib/db/client";
+  import { FlaskConical } from "@lucide/svelte";
+  import { push } from "svelte-spa-router";
+
+  let sandbox = $state(false);
+  onMount(async () => {
+    sandbox = await isSandboxActive();
+  });
 
   let { children } = $props();
 
@@ -91,7 +99,20 @@
 </script>
 
 <div class="flex flex-col h-full bg-background text-foreground">
-  <Titlebar title={windowTitle} />
+  <Titlebar title={windowTitle}>
+    {#if sandbox}
+      <button
+        type="button"
+        onclick={() => push("/settings")}
+        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-amber-500/20 text-amber-900 dark:text-amber-200 border border-amber-500/40 hover:bg-amber-500/30 transition-colors cursor-pointer"
+        title="Sandbox aktiv – zu den Einstellungen"
+        style="-webkit-app-region: no-drag"
+      >
+        <FlaskConical class="size-3" />
+        Sandbox
+      </button>
+    {/if}
+  </Titlebar>
 
   <div class="flex flex-1 min-h-0">
     <aside class="w-60 shrink-0 border-r bg-card/50 flex flex-col">

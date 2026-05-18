@@ -3,16 +3,13 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 mod accent;
 mod backup;
 mod crypto;
+mod sandbox;
 mod fs_export;
 mod sidecar;
 mod validator;
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    // Apply any pending restore BEFORE the SQL plugin opens the DB.
-    backup::apply_pending_restore_blocking();
-
-    let migrations = vec![
+fn build_migrations() -> Vec<Migration> {
+    vec![
         Migration {
             version: 1,
             description: "initial_schema",
@@ -85,7 +82,13 @@ pub fn run() {
             sql: include_str!("../../src/lib/db/migrations/0011_validation_status.sql"),
             kind: MigrationKind::Up,
         },
-    ];
+    ]
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    // Apply any pending restore BEFORE the SQL plugin opens the DB.
+    backup::apply_pending_restore_blocking();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -96,7 +99,8 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:zettel.db", migrations)
+                .add_migrations("sqlite:zettel.db", build_migrations())
+                .add_migrations("sqlite:zettel-sandbox.db", build_migrations())
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
@@ -116,6 +120,8 @@ pub fn run() {
             validator::validator_status,
             validator::validate_einvoice_xml,
             validator::validate_einvoice_pdf,
+            sandbox::is_sandbox,
+            sandbox::set_sandbox,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())

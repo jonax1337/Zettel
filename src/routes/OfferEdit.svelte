@@ -25,6 +25,7 @@
     Label,
     Card,
     CardContent,
+    DatePicker,
     Select,
     Checkbox,
     toast,
@@ -310,11 +311,11 @@
             </div>
             <div class="flex flex-col gap-1.5">
               <Label>Angebotsdatum</Label>
-              <Input type="date" bind:value={issueDateIso} required disabled={readOnly} />
+              <DatePicker bind:value={issueDateIso} required disabled={readOnly} />
             </div>
             <div class="flex flex-col gap-1.5">
               <Label>Gültig bis</Label>
-              <Input type="date" bind:value={validUntilIso} required disabled={readOnly} />
+              <DatePicker bind:value={validUntilIso} required disabled={readOnly} />
             </div>
             {#if settings && !settings.isKleinunternehmer}
               <div class="col-span-2 flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
