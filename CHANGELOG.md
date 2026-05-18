@@ -33,7 +33,9 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 - **Credit-Status-Enum**: `'watch'` durch `'caution'` ersetzt (Issue-Spec-Aligned) — Migration nicht nötig, war reines TS-Property.
 
 ### Migration
-- `0012_v0.10_flexibility.sql` — `user_version = 13`. Idempotente ALTERs auf `customers` (`follow_up_date`), `invoices` (`currency`, `exchange_rate`, `eur_total_cent`, `notes_internal`, `follow_up_date`), `offers` (`currency`, `exchange_rate`). `CURRENT_SCHEMA` in `backup.rs` synchron bumped.
+- `0012_v0.10_flexibility.sql` — `user_version = 13`. ALTERs auf `customers` (`credit_status`, `credit_note`, `follow_up_date`), `invoices` (`currency`, `exchange_rate`, `eur_total_cent`, `notes_internal`, `follow_up_date`), `offers` (`currency`, `exchange_rate`). Tabelle `invoice_attachments`.
+- `0013_v0.10_cleanup.sql` — `user_version = 14`. DROPpt die gecutteten Bonität-Spalten (`customers.credit_status`, `customers.credit_note`) und die `invoice_attachments`-Tabelle. Migration 0012 bleibt byte-stabil — Bestands-Installationen kriegen 0013 als Folge-Migration, frische Installationen laufen beide nacheinander durch.
+- `CURRENT_SCHEMA` in `backup.rs` auf 14, `CURRENT_DB_SCHEMA_VERSION` in `Settings.svelte` synchron auf 14 (war seit v0.9 stale auf 12).
 
 ### Notes
 - **Kein Accounts/Berechtigungen-Modul in v0.10** — wurde aus Scope entfernt; Profile/Mandanten als 1.0-Roadmap-Kandidat dokumentiert.
