@@ -79,9 +79,9 @@
           <td class="col-desc">{{ it.description }}</td>
           <td class="col-qty">{{ it.quantity | qty }}</td>
           <td class="col-unit">{{ it.unit }}</td>
-          <td class="col-price">{{ it.unitPrice | eur }}</td>
+          <td class="col-price">{{ it.unitPrice | eur(offer.currency) }}</td>
           {% if not offer.isKleinunternehmer and not offer.isReverseCharge %}<td class="col-vat">{{ it.vatRate }}</td>{% endif %}
-          <td class="col-total">{{ it.lineTotal | eur }}</td>
+          <td class="col-total">{{ it.lineTotal | eur(offer.currency) }}</td>
         </tr>
       {% endfor %}
     </tbody>
@@ -91,17 +91,17 @@
     <table class="totals">
       <tr>
         <th>Zwischensumme</th>
-        <td>{{ offer.subtotal | eur }}</td>
+        <td>{{ offer.subtotal | eur(offer.currency) }}</td>
       </tr>
       {% if not offer.isKleinunternehmer and not offer.isReverseCharge %}
         <tr>
           <th>Umsatzsteuer</th>
-          <td>{{ offer.vatAmount | eur }}</td>
+          <td>{{ offer.vatAmount | eur(offer.currency) }}</td>
         </tr>
       {% endif %}
       <tr class="grand">
         <th>Gesamtbetrag</th>
-        <td>{{ offer.total | eur }}</td>
+        <td>{{ offer.total | eur(offer.currency) }}</td>
       </tr>
     </table>
   </section>

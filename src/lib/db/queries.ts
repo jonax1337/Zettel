@@ -213,6 +213,7 @@ type CustomerRow = {
   phone: string | null;
   vat_id: string | null;
   notes: string | null;
+  follow_up_date: number | null;
   created_at: number;
   updated_at: number;
 };
@@ -231,6 +232,7 @@ function mapCustomer(r: CustomerRow): Customer {
     phone: r.phone,
     vatId: r.vat_id,
     notes: r.notes,
+    followUpDate: r.follow_up_date,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -276,15 +278,19 @@ async function nextCustomerNumber(): Promise<string> {
 
 export type CustomerInput = Omit<
   Customer,
-  "id" | "customerNumber" | "createdAt" | "updatedAt"
-> & { customerNumber?: string };
+  "id" | "customerNumber" | "createdAt" | "updatedAt" | "followUpDate"
+> & {
+  customerNumber?: string;
+  followUpDate?: number | null;
+};
 
 export async function createCustomer(input: CustomerInput): Promise<number> {
   const number = input.customerNumber ?? (await nextCustomerNumber());
   const res = await execute(
     `INSERT INTO customers
-      (customer_number, name, contact_person, street, postal_code, city, country, email, phone, vat_id, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (customer_number, name, contact_person, street, postal_code, city, country, email, phone, vat_id, notes,
+       follow_up_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.name,
@@ -297,6 +303,7 @@ export async function createCustomer(input: CustomerInput): Promise<number> {
       input.phone ?? null,
       input.vatId ?? null,
       input.notes ?? null,
+      input.followUpDate ?? null,
     ],
   );
   return Number(res.lastInsertId ?? 0);
@@ -310,6 +317,7 @@ export async function updateCustomer(
     `UPDATE customers SET
       name = ?, contact_person = ?, street = ?, postal_code = ?, city = ?,
       country = ?, email = ?, phone = ?, vat_id = ?, notes = ?,
+      follow_up_date = ?,
       updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -323,6 +331,7 @@ export async function updateCustomer(
       input.phone ?? null,
       input.vatId ?? null,
       input.notes ?? null,
+      input.followUpDate ?? null,
       id,
     ],
   );

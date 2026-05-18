@@ -3,6 +3,7 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 mod accent;
 mod backup;
 mod crypto;
+mod exchange;
 mod sandbox;
 mod fs_export;
 mod sidecar;
@@ -82,6 +83,18 @@ fn build_migrations() -> Vec<Migration> {
             sql: include_str!("../../src/lib/db/migrations/0011_validation_status.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 13,
+            description: "v0.10_flexibility",
+            sql: include_str!("../../src/lib/db/migrations/0012_v0.10_flexibility.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 14,
+            description: "v0.10_cleanup",
+            sql: include_str!("../../src/lib/db/migrations/0013_v0.10_cleanup.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -122,6 +135,7 @@ pub fn run() {
             validator::validate_einvoice_pdf,
             sandbox::is_sandbox,
             sandbox::set_sandbox,
+            exchange::fetch_ecb_exchange_rate,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())

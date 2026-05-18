@@ -235,7 +235,7 @@ pub async fn stage_restore(
             // Muss mit dem Wert in `Settings.svelte`:CURRENT_DB_SCHEMA_VERSION
             // sowie dem höchsten registrierten Migrations-`version` in `lib.rs`
             // synchron bleiben. Bei neuer Migration: hier hochzählen.
-            const CURRENT_SCHEMA: u32 = 12;
+            const CURRENT_SCHEMA: u32 = 14;
             if parsed.db_schema_version > CURRENT_SCHEMA {
                 return Err(format!(
                     "Backup-Schema {} ist neuer als die App-Version (Schema {}). Bitte App aktualisieren.",

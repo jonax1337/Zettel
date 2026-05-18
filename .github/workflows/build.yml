@@ -132,14 +132,14 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm tauri build --target ${{ matrix.rust-target }} --bundles deb,updater
+        run: pnpm tauri build --config src-tauri/tauri.bundle.conf.json --target ${{ matrix.rust-target }} --bundles deb,updater
 
       - name: Build Tauri app
         if: matrix.os != 'ubuntu-22.04'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm tauri build --target ${{ matrix.rust-target }}
+        run: pnpm tauri build --config src-tauri/tauri.bundle.conf.json --target ${{ matrix.rust-target }}
 
       # ---------- Upload ----------
 

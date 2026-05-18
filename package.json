@@ -1,6 +1,6 @@
 {
   "name": "zettel",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Offline-first invoice generator with ZUGFeRD/Factur-X support",
   "type": "module",
   "scripts": {
@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
+    "tauri:build": "tauri build --config src-tauri/tauri.bundle.conf.json",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

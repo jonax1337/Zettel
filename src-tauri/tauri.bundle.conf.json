@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "resources": {
+      "../sidecar/dist/zettel-sidecar": "sidecar",
+      "../tools/kosit-validator": "kosit-validator",
+      "../tools/jre": "jre"
+    }
+  }
+}

@@ -16,7 +16,8 @@
     Sun,
     Moon,
   } from "@lucide/svelte";
-  import { Toaster, DropdownMenu, DropdownItem, Titlebar } from "$lib/ui";
+  import { Toaster, DropdownMenu, DropdownItem, Titlebar, CommandPalette } from "$lib/ui";
+  import { Search } from "@lucide/svelte";
   import { theme, type ThemeMode } from "$lib/theme.svelte";
   import { cn } from "$lib/utils";
   import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -27,9 +28,32 @@
   import { push } from "svelte-spa-router";
 
   let sandbox = $state(false);
+  let paletteOpen = $state(false);
+
   onMount(async () => {
     sandbox = await isSandboxActive();
   });
+
+  function isEditable(el: EventTarget | null): boolean {
+    if (!(el instanceof HTMLElement)) return false;
+    if (el.dataset.commandPaletteInput !== undefined) return false;
+    const tag = el.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+    if (el.isContentEditable) return true;
+    return false;
+  }
+
+  function onGlobalKey(e: KeyboardEvent) {
+    const isMac =
+      typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform);
+    const mod = isMac ? e.metaKey : e.ctrlKey;
+    if (mod && (e.key === "k" || e.key === "K")) {
+      if (paletteOpen) return;
+      if (isEditable(e.target)) return;
+      e.preventDefault();
+      paletteOpen = true;
+    }
+  }
 
   let { children } = $props();
 
@@ -98,8 +122,22 @@
   };
 </script>
 
+<svelte:window onkeydown={onGlobalKey} />
+
 <div class="flex flex-col h-full bg-background text-foreground">
   <Titlebar title={windowTitle}>
+    {#snippet actions()}
+      <button
+        type="button"
+        onclick={() => (paletteOpen = true)}
+        aria-label="Globale Suche (Strg+K)"
+        title="Globale Suche (Strg+K)"
+        class="inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+      >
+        <Search class="size-3.5" />
+        <kbd class="hidden md:inline text-[10px] font-medium opacity-70">Strg K</kbd>
+      </button>
+    {/snippet}
     {#if sandbox}
       <button
         type="button"
@@ -195,5 +233,7 @@
     </main>
   </div>
 </div>
+
+<CommandPalette bind:open={paletteOpen} />
 
 <Toaster />

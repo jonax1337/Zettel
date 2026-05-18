@@ -6,6 +6,41 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-05-18
+
+> **Flexibilität & Datenpflege.** Sechs Module, die das Tagesgeschäft flexibler machen und den wachsenden Datenbestand handhabbar halten — kein Funktions-Sprung, sondern gezielte UX-Aufwertung. Plus ein neuer Sidecar-Pfad für PDF-Anhänge an Rechnungen und ein dev/bundle-Config-Split, der Cargo-Build-Probleme auf Windows behebt.
+
+### Added
+- **Flexibles Dashboard.** Zeitraum-Switcher in der Header-Leiste (`Jahr | Quartal | Monat | Benutzerdefiniert` mit DateRangePicker), KPI-Cards (Umsatz netto/brutto, Aufwand, Saldo, Offene Posten) filtern am Zeitraum mit YoY-Vergleich (Vorzeichen-korrekt: Aufwand-Steigerung rot, Umsatz-Steigerung grün). Zwei Charts: Umsatz/Monat (Bar) und Top-5-Kunden (Tabelle). Offene-Forderungen-Zeile zeigt Gesamtsumme + Anzahl + Tage seit Fälligkeit der ältesten offenen Rechnung. Neue Card „Wiedervorlage" zeigt Kunden + Rechnungen mit `follow_up_date <= today + 7d`, gruppiert nach heute/diese Woche/überfällig. Default-Zeitraum persistiert lokal. (#56)
+- **Mehrwährungs-Support.** Currency-Dropdown (EUR, USD, GBP, CHF, AUD, CAD, JPY, NOK, SEK, DKK, PLN, CZK) in InvoiceEdit + OfferEdit, bei nicht-EUR erscheint ein Kurs-Feld („1 EUR = X CCY"). `eur_total_cent` wird beim Speichern via BigInt fixed-point-Division (8 Nachkommastellen Genauigkeit) eingefroren — DATEV-Export nimmt diesen Wert, sodass nachträgliche Kurs-Schwankungen Buchhaltungs-Daten nicht verfälschen. ZUGFeRD-XML `InvoiceCurrencyCode` parametrisiert. PDF-Templates zeigen Currency-Symbol (€/$/£/¥) bzw. ISO-Code als Suffix. **„EZB-Kurs"-Button** holt den aktuellen Tageskurs von ecb.europa.eu (ureq blocking call, ~8s Timeout), Wert ist anschließend frei editierbar. Aus-Scope: Pro-Position-Währung, Mischwährung, Live-Kurs-Updates auf Bestandsrechnungen. (#57)
+- **Interne Notizen + Wiedervorlage.** Drei neue Daten-Stellen: `customers.follow_up_date`, `invoices.notes_internal` (klar abgegrenzt vom PDF-`notes`-Feld) und `invoices.follow_up_date`. Notizen-Section in CustomerEdit, „Notizen (intern) & Wiedervorlage"-Card im InvoiceDetail mit Inline-Edit (funktioniert auch auf bezahlten Rechnungen via tightly-scoped `updateInvoiceInternalMeta`). Filter „Nur mit Wiedervorlage" in CustomersList + InvoicesList. (#59)
+- **Globale Suche (Cmd/Ctrl+K).** Neue Command-Palette in `src/lib/ui/CommandPalette.svelte`, getriggert per Shortcut oder Such-Icon in der Titlebar. LIKE-Suche über alle 6 Entity-Typen (Rechnungen, Kunden, Lieferanten, Ausgaben, Angebote, Mahnungen) inkl. Item-Beschreibungen via EXISTS-Subquery. 150ms Debounce, Tastatur-Navigation, gruppierte Ergebnisse, letzte 5 Treffer als Recents in localStorage. (#60)
+- **EZB-Wechselkurs als Tauri-Command.** `fetch_ecb_exchange_rate(currency: String)` in `src-tauri/src/exchange.rs` — minimaler ureq-Aufruf gegen `eurofxref-daily.xml`, regex-frei via Substring-Match (Format stabil seit Jahren).
+
+### Changed
+- **Eindeutiger Draft-Handle.** Entwürfe zeigen `Entwurf #<4-hex>` statt nur `Entwurf` — bei mehreren parallelen Drafts unterscheidbar. Status-Badge wird für Drafts ausgeblendet (Spalte trägt die Info bereits, Doppel-Anzeige war redundant); Storno-Drafts behalten ihren Badge wegen der `destructive`-Variante.
+- **Dashboard ist nicht mehr YTD-only.** Alle KPI-Cards und Charts respektieren den gewählten Zeitraum; YoY-Werte werden gegen denselben Zeitraum im Vorjahr berechnet.
+- **DATEV-Buchungen für nicht-EUR-Rechnungen** verteilen den `eur_total_cent` proportional auf die VAT-Gruppen mit Cent-Residual auf der größten Gruppe, sodass die Buchungssumme exakt dem eingefrorenen EUR-Total entspricht.
+
+### Removed
+- **Bonitäts-Markierung / Dunkle Liste** (Spec war #58, kurz integriert, dann zurückgenommen). Für ein Tool dieser Skala — wenige Dutzend persönlich bekannte Kunden — ein Schufa-LARP-Feature ohne realen Nutzen. Spalten `customers.credit_status` / `credit_note` wurden vor Release wieder aus der Migration entfernt.
+- **PDF-Anhänge an Rechnungen** (Spec war #61, kurz integriert, dann zurückgenommen). Pipeline WeasyPrint → pypdf-Merge → factur-x war nie gegen KoSIT validiert, und der reale Use Case (Stundennachweis dem Empfänger zusenden) ist über Mail-Attachment einfacher als über ZUGFeRD-PDF-Embed. Tabelle `invoice_attachments`, `attachments.rs`, `attachments.ts`, sha2-Dep, pypdf-Merge — alles raus.
+- **Aging-Bucket-Chart** (0-30/31-60/61-90/>90 Tage). Enterprise-AR-Feature; bei realistisch <20 offenen Rechnungen pro Freelancer ist die Liste sortiert nach `due_date` aussagekräftiger als eine vier-Balken-Visualisierung. Ersetzt durch eine einzeilige Summary mit Tagen-Verzug der ältesten offenen Rechnung.
+
+### Fixed
+- **Cargo build failed mit `Zugriff verweigert (os error 5)` auf Windows.** `bundle.resources` (sidecar/dist, tools/jre, kosit-validator) emittierte `cargo:rerun-if-changed` für tausende Files; intermittente AV-/Reparse-Point-Effekte ließen tauri-build mid-scan abstürzen. **Resources in `tauri.bundle.conf.json` ausgelagert** und als Overlay nur beim `pnpm tauri build` (lokal + CI) reingeladen. Dev-Mode arbeitet ohne diese Resources, weil `sidecar.rs` im Debug-Build das Python-Script nimmt und die JRE nur on-demand beim Validieren gebraucht wird. Funktional unverändert für Release-Builds.
+- **PDF-Rechnungen zeigten nur €** unabhängig von `invoice.currency`. `cents_to_eur`-Filter in `sidecar/invoice/templates.py` ist jetzt currency-aware, Symbole-Map (€/$/£/¥) mit ISO-Code-Fallback.
+- **Credit-Status-Enum**: `'watch'` durch `'caution'` ersetzt (Issue-Spec-Aligned) — Migration nicht nötig, war reines TS-Property.
+
+### Migration
+- `0012_v0.10_flexibility.sql` — `user_version = 13`. ALTERs auf `customers` (`credit_status`, `credit_note`, `follow_up_date`), `invoices` (`currency`, `exchange_rate`, `eur_total_cent`, `notes_internal`, `follow_up_date`), `offers` (`currency`, `exchange_rate`). Tabelle `invoice_attachments`.
+- `0013_v0.10_cleanup.sql` — `user_version = 14`. DROPpt die gecutteten Bonität-Spalten (`customers.credit_status`, `customers.credit_note`) und die `invoice_attachments`-Tabelle. Migration 0012 bleibt byte-stabil — Bestands-Installationen kriegen 0013 als Folge-Migration, frische Installationen laufen beide nacheinander durch.
+- `CURRENT_SCHEMA` in `backup.rs` auf 14, `CURRENT_DB_SCHEMA_VERSION` in `Settings.svelte` synchron auf 14 (war seit v0.9 stale auf 12).
+
+### Notes
+- **Kein Accounts/Berechtigungen-Modul in v0.10** — wurde aus Scope entfernt; Profile/Mandanten als 1.0-Roadmap-Kandidat dokumentiert.
+- **Kein SMTP-Versand** — bewusst nicht in Scope.
+
 ## [0.9.0] — 2026-05-18
 
 > **Nacherfassung & Sandbox.** Drei zusammenhängende UX-Lücken im Buchhaltungs-Workflow geschlossen, dazu ein eigener DatePicker mit Quick-Navigation, neues App-Icon und Indigo als Default-Akzent.

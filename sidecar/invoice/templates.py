@@ -15,13 +15,18 @@ def _templates_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "templates"
 
 
-def cents_to_eur(cents: int | float | None) -> str:
+_CURRENCY_SYMBOLS = {"EUR": "€", "USD": "$", "GBP": "£", "JPY": "¥"}
+
+
+def cents_to_eur(cents: int | float | None, currency: str | None = "EUR") -> str:
+    code = (currency or "EUR").upper()
+    suffix = _CURRENCY_SYMBOLS.get(code, code)
     if cents is None:
-        return "0,00 €"
+        return f"0,00 {suffix}"
     value = float(cents) / 100
     s = f"{value:,.2f}"
     # de-DE: . as thousand sep, , as decimal sep — swap from en formatting.
-    return s.replace(",", "X").replace(".", ",").replace("X", ".") + " €"
+    return s.replace(",", "X").replace(".", ",").replace("X", ".") + f" {suffix}"
 
 
 def fmt_qty(q: float | int) -> str:

@@ -6,8 +6,10 @@
     updateCustomer,
     type CustomerInput,
   } from "$lib/db/queries";
-  import { Button, Input, Textarea, Label, Card, CardContent, toast } from "$lib/ui";
+  import { Button, Input, Textarea, Label, Card, CardContent, DatePicker, toast } from "$lib/ui";
   import { ArrowLeft } from "@lucide/svelte";
+  import { fromIsoDate, toIsoDate } from "$lib/utils/date";
+
   type Props = {
     mode: "new" | "edit";
     params?: { id?: string };
@@ -28,6 +30,7 @@
   };
 
   let form = $state<CustomerInput>({ ...empty });
+  let followUpIso = $state<string>("");
   let id = $state<number | null>(null);
   let loaded = $state(false);
   const loading = $derived(mode === "edit" && !loaded);
@@ -54,6 +57,7 @@
                 vatId: c.vatId,
                 notes: c.notes,
               };
+              followUpIso = c.followUpDate ? toIsoDate(c.followUpDate) : "";
             } else {
               error = "Kunde nicht gefunden.";
             }
@@ -75,6 +79,7 @@
       return;
     }
     form.country = trimmed;
+    form.followUpDate = followUpIso ? fromIsoDate(followUpIso) : null;
     saving = true;
     error = null;
     try {
@@ -167,8 +172,14 @@
             <Input bind:value={form.vatId} />
           </div>
           <div class="col-span-2 flex flex-col gap-1.5">
-            <Label>Notizen</Label>
+            <Label>Notizen (intern)</Label>
             <Textarea rows={3} bind:value={form.notes} />
+            <p class="text-xs text-muted-foreground">Nur intern sichtbar, erscheint nicht auf Rechnungen.</p>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label>Wiedervorlage am</Label>
+            <DatePicker bind:value={followUpIso} />
+            <p class="text-xs text-muted-foreground">Optional — Erinnerung im Dashboard.</p>
           </div>
         </section>
       </CardContent>

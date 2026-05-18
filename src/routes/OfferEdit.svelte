@@ -1,5 +1,6 @@
 <script lang="ts">
   import { link, push } from "svelte-spa-router";
+  import { invoke } from "@tauri-apps/api/core";
   import { listCustomers, loadSettings } from "$lib/db/queries";
   import {
     computeLineTotal,
@@ -12,6 +13,12 @@
   } from "$lib/db/offers";
   import type { Customer, Settings } from "$lib/db/schema";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
+  import {
+    SUPPORTED_CURRENCIES,
+    formatMoney,
+    parseExchangeRateScaled,
+    computeEurTotalCent,
+  } from "$lib/utils/currency";
   import {
     addDaysUnix,
     fromIsoDate,
@@ -57,6 +64,23 @@
   let items = $state<Array<OfferItemInput & { priceText: string }>>([
     { description: "", quantity: 1, unit: "Stk", unitPrice: 0, vatRate: 0, priceText: "" },
   ]);
+  let currency = $state<string>("EUR");
+  let exchangeRate = $state<string>("");
+  let fetchingRate = $state(false);
+
+  async function fetchEcbRate() {
+    if (currency === "EUR") return;
+    fetchingRate = true;
+    try {
+      const rate = await invoke<string>("fetch_ecb_exchange_rate", { currency });
+      exchangeRate = rate.replace(".", ",");
+      toast.success("EZB-Tageskurs übernommen", `1 EUR = ${exchangeRate} ${currency}`);
+    } catch (e) {
+      toast.error("Kurs konnte nicht geholt werden", String(e));
+    } finally {
+      fetchingRate = false;
+    }
+  }
 
   const selectedCustomer = $derived(
     customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
@@ -146,6 +170,8 @@
           notes = res.offer.notes ?? "";
           introText = res.offer.introText ?? "";
           isReverseCharge = res.offer.isReverseCharge;
+          currency = res.offer.currency ?? "EUR";
+          exchangeRate = res.offer.exchangeRate ?? "";
           items = res.items.map((it) => ({
             description: it.description,
             quantity: it.quantity,
@@ -197,6 +223,20 @@
     customers.map((c) => ({ value: String(c.id), label: `${c.customerNumber} · ${c.name}` })),
   );
 
+  const currencyItems = SUPPORTED_CURRENCIES.map((c) => ({
+    value: c.code,
+    label: c.label,
+  }));
+  const isForeignCurrency = $derived(currency !== "EUR");
+  const rateScaled = $derived(
+    isForeignCurrency ? parseExchangeRateScaled(exchangeRate) : null,
+  );
+  const eurEquivalentCent = $derived(
+    isForeignCurrency
+      ? computeEurTotalCent(currency, totals.total, exchangeRate)
+      : totals.total,
+  );
+
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     if (readOnly) return;
@@ -222,6 +262,12 @@
         return;
       }
     }
+    if (currency !== "EUR") {
+      if (!exchangeRate || !parseExchangeRateScaled(exchangeRate)) {
+        error = `Wechselkurs erforderlich für ${currency}. Format: 1 EUR = X ${currency}.`;
+        return;
+      }
+    }
     saving = true;
     error = null;
     try {
@@ -233,6 +279,8 @@
         introText: introText.trim() || null,
         isReverseCharge,
         items: items.map(({ priceText: _p, ...rest }) => rest),
+        currency,
+        exchangeRate: currency === "EUR" ? null : exchangeRate.trim(),
       };
       let savedId: number;
       if (mode === "new") {
@@ -317,6 +365,43 @@
               <Label>Gültig bis</Label>
               <DatePicker bind:value={validUntilIso} required disabled={readOnly} />
             </div>
+            <div class="flex flex-col gap-1.5">
+              <Label>Währung</Label>
+              <Select bind:value={currency} items={currencyItems} disabled={readOnly} />
+            </div>
+            {#if isForeignCurrency}
+              <div class="flex flex-col gap-1.5">
+                <Label>Wechselkurs</Label>
+                <div class="flex gap-2">
+                  <Input
+                    type="text"
+                    bind:value={exchangeRate}
+                    placeholder="z. B. 1,0832"
+                    inputmode="decimal"
+                    disabled={readOnly}
+                    class="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={readOnly || fetchingRate}
+                    onclick={fetchEcbRate}
+                  >
+                    {fetchingRate ? "Lädt…" : "EZB-Kurs"}
+                  </Button>
+                </div>
+                <p class="text-xs text-muted-foreground">
+                  1 EUR = X {currency}.
+                </p>
+                {#if exchangeRate && !rateScaled}
+                  <p class="text-xs text-destructive">Ungültiger Wechselkurs.</p>
+                {:else if rateScaled && eurEquivalentCent !== null}
+                  <p class="text-xs text-muted-foreground">
+                    Gesamt in EUR: <span class="font-mono">{centsToEur(eurEquivalentCent)}</span>
+                  </p>
+                {/if}
+              </div>
+            {/if}
             {#if settings && !settings.isKleinunternehmer}
               <div class="col-span-2 flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
                 <Checkbox
@@ -369,7 +454,7 @@
               <th class="px-3 py-2 font-medium">Beschreibung</th>
               <th class="px-3 py-2 w-20 font-medium">Menge</th>
               <th class="px-3 py-2 w-20 font-medium">Einheit</th>
-              <th class="px-3 py-2 w-28 font-medium">Preis (€)</th>
+              <th class="px-3 py-2 w-28 font-medium">Preis ({currency})</th>
               {#if !vatExempt}
                 <th class="px-3 py-2 w-24 font-medium">USt</th>
               {/if}
@@ -421,7 +506,7 @@
                   </td>
                 {/if}
                 <td class="px-3 py-2 text-right font-mono text-xs">
-                  {centsToEur(computeLineTotal(it))}
+                  {formatMoney(computeLineTotal(it), currency)}
                 </td>
                 <td class="px-2 py-1.5 text-right">
                   <button
@@ -442,13 +527,13 @@
               <td colspan={vatExempt ? 5 : 6} class="px-3 py-2 text-right text-muted-foreground">
                 Zwischensumme
               </td>
-              <td class="px-3 py-2 text-right font-mono">{centsToEur(totals.subtotal)}</td>
+              <td class="px-3 py-2 text-right font-mono">{formatMoney(totals.subtotal, currency)}</td>
               <td></td>
             </tr>
             {#if !vatExempt}
               <tr>
                 <td colspan="6" class="px-3 py-2 text-right text-muted-foreground">USt</td>
-                <td class="px-3 py-2 text-right font-mono">{centsToEur(totals.vatAmount)}</td>
+                <td class="px-3 py-2 text-right font-mono">{formatMoney(totals.vatAmount, currency)}</td>
                 <td></td>
               </tr>
             {/if}
@@ -456,7 +541,7 @@
               <td colspan={vatExempt ? 5 : 6} class="px-3 py-2 text-right font-semibold">
                 Gesamtbetrag
               </td>
-              <td class="px-3 py-2 text-right font-mono font-semibold">{centsToEur(totals.total)}</td>
+              <td class="px-3 py-2 text-right font-mono font-semibold">{formatMoney(totals.total, currency)}</td>
               <td></td>
             </tr>
           </tfoot>

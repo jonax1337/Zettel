@@ -11,6 +11,7 @@
   import { listCustomers } from "$lib/db/queries";
   import type { Customer } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
+  import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
   import { Button, Card, Input, Select, Badge, Label, Checkbox } from "$lib/ui";
   import { Plus, Search } from "@lucide/svelte";
@@ -26,6 +27,7 @@
   let customerId = $state<string>("all");
   let search = $state("");
   let onlyCreditNotes = $state(false);
+  let onlyFollowUp = $state(false);
 
   async function reload() {
     loading = true;
@@ -37,7 +39,9 @@
         search,
       };
       const all = await listInvoices(filter);
-      invoices = onlyCreditNotes ? all.filter((i) => i.isCreditNote) : all;
+      let filtered = onlyCreditNotes ? all.filter((i) => i.isCreditNote) : all;
+      if (onlyFollowUp) filtered = filtered.filter((i) => i.followUpDate != null);
+      invoices = filtered;
       error = null;
     } catch (e) {
       error = String(e);
@@ -57,6 +61,7 @@
     void customerId;
     void search;
     void onlyCreditNotes;
+    void onlyFollowUp;
     reload();
   });
 
@@ -132,10 +137,16 @@
   </div>
 </div>
 
-<label class="inline-flex items-center gap-2 mb-5 text-sm text-muted-foreground cursor-pointer select-none">
-  <Checkbox bind:checked={onlyCreditNotes} />
-  Nur Stornorechnungen
-</label>
+<div class="mb-5 flex flex-wrap items-center gap-4">
+  <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+    <Checkbox bind:checked={onlyCreditNotes} />
+    Nur Stornorechnungen
+  </label>
+  <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+    <Checkbox bind:checked={onlyFollowUp} />
+    Nur mit Wiedervorlage
+  </label>
+</div>
 
 {#if error}
   <p class="text-sm text-destructive">Fehler: {error}</p>
@@ -176,9 +187,20 @@
             </td>
             <td class="px-4 py-3 text-muted-foreground">{formatDate(inv.issueDate)}</td>
             <td class="px-4 py-3">{inv.customerName}</td>
-            <td class="px-4 py-3 text-right font-mono">{centsToEur(inv.total)}</td>
+            <td class="px-4 py-3 text-right font-mono">
+              <span class="inline-flex items-center gap-1.5">
+                {formatMoney(inv.total, inv.currency)}
+                {#if inv.currency && inv.currency !== "EUR"}
+                  <Badge variant="outline" class="text-[10px] px-1.5 py-0">{inv.currency}</Badge>
+                {/if}
+              </span>
+            </td>
             <td class="px-4 py-3">
-              <Badge variant={statusVariant[inv.status]}>{statusLabel[inv.status]}</Badge>
+              {#if inv.status !== "draft"}
+                <Badge variant={statusVariant[inv.status]}>{statusLabel[inv.status]}</Badge>
+              {:else}
+                <span class="text-muted-foreground">—</span>
+              {/if}
             </td>
             <td class="px-4 py-3 text-muted-foreground text-xs">
               {inv.isCreditNote ? "—" : formatDate(inv.dueDate)}

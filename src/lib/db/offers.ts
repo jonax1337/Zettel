@@ -34,6 +34,8 @@ type OfferRow = {
   sent_at: number | null;
   accepted_at: number | null;
   rejected_at: number | null;
+  currency: string;
+  exchange_rate: string | null;
 };
 
 type OfferItemRow = {
@@ -71,6 +73,8 @@ function mapOffer(r: OfferRow): Offer {
     sentAt: r.sent_at,
     acceptedAt: r.accepted_at,
     rejectedAt: r.rejected_at,
+    currency: r.currency ?? "EUR",
+    exchangeRate: r.exchange_rate,
   };
 }
 
@@ -104,6 +108,8 @@ export type OfferFormInput = {
   introText: string | null;
   isReverseCharge: boolean;
   items: OfferItemInput[];
+  currency?: string;
+  exchangeRate?: string | null;
 };
 
 export function computeLineTotal(item: OfferItemInput): number {
@@ -266,8 +272,8 @@ export async function createOffer(input: OfferFormInput): Promise<number> {
     `INSERT INTO offers
       (number, customer_id, customer_snapshot, issue_date, valid_until,
        status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
-       notes, intro_text)
-     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`,
+       notes, intro_text, currency, exchange_rate)
+     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.customerId,
@@ -281,6 +287,8 @@ export async function createOffer(input: OfferFormInput): Promise<number> {
       input.isReverseCharge ? 1 : 0,
       input.notes,
       input.introText,
+      input.currency ?? "EUR",
+      input.exchangeRate ?? null,
     ],
   );
   const id = Number(res.lastInsertId ?? 0);
@@ -313,7 +321,9 @@ export async function updateOffer(
       issue_date = ?, valid_until = ?,
       subtotal = ?, vat_amount = ?, total = ?,
       is_reverse_charge = ?,
-      notes = ?, intro_text = ?, updated_at = unixepoch()
+      notes = ?, intro_text = ?,
+      currency = ?, exchange_rate = ?,
+      updated_at = unixepoch()
      WHERE id = ?`,
     [
       input.customerId,
@@ -326,6 +336,8 @@ export async function updateOffer(
       input.isReverseCharge ? 1 : 0,
       input.notes,
       input.introText,
+      input.currency ?? existing.offer.currency ?? "EUR",
+      input.exchangeRate ?? existing.offer.exchangeRate ?? null,
       id,
     ],
   );
@@ -430,6 +442,8 @@ export async function convertToInvoice(
       unitPrice: it.unitPrice,
       vatRate: it.vatRate,
     })),
+    currency: data.offer.currency,
+    exchangeRate: data.offer.exchangeRate,
   };
 
   const invoiceId = await createInvoice(invoiceInput);

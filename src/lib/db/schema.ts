@@ -92,6 +92,7 @@ export const customers = sqliteTable("customers", {
   phone: text("phone"),
   vatId: text("vat_id"),
   notes: text("notes"),
+  followUpDate: integer("follow_up_date"),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),
@@ -147,6 +148,11 @@ export const invoices = sqliteTable("invoices", {
   }),
   lastValidatedAt: integer("last_validated_at"),
   lastValidationFindingsCount: integer("last_validation_findings_count"),
+  currency: text("currency").notNull().default("EUR"),
+  exchangeRate: text("exchange_rate"),
+  eurTotalCent: integer("eur_total_cent"),
+  notesInternal: text("notes_internal"),
+  followUpDate: integer("follow_up_date"),
 });
 
 export const invoiceItems = sqliteTable("invoice_items", {
@@ -232,6 +238,8 @@ export const offers = sqliteTable("offers", {
   sentAt: integer("sent_at"),
   acceptedAt: integer("accepted_at"),
   rejectedAt: integer("rejected_at"),
+  currency: text("currency").notNull().default("EUR"),
+  exchangeRate: text("exchange_rate"),
 });
 
 export const offerItems = sqliteTable("offer_items", {

@@ -173,6 +173,7 @@ def render_invoice_pdf(payload: dict[str, Any]) -> Path:
 
     profile = (payload.get("profile") or "en16931").lower()
     pdf_bytes = _render_html_pdf(payload)
+
     xml_str = render_zugferd_xml(payload)
     final_pdf = _embed_xml(pdf_bytes, xml_str, profile)
 

@@ -10,6 +10,7 @@
     markPaid,
     markSent,
     reopenDraft,
+    updateInvoiceInternalMeta,
   } from "$lib/db/invoices";
   import type {
     CustomerSnapshot,
@@ -18,6 +19,7 @@
     InvoiceStatus,
   } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
+  import { formatMoney } from "$lib/utils/currency";
   import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { generateInvoicePdf } from "$lib/sidecar/invoice";
   import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -34,6 +36,7 @@
     DropdownSeparator,
     Input,
     Label,
+    Textarea,
     toast,
   } from "$lib/ui";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
@@ -348,6 +351,38 @@
     }
   });
 
+  let notesInternalDraft = $state("");
+  let followUpIso = $state("");
+  let savingMeta = $state(false);
+  $effect(() => {
+    if (invoice) {
+      notesInternalDraft = invoice.notesInternal ?? "";
+      followUpIso = invoice.followUpDate ? toIsoDate(invoice.followUpDate) : "";
+    }
+  });
+  const metaDirty = $derived(
+    !!invoice &&
+      ((invoice.notesInternal ?? "") !== notesInternalDraft ||
+        (invoice.followUpDate ? toIsoDate(invoice.followUpDate) : "") !== followUpIso),
+  );
+
+  async function saveMeta() {
+    if (!invoice || savingMeta) return;
+    savingMeta = true;
+    try {
+      await updateInvoiceInternalMeta(invoice.id, {
+        notesInternal: notesInternalDraft.trim() === "" ? null : notesInternalDraft,
+        followUpDate: followUpIso ? fromIsoDate(followUpIso) : null,
+      });
+      toast.success("Interne Notizen gespeichert");
+      await load();
+    } catch (e) {
+      toast.error("Speichern fehlgeschlagen", String(e));
+    } finally {
+      savingMeta = false;
+    }
+  }
+
   const isOverdue = $derived(
     !!invoice &&
       !invoice.isCreditNote &&
@@ -366,6 +401,7 @@
   const canCreateReminder = $derived(
     isOverdue && !existingReminderLevels.includes(3),
   );
+
 </script>
 
 <header class="mb-6">
@@ -436,9 +472,11 @@
         <h1 class="text-3xl font-semibold tracking-tight font-mono">
           {invoice.isCreditNote ? "Storno " : ""}{displayInvoiceNumber(invoice)}
         </h1>
-        <Badge variant={invoice.isCreditNote ? "destructive" : statusVariant[invoice.status]}>
-          {invoice.isCreditNote ? `Storno · ${statusLabel[invoice.status]}` : statusLabel[invoice.status]}
-        </Badge>
+        {#if invoice.status !== "draft" || invoice.isCreditNote}
+          <Badge variant={invoice.isCreditNote ? "destructive" : statusVariant[invoice.status]}>
+            {invoice.isCreditNote ? `Storno · ${statusLabel[invoice.status]}` : statusLabel[invoice.status]}
+          </Badge>
+        {/if}
         {#if invoice.lastValidationStatus || lastPdfPath}
           <ValidationBadge
             status={invoice.lastValidationStatus}
@@ -624,6 +662,20 @@
             <dt class="text-muted-foreground">Bezahlt</dt>
             <dd>{formatDate(invoice.paidAt)}</dd>
           {/if}
+          {#if invoice.currency && invoice.currency !== "EUR"}
+            <dt class="text-muted-foreground">Währung</dt>
+            <dd>
+              <Badge variant="outline">{invoice.currency}</Badge>
+            </dd>
+            {#if invoice.exchangeRate}
+              <dt class="text-muted-foreground">Wechselkurs</dt>
+              <dd class="font-mono">1 EUR = {invoice.exchangeRate} {invoice.currency}</dd>
+            {/if}
+            {#if invoice.eurTotalCent !== null && invoice.eurTotalCent !== undefined}
+              <dt class="text-muted-foreground">Gesamt (EUR)</dt>
+              <dd class="font-mono">{centsToEur(invoice.eurTotalCent)}</dd>
+            {/if}
+          {/if}
         </dl>
       </CardContent>
     </Card>
@@ -651,11 +703,11 @@
             <td class="px-4 py-3">{it.description}</td>
             <td class="px-4 py-3 text-right">{it.quantity}</td>
             <td class="px-4 py-3">{it.unit}</td>
-            <td class="px-4 py-3 text-right font-mono">{centsToEur(it.unitPrice)}</td>
+            <td class="px-4 py-3 text-right font-mono">{formatMoney(it.unitPrice, invoice.currency)}</td>
             {#if !invoice.isKleinunternehmer}
               <td class="px-4 py-3 text-right">{it.vatRate}</td>
             {/if}
-            <td class="px-4 py-3 text-right font-mono">{centsToEur(it.lineTotal)}</td>
+            <td class="px-4 py-3 text-right font-mono">{formatMoney(it.lineTotal, invoice.currency)}</td>
           </tr>
         {/each}
       </tbody>
@@ -664,19 +716,19 @@
           <td colspan={invoice.isKleinunternehmer ? 5 : 6} class="px-4 py-2 text-right text-muted-foreground">
             Zwischensumme
           </td>
-          <td class="px-4 py-2 text-right font-mono">{centsToEur(invoice.subtotal)}</td>
+          <td class="px-4 py-2 text-right font-mono">{formatMoney(invoice.subtotal, invoice.currency)}</td>
         </tr>
         {#if !invoice.isKleinunternehmer}
           <tr>
             <td colspan="6" class="px-4 py-2 text-right text-muted-foreground">USt</td>
-            <td class="px-4 py-2 text-right font-mono">{centsToEur(invoice.vatAmount)}</td>
+            <td class="px-4 py-2 text-right font-mono">{formatMoney(invoice.vatAmount, invoice.currency)}</td>
           </tr>
         {/if}
         <tr class="border-t border-border">
           <td colspan={invoice.isKleinunternehmer ? 5 : 6} class="px-4 py-3 text-right font-semibold">
             Gesamtbetrag
           </td>
-          <td class="px-4 py-3 text-right font-mono font-semibold">{centsToEur(invoice.total)}</td>
+          <td class="px-4 py-3 text-right font-mono font-semibold">{formatMoney(invoice.total, invoice.currency)}</td>
         </tr>
       </tfoot>
     </table>
@@ -694,11 +746,45 @@
   {#if invoice.notes}
     <section class="mb-4">
       <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-1">
-        Notizen
+        Notizen (auf der Rechnung)
       </h3>
       <p class="text-sm whitespace-pre-line">{invoice.notes}</p>
     </section>
   {/if}
+
+  <Card class="mb-6">
+    <CardContent class="space-y-4">
+      <div>
+        <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
+          Interne Notizen & Wiedervorlage
+        </h3>
+        <p class="text-xs text-muted-foreground mt-0.5">
+          Nur intern, erscheint nicht auf der Rechnung.
+        </p>
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label for="notes-internal">Notizen (intern)</Label>
+        <Textarea
+          id="notes-internal"
+          rows={3}
+          bind:value={notesInternalDraft}
+          placeholder="z. B. Telefonat am … abgesprochen, Skonto gewährt, etc."
+        />
+      </div>
+      <div class="flex flex-col gap-1.5 max-w-xs">
+        <Label for="follow-up">Wiedervorlage am</Label>
+        <DatePicker id="follow-up" bind:value={followUpIso} />
+      </div>
+      <div class="flex items-center gap-2">
+        <Button onclick={saveMeta} disabled={!metaDirty || savingMeta}>
+          {savingMeta ? "Speichere…" : "Speichern"}
+        </Button>
+        {#if metaDirty && !savingMeta}
+          <span class="text-xs text-muted-foreground">Ungespeicherte Änderungen.</span>
+        {/if}
+      </div>
+    </CardContent>
+  </Card>
 
   <ConfirmDialog
     bind:open={confirmDeleteOpen}

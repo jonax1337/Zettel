@@ -4,6 +4,7 @@
   import {
     Button,
     Card,
+    Checkbox,
     Input,
     ConfirmDialog,
     DropdownMenu,
@@ -15,9 +16,12 @@
   import { push } from "svelte-spa-router";
 
   let search = $state("");
+  let onlyFollowUp = $state(false);
   let customers = $state<Customer[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
+
+  const filtered = $derived(customers);
 
   let confirmOpen = $state(false);
   let toDelete = $state<Customer | null>(null);
@@ -25,7 +29,8 @@
   async function reload() {
     loading = true;
     try {
-      customers = await listCustomers(search);
+      const all = await listCustomers(search);
+      customers = onlyFollowUp ? all.filter((c) => c.followUpDate != null) : all;
       error = null;
     } catch (e) {
       error = String(e);
@@ -36,6 +41,7 @@
 
   $effect(() => {
     void search;
+    void onlyFollowUp;
     reload();
   });
 
@@ -69,7 +75,7 @@
   <div>
     <h1 class="text-3xl font-semibold tracking-tight">Kunden</h1>
     <p class="text-sm text-muted-foreground mt-1">
-      {customers.length} {customers.length === 1 ? "Eintrag" : "Einträge"}
+      {filtered.length} {filtered.length === 1 ? "Eintrag" : "Einträge"}
     </p>
   </div>
   <Button onclick={newCustomer}>
@@ -78,24 +84,30 @@
   </Button>
 </header>
 
-<div class="mb-4 relative max-w-md">
-  <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-  <Input
-    type="search"
-    placeholder="Suche (Name, Nummer, Ort, E-Mail)…"
-    bind:value={search}
-    class="pl-9"
-  />
+<div class="mb-4 flex flex-wrap items-end gap-3">
+  <div class="relative max-w-md flex-1 min-w-[200px]">
+    <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+    <Input
+      type="search"
+      placeholder="Suche (Name, Nummer, Ort, E-Mail)…"
+      bind:value={search}
+      class="pl-9"
+    />
+  </div>
+  <label class="flex items-center gap-2 text-sm pb-2 cursor-pointer">
+    <Checkbox bind:checked={onlyFollowUp} />
+    <span>Nur mit Wiedervorlage</span>
+  </label>
 </div>
 
 {#if error}
   <p class="text-sm text-destructive">Fehler: {error}</p>
 {:else if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if customers.length === 0}
+{:else if filtered.length === 0}
   <Card>
     <div class="py-12 text-center text-sm text-muted-foreground">
-      {search ? "Keine Treffer." : "Noch keine Kunden angelegt."}
+      {search || onlyFollowUp ? "Keine Treffer." : "Noch keine Kunden angelegt."}
     </div>
   </Card>
 {:else}
@@ -111,7 +123,7 @@
         </tr>
       </thead>
       <tbody class="stagger">
-        {#each customers as c (c.id)}
+        {#each filtered as c (c.id)}
           <tr class="border-t hover:bg-muted/30 transition-colors">
             <td class="px-4 py-3 font-mono text-xs text-muted-foreground">{c.customerNumber}</td>
             <td class="px-4 py-3">
