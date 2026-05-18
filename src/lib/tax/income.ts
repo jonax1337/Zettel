@@ -96,16 +96,15 @@ function soli(estEuro: number, status: FilingStatus, tarif: TarifZone): number {
 }
 
 /**
- * Schätzt ESt + Soli + KiSt für ein zu versteuerndes Einkommen.
+ * Lokale Tarif-Schätzung — § 32a EStG Formel mit eingefrorenen Konstanten.
+ * Synchron, deterministisch, offline-fähig. Fallback wenn BMF-API unerreichbar.
  *
- * @param taxableProfitCent Steuerpflichtiges Einkommen in Cent (= Gewinn nach
- *   Werbungskosten, vereinfacht: Umsatz netto - Aufwand netto).
+ * @param taxableProfitCent Steuerpflichtiges Einkommen in Cent.
  * @param status `'single'` (Grundtarif) oder `'married'` (Splittingtarif).
  * @param churchRate Kirchensteuersatz als Dezimal: `0`, `0.08` (BY, BW) oder
  *   `0.09` (übrige Länder).
- * @returns Aufschlüsselung in Cent.
  */
-export function estimateIncomeTax(
+export function estimateIncomeTaxLocal(
   taxableProfitCent: number,
   status: FilingStatus,
   churchRate: number,
@@ -126,4 +125,46 @@ export function estimateIncomeTax(
     kist: kistCent,
     total: est + soliCent + kistCent,
   };
+}
+
+export type TaxSource = "bmf" | "local";
+
+export interface IncomeTaxWithSource extends IncomeTaxResult {
+  /** Wer hat die Zahlen geliefert? */
+  source: TaxSource;
+  /** Veranlagungsjahr, das verwendet wurde. */
+  year: number;
+}
+
+/**
+ * Schätzt ESt + Soli + KiSt — primär via BMF-Lohnsteuer-Rechner (autoritative
+ * Live-Daten), bei Offline / API-Fehler Fallback auf lokale Formel.
+ *
+ * Ergebnisse werden 24 h in localStorage gecacht (key
+ * `zettel.bmf.<year>:<status>:<zvE>`), damit Dashboard-Renders nicht jedes
+ * Mal HTTP-Aufrufe machen. KiSt rechnen wir lokal — sie ist `rate × ESt`,
+ * BMF braucht dafür Konfessions-Parameter, die wir vermeiden wollen.
+ */
+export async function estimateIncomeTax(
+  taxableProfitCent: number,
+  status: FilingStatus,
+  churchRate: number,
+  year: number = new Date().getFullYear(),
+): Promise<IncomeTaxWithSource> {
+  const { fetchBmfIncomeTax } = await import("./bmf");
+  const bmf = await fetchBmfIncomeTax(taxableProfitCent, status, year);
+  if (bmf) {
+    const estEuro = Math.floor(bmf.est / 100);
+    const kistCent = Math.floor(estEuro * churchRate) * 100;
+    return {
+      est: bmf.est,
+      soli: bmf.soli,
+      kist: kistCent,
+      total: bmf.est + bmf.soli + kistCent,
+      source: "bmf",
+      year: bmf.year,
+    };
+  }
+  const local = estimateIncomeTaxLocal(taxableProfitCent, status, churchRate);
+  return { ...local, source: "local", year: 2024 };
 }
