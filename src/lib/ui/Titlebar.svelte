@@ -9,8 +9,9 @@
     title?: string;
     showAppMark?: boolean;
     children?: Snippet;
+    actions?: Snippet;
   };
-  let { title = "Zettel", showAppMark = true, children }: Props = $props();
+  let { title = "Zettel", showAppMark = true, children, actions }: Props = $props();
 
   const win = getCurrentWindow();
   let maximized = $state(false);
@@ -52,6 +53,12 @@
     {title}
     {@render children?.()}
   </div>
+
+  {#if actions}
+    <div class="flex items-center h-full pr-1" style="-webkit-app-region: no-drag">
+      {@render actions()}
+    </div>
+  {/if}
 
   <div class="flex items-center h-full">
     <button
