@@ -71,6 +71,18 @@ export const settings = sqliteTable("settings", {
   })
     .notNull()
     .default("classic"),
+  legalForm: text("legal_form", { enum: ["freelancer", "trade"] })
+    .notNull()
+    .default("freelancer"),
+  tradeTaxRate: real("trade_tax_rate").notNull().default(4.0),
+  churchTaxRate: real("church_tax_rate").notNull().default(0.0),
+  taxFilingStatus: text("tax_filing_status", { enum: ["single", "married"] })
+    .notNull()
+    .default("single"),
+  estPrepaymentQ1Cent: integer("est_prepayment_q1_cent").notNull().default(0),
+  estPrepaymentQ2Cent: integer("est_prepayment_q2_cent").notNull().default(0),
+  estPrepaymentQ3Cent: integer("est_prepayment_q3_cent").notNull().default(0),
+  estPrepaymentQ4Cent: integer("est_prepayment_q4_cent").notNull().default(0),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),

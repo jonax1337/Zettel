@@ -23,6 +23,21 @@
   import { version as appVersion } from "../../package.json";
   import { checkForUpdate } from "$lib/updater";
   import { accent, ACCENT_PRESETS, type AccentKey } from "$lib/accent.svelte";
+  import { centsToEur, eurStringToCents } from "$lib/utils/money";
+
+  const legalFormItems = [
+    { value: "freelancer", label: "Freiberufler (keine Gewerbesteuer)" },
+    { value: "trade", label: "Gewerbetreibender" },
+  ];
+  const filingStatusItems = [
+    { value: "single", label: "ledig" },
+    { value: "married", label: "verheiratet (Splittingtarif)" },
+  ];
+  const churchRateItems = [
+    { value: "0", label: "keine Kirchensteuer" },
+    { value: "0.08", label: "8 % (BY, BW)" },
+    { value: "0.09", label: "9 % (übrige Länder)" },
+  ];
   import { theme } from "$lib/theme.svelte";
 
   const accentKeys: AccentKey[] = [
@@ -38,7 +53,7 @@
   const accentLabel = (k: AccentKey) => (k === "system" ? "System" : ACCENT_PRESETS[k].label);
 
   // aktueller DB-Schema-Stand (siehe src-tauri/src/lib.rs Migrations-Vektor)
-  const CURRENT_DB_SCHEMA_VERSION = 14;
+  const CURRENT_DB_SCHEMA_VERSION = 15;
 
   let s = $state<Settings | null>(null);
   let loading = $state(true);
@@ -425,6 +440,93 @@
               <Textarea rows={2} bind:value={s.kleinunternehmerNote} />
             </div>
           {/if}
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Steuerprofil</CardTitle>
+        <CardDescription>
+          Grundlage für die Steuer-Rücklage-Schätzung im Dashboard. Keine Steuerberatung — nur eine Vorhersage zur Liquiditätsplanung.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="col-span-2 flex flex-col gap-1.5">
+            <Label>Rechtsform</Label>
+            <Select
+              items={legalFormItems}
+              value={s.legalForm}
+              onValueChange={(v) => (s!.legalForm = v as Settings["legalForm"])}
+            />
+          </div>
+
+          {#if s.legalForm === "trade"}
+            <div class="flex flex-col gap-1.5">
+              <Label>Gewerbe-Hebesatz (%)</Label>
+              <Input
+                type="number"
+                min="200"
+                max="900"
+                step="10"
+                value={Math.round(s.tradeTaxRate * 100)}
+                oninput={(e) => {
+                  const n = Number.parseInt((e.currentTarget as HTMLInputElement).value, 10);
+                  if (!Number.isNaN(n)) s!.tradeTaxRate = n / 100;
+                }}
+              />
+              <p class="text-xs text-muted-foreground">
+                Hebesatz deiner Gemeinde. Bundesdurchschnitt ~400 %.
+              </p>
+            </div>
+          {/if}
+
+          <div class="flex flex-col gap-1.5">
+            <Label>Kirchensteuer</Label>
+            <Select
+              items={churchRateItems}
+              value={String(s.churchTaxRate)}
+              onValueChange={(v) => (s!.churchTaxRate = Number.parseFloat(v))}
+            />
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <Label>Familienstand (Steuer)</Label>
+            <Select
+              items={filingStatusItems}
+              value={s.taxFilingStatus}
+              onValueChange={(v) => (s!.taxFilingStatus = v as Settings["taxFilingStatus"])}
+            />
+          </div>
+
+          <div class="col-span-2 mt-2">
+            <Label>Geleistete ESt-Vorauszahlungen ({new Date().getFullYear()})</Label>
+            <div class="grid grid-cols-4 gap-2 mt-1.5">
+              {#each [
+                { key: "estPrepaymentQ1Cent", label: "Q1" },
+                { key: "estPrepaymentQ2Cent", label: "Q2" },
+                { key: "estPrepaymentQ3Cent", label: "Q3" },
+                { key: "estPrepaymentQ4Cent", label: "Q4" },
+              ] as q}
+                <div class="flex flex-col gap-1">
+                  <span class="text-xs text-muted-foreground">{q.label}</span>
+                  <Input
+                    type="text"
+                    inputmode="decimal"
+                    value={centsToEur((s as unknown as Record<string, number>)[q.key])}
+                    onblur={(e) => {
+                      const cents = eurStringToCents((e.currentTarget as HTMLInputElement).value);
+                      (s as unknown as Record<string, number>)[q.key] = cents;
+                    }}
+                  />
+                </div>
+              {/each}
+            </div>
+            <p class="text-xs text-muted-foreground mt-1.5">
+              Bereits ans Finanzamt überwiesene ESt-Vorauszahlungen. Werden von der empfohlenen Rücklage abgezogen.
+            </p>
+          </div>
         </div>
       </CardContent>
     </Card>

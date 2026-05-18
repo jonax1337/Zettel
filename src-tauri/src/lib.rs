@@ -95,6 +95,12 @@ fn build_migrations() -> Vec<Migration> {
             sql: include_str!("../../src/lib/db/migrations/0013_v0.10_cleanup.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 15,
+            description: "v0.11_tax_profile",
+            sql: include_str!("../../src/lib/db/migrations/0014_v0.11_tax_profile.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
