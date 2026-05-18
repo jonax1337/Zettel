@@ -67,52 +67,6 @@ def _render_html_pdf(payload: dict[str, Any]) -> bytes:
     return buf.getvalue()
 
 
-def _merge_pdf_attachments(base_pdf: bytes, attachment_paths: list[str]) -> bytes:
-    """Append each PDF attachment's pages to `base_pdf`.
-
-    Only `application/pdf` attachments are merged into the body — other types
-    are skipped (they'd still be visible to the user via the DB list but won't
-    be part of the body PDF). We deliberately use pypdf (already available via
-    factur-x's dep tree) and write to bytes so the factur-x embed step can run
-    unmodified afterwards.
-
-    Critical: factur-x.generate_from_binary will re-flatten the merged PDF
-    to PDF/A-3b when embedding the XML, so we don't enforce PDF/A-3 here.
-    Non-conformant input PDFs may break the resulting PDF/A-3 validity —
-    that risk is owned by the user (they pick what to attach).
-    """
-    if not attachment_paths:
-        return base_pdf
-
-    from pypdf import PdfReader, PdfWriter
-
-    writer = PdfWriter()
-    # Start from the rendered invoice
-    base_reader = PdfReader(io.BytesIO(base_pdf))
-    for page in base_reader.pages:
-        writer.add_page(page)
-
-    for path in attachment_paths:
-        try:
-            p = Path(path).expanduser()
-            if not p.is_file():
-                continue
-            # Skip non-PDFs by extension — defensive; UI should already filter.
-            if p.suffix.lower() != ".pdf":
-                continue
-            reader = PdfReader(str(p))
-            for page in reader.pages:
-                writer.add_page(page)
-        except Exception:
-            # One bad attachment must not destroy the entire invoice render.
-            # The orchestrator will see the missing pages on inspection.
-            continue
-
-    out = io.BytesIO()
-    writer.write(out)
-    return out.getvalue()
-
-
 def _embed_xml(pdf_bytes: bytes, xml_str: str, profile: str) -> bytes:
     """Embed Factur-X XML into a PDF/A-3 using the factur-x library."""
     from facturx import generate_from_binary
@@ -219,10 +173,6 @@ def render_invoice_pdf(payload: dict[str, Any]) -> Path:
 
     profile = (payload.get("profile") or "en16931").lower()
     pdf_bytes = _render_html_pdf(payload)
-
-    attachments = payload.get("attachments") or []
-    if attachments:
-        pdf_bytes = _merge_pdf_attachments(pdf_bytes, attachments)
 
     xml_str = render_zugferd_xml(payload)
     final_pdf = _embed_xml(pdf_bytes, xml_str, profile)

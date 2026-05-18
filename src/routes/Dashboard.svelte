@@ -29,12 +29,12 @@
     loadKpisWithYoY,
     monthlyRevenueInPeriod,
     topCustomersInPeriod,
-    agingBuckets,
+    oldestOverdue,
     loadFollowUps,
     type KpisWithYoY,
     type MonthPoint,
     type TopCustomerRow,
-    type AgingBucket,
+    type OldestOverdue,
     type FollowUpItem,
   } from "$lib/dashboard/queries";
   import { listCustomers } from "$lib/db/queries";
@@ -51,7 +51,7 @@
   let kpis = $state<KpisWithYoY | null>(null);
   let monthly = $state<MonthPoint[]>([]);
   let top = $state<TopCustomerRow[]>([]);
-  let aging = $state<AgingBucket[]>([]);
+  let aging = $state<OldestOverdue>({ daysOverdue: null, openTotal: 0, openCount: 0 });
   let followUps = $state<FollowUpItem[]>([]);
   let offerStats = $state({ count: 0, total: 0, expiringSoonCount: 0 });
   let due = $state<RecurringListRow[]>([]);
@@ -69,7 +69,7 @@
       loadKpisWithYoY(p),
       monthlyRevenueInPeriod(p),
       topCustomersInPeriod(p, 5),
-      agingBuckets(),
+      oldestOverdue(),
       loadFollowUps(),
       openOffersStats(),
       dueRecurring(),
@@ -120,10 +120,6 @@
   const monthlyBars = $derived(
     monthly.map((m) => ({ label: m.label, value: m.total, sublabel: String(m.year) })),
   );
-  const agingBars = $derived(
-    aging.map((a) => ({ label: a.label, value: a.total, sublabel: `${a.count} R.` })),
-  );
-
   const followUpGroups = $derived({
     overdue: followUps.filter((f) => f.group === "overdue"),
     today: followUps.filter((f) => f.group === "today"),
@@ -373,19 +369,26 @@
     <CardContent>
       <div class="flex items-center justify-between mb-3">
         <div>
-          <div class="text-xs text-muted-foreground uppercase tracking-wider">Aging — offene Forderungen</div>
-          <div class="text-xs text-muted-foreground mt-0.5">nach Tagen seit Fälligkeit</div>
+          <div class="text-xs text-muted-foreground uppercase tracking-wider">Offene Forderungen</div>
         </div>
         <Hourglass class="size-4 text-muted-foreground" />
       </div>
       {#if loading}
-        <div class="h-40 grid place-items-center text-sm text-muted-foreground">Lade…</div>
-      {:else if aging.every((b) => b.count === 0)}
-        <div class="h-40 grid place-items-center text-sm text-muted-foreground">
-          Keine offenen Forderungen.
-        </div>
+        <div class="text-sm text-muted-foreground">Lade…</div>
+      {:else if aging.openCount === 0}
+        <div class="text-sm text-muted-foreground">Keine offenen Forderungen.</div>
       {:else}
-        <BarChart bars={agingBars} ariaLabel="Aging-Buckets" />
+        <div class="space-y-1">
+          <div class="text-2xl font-semibold tabular-nums">{centsToEur(aging.openTotal)}</div>
+          <div class="text-sm text-muted-foreground">
+            {aging.openCount} {aging.openCount === 1 ? "Rechnung" : "Rechnungen"} offen
+            {#if aging.daysOverdue !== null && aging.daysOverdue > 0}
+              · älteste {aging.daysOverdue} {aging.daysOverdue === 1 ? "Tag" : "Tage"} überfällig
+            {:else if aging.daysOverdue !== null && aging.daysOverdue <= 0}
+              · alle innerhalb Frist
+            {/if}
+          </div>
+        </div>
       {/if}
     </CardContent>
   </Card>

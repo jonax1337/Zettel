@@ -61,9 +61,7 @@
   import { execute } from "$lib/db/client";
   import { validatePdf } from "$lib/validator";
   import { listRemindersForInvoice } from "$lib/db/reminders";
-  import { attachmentStoredPath, listAttachments } from "$lib/db/attachments";
-  import type { InvoiceAttachment, ReminderLevel } from "$lib/db/schema";
-  import { Paperclip } from "@lucide/svelte";
+  import type { ReminderLevel } from "$lib/db/schema";
   type Props = { params?: { id?: string } };
   let { params }: Props = $props();
 
@@ -404,32 +402,6 @@
     isOverdue && !existingReminderLevels.includes(3),
   );
 
-  let attachments = $state<InvoiceAttachment[]>([]);
-  $effect(() => {
-    if (invoice) {
-      listAttachments(invoice.id)
-        .then((list) => (attachments = list))
-        .catch(() => (attachments = []));
-    } else {
-      attachments = [];
-    }
-  });
-
-  function formatBytes(n: number): string {
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  async function onOpenAttachment(att: InvoiceAttachment) {
-    if (!invoice) return;
-    try {
-      const path = await attachmentStoredPath(invoice.number, att.filename, att.contentHash);
-      await openPath(path);
-    } catch (e) {
-      toast.error("Öffnen fehlgeschlagen", String(e));
-    }
-  }
 </script>
 
 <header class="mb-6">
@@ -768,39 +740,6 @@
         Zahlungsbedingungen
       </h3>
       <p class="text-sm whitespace-pre-line">{invoice.paymentTerms}</p>
-    </section>
-  {/if}
-
-  {#if attachments.length > 0}
-    <section class="mb-4">
-      <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-2">
-        Anhänge
-      </h3>
-      <Card>
-        <CardContent class="py-2">
-          <ul class="divide-y divide-border -my-1">
-            {#each attachments as att (att.id)}
-              <li class="flex items-center justify-between gap-3 py-2 text-sm">
-                <button
-                  type="button"
-                  onclick={() => onOpenAttachment(att)}
-                  class="flex items-center gap-2 min-w-0 text-left hover:text-foreground transition-colors"
-                  title="Anhang öffnen"
-                >
-                  <Paperclip class="size-4 text-muted-foreground shrink-0" />
-                  <span class="truncate underline-offset-2 hover:underline">{att.filename}</span>
-                  <span class="text-xs text-muted-foreground shrink-0">
-                    · {formatBytes(att.fileSize)}
-                  </span>
-                </button>
-              </li>
-            {/each}
-          </ul>
-        </CardContent>
-      </Card>
-      <p class="text-xs text-muted-foreground mt-2">
-        Wurde beim PDF-Erzeugen an die Rechnungs-PDF angehängt (vor ZUGFeRD-Einbettung).
-      </p>
     </section>
   {/if}
 

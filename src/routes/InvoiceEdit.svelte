@@ -1,16 +1,7 @@
 <script lang="ts">
   import { link, push } from "svelte-spa-router";
-  import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { open as openDialog } from "@tauri-apps/plugin-dialog";
-  import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { listCustomers, loadSettings } from "$lib/db/queries";
-  import {
-    addAttachment,
-    listAttachments,
-    removeAttachment,
-  } from "$lib/db/attachments";
-  import type { InvoiceAttachment } from "$lib/db/schema";
   import {
     computeLineTotal,
     computeTotals,
@@ -36,9 +27,7 @@
     toIsoDate,
   } from "$lib/utils/date";
   import {
-    Badge,
     Button,
-    ConfirmDialog,
     Input,
     Textarea,
     Label,
@@ -48,19 +37,7 @@
     Select,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2, AlertTriangle, Paperclip, FileUp, Loader2 } from "@lucide/svelte";
-
-  type CreditStatus = "good" | "caution" | "blocked";
-  function creditVariant(s: CreditStatus): "success" | "warning" | "destructive" {
-    if (s === "blocked") return "destructive";
-    if (s === "caution") return "warning";
-    return "success";
-  }
-  function creditLabel(s: CreditStatus): string {
-    if (s === "blocked") return "Gesperrt";
-    if (s === "caution") return "Vorsicht";
-    return "Gut";
-  }
+  import { ArrowLeft, Plus, Trash2, AlertTriangle } from "@lucide/svelte";
 
   type Props = {
     mode: "new" | "edit";
@@ -72,9 +49,6 @@
   let settings = $state<Settings | null>(null);
   let id = $state<number | null>(null);
   let invoiceNumber = $state<string>("");
-  let attachments = $state<InvoiceAttachment[]>([]);
-  let attachmentBusy = $state(false);
-  let dropHover = $state(false);
   let loaded = $state(false);
   const loading = $derived(mode === "edit" && !loaded);
 
@@ -115,36 +89,6 @@
   const selectedCustomer = $derived(
     customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
   );
-
-  let blockedConfirmOpen = $state(false);
-  let pendingCustomerIdStr = $state<string>("");
-  let previousCustomerIdStr = $state<string>("");
-  const pendingBlockedCustomer = $derived(
-    pendingCustomerIdStr ? customers.find((c) => String(c.id) === pendingCustomerIdStr) ?? null : null,
-  );
-
-  function onCustomerChange(next: string) {
-    if (mode === "new" && next) {
-      const target = customers.find((c) => String(c.id) === next);
-      if (target?.creditStatus === "blocked") {
-        pendingCustomerIdStr = next;
-        previousCustomerIdStr = customerIdStr;
-        customerIdStr = next;
-        blockedConfirmOpen = true;
-        return;
-      }
-    }
-    customerIdStr = next;
-  }
-
-  function confirmBlocked() {
-    pendingCustomerIdStr = "";
-  }
-
-  function cancelBlocked() {
-    customerIdStr = previousCustomerIdStr;
-    pendingCustomerIdStr = "";
-  }
 
   // Reverse-Charge: sender must not be Kleinunternehmer. intra_eu requires both
   // VAT-IDs; third_country (export outside EU) only requires the sender's. The
@@ -227,9 +171,6 @@
           }
           customerIdStr = String(res.invoice.customerId);
           invoiceNumber = res.invoice.number;
-          listAttachments(res.invoice.id)
-            .then((list) => (attachments = list))
-            .catch(() => (attachments = []));
           issueDateIso = toIsoDate(res.invoice.issueDate);
           deliveryDateIso = res.invoice.deliveryDate
             ? toIsoDate(res.invoice.deliveryDate)
@@ -273,117 +214,6 @@
   function removeItem(idx: number) {
     items = items.filter((_, i) => i !== idx);
   }
-
-  type AttachmentRef = {
-    filename: string;
-    contentHash: string;
-    mimeType: string;
-    fileSize: number;
-    storedPath: string;
-  };
-
-  const canAttach = $derived(mode === "edit" && id !== null && !!invoiceNumber);
-
-  async function handleAttachmentFile(sourcePath: string, displayName?: string) {
-    if (!canAttach || id === null) return;
-    attachmentBusy = true;
-    try {
-      const filename = displayName ?? sourcePath.split(/[\\/]/).pop() ?? "anhang.pdf";
-      const ref = await invoke<AttachmentRef>("import_invoice_attachment", {
-        invoiceNumber,
-        sourcePath,
-        filename,
-      });
-      await addAttachment({
-        invoiceId: id,
-        filename: ref.filename,
-        contentHash: ref.contentHash,
-        mimeType: ref.mimeType,
-        fileSize: ref.fileSize,
-      });
-      attachments = await listAttachments(id);
-      if (ref.fileSize > 10 * 1024 * 1024) {
-        toast.warning(
-          "Großer Anhang",
-          `${ref.filename} ist ${(ref.fileSize / (1024 * 1024)).toFixed(1)} MB — die PDF wird entsprechend groß.`,
-        );
-      } else {
-        toast.success("Anhang hinzugefügt", ref.filename);
-      }
-    } catch (e) {
-      toast.error("Anhang fehlgeschlagen", String(e));
-    } finally {
-      attachmentBusy = false;
-    }
-  }
-
-  async function onPickAttachment() {
-    if (!canAttach) return;
-    try {
-      const selected = await openDialog({
-        multiple: false,
-        directory: false,
-        filters: [{ name: "PDF", extensions: ["pdf"] }],
-      });
-      if (typeof selected === "string") {
-        await handleAttachmentFile(selected);
-      }
-    } catch (e) {
-      toast.error("Datei-Dialog fehlgeschlagen", String(e));
-    }
-  }
-
-  async function onRemoveAttachment(att: InvoiceAttachment) {
-    if (id === null) return;
-    try {
-      const { attachmentStoredPath } = await import("$lib/db/attachments");
-      const stored = await attachmentStoredPath(invoiceNumber, att.filename, att.contentHash);
-      await removeAttachment(att.id);
-      try {
-        await invoke("delete_invoice_attachment", { storedPath: stored });
-      } catch {
-        // fs delete is best-effort; DB row is gone either way.
-      }
-      attachments = await listAttachments(id);
-      toast.success("Anhang entfernt");
-    } catch (e) {
-      toast.error("Entfernen fehlgeschlagen", String(e));
-    }
-  }
-
-  function formatBytes(n: number): string {
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  onMount(() => {
-    let unlisten: (() => void) | null = null;
-    getCurrentWebview()
-      .onDragDropEvent((event) => {
-        if (!canAttach) return;
-        if (event.payload.type === "over") {
-          dropHover = true;
-        } else if (event.payload.type === "leave") {
-          dropHover = false;
-        } else if (event.payload.type === "drop") {
-          dropHover = false;
-          const pdfPaths = event.payload.paths.filter((p) => p.toLowerCase().endsWith(".pdf"));
-          if (pdfPaths.length === 0) {
-            if (event.payload.paths.length > 0)
-              toast.warning("Nur PDF-Anhänge werden unterstützt.");
-            return;
-          }
-          (async () => {
-            for (const p of pdfPaths) {
-              await handleAttachmentFile(p);
-            }
-          })();
-        }
-      })
-      .then((u) => (unlisten = u));
-    return () => unlisten?.();
-  });
 
   function onPriceBlur(idx: number) {
     const it = items[idx];
@@ -552,20 +382,11 @@
           <div class="col-span-2 flex flex-col gap-1.5">
             <Label>Kunde <span class="text-destructive">*</span></Label>
             <Select
-              value={customerIdStr}
-              onValueChange={onCustomerChange}
+              bind:value={customerIdStr}
               items={customerItems}
               placeholder="— bitte wählen —"
               disabled={isCreditNote}
             />
-            {#if selectedCustomer}
-              <div class="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>{selectedCustomer.name}</span>
-                <Badge variant={creditVariant(selectedCustomer.creditStatus)}>
-                  {creditLabel(selectedCustomer.creditStatus)}
-                </Badge>
-              </div>
-            {/if}
             {#if isCreditNote}
               <p class="text-xs text-muted-foreground">
                 Kunde ist an die Originalrechnung gebunden und kann nicht geändert werden.
@@ -760,89 +581,6 @@
       </Card>
     </section>
 
-    {#if !isCreditNote}
-      <section>
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-sm font-semibold uppercase text-muted-foreground tracking-wider">
-            PDF-Anhänge (Leistungsnachweise, etc.)
-          </h2>
-        </div>
-        <Card>
-          <CardContent class="space-y-3">
-            <div
-              class={"rounded-lg border-2 border-dashed p-5 text-center transition-colors " +
-                (!canAttach
-                  ? "border-muted-foreground/15 bg-muted/20"
-                  : dropHover
-                    ? "border-primary bg-primary/5"
-                    : attachmentBusy
-                      ? "border-muted bg-muted/30"
-                      : "border-muted-foreground/25 hover:border-muted-foreground/50")}
-              title={!canAttach ? "Erst Entwurf speichern, dann Anhänge hinzufügen" : undefined}
-            >
-              {#if attachmentBusy}
-                <div class="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 class="size-4 animate-spin" />
-                  <span>Anhang wird importiert…</span>
-                </div>
-              {:else if !canAttach}
-                <div class="flex flex-col items-center gap-2 text-sm text-muted-foreground">
-                  <Paperclip class="size-6" />
-                  <span>Erst Entwurf speichern, dann Anhänge hinzufügen.</span>
-                </div>
-              {:else}
-                <div class="flex flex-col items-center gap-3">
-                  <FileUp class="size-7 text-muted-foreground" />
-                  <div class="text-sm">
-                    <span class="font-medium">PDF hierher ziehen</span>
-                    <span class="text-muted-foreground"> oder </span>
-                    <button
-                      type="button"
-                      onclick={onPickAttachment}
-                      class="underline underline-offset-2 hover:text-foreground"
-                    >Datei auswählen</button>
-                  </div>
-                  <p class="text-xs text-muted-foreground">
-                    Wird beim PDF-Generieren an die Rechnung angehängt (vor der ZUGFeRD-Einbettung).
-                  </p>
-                </div>
-              {/if}
-            </div>
-
-            {#if attachments.length > 0}
-              <ul class="divide-y divide-border rounded-md border border-border">
-                {#each attachments as att (att.id)}
-                  <li class="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                    <div class="flex items-center gap-2 min-w-0">
-                      <Paperclip class="size-4 text-muted-foreground shrink-0" />
-                      <span class="truncate" title={att.filename}>{att.filename}</span>
-                      <span class="text-xs text-muted-foreground shrink-0">
-                        · {formatBytes(att.fileSize)}
-                      </span>
-                      {#if att.mimeType !== "application/pdf"}
-                        <span class="text-xs text-amber-600 dark:text-amber-500 shrink-0">
-                          · wird nicht in die Rechnungs-PDF eingebettet
-                        </span>
-                      {/if}
-                    </div>
-                    <button
-                      type="button"
-                      onclick={() => onRemoveAttachment(att)}
-                      class="inline-flex items-center justify-center size-7 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                      title="Anhang entfernen"
-                      aria-label="Anhang entfernen"
-                    >
-                      <Trash2 class="size-4" />
-                    </button>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </CardContent>
-        </Card>
-      </section>
-    {/if}
-
     <Card>
       <CardContent class="space-y-4">
         {#if !isCreditNote}
@@ -869,16 +607,3 @@
     </div>
   </form>
 {/if}
-
-<ConfirmDialog
-  bind:open={blockedConfirmOpen}
-  title="Kunde ist gesperrt"
-  description={pendingBlockedCustomer
-    ? `Dieser Kunde ist als gesperrt markiert.${pendingBlockedCustomer.creditNote ? ` Grund: ${pendingBlockedCustomer.creditNote}` : ""} Trotzdem fortfahren?`
-    : ""}
-  confirmLabel="Trotzdem fortfahren"
-  cancelLabel="Abbrechen"
-  destructive
-  onConfirm={confirmBlocked}
-  onCancel={cancelBlocked}
-/>

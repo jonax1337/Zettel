@@ -157,42 +157,42 @@ export async function topCustomersInPeriod(
   }));
 }
 
-// --- Aging buckets (open receivables) ---
+// --- Oldest open receivable ---
 
-export type AgingBucket = {
-  label: string;
-  count: number;
-  total: number;
+export type OldestOverdue = {
+  /** Days overdue. Negative = not yet due. null = no open invoices. */
+  daysOverdue: number | null;
+  /** Total open (sent, not paid) amount across all currencies, in EUR cents. */
+  openTotal: number;
+  /** Count of open invoices. */
+  openCount: number;
 };
 
 /**
- * Open (status=sent) invoices bucketed by days overdue, measured from
- * due_date relative to today. Negative days (not yet due) go into "0-30".
+ * Single-line summary of open receivables — bucketed charts overkill at
+ * freelancer scale.
  */
-export async function agingBuckets(): Promise<AgingBucket[]> {
+export async function oldestOverdue(): Promise<OldestOverdue> {
   const now = Math.floor(Date.now() / 1000);
   const rows = await select<{ due_date: number; t: number }>(
     `SELECT due_date, ${REVENUE_AMOUNT_SQL} AS t
      FROM invoices
      WHERE status = 'sent'`,
   );
-  const buckets: AgingBucket[] = [
-    { label: "0–30 Tage", count: 0, total: 0 },
-    { label: "31–60 Tage", count: 0, total: 0 },
-    { label: "61–90 Tage", count: 0, total: 0 },
-    { label: "> 90 Tage", count: 0, total: 0 },
-  ];
-  for (const r of rows) {
-    const days = Math.floor((now - r.due_date) / 86400);
-    let idx: number;
-    if (days <= 30) idx = 0;
-    else if (days <= 60) idx = 1;
-    else if (days <= 90) idx = 2;
-    else idx = 3;
-    buckets[idx].count += 1;
-    buckets[idx].total += r.t;
+  if (rows.length === 0) {
+    return { daysOverdue: null, openTotal: 0, openCount: 0 };
   }
-  return buckets;
+  let openTotal = 0;
+  let oldestDue = rows[0].due_date;
+  for (const r of rows) {
+    openTotal += r.t;
+    if (r.due_date < oldestDue) oldestDue = r.due_date;
+  }
+  return {
+    daysOverdue: Math.floor((now - oldestDue) / 86400),
+    openTotal,
+    openCount: rows.length,
+  };
 }
 
 // --- Wiedervorlage (follow-ups) ---

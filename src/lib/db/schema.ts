@@ -92,10 +92,6 @@ export const customers = sqliteTable("customers", {
   phone: text("phone"),
   vatId: text("vat_id"),
   notes: text("notes"),
-  creditStatus: text("credit_status", { enum: ["good", "caution", "blocked"] })
-    .notNull()
-    .default("good"),
-  creditNote: text("credit_note"),
   followUpDate: integer("follow_up_date"),
   createdAt: integer("created_at")
     .notNull()
@@ -394,19 +390,6 @@ export type VendorSnapshot = {
   email: string | null;
   vatId: string | null;
 };
-
-export const invoiceAttachments = sqliteTable("invoice_attachments", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  invoiceId: integer("invoice_id").notNull(),
-  filename: text("filename").notNull(),
-  contentHash: text("content_hash").notNull(),
-  mimeType: text("mime_type").notNull(),
-  fileSize: integer("file_size").notNull(),
-  createdAt: integer("created_at").notNull(),
-});
-
-export type InvoiceAttachment = typeof invoiceAttachments.$inferSelect;
-export type InvoiceAttachmentInsert = typeof invoiceAttachments.$inferInsert;
 
 export type CustomerSnapshot = {
   customerNumber: string;
