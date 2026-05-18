@@ -2,7 +2,6 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod accent;
 mod backup;
-mod bmf;
 mod crypto;
 mod exchange;
 mod sandbox;
@@ -155,7 +154,6 @@ pub fn run() {
             sandbox::is_sandbox,
             sandbox::set_sandbox,
             exchange::fetch_ecb_exchange_rate,
-            bmf::fetch_bmf_income_tax,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())

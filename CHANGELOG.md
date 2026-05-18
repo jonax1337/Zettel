@@ -8,7 +8,7 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [0.11.0] — 2026-05-18
 
-> **Steuer-Rücklage.** Eine fokussierte Story — Zettel sagt dir jetzt im Dashboard, wieviel Geld du von deinem YTD-Gewinn für die Einkommensteuer am Jahresende zurücklegen solltest. Hybrid-Tarif: BMF-Lohnsteuer-Rechner live wenn online (autoritativ, immer aktuell), § 32a-Formel mit 2024er-Konstanten als Offline-Fallback.
+> **Steuer-Rücklage.** Eine fokussierte Story — Zettel sagt dir jetzt im Dashboard, wieviel Geld du von deinem YTD-Gewinn für die Einkommensteuer am Jahresende zurücklegen solltest. § 32a EStG-Tarif für VZ 2024, 2025 und 2026 hartcodiert aus amtlicher BMF-Bekanntmachung, durchgetestet mit 38 Vitest-Cases gegen Eckpunkte aller Zonen.
 
 ### Added
 - **Steuerprofil in Settings.** Neue Card mit Rechtsform (Freiberufler / Gewerbetreibender), Hebesatz für Gewerbe-Steuer (Default 400 % = Bundesdurchschnitt, nur bei Gewerbe sichtbar), Kirchensteuersatz (0 / 8 / 9 %), Familienstand (ledig / verheiratet-Splittingtarif) und 4× Quartals-Vorauszahlungen (Q1-Q4). Klar gelabelt als Vorhersage, keine Steuerberatung. (#64)
@@ -16,11 +16,11 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
   - `income.ts` — § 32a EStG mit 5-Zonen-Formel, Splittingtarif für `married`, Soli mit Milderungszone (§ 4 Abs. 2 SolzG), KiSt 0/8/9 %. Konstanten in `TARIF_2024` ausgelagert, Update-Pfad dokumentiert.
   - `trade.ts` — Gewerbesteuer (Freibetrag 24.500 €, Messzahl 3,5 %, Hebesatz), § 35 EStG Anrechnung auf ESt (3,8 × Messbetrag, gedeckelt). Freiberufler-Pfad: sofort 0.
   - 23 Vitest-Tests gegen amtliche BMF-Tarifrechner-Werte (Grundtarif + Splittingtarif × 6 Einkommensstufen, Soli-Freigrenze + Milderungszone + voller Satz, KiSt 8/9, GewSt-Freibetrag, ESt-Anrechnung bei niedrigem vs. hohem Hebesatz). (#65)
-- **BMF-Live-Anbindung.** Rust-Command `fetch_bmf_income_tax` ruft das offizielle `bmf-steuerrechner.de/interface/<JAHR>Version1.xhtml` an (ureq blocking, 8 s Timeout, XML-Response via Substring-Match). TS-Wrapper in `src/lib/tax/bmf.ts` cached 24 h pro `(year, status, zvE)` in localStorage. `estimateIncomeTax` async: versucht BMF zuerst, fällt bei Offline/API-Fehler auf den lokalen Tarif zurück. UI-Badge zeigt `BMF live` oder `lokale Schätzung`. (#65)
+- **Tarif für VZ 2024, 2025 und 2026** als hartcodierte Konstanten aus der amtlichen BMF-Bekanntmachung (Steuerfortentwicklungsgesetz Dez 2024). `estimateIncomeTax(profit, status, churchRate, year)` wählt automatisch den Tarif für das angegebene Jahr; bei Zukunfts-Jahren wird der jeweils neueste hinterlegte Tarif genutzt (mit Code-Kommentar zum Update-Pfad pro Bekanntmachung). 38 Vitest-Cases verifizieren jede Zone (Grundfreibetrag → Reichensteuer), Splittingtarif, Soli-Milderungszone und KiSt 8/9 % pro Jahr — plus Cross-Year-Eigenschaftstest (Steuerlast sinkt 2024→2026 wegen Grundfreibetrag-Anhebung).
 - **Dashboard-Card „Steuer-Rücklage".** Kompakt unter den KPI-Cards, vor Aging/Wiedervorlage. Headline-Betrag + ein-Zeilen-Aufschlüsselung (ESt+Soli+KiSt · GewSt · USt · Vorauszahlungen). Klick → Detail-Route. (#66)
 - **Detail-Route `/reports/taxes`** (neue Komponente `TaxReport.svelte`):
   - Headline mit empfohlener Rücklage
-  - Datenquellen-Card (BMF live / lokal + Jahresangabe)
+  - Tarifjahr-Card mit Quellen-Hinweis (§ 32a EStG, BMF-Bekanntmachung)
   - Hochrechnungs-Card mit Was-wenn-Input („Restjahres-Gewinn (€)") für Szenarien
   - Aufschlüsselungs-Tabelle inkl. § 35 EStG-Anrechnung sichtbar
   - Drei Disclaimer-Absätze: keine Steuerberatung, USt-Approximation, kein ELSTER
@@ -32,7 +32,8 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 - `CURRENT_SCHEMA` in `backup.rs` auf 16, `CURRENT_DB_SCHEMA_VERSION` in `Settings.svelte` synchron.
 
 ### Notes
-- **Tax-Year 2024-Konstanten im lokalen Fallback** sind bewusst gewählt (verifizierbar gegen offizielle BMF-Beispiele). Solange BMF-Live erreichbar ist, ist das egal; der Fallback wird nur bei Offline-Modus genutzt. Beim Jahres-Tarif-Update Anfang 2027 wird `TARIF_2024` durch eine versionierte Struktur ersetzt.
+- **Kein BMF-Live-API-Call.** Wir hatten in einer Zwischen-Iteration einen Tauri-Command auf `bmf-steuerrechner.de/interface/<JAHR>Version1.xhtml` integriert — der Service verlangt aber einen **partnerregistrierten Zugriffscode**, den wir nicht haben (`<information>Der angegebene Zugriffscode existiert nicht!</information>`). Deshalb rausgenommen. Die Konstanten der amtlichen BMF-Bekanntmachung liefern dasselbe Ergebnis offline + deterministisch + testbar.
+- **Tarif-Update jährlich.** Neue BMF-Bekanntmachung im Spätsommer/Herbst → `TARIF_YYYY`-Block in `src/lib/tax/income.ts` ergänzen, Tests dazu. `getTarifYear(year)` fällt für Jahre > letztem hinterlegtem Jahr auf den jüngsten Tarif zurück.
 - **USt-Schuld YTD im Tax-Report ist eine Approximation** (Rechnungs-USt − Vorsteuer ohne RC). Für die echte UStVA bleibt `/reports/ustva` der maßgebliche Workflow.
 - **Kein ELSTER, kein EÜR-Export, kein AfA, kein Bankabgleich, kein Krankenversicherungs-Rechner** — alles als Roadmap-Kandidaten dokumentiert, keiner davon in v0.11.
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
   import { Button, Card, CardContent, CardHeader, CardTitle, CardDescription, Label } from "$lib/ui";
-  import { ArrowLeft, Calculator, Sparkles, Wifi, WifiOff } from "@lucide/svelte";
+  import { ArrowLeft, Calculator, Sparkles } from "@lucide/svelte";
   import { centsToEur } from "$lib/utils/money";
   import { computeTaxRücklage, type TaxRücklageResult } from "$lib/dashboard/tax";
 
@@ -55,7 +55,8 @@
   </h1>
   <p class="text-sm text-muted-foreground mt-1.5 max-w-2xl">
     Vorhersage zur Liquiditätsplanung — <strong>keine Steuerberatung</strong>.
-    Tarif {result?.flags.estSource === "bmf" ? "live vom BMF-Lohnsteuerrechner" : "lokale § 32a-Schätzung (VZ 2024 Konstanten)"}.
+    Tarif nach § 32a EStG VZ {result?.income.tarifYear ?? new Date().getFullYear()},
+    Konstanten aus amtlicher BMF-Bekanntmachung.
   </p>
 </header>
 
@@ -93,21 +94,14 @@
 
     <Card>
       <CardHeader>
-        <CardTitle class="text-base">Datenquelle</CardTitle>
+        <CardTitle class="text-base">Tarifjahr</CardTitle>
       </CardHeader>
       <CardContent class="space-y-2">
-        <div class="flex items-center gap-2 text-sm">
-          {#if result.flags.estSource === "bmf"}
-            <Wifi class="size-4 text-success" />
-            <span>BMF live ({result.income.year})</span>
-          {:else}
-            <WifiOff class="size-4 text-muted-foreground" />
-            <span>Lokal (Tarif {result.income.year})</span>
-          {/if}
-        </div>
+        <div class="text-2xl font-semibold tabular-nums">{result.income.tarifYear}</div>
         <p class="text-xs text-muted-foreground">
-          Bei BMF-Erreichbarkeit ziehen wir die ESt aus dem offiziellen Lohnsteuer-Rechner,
-          Cache 24 h. Offline-Fallback ist die § 32a-Formel mit eingefrorenen Konstanten.
+          § 32a EStG mit den Konstanten der amtlichen BMF-Bekanntmachung
+          für VZ {result.income.tarifYear}. Verifizierbar gegen den
+          Lohnsteuer-Rechner auf bmf-steuerrechner.de.
         </p>
       </CardContent>
     </Card>

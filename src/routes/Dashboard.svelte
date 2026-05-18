@@ -385,8 +385,7 @@
             <Calculator class="size-5 text-muted-foreground shrink-0" />
             <div class="min-w-0">
               <div class="text-xs text-muted-foreground uppercase tracking-wider">
-                Steuer-Rücklage {taxRücklage.year} ·
-                {#if taxRücklage.flags.estSource === "bmf"}BMF live{:else}lokale Schätzung{/if}
+                Steuer-Rücklage {taxRücklage.year} · Tarif {taxRücklage.income.tarifYear}
               </div>
               <div class="flex items-baseline gap-4 mt-0.5">
                 <div class="text-2xl font-semibold tabular-nums">

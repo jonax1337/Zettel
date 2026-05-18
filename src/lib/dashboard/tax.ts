@@ -1,7 +1,7 @@
 import { select } from "$lib/db/client";
 import { loadSettings } from "$lib/db/queries";
 import { sumPrepaymentsForYear } from "$lib/db/tax-prepayments";
-import { estimateIncomeTax, type IncomeTaxWithSource } from "$lib/tax/income";
+import { estimateIncomeTax, type IncomeTaxResult } from "$lib/tax/income";
 import { estimateTradeTax, type TradeTaxResult } from "$lib/tax/trade";
 
 export interface TaxRücklageInput {
@@ -23,7 +23,7 @@ export interface TaxRücklageResult {
   /** USt-Schuld YTD (Cent). 0 bei Kleinunternehmer. */
   ustSchuldYtdCent: number;
   /** ESt + Soli + KiSt-Schätzung für den hochgerechneten Jahresgewinn. */
-  income: IncomeTaxWithSource;
+  income: IncomeTaxResult;
   /** GewSt-Schätzung. */
   trade: TradeTaxResult;
   /** Summe aller Steuer-Lasten (Detail-Berechnung). */
@@ -39,7 +39,6 @@ export interface TaxRücklageResult {
   flags: {
     isFreelancer: boolean;
     isKleinunternehmer: boolean;
-    estSource: "bmf" | "local";
     usePauschal: boolean;
     pauschalPercent: number;
   };
@@ -118,7 +117,7 @@ export async function computeTaxRücklage(
     ? 0
     : Math.max(0, agg.invoiceVat - agg.stornoVat - agg.expenseVat);
 
-  const income = await estimateIncomeTax(
+  const income = estimateIncomeTax(
     Math.max(0, projectedAnnualProfitCent),
     settings.taxFilingStatus,
     settings.churchTaxRate,
@@ -162,7 +161,6 @@ export async function computeTaxRücklage(
     flags: {
       isFreelancer: settings.legalForm === "freelancer",
       isKleinunternehmer: settings.isKleinunternehmer,
-      estSource: income.source,
       usePauschal: settings.usePauschalTaxReserve,
       pauschalPercent,
     },
