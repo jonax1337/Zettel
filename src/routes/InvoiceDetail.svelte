@@ -500,9 +500,11 @@
         <h1 class="text-3xl font-semibold tracking-tight font-mono">
           {invoice.isCreditNote ? "Storno " : ""}{displayInvoiceNumber(invoice)}
         </h1>
-        <Badge variant={invoice.isCreditNote ? "destructive" : statusVariant[invoice.status]}>
-          {invoice.isCreditNote ? `Storno · ${statusLabel[invoice.status]}` : statusLabel[invoice.status]}
-        </Badge>
+        {#if invoice.status !== "draft" || invoice.isCreditNote}
+          <Badge variant={invoice.isCreditNote ? "destructive" : statusVariant[invoice.status]}>
+            {invoice.isCreditNote ? `Storno · ${statusLabel[invoice.status]}` : statusLabel[invoice.status]}
+          </Badge>
+        {/if}
         {#if invoice.lastValidationStatus || lastPdfPath}
           <ValidationBadge
             status={invoice.lastValidationStatus}

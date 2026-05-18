@@ -262,7 +262,7 @@ export async function loadFollowUps(): Promise<FollowUpItem[]> {
     items.push({
       kind: "invoice",
       id: i.id,
-      title: i.number.startsWith("DRAFT-") ? "Entwurf" : i.number,
+      title: i.number.startsWith("DRAFT-") ? `Entwurf #${i.number.slice(6, 10)}` : i.number,
       subtitle: i.customer_name ?? "—",
       followUpDate: i.follow_up_date,
       href: `/invoices/${i.id}`,

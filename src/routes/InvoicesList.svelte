@@ -196,7 +196,11 @@
               </span>
             </td>
             <td class="px-4 py-3">
-              <Badge variant={statusVariant[inv.status]}>{statusLabel[inv.status]}</Badge>
+              {#if inv.status !== "draft"}
+                <Badge variant={statusVariant[inv.status]}>{statusLabel[inv.status]}</Badge>
+              {:else}
+                <span class="text-muted-foreground">—</span>
+              {/if}
             </td>
             <td class="px-4 py-3 text-muted-foreground text-xs">
               {inv.isCreditNote ? "—" : formatDate(inv.dueDate)}

@@ -313,7 +313,9 @@ export function displayInvoiceNumber(inv: {
   number: string;
   status: InvoiceStatus;
 }): string {
-  if (inv.status === "draft" && isDraftNumber(inv.number)) return "Entwurf";
+  if (inv.status === "draft" && isDraftNumber(inv.number)) {
+    return `Entwurf #${inv.number.slice(6, 10)}`;
+  }
   return inv.number;
 }
 

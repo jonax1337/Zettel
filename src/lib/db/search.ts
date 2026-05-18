@@ -171,7 +171,7 @@ export async function search(query: string): Promise<SearchResults> {
   return {
     invoices: invoiceRows.map((r): SearchHit => {
       const isDraft = r.number.startsWith("DRAFT-");
-      const displayNumber = isDraft && r.status === "draft" ? "Entwurf" : r.number;
+      const displayNumber = isDraft && r.status === "draft" ? `Entwurf #${r.number.slice(6, 10)}` : r.number;
       return {
         kind: "invoice",
         id: r.id,
