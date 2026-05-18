@@ -1,6 +1,7 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod accent;
+mod attachments;
 mod backup;
 mod crypto;
 mod sandbox;
@@ -118,6 +119,8 @@ pub fn run() {
             sidecar::generate_reminder,
             fs_export::save_text_file,
             fs_export::import_expense_pdf,
+            attachments::import_invoice_attachment,
+            attachments::delete_invoice_attachment,
             backup::snapshot_db_path,
             backup::bundle_backup,
             backup::stage_restore,
