@@ -1,5 +1,6 @@
 import { select } from "$lib/db/client";
 import { loadSettings } from "$lib/db/queries";
+import { sumPrepaymentsForYear } from "$lib/db/tax-prepayments";
 import { estimateIncomeTax, type IncomeTaxWithSource } from "$lib/tax/income";
 import { estimateTradeTax, type TradeTaxResult } from "$lib/tax/trade";
 
@@ -133,11 +134,7 @@ export async function computeTaxRücklage(
   const gewStNetCent = Math.max(0, trade.tradeTax - trade.estCredit);
   const totalTaxBurdenCent = income.total + gewStNetCent + ustSchuldYtdCent;
 
-  const prepaymentsCent =
-    settings.estPrepaymentQ1Cent +
-    settings.estPrepaymentQ2Cent +
-    settings.estPrepaymentQ3Cent +
-    settings.estPrepaymentQ4Cent;
+  const prepaymentsCent = await sumPrepaymentsForYear(year);
 
   const recommendedReserveCent = Math.max(0, totalTaxBurdenCent - prepaymentsCent);
 

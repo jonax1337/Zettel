@@ -10,6 +10,7 @@ export { default as CardContent } from "./CardContent.svelte";
 export { default as Badge } from "./Badge.svelte";
 export { default as Select } from "./Select.svelte";
 export { default as Checkbox } from "./Checkbox.svelte";
+export { default as Slider } from "./Slider.svelte";
 export { default as DatePicker } from "./DatePicker.svelte";
 export { default as Dialog } from "./Dialog.svelte";
 export { default as ConfirmDialog } from "./ConfirmDialog.svelte";

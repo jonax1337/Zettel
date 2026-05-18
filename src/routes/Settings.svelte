@@ -24,6 +24,14 @@
   import { checkForUpdate } from "$lib/updater";
   import { accent, ACCENT_PRESETS, type AccentKey } from "$lib/accent.svelte";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
+  import {
+    listPrepayments,
+    upsertPrepayment,
+    type PrepaymentRow,
+    type Quarter,
+  } from "$lib/db/tax-prepayments";
+  import { Slider } from "$lib/ui";
+  import { ChevronLeft, ChevronRight } from "@lucide/svelte";
 
   const legalFormItems = [
     { value: "freelancer", label: "Freiberufler (keine Gewerbesteuer)" },
@@ -53,13 +61,37 @@
   const accentLabel = (k: AccentKey) => (k === "system" ? "System" : ACCENT_PRESETS[k].label);
 
   // aktueller DB-Schema-Stand (siehe src-tauri/src/lib.rs Migrations-Vektor)
-  const CURRENT_DB_SCHEMA_VERSION = 16;
+  const CURRENT_DB_SCHEMA_VERSION = 17;
 
   let s = $state<Settings | null>(null);
   let loading = $state(true);
   let saving = $state(false);
   let error = $state<string | null>(null);
   let sandbox = $state(false);
+
+  let prepaymentYear = $state(new Date().getFullYear());
+  let prepayments = $state<PrepaymentRow[]>([]);
+  let prepaymentBusy = $state(false);
+
+  async function loadPrepayments(year: number) {
+    prepaymentBusy = true;
+    try {
+      prepayments = await listPrepayments(year);
+    } finally {
+      prepaymentBusy = false;
+    }
+  }
+
+  $effect(() => {
+    loadPrepayments(prepaymentYear);
+  });
+
+  async function savePrepayment(quarter: Quarter, euroStr: string) {
+    const cents = eurStringToCents(euroStr);
+    await upsertPrepayment(prepaymentYear, quarter, cents);
+    await loadPrepayments(prepaymentYear);
+  }
+
   let sandboxBusy = $state(false);
   let confirmSandboxToggleOpen = $state(false);
   let pendingSandbox = $state(false);
@@ -501,30 +533,50 @@
           </div>
 
           <div class="col-span-2 mt-2">
-            <Label>Geleistete ESt-Vorauszahlungen ({new Date().getFullYear()})</Label>
-            <div class="grid grid-cols-4 gap-2 mt-1.5">
-              {#each [
-                { key: "estPrepaymentQ1Cent", label: "Q1" },
-                { key: "estPrepaymentQ2Cent", label: "Q2" },
-                { key: "estPrepaymentQ3Cent", label: "Q3" },
-                { key: "estPrepaymentQ4Cent", label: "Q4" },
-              ] as q}
+            <div class="flex items-center justify-between mb-1.5">
+              <Label>Geleistete ESt-Vorauszahlungen</Label>
+              <div class="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onclick={() => (prepaymentYear = prepaymentYear - 1)}
+                  disabled={prepaymentBusy}
+                  aria-label="Vorjahr"
+                >
+                  <ChevronLeft class="size-4" />
+                </Button>
+                <span class="tabular-nums font-medium px-2 min-w-[3.5rem] text-center">
+                  {prepaymentYear}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onclick={() => (prepaymentYear = prepaymentYear + 1)}
+                  disabled={prepaymentBusy}
+                  aria-label="Folgejahr"
+                >
+                  <ChevronRight class="size-4" />
+                </Button>
+              </div>
+            </div>
+            <div class="grid grid-cols-4 gap-2">
+              {#each prepayments as p (p.quarter)}
                 <div class="flex flex-col gap-1">
-                  <span class="text-xs text-muted-foreground">{q.label}</span>
+                  <span class="text-xs text-muted-foreground">Q{p.quarter}</span>
                   <Input
                     type="text"
                     inputmode="decimal"
-                    value={centsToEur((s as unknown as Record<string, number>)[q.key])}
-                    onblur={(e) => {
-                      const cents = eurStringToCents((e.currentTarget as HTMLInputElement).value);
-                      (s as unknown as Record<string, number>)[q.key] = cents;
-                    }}
+                    value={centsToEur(p.amountCent)}
+                    disabled={prepaymentBusy}
+                    onblur={(e) => savePrepayment(p.quarter, (e.currentTarget as HTMLInputElement).value)}
                   />
                 </div>
               {/each}
             </div>
             <p class="text-xs text-muted-foreground mt-1.5">
-              Bereits ans Finanzamt überwiesene ESt-Vorauszahlungen. Werden von der empfohlenen Rücklage abgezogen.
+              Pro Steuerjahr getrennt. Die Steuer-Rücklage im Dashboard rechnet immer mit den Werten des aktuellen Kalenderjahres ({new Date().getFullYear()}). Andere Jahre kannst du hier zur Historie erfassen — z. B. Folgejahres-Vorauszahlungen aus einem Anpassungsbescheid.
             </p>
           </div>
 
@@ -539,24 +591,27 @@
               </span>
             </label>
             {#if s.usePauschalTaxReserve}
-              <div class="mt-3 ml-7 flex items-center gap-3">
-                <Label class="text-xs">Prozentsatz vom Brutto-Umsatz</Label>
-                <div class="flex items-center gap-1">
-                  <Input
-                    type="number"
-                    min="0"
-                    max="50"
-                    step="1"
-                    value={Math.round(s.pauschalTaxPercent)}
-                    oninput={(e) => {
-                      const n = Number.parseInt((e.currentTarget as HTMLInputElement).value, 10);
-                      if (!Number.isNaN(n)) s!.pauschalTaxPercent = Math.max(0, Math.min(50, n));
-                    }}
-                    class="w-20"
-                  />
-                  <span class="text-sm text-muted-foreground">%</span>
+              <div class="mt-4 ml-7 space-y-2">
+                <div class="flex items-center justify-between">
+                  <Label class="text-xs">Prozentsatz vom Brutto-Umsatz</Label>
+                  <span class="text-base font-semibold tabular-nums">{Math.round(s.pauschalTaxPercent)} %</span>
                 </div>
-                <span class="text-xs text-muted-foreground">Daumenwert für Solo-Selbstständige: 30 %.</span>
+                <Slider
+                  type="single"
+                  min={0}
+                  max={50}
+                  step={1}
+                  value={Math.round(s.pauschalTaxPercent)}
+                  onValueChange={(v) => (s!.pauschalTaxPercent = typeof v === "number" ? v : v[0])}
+                />
+                <div class="flex justify-between text-[10px] text-muted-foreground tabular-nums">
+                  <span>0 %</span>
+                  <span>25 %</span>
+                  <span>50 %</span>
+                </div>
+                <p class="text-xs text-muted-foreground">
+                  Daumenwert für Solo-Selbstständige: <strong>30 %</strong>.
+                </p>
               </div>
             {/if}
           </div>

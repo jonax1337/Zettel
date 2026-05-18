@@ -407,6 +407,21 @@ export type VendorSnapshot = {
   vatId: string | null;
 };
 
+export const taxPrepayments = sqliteTable("tax_prepayments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  year: integer("year").notNull(),
+  quarter: integer("quarter").notNull(),
+  amountCent: integer("amount_cent").notNull().default(0),
+  createdAt: integer("created_at")
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at")
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export type TaxPrepayment = typeof taxPrepayments.$inferSelect;
+
 export type CustomerSnapshot = {
   customerNumber: string;
   name: string;
