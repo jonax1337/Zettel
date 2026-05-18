@@ -2,22 +2,60 @@
   import { deleteCustomer, listCustomers } from "$lib/db/queries";
   import type { Customer } from "$lib/db/schema";
   import {
+    Badge,
     Button,
     Card,
+    Checkbox,
     Input,
+    Label,
     ConfirmDialog,
     DropdownMenu,
     DropdownItem,
     DropdownSeparator,
+    Select,
     toast,
   } from "$lib/ui";
   import { Plus, MoreHorizontal, Pencil, Trash2, Search } from "@lucide/svelte";
   import { push } from "svelte-spa-router";
 
+  type CreditStatus = "good" | "caution" | "blocked";
+  type StatusFilter = "all" | CreditStatus;
+
   let search = $state("");
+  let statusFilter = $state<StatusFilter>("all");
+  let onlyProblematic = $state(false);
   let customers = $state<Customer[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
+
+  const statusFilterItems: { value: StatusFilter; label: string }[] = [
+    { value: "all", label: "Alle" },
+    { value: "good", label: "Gut" },
+    { value: "caution", label: "Vorsicht" },
+    { value: "blocked", label: "Gesperrt" },
+  ];
+
+  const filtered = $derived.by(() => {
+    let list = customers;
+    if (onlyProblematic) {
+      list = list.filter((c) => c.creditStatus === "caution" || c.creditStatus === "blocked");
+    } else if (statusFilter !== "all") {
+      list = list.filter((c) => c.creditStatus === statusFilter);
+    }
+    return list;
+  });
+
+  function statusVariant(s: CreditStatus): "success" | "warning" | "destructive" {
+    if (s === "blocked") return "destructive";
+    if (s === "caution") return "warning";
+    return "success";
+  }
+
+  function statusLabel(s: CreditStatus): string {
+    if (s === "blocked") return "Gesperrt";
+    if (s === "caution") return "Vorsicht";
+    return "Gut";
+  }
 
   let confirmOpen = $state(false);
   let toDelete = $state<Customer | null>(null);
@@ -69,7 +107,7 @@
   <div>
     <h1 class="text-3xl font-semibold tracking-tight">Kunden</h1>
     <p class="text-sm text-muted-foreground mt-1">
-      {customers.length} {customers.length === 1 ? "Eintrag" : "Einträge"}
+      {filtered.length} {filtered.length === 1 ? "Eintrag" : "Einträge"}
     </p>
   </div>
   <Button onclick={newCustomer}>
@@ -78,24 +116,39 @@
   </Button>
 </header>
 
-<div class="mb-4 relative max-w-md">
-  <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-  <Input
-    type="search"
-    placeholder="Suche (Name, Nummer, Ort, E-Mail)…"
-    bind:value={search}
-    class="pl-9"
-  />
+<div class="mb-4 flex flex-wrap items-end gap-3">
+  <div class="relative max-w-md flex-1 min-w-[200px]">
+    <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+    <Input
+      type="search"
+      placeholder="Suche (Name, Nummer, Ort, E-Mail)…"
+      bind:value={search}
+      class="pl-9"
+    />
+  </div>
+  <div class="flex flex-col gap-1.5 min-w-[160px]">
+    <Label class="text-xs">Status</Label>
+    <Select
+      items={statusFilterItems}
+      value={statusFilter}
+      onValueChange={(v) => (statusFilter = v)}
+      disabled={onlyProblematic}
+    />
+  </div>
+  <label class="flex items-center gap-2 text-sm pb-2 cursor-pointer">
+    <Checkbox bind:checked={onlyProblematic} />
+    <span>Nur problematische Kunden</span>
+  </label>
 </div>
 
 {#if error}
   <p class="text-sm text-destructive">Fehler: {error}</p>
 {:else if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if customers.length === 0}
+{:else if filtered.length === 0}
   <Card>
     <div class="py-12 text-center text-sm text-muted-foreground">
-      {search ? "Keine Treffer." : "Noch keine Kunden angelegt."}
+      {search || statusFilter !== "all" || onlyProblematic ? "Keine Treffer." : "Noch keine Kunden angelegt."}
     </div>
   </Card>
 {:else}
@@ -107,11 +160,12 @@
           <th class="px-4 py-3 font-medium">Name</th>
           <th class="px-4 py-3 font-medium">Ort</th>
           <th class="px-4 py-3 font-medium">E-Mail</th>
+          <th class="px-4 py-3 font-medium">Bonität</th>
           <th class="px-4 py-3 font-medium w-12"></th>
         </tr>
       </thead>
       <tbody class="stagger">
-        {#each customers as c (c.id)}
+        {#each filtered as c (c.id)}
           <tr class="border-t hover:bg-muted/30 transition-colors">
             <td class="px-4 py-3 font-mono text-xs text-muted-foreground">{c.customerNumber}</td>
             <td class="px-4 py-3">
@@ -125,6 +179,9 @@
             </td>
             <td class="px-4 py-3 text-muted-foreground">{c.city}</td>
             <td class="px-4 py-3 text-muted-foreground">{c.email ?? ""}</td>
+            <td class="px-4 py-3">
+              <Badge variant={statusVariant(c.creditStatus)}>{statusLabel(c.creditStatus)}</Badge>
+            </td>
             <td class="px-4 py-3 text-right">
               <DropdownMenu>
                 {#snippet trigger()}

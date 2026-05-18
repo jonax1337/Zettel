@@ -92,7 +92,7 @@ export const customers = sqliteTable("customers", {
   phone: text("phone"),
   vatId: text("vat_id"),
   notes: text("notes"),
-  creditStatus: text("credit_status", { enum: ["good", "watch", "blocked"] })
+  creditStatus: text("credit_status", { enum: ["good", "caution", "blocked"] })
     .notNull()
     .default("good"),
   creditNote: text("credit_note"),
