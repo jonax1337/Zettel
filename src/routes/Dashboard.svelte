@@ -18,6 +18,7 @@
     Hourglass,
     Bell,
     AlertTriangle,
+    Calculator,
   } from "@lucide/svelte";
   import PeriodSwitcher from "$lib/components/PeriodSwitcher.svelte";
   import BarChart from "$lib/components/BarChart.svelte";
@@ -37,6 +38,7 @@
     type OldestOverdue,
     type FollowUpItem,
   } from "$lib/dashboard/queries";
+  import { computeTaxRücklage, type TaxRücklageResult } from "$lib/dashboard/tax";
   import { listCustomers } from "$lib/db/queries";
   import { openOffersStats, expireDueOffers } from "$lib/db/offers";
   import { dueRecurring, generateInvoiceFromRecurring, type RecurringListRow } from "$lib/db/recurring";
@@ -55,6 +57,7 @@
   let followUps = $state<FollowUpItem[]>([]);
   let offerStats = $state({ count: 0, total: 0, expiringSoonCount: 0 });
   let due = $state<RecurringListRow[]>([]);
+  let taxRücklage = $state<TaxRücklageResult | null>(null);
   let loading = $state(true);
 
   $effect(() => {
@@ -82,6 +85,11 @@
     followUps = fu;
     offerStats = os;
     due = dr;
+    // Tax-Rücklage parallel — kann BMF anrufen (8s timeout), Dashboard
+    // soll trotzdem schnell sichtbar werden, also nicht ins Promise.all.
+    computeTaxRücklage()
+      .then((t) => (taxRücklage = t))
+      .catch(() => (taxRücklage = null));
     loading = false;
   }
 
@@ -363,6 +371,52 @@
     </CardContent>
   </Card>
 </div>
+
+{#if taxRücklage}
+  <button
+    type="button"
+    onclick={() => push("/reports/taxes")}
+    class="block w-full text-left mb-6 group"
+  >
+    <Card class="hover:border-foreground/30 transition-colors">
+      <CardContent>
+        <div class="flex items-center justify-between gap-6">
+          <div class="flex items-center gap-4 min-w-0">
+            <Calculator class="size-5 text-muted-foreground shrink-0" />
+            <div class="min-w-0">
+              <div class="text-xs text-muted-foreground uppercase tracking-wider">
+                Steuer-Rücklage {taxRücklage.year} ·
+                {#if taxRücklage.flags.estSource === "bmf"}BMF live{:else}lokale Schätzung{/if}
+              </div>
+              <div class="text-2xl font-semibold tabular-nums mt-0.5">
+                {centsToEur(taxRücklage.recommendedReserveCent)}
+              </div>
+              <div class="text-xs text-muted-foreground mt-1 truncate">
+                {#if taxRücklage.totalTaxBurdenCent === 0}
+                  Bisher keine relevante Steuerlast erwartet.
+                {:else if taxRücklage.recommendedReserveCent === 0}
+                  Vorauszahlungen decken die Last bereits ab.
+                {:else}
+                  ESt+Soli+KiSt {centsToEur(taxRücklage.income.total)}
+                  {#if !taxRücklage.flags.isFreelancer}
+                    · GewSt {centsToEur(Math.max(0, taxRücklage.trade.tradeTax - taxRücklage.trade.estCredit))}
+                  {/if}
+                  {#if !taxRücklage.flags.isKleinunternehmer}
+                    · USt {centsToEur(taxRücklage.ustSchuldYtdCent)}
+                  {/if}
+                  · Vorauszahlungen −{centsToEur(taxRücklage.prepaymentsCent)}
+                {/if}
+              </div>
+            </div>
+          </div>
+          <div class="text-xs text-muted-foreground group-hover:text-foreground transition-colors shrink-0">
+            Details →
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  </button>
+{/if}
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
   <Card class="lg:col-span-2">

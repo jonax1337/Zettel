@@ -20,6 +20,7 @@
   import RemindersList from "./routes/RemindersList.svelte";
   import ReminderEdit from "./routes/ReminderEdit.svelte";
   import UstvaReport from "./routes/UstvaReport.svelte";
+  import TaxReport from "./routes/TaxReport.svelte";
   import Validate from "./routes/Validate.svelte";
   import Settings from "./routes/Settings.svelte";
   import Export from "./routes/Export.svelte";
@@ -124,6 +125,7 @@
       props: { mode: "edit" },
     }),
     "/reports/ustva": UstvaReport,
+    "/reports/taxes": TaxReport,
     "/validate": Validate,
     "/settings": Settings,
     "/export": Export,
