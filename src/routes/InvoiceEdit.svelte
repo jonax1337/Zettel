@@ -96,6 +96,21 @@
   ]);
   let currency = $state<string>("EUR");
   let exchangeRate = $state<string>("");
+  let fetchingRate = $state(false);
+
+  async function fetchEcbRate() {
+    if (currency === "EUR") return;
+    fetchingRate = true;
+    try {
+      const rate = await invoke<string>("fetch_ecb_exchange_rate", { currency });
+      exchangeRate = rate.replace(".", ",");
+      toast.success("EZB-Tageskurs übernommen", `1 EUR = ${exchangeRate} ${currency}`);
+    } catch (e) {
+      toast.error("Kurs konnte nicht geholt werden", String(e));
+    } finally {
+      fetchingRate = false;
+    }
+  }
 
   const selectedCustomer = $derived(
     customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
@@ -578,12 +593,23 @@
           {#if isForeignCurrency}
             <div class="flex flex-col gap-1.5">
               <Label>Wechselkurs</Label>
-              <Input
-                type="text"
-                bind:value={exchangeRate}
-                placeholder="z. B. 1,0832"
-                inputmode="decimal"
-              />
+              <div class="flex gap-2">
+                <Input
+                  type="text"
+                  bind:value={exchangeRate}
+                  placeholder="z. B. 1,0832"
+                  inputmode="decimal"
+                  class="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={fetchingRate}
+                  onclick={fetchEcbRate}
+                >
+                  {fetchingRate ? "Lädt…" : "EZB-Kurs"}
+                </Button>
+              </div>
               <p class="text-xs text-muted-foreground">
                 1 EUR = X {currency}. Acht Nachkommastellen werden berücksichtigt.
               </p>

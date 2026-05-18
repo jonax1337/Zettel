@@ -87,9 +87,9 @@
           <td class="col-desc">{{ it.description }}</td>
           <td class="col-qty">{{ it.quantity | qty }}</td>
           <td class="col-unit">{{ it.unit }}</td>
-          <td class="col-price">{{ it.unitPrice | eur }}</td>
+          <td class="col-price">{{ it.unitPrice | eur(invoice.currency) }}</td>
           {% if not invoice.isKleinunternehmer and not invoice.isReverseCharge %}<td class="col-vat">{{ it.vatRate }}</td>{% endif %}
-          <td class="col-total">{{ (it.lineTotal * -1 if invoice.isCreditNote else it.lineTotal) | eur }}</td>
+          <td class="col-total">{{ (it.lineTotal * -1 if invoice.isCreditNote else it.lineTotal) | eur(invoice.currency) }}</td>
         </tr>
       {% endfor %}
     </tbody>
@@ -99,17 +99,17 @@
     <table class="totals">
       <tr>
         <th>Zwischensumme</th>
-        <td>{{ invoice.subtotal | eur }}</td>
+        <td>{{ invoice.subtotal | eur(invoice.currency) }}</td>
       </tr>
       {% if not invoice.isKleinunternehmer and not invoice.isReverseCharge %}
         <tr>
           <th>Umsatzsteuer</th>
-          <td>{{ invoice.vatAmount | eur }}</td>
+          <td>{{ invoice.vatAmount | eur(invoice.currency) }}</td>
         </tr>
       {% endif %}
       <tr class="grand">
         <th>Gesamtbetrag</th>
-        <td>{{ invoice.total | eur }}</td>
+        <td>{{ invoice.total | eur(invoice.currency) }}</td>
       </tr>
     </table>
   </section>

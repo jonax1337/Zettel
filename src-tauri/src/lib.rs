@@ -4,6 +4,7 @@ mod accent;
 mod attachments;
 mod backup;
 mod crypto;
+mod exchange;
 mod sandbox;
 mod fs_export;
 mod sidecar;
@@ -131,6 +132,7 @@ pub fn run() {
             validator::validate_einvoice_pdf,
             sandbox::is_sandbox,
             sandbox::set_sandbox,
+            exchange::fetch_ecb_exchange_rate,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())

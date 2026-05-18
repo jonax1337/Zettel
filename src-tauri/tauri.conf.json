@@ -37,11 +37,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": {
-      "../sidecar/dist/zettel-sidecar": "sidecar",
-      "../tools/kosit-validator": "kosit-validator",
-      "../tools/jre": "jre"
-    },
+    "resources": {},
     "category": "Business",
     "shortDescription": "Offline-first invoice generator",
     "longDescription": "Zettel — ZUGFeRD/Factur-X invoice generator for German freelancers and small businesses."
