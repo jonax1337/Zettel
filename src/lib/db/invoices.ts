@@ -421,6 +421,16 @@ export async function updateInvoice(
   await writeItems(id, input.items);
 }
 
+export async function updateInvoiceInternalMeta(
+  id: number,
+  patch: { notesInternal?: string | null; followUpDate?: number | null },
+): Promise<void> {
+  await execute(
+    `UPDATE invoices SET notes_internal = ?, follow_up_date = ?, updated_at = unixepoch() WHERE id = ?`,
+    [patch.notesInternal ?? null, patch.followUpDate ?? null, id],
+  );
+}
+
 export async function deleteInvoice(id: number): Promise<void> {
   const existing = await getInvoice(id);
   if (!existing) return;

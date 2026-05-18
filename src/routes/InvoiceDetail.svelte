@@ -10,6 +10,7 @@
     markPaid,
     markSent,
     reopenDraft,
+    updateInvoiceInternalMeta,
   } from "$lib/db/invoices";
   import type {
     CustomerSnapshot,
@@ -34,6 +35,7 @@
     DropdownSeparator,
     Input,
     Label,
+    Textarea,
     toast,
   } from "$lib/ui";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
@@ -347,6 +349,38 @@
       existingReminderLevels = [];
     }
   });
+
+  let notesInternalDraft = $state("");
+  let followUpIso = $state("");
+  let savingMeta = $state(false);
+  $effect(() => {
+    if (invoice) {
+      notesInternalDraft = invoice.notesInternal ?? "";
+      followUpIso = invoice.followUpDate ? toIsoDate(invoice.followUpDate) : "";
+    }
+  });
+  const metaDirty = $derived(
+    !!invoice &&
+      ((invoice.notesInternal ?? "") !== notesInternalDraft ||
+        (invoice.followUpDate ? toIsoDate(invoice.followUpDate) : "") !== followUpIso),
+  );
+
+  async function saveMeta() {
+    if (!invoice || savingMeta) return;
+    savingMeta = true;
+    try {
+      await updateInvoiceInternalMeta(invoice.id, {
+        notesInternal: notesInternalDraft.trim() === "" ? null : notesInternalDraft,
+        followUpDate: followUpIso ? fromIsoDate(followUpIso) : null,
+      });
+      toast.success("Interne Notizen gespeichert");
+      await load();
+    } catch (e) {
+      toast.error("Speichern fehlgeschlagen", String(e));
+    } finally {
+      savingMeta = false;
+    }
+  }
 
   const isOverdue = $derived(
     !!invoice &&
@@ -694,11 +728,45 @@
   {#if invoice.notes}
     <section class="mb-4">
       <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-1">
-        Notizen
+        Notizen (auf der Rechnung)
       </h3>
       <p class="text-sm whitespace-pre-line">{invoice.notes}</p>
     </section>
   {/if}
+
+  <Card class="mb-6">
+    <CardContent class="space-y-4">
+      <div>
+        <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
+          Interne Notizen & Wiedervorlage
+        </h3>
+        <p class="text-xs text-muted-foreground mt-0.5">
+          Nur intern, erscheint nicht auf der Rechnung.
+        </p>
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label for="notes-internal">Notizen (intern)</Label>
+        <Textarea
+          id="notes-internal"
+          rows={3}
+          bind:value={notesInternalDraft}
+          placeholder="z. B. Telefonat am … abgesprochen, Skonto gewährt, etc."
+        />
+      </div>
+      <div class="flex flex-col gap-1.5 max-w-xs">
+        <Label for="follow-up">Wiedervorlage am</Label>
+        <DatePicker id="follow-up" bind:value={followUpIso} />
+      </div>
+      <div class="flex items-center gap-2">
+        <Button onclick={saveMeta} disabled={!metaDirty || savingMeta}>
+          {savingMeta ? "Speichere…" : "Speichern"}
+        </Button>
+        {#if metaDirty && !savingMeta}
+          <span class="text-xs text-muted-foreground">Ungespeicherte Änderungen.</span>
+        {/if}
+      </div>
+    </CardContent>
+  </Card>
 
   <ConfirmDialog
     bind:open={confirmDeleteOpen}
