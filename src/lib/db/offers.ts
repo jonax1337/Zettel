@@ -442,6 +442,8 @@ export async function convertToInvoice(
       unitPrice: it.unitPrice,
       vatRate: it.vatRate,
     })),
+    currency: data.offer.currency,
+    exchangeRate: data.offer.exchangeRate,
   };
 
   const invoiceId = await createInvoice(invoiceInput);

@@ -14,6 +14,12 @@
   import type { Customer, Settings } from "$lib/db/schema";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
   import {
+    SUPPORTED_CURRENCIES,
+    computeEurTotalCent,
+    formatMoney,
+    parseExchangeRateScaled,
+  } from "$lib/utils/currency";
+  import {
     addDaysUnix,
     fromIsoDate,
     nowUnix,
@@ -60,6 +66,8 @@
   let items = $state<Array<InvoiceItemInput & { priceText: string }>>([
     { description: "", quantity: 1, unit: "Stk", unitPrice: 0, vatRate: 0, priceText: "" },
   ]);
+  let currency = $state<string>("EUR");
+  let exchangeRate = $state<string>("");
 
   const selectedCustomer = $derived(
     customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
@@ -155,6 +163,8 @@
           reverseChargeType = res.invoice.reverseChargeType;
           isCreditNote = res.invoice.isCreditNote;
           correctsInvoiceId = res.invoice.correctsInvoiceId;
+          currency = res.invoice.currency ?? "EUR";
+          exchangeRate = res.invoice.exchangeRate ?? "";
           items = res.items.map((it) => ({
             description: it.description,
             quantity: it.quantity,
@@ -206,6 +216,21 @@
     customers.map((c) => ({ value: String(c.id), label: `${c.customerNumber} · ${c.name}` })),
   );
 
+  const currencyItems = SUPPORTED_CURRENCIES.map((c) => ({
+    value: c.code,
+    label: c.label,
+  }));
+
+  const isForeignCurrency = $derived(currency !== "EUR");
+  const rateScaled = $derived(
+    isForeignCurrency ? parseExchangeRateScaled(exchangeRate) : null,
+  );
+  const eurEquivalentCent = $derived(
+    isForeignCurrency
+      ? computeEurTotalCent(currency, totals.total, exchangeRate)
+      : totals.total,
+  );
+
   const rcItems: { value: ReverseChargeType; label: string }[] = [
     { value: "none", label: "Keine" },
     { value: "intra_eu", label: "Innergemeinschaftliche Lieferung (EU)" },
@@ -237,9 +262,19 @@
         return;
       }
     }
+    if (currency !== "EUR") {
+      if (!exchangeRate || !parseExchangeRateScaled(exchangeRate)) {
+        error = `Wechselkurs erforderlich für ${currency}. Format: 1 EUR = X ${currency}.`;
+        return;
+      }
+    }
     saving = true;
     error = null;
     try {
+      const eurTotalCent =
+        currency === "EUR"
+          ? totals.total
+          : computeEurTotalCent(currency, totals.total, exchangeRate);
       const input: InvoiceFormInput = {
         customerId,
         issueDate: fromIsoDate(issueDateIso),
@@ -249,6 +284,9 @@
         paymentTerms: paymentTerms.trim() || null,
         reverseChargeType,
         items: items.map(({ priceText: _p, ...rest }) => rest),
+        currency,
+        exchangeRate: currency === "EUR" ? null : exchangeRate.trim(),
+        eurTotalCent,
       };
       let savedId: number;
       if (mode === "new") {
@@ -351,6 +389,31 @@
             <Label>Liefer-/Leistungsdatum</Label>
             <DatePicker bind:value={deliveryDateIso} />
           </div>
+          <div class="flex flex-col gap-1.5">
+            <Label>Währung</Label>
+            <Select bind:value={currency} items={currencyItems} />
+          </div>
+          {#if isForeignCurrency}
+            <div class="flex flex-col gap-1.5">
+              <Label>Wechselkurs</Label>
+              <Input
+                type="text"
+                bind:value={exchangeRate}
+                placeholder="z. B. 1,0832"
+                inputmode="decimal"
+              />
+              <p class="text-xs text-muted-foreground">
+                1 EUR = X {currency}. Acht Nachkommastellen werden berücksichtigt.
+              </p>
+              {#if exchangeRate && !rateScaled}
+                <p class="text-xs text-destructive">Ungültiger Wechselkurs.</p>
+              {:else if rateScaled && eurEquivalentCent !== null}
+                <p class="text-xs text-muted-foreground">
+                  Gesamtbetrag in EUR: <span class="font-mono">{centsToEur(eurEquivalentCent)}</span>
+                </p>
+              {/if}
+            </div>
+          {/if}
           {#if settings && !settings.isKleinunternehmer && !isCreditNote}
             <div class="col-span-2 flex flex-col gap-1.5">
               <Label>Reverse-Charge</Label>
@@ -397,7 +460,7 @@
               <th class="px-3 py-2 font-medium">Beschreibung</th>
               <th class="px-3 py-2 w-20 font-medium">Menge</th>
               <th class="px-3 py-2 w-20 font-medium">Einheit</th>
-              <th class="px-3 py-2 w-28 font-medium">Preis (€)</th>
+              <th class="px-3 py-2 w-28 font-medium">Preis ({currency})</th>
               {#if !vatExempt}
                 <th class="px-3 py-2 w-24 font-medium">USt</th>
               {/if}
@@ -446,7 +509,7 @@
                   </td>
                 {/if}
                 <td class="px-3 py-2 text-right font-mono text-xs">
-                  {centsToEur(computeLineTotal(it))}
+                  {formatMoney(computeLineTotal(it), currency)}
                 </td>
                 <td class="px-2 py-1.5 text-right">
                   <button
@@ -467,13 +530,13 @@
               <td colspan={vatExempt ? 5 : 6} class="px-3 py-2 text-right text-muted-foreground">
                 Zwischensumme
               </td>
-              <td class="px-3 py-2 text-right font-mono">{centsToEur(totals.subtotal)}</td>
+              <td class="px-3 py-2 text-right font-mono">{formatMoney(totals.subtotal, currency)}</td>
               <td></td>
             </tr>
             {#if !vatExempt}
               <tr>
                 <td colspan="6" class="px-3 py-2 text-right text-muted-foreground">USt</td>
-                <td class="px-3 py-2 text-right font-mono">{centsToEur(totals.vatAmount)}</td>
+                <td class="px-3 py-2 text-right font-mono">{formatMoney(totals.vatAmount, currency)}</td>
                 <td></td>
               </tr>
             {/if}
@@ -481,7 +544,7 @@
               <td colspan={vatExempt ? 5 : 6} class="px-3 py-2 text-right font-semibold">
                 Gesamtbetrag
               </td>
-              <td class="px-3 py-2 text-right font-mono font-semibold">{centsToEur(totals.total)}</td>
+              <td class="px-3 py-2 text-right font-mono font-semibold">{formatMoney(totals.total, currency)}</td>
               <td></td>
             </tr>
           </tfoot>
