@@ -4,6 +4,7 @@
   import {
     Button,
     Card,
+    Checkbox,
     Input,
     ConfirmDialog,
     DropdownMenu,
@@ -15,6 +16,7 @@
   import { push } from "svelte-spa-router";
 
   let search = $state("");
+  let onlyFollowUp = $state(false);
   let customers = $state<Customer[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -25,7 +27,8 @@
   async function reload() {
     loading = true;
     try {
-      customers = await listCustomers(search);
+      const all = await listCustomers(search);
+      customers = onlyFollowUp ? all.filter((c) => c.followUpDate != null) : all;
       error = null;
     } catch (e) {
       error = String(e);
@@ -36,6 +39,7 @@
 
   $effect(() => {
     void search;
+    void onlyFollowUp;
     reload();
   });
 
@@ -78,7 +82,7 @@
   </Button>
 </header>
 
-<div class="mb-4 relative max-w-md">
+<div class="mb-3 relative max-w-md">
   <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
   <Input
     type="search"
@@ -87,6 +91,11 @@
     class="pl-9"
   />
 </div>
+
+<label class="inline-flex items-center gap-2 mb-5 text-sm text-muted-foreground cursor-pointer select-none">
+  <Checkbox bind:checked={onlyFollowUp} />
+  Nur mit Wiedervorlage
+</label>
 
 {#if error}
   <p class="text-sm text-destructive">Fehler: {error}</p>

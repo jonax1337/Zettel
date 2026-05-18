@@ -27,6 +27,7 @@
   let customerId = $state<string>("all");
   let search = $state("");
   let onlyCreditNotes = $state(false);
+  let onlyFollowUp = $state(false);
 
   async function reload() {
     loading = true;
@@ -38,7 +39,9 @@
         search,
       };
       const all = await listInvoices(filter);
-      invoices = onlyCreditNotes ? all.filter((i) => i.isCreditNote) : all;
+      let filtered = onlyCreditNotes ? all.filter((i) => i.isCreditNote) : all;
+      if (onlyFollowUp) filtered = filtered.filter((i) => i.followUpDate != null);
+      invoices = filtered;
       error = null;
     } catch (e) {
       error = String(e);
@@ -58,6 +61,7 @@
     void customerId;
     void search;
     void onlyCreditNotes;
+    void onlyFollowUp;
     reload();
   });
 
@@ -133,10 +137,16 @@
   </div>
 </div>
 
-<label class="inline-flex items-center gap-2 mb-5 text-sm text-muted-foreground cursor-pointer select-none">
-  <Checkbox bind:checked={onlyCreditNotes} />
-  Nur Stornorechnungen
-</label>
+<div class="mb-5 flex flex-wrap items-center gap-4">
+  <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+    <Checkbox bind:checked={onlyCreditNotes} />
+    Nur Stornorechnungen
+  </label>
+  <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+    <Checkbox bind:checked={onlyFollowUp} />
+    Nur mit Wiedervorlage
+  </label>
+</div>
 
 {#if error}
   <p class="text-sm text-destructive">Fehler: {error}</p>
