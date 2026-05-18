@@ -6,6 +6,37 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-05-18
+
+> **Flexibilität & Datenpflege.** Sechs Module, die das Tagesgeschäft flexibler machen und den wachsenden Datenbestand handhabbar halten — kein Funktions-Sprung, sondern gezielte UX-Aufwertung. Plus ein neuer Sidecar-Pfad für PDF-Anhänge an Rechnungen und ein dev/bundle-Config-Split, der Cargo-Build-Probleme auf Windows behebt.
+
+### Added
+- **Flexibles Dashboard.** Zeitraum-Switcher in der Header-Leiste (`Jahr | Quartal | Monat | Benutzerdefiniert` mit DateRangePicker), KPI-Cards (Umsatz netto/brutto, Aufwand, Saldo, Offene Posten) filtern am Zeitraum mit YoY-Vergleich (Vorzeichen-korrekt: Aufwand-Steigerung rot, Umsatz-Steigerung grün). Drei Charts: Umsatz/Monat, Top-5-Kunden, Aging-Buckets (0-30/31-60/61-90/>90 Tage). Neue Card „Wiedervorlage" zeigt Kunden + Rechnungen mit `follow_up_date <= today + 7d`, gruppiert nach heute/diese Woche/überfällig. Default-Zeitraum persistiert lokal. (#56)
+- **Mehrwährungs-Support.** Currency-Dropdown (EUR, USD, GBP, CHF, AUD, CAD, JPY, NOK, SEK, DKK, PLN, CZK) in InvoiceEdit + OfferEdit, bei nicht-EUR erscheint ein Kurs-Feld („1 EUR = X CCY"). `eur_total_cent` wird beim Speichern via BigInt fixed-point-Division (8 Nachkommastellen Genauigkeit) eingefroren — DATEV-Export nimmt diesen Wert, sodass nachträgliche Kurs-Schwankungen Buchhaltungs-Daten nicht verfälschen. ZUGFeRD-XML `InvoiceCurrencyCode` parametrisiert. PDF-Templates zeigen Currency-Symbol (€/$/£/¥) bzw. ISO-Code als Suffix. **„EZB-Kurs"-Button** holt den aktuellen Tageskurs von ecb.europa.eu (ureq blocking call, ~8s Timeout), Wert ist anschließend frei editierbar. Aus-Scope: Pro-Position-Währung, Mischwährung, Live-Kurs-Updates auf Bestandsrechnungen. (#57)
+- **Dunkle Liste / Bonitäts-Markierung.** `customers.credit_status` (Enum `good | caution | blocked`) + `credit_note`. Farbiger Badge in CustomersList + InvoiceEdit (grün/gelb/rot), Filter „Status" + „Nur problematische Kunden" in der Kundenliste. Beim Anlegen einer neuen Rechnung für einen `blocked` Kunden öffnet ein ConfirmDialog mit dem Bonität-Notiz-Text — Soft-Warning, kein Hard-Block. (#58)
+- **Interne Notizen + Wiedervorlage.** Drei neue Daten-Stellen: `customers.follow_up_date`, `invoices.notes_internal` (klar abgegrenzt vom PDF-`notes`-Feld) und `invoices.follow_up_date`. Notizen-Section in CustomerEdit, „Notizen (intern) & Wiedervorlage"-Card im InvoiceDetail mit Inline-Edit (funktioniert auch auf bezahlten Rechnungen via tightly-scoped `updateInvoiceInternalMeta`). Filter „Nur mit Wiedervorlage" in CustomersList + InvoicesList. (#59)
+- **Globale Suche (Cmd/Ctrl+K).** Neue Command-Palette in `src/lib/ui/CommandPalette.svelte`, getriggert per Shortcut oder Such-Icon in der Titlebar. LIKE-Suche über alle 6 Entity-Typen (Rechnungen, Kunden, Lieferanten, Ausgaben, Angebote, Mahnungen) inkl. Item-Beschreibungen via EXISTS-Subquery. 150ms Debounce, Tastatur-Navigation, gruppierte Ergebnisse, letzte 5 Treffer als Recents in localStorage. (#60)
+- **PDF-Anhänge an Rechnungen.** Neue Tabelle `invoice_attachments`. Rust-Commands `import_invoice_attachment` (kopiert in `~/Documents/Zettel/Anhänge/<invoice-number>/`, sha256-Hash) + `delete_invoice_attachment`. Drag-Drop-Zone in InvoiceEdit (aktiviert sobald Draft gespeichert wurde, 10 MB Soft-Warning), Anhänge-Section in InvoiceDetail. Sidecar-Pipeline erweitert: WeasyPrint → pypdf-Merge der Anhang-PDFs → factur-x embedded ZUGFeRD-XML auf das gemergte Dokument. Ein einziges archiv-konformes Artefakt statt N Siblings, Empfänger sieht Leistungsnachweise ohne ZUGFeRD-Reader. Storno-Belege erben keine Anhänge. (#61)
+- **EZB-Wechselkurs als Tauri-Command.** `fetch_ecb_exchange_rate(currency: String)` in `src-tauri/src/exchange.rs` — minimaler ureq-Aufruf gegen `eurofxref-daily.xml`, regex-frei via Substring-Match (Format stabil seit Jahren).
+
+### Changed
+- **Eindeutiger Draft-Handle.** Entwürfe zeigen `Entwurf #<4-hex>` statt nur `Entwurf` — bei mehreren parallelen Drafts unterscheidbar. Status-Badge wird für Drafts ausgeblendet (Spalte trägt die Info bereits, Doppel-Anzeige war redundant); Storno-Drafts behalten ihren Badge wegen der `destructive`-Variante.
+- **Dashboard ist nicht mehr YTD-only.** Alle KPI-Cards und Charts respektieren den gewählten Zeitraum; YoY-Werte werden gegen denselben Zeitraum im Vorjahr berechnet.
+- **DATEV-Buchungen für nicht-EUR-Rechnungen** verteilen den `eur_total_cent` proportional auf die VAT-Gruppen mit Cent-Residual auf der größten Gruppe, sodass die Buchungssumme exakt dem eingefrorenen EUR-Total entspricht.
+
+### Fixed
+- **Cargo build failed mit `Zugriff verweigert (os error 5)` auf Windows.** `bundle.resources` (sidecar/dist, tools/jre, kosit-validator) emittierte `cargo:rerun-if-changed` für tausende Files; intermittente AV-/Reparse-Point-Effekte ließen tauri-build mid-scan abstürzen. **Resources in `tauri.bundle.conf.json` ausgelagert** und als Overlay nur beim `pnpm tauri build` (lokal + CI) reingeladen. Dev-Mode arbeitet ohne diese Resources, weil `sidecar.rs` im Debug-Build das Python-Script nimmt und die JRE nur on-demand beim Validieren gebraucht wird. Funktional unverändert für Release-Builds.
+- **PDF-Rechnungen zeigten nur €** unabhängig von `invoice.currency`. `cents_to_eur`-Filter in `sidecar/invoice/templates.py` ist jetzt currency-aware, Symbole-Map (€/$/£/¥) mit ISO-Code-Fallback.
+- **Credit-Status-Enum**: `'watch'` durch `'caution'` ersetzt (Issue-Spec-Aligned) — Migration nicht nötig, war reines TS-Property.
+
+### Migration
+- `0012_v0.10_flexibility.sql` — `user_version = 13`. Idempotente ALTERs auf `customers` (`credit_status`, `credit_note`, `follow_up_date`), `invoices` (`currency`, `exchange_rate`, `eur_total_cent`, `notes_internal`, `follow_up_date`), `offers` (`currency`, `exchange_rate`). Neue Tabelle `invoice_attachments`. `CURRENT_SCHEMA` in `backup.rs` synchron bumped.
+
+### Notes
+- **Kein Accounts/Berechtigungen-Modul in v0.10** — wurde aus Scope entfernt; Profile/Mandanten als 1.0-Roadmap-Kandidat dokumentiert.
+- **Kein SMTP-Versand** — bewusst nicht in Scope.
+- **PDF-Anhang + ZUGFeRD-Konformität** ist der riskanteste Code-Pfad in diesem Release. KoSIT-Validator-Check beim Generieren ist Teil des bestehenden Soft-Gate-Workflows aus v0.8; rote ValidationBadges nach Anhang-Use bitte als Hot-Issue melden.
+
 ## [0.9.0] — 2026-05-18
 
 > **Nacherfassung & Sandbox.** Drei zusammenhängende UX-Lücken im Buchhaltungs-Workflow geschlossen, dazu ein eigener DatePicker mit Quick-Navigation, neues App-Icon und Indigo als Default-Akzent.

@@ -1,6 +1,6 @@
 [package]
 name = "zettel"
-version = "0.9.0"
+version = "0.10.0"
 description = "Zettel — Offline-first invoice generator"
 authors = ["Jonas Laux"]
 edition = "2021"
