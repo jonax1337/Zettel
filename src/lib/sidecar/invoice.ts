@@ -56,6 +56,9 @@ function buildPayload(opts: {
       correctsInvoice: correctsInvoice ?? null,
       notes: invoice.notes,
       paymentTerms: invoice.paymentTerms,
+      currency: invoice.currency ?? "EUR",
+      exchangeRate: invoice.exchangeRate,
+      eurTotalCent: invoice.eurTotalCent,
     },
     items: items.map((it) => ({
       position: it.position,

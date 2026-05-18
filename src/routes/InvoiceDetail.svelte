@@ -18,6 +18,7 @@
     InvoiceStatus,
   } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
+  import { formatMoney } from "$lib/utils/currency";
   import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { generateInvoicePdf } from "$lib/sidecar/invoice";
   import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -624,6 +625,20 @@
             <dt class="text-muted-foreground">Bezahlt</dt>
             <dd>{formatDate(invoice.paidAt)}</dd>
           {/if}
+          {#if invoice.currency && invoice.currency !== "EUR"}
+            <dt class="text-muted-foreground">Währung</dt>
+            <dd>
+              <Badge variant="outline">{invoice.currency}</Badge>
+            </dd>
+            {#if invoice.exchangeRate}
+              <dt class="text-muted-foreground">Wechselkurs</dt>
+              <dd class="font-mono">1 EUR = {invoice.exchangeRate} {invoice.currency}</dd>
+            {/if}
+            {#if invoice.eurTotalCent !== null && invoice.eurTotalCent !== undefined}
+              <dt class="text-muted-foreground">Gesamt (EUR)</dt>
+              <dd class="font-mono">{centsToEur(invoice.eurTotalCent)}</dd>
+            {/if}
+          {/if}
         </dl>
       </CardContent>
     </Card>
@@ -651,11 +666,11 @@
             <td class="px-4 py-3">{it.description}</td>
             <td class="px-4 py-3 text-right">{it.quantity}</td>
             <td class="px-4 py-3">{it.unit}</td>
-            <td class="px-4 py-3 text-right font-mono">{centsToEur(it.unitPrice)}</td>
+            <td class="px-4 py-3 text-right font-mono">{formatMoney(it.unitPrice, invoice.currency)}</td>
             {#if !invoice.isKleinunternehmer}
               <td class="px-4 py-3 text-right">{it.vatRate}</td>
             {/if}
-            <td class="px-4 py-3 text-right font-mono">{centsToEur(it.lineTotal)}</td>
+            <td class="px-4 py-3 text-right font-mono">{formatMoney(it.lineTotal, invoice.currency)}</td>
           </tr>
         {/each}
       </tbody>
@@ -664,19 +679,19 @@
           <td colspan={invoice.isKleinunternehmer ? 5 : 6} class="px-4 py-2 text-right text-muted-foreground">
             Zwischensumme
           </td>
-          <td class="px-4 py-2 text-right font-mono">{centsToEur(invoice.subtotal)}</td>
+          <td class="px-4 py-2 text-right font-mono">{formatMoney(invoice.subtotal, invoice.currency)}</td>
         </tr>
         {#if !invoice.isKleinunternehmer}
           <tr>
             <td colspan="6" class="px-4 py-2 text-right text-muted-foreground">USt</td>
-            <td class="px-4 py-2 text-right font-mono">{centsToEur(invoice.vatAmount)}</td>
+            <td class="px-4 py-2 text-right font-mono">{formatMoney(invoice.vatAmount, invoice.currency)}</td>
           </tr>
         {/if}
         <tr class="border-t border-border">
           <td colspan={invoice.isKleinunternehmer ? 5 : 6} class="px-4 py-3 text-right font-semibold">
             Gesamtbetrag
           </td>
-          <td class="px-4 py-3 text-right font-mono font-semibold">{centsToEur(invoice.total)}</td>
+          <td class="px-4 py-3 text-right font-mono font-semibold">{formatMoney(invoice.total, invoice.currency)}</td>
         </tr>
       </tfoot>
     </table>

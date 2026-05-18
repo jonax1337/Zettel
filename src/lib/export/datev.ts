@@ -201,9 +201,44 @@ function bookingsForInvoice(input: DatevInvoiceInput, accounts: DatevAccountMap)
   const isCn = invoice.isCreditNote;
   const out: Booking[] = [];
   const sortedRates = [...groups.keys()].sort((a, b) => a - b);
+
+  // Multi-currency: if the invoice is non-EUR, scale each VAT-group gross to
+  // its EUR-equivalent share. `invoice.eurTotalCent` is the authoritative EUR
+  // amount (computed at issue time); we apportion it proportionally and assign
+  // the rounding residual to the largest group so the bookings sum exactly.
+  const isForeignCurrency =
+    !!invoice.currency && invoice.currency !== "EUR" && invoice.eurTotalCent != null;
+  const grossByRate = new Map<number, number>();
+  let originalTotal = 0;
   for (const rate of sortedRates) {
     const g = groups.get(rate)!;
     const gross = g.net + g.vat;
+    grossByRate.set(rate, gross);
+    originalTotal += gross;
+  }
+  if (isForeignCurrency && originalTotal !== 0) {
+    const eurTotal = invoice.eurTotalCent!;
+    let allocated = 0;
+    let largestRate = sortedRates[0];
+    let largestGross = -Infinity;
+    for (const rate of sortedRates) {
+      const gross = grossByRate.get(rate)!;
+      if (Math.abs(gross) > Math.abs(largestGross)) {
+        largestGross = gross;
+        largestRate = rate;
+      }
+      const share = Math.round((gross / originalTotal) * eurTotal);
+      grossByRate.set(rate, share);
+      allocated += share;
+    }
+    const residual = eurTotal - allocated;
+    if (residual !== 0) {
+      grossByRate.set(largestRate, grossByRate.get(largestRate)! + residual);
+    }
+  }
+
+  for (const rate of sortedRates) {
+    const gross = grossByRate.get(rate)!;
     out.push({
       amountCents: gross,
       debit: accounts.debitor,

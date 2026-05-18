@@ -11,6 +11,7 @@
   import { listCustomers } from "$lib/db/queries";
   import type { Customer } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
+  import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
   import { Button, Card, Input, Select, Badge, Label, Checkbox } from "$lib/ui";
   import { Plus, Search } from "@lucide/svelte";
@@ -176,7 +177,14 @@
             </td>
             <td class="px-4 py-3 text-muted-foreground">{formatDate(inv.issueDate)}</td>
             <td class="px-4 py-3">{inv.customerName}</td>
-            <td class="px-4 py-3 text-right font-mono">{centsToEur(inv.total)}</td>
+            <td class="px-4 py-3 text-right font-mono">
+              <span class="inline-flex items-center gap-1.5">
+                {formatMoney(inv.total, inv.currency)}
+                {#if inv.currency && inv.currency !== "EUR"}
+                  <Badge variant="outline" class="text-[10px] px-1.5 py-0">{inv.currency}</Badge>
+                {/if}
+              </span>
+            </td>
             <td class="px-4 py-3">
               <Badge variant={statusVariant[inv.status]}>{statusLabel[inv.status]}</Badge>
             </td>

@@ -152,7 +152,7 @@
     </ram:ApplicableHeaderTradeDelivery>
 
     <ram:ApplicableHeaderTradeSettlement>
-      <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
+      <ram:InvoiceCurrencyCode>{{ invoice.currency or 'EUR' }}</ram:InvoiceCurrencyCode>
       {% if company.bankIban %}
       <ram:SpecifiedTradeSettlementPaymentMeans>
         <ram:TypeCode>58</ram:TypeCode>
@@ -212,7 +212,7 @@
       <ram:SpecifiedTradeSettlementHeaderMonetarySummation>
         <ram:LineTotalAmount>{{ invoice.subtotal | cents_xml }}</ram:LineTotalAmount>
         <ram:TaxBasisTotalAmount>{{ invoice.subtotal | cents_xml }}</ram:TaxBasisTotalAmount>
-        <ram:TaxTotalAmount currencyID="EUR">{{ invoice.vatAmount | cents_xml }}</ram:TaxTotalAmount>
+        <ram:TaxTotalAmount currencyID="{{ invoice.currency or 'EUR' }}">{{ invoice.vatAmount | cents_xml }}</ram:TaxTotalAmount>
         <ram:GrandTotalAmount>{{ invoice.total | cents_xml }}</ram:GrandTotalAmount>
         <ram:DuePayableAmount>{{ invoice.total | cents_xml }}</ram:DuePayableAmount>
       </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
