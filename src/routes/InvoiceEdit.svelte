@@ -26,7 +26,9 @@
     toIsoDate,
   } from "$lib/utils/date";
   import {
+    Badge,
     Button,
+    ConfirmDialog,
     Input,
     Textarea,
     Label,
@@ -36,6 +38,18 @@
     Select,
     toast,
   } from "$lib/ui";
+
+  type CreditStatus = "good" | "caution" | "blocked";
+  function creditVariant(s: CreditStatus): "success" | "warning" | "destructive" {
+    if (s === "blocked") return "destructive";
+    if (s === "caution") return "warning";
+    return "success";
+  }
+  function creditLabel(s: CreditStatus): string {
+    if (s === "blocked") return "Gesperrt";
+    if (s === "caution") return "Vorsicht";
+    return "Gut";
+  }
   import { ArrowLeft, Plus, Trash2, AlertTriangle } from "@lucide/svelte";
 
   type Props = {
@@ -72,6 +86,36 @@
   const selectedCustomer = $derived(
     customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
   );
+
+  let blockedConfirmOpen = $state(false);
+  let pendingCustomerIdStr = $state<string>("");
+  let previousCustomerIdStr = $state<string>("");
+  const pendingBlockedCustomer = $derived(
+    pendingCustomerIdStr ? customers.find((c) => String(c.id) === pendingCustomerIdStr) ?? null : null,
+  );
+
+  function onCustomerChange(next: string) {
+    if (mode === "new" && next) {
+      const target = customers.find((c) => String(c.id) === next);
+      if (target?.creditStatus === "blocked") {
+        pendingCustomerIdStr = next;
+        previousCustomerIdStr = customerIdStr;
+        customerIdStr = next;
+        blockedConfirmOpen = true;
+        return;
+      }
+    }
+    customerIdStr = next;
+  }
+
+  function confirmBlocked() {
+    pendingCustomerIdStr = "";
+  }
+
+  function cancelBlocked() {
+    customerIdStr = previousCustomerIdStr;
+    pendingCustomerIdStr = "";
+  }
 
   // Reverse-Charge: sender must not be Kleinunternehmer. intra_eu requires both
   // VAT-IDs; third_country (export outside EU) only requires the sender's. The
@@ -364,11 +408,20 @@
           <div class="col-span-2 flex flex-col gap-1.5">
             <Label>Kunde <span class="text-destructive">*</span></Label>
             <Select
-              bind:value={customerIdStr}
+              value={customerIdStr}
+              onValueChange={onCustomerChange}
               items={customerItems}
               placeholder="— bitte wählen —"
               disabled={isCreditNote}
             />
+            {#if selectedCustomer}
+              <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>{selectedCustomer.name}</span>
+                <Badge variant={creditVariant(selectedCustomer.creditStatus)}>
+                  {creditLabel(selectedCustomer.creditStatus)}
+                </Badge>
+              </div>
+            {/if}
             {#if isCreditNote}
               <p class="text-xs text-muted-foreground">
                 Kunde ist an die Originalrechnung gebunden und kann nicht geändert werden.
@@ -578,3 +631,16 @@
     </div>
   </form>
 {/if}
+
+<ConfirmDialog
+  bind:open={blockedConfirmOpen}
+  title="Kunde ist gesperrt"
+  description={pendingBlockedCustomer
+    ? `Dieser Kunde ist als gesperrt markiert.${pendingBlockedCustomer.creditNote ? ` Grund: ${pendingBlockedCustomer.creditNote}` : ""} Trotzdem fortfahren?`
+    : ""}
+  confirmLabel="Trotzdem fortfahren"
+  cancelLabel="Abbrechen"
+  destructive
+  onConfirm={confirmBlocked}
+  onCancel={cancelBlocked}
+/>

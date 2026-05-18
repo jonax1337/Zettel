@@ -6,9 +6,16 @@
     updateCustomer,
     type CustomerInput,
   } from "$lib/db/queries";
-  import { Button, Input, Textarea, Label, Card, CardContent, DatePicker, toast } from "$lib/ui";
+  import { Button, Input, Textarea, Label, Card, CardContent, DatePicker, Select, toast } from "$lib/ui";
   import { ArrowLeft } from "@lucide/svelte";
   import { fromIsoDate, toIsoDate } from "$lib/utils/date";
+
+  type CreditStatus = "good" | "caution" | "blocked";
+  const creditStatusItems: { value: CreditStatus; label: string }[] = [
+    { value: "good", label: "Gut" },
+    { value: "caution", label: "Vorsicht" },
+    { value: "blocked", label: "Gesperrt" },
+  ];
   type Props = {
     mode: "new" | "edit";
     params?: { id?: string };
@@ -26,6 +33,8 @@
     phone: null,
     vatId: null,
     notes: null,
+    creditStatus: "good",
+    creditNote: null,
   };
 
   let form = $state<CustomerInput>({ ...empty });
@@ -55,6 +64,8 @@
                 phone: c.phone,
                 vatId: c.vatId,
                 notes: c.notes,
+                creditStatus: c.creditStatus,
+                creditNote: c.creditNote,
               };
               followUpIso = c.followUpDate ? toIsoDate(c.followUpDate) : "";
             } else {
@@ -179,6 +190,35 @@
             <Label>Wiedervorlage am</Label>
             <DatePicker bind:value={followUpIso} />
             <p class="text-xs text-muted-foreground">Optional — Erinnerung im Dashboard.</p>
+          </div>
+        </section>
+
+        <section class="space-y-4">
+          <div>
+            <h2 class="text-sm font-semibold uppercase text-muted-foreground tracking-wider">
+              Bonität
+            </h2>
+            <p class="text-xs text-muted-foreground mt-1">
+              Markiert Kunden mit Zahlungsproblemen. Beim Anlegen einer neuen Rechnung für einen gesperrten Kunden wird eine Warnung angezeigt.
+            </p>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="flex flex-col gap-1.5">
+              <Label>Status</Label>
+              <Select
+                items={creditStatusItems}
+                value={(form.creditStatus ?? "good") as CreditStatus}
+                onValueChange={(v) => (form.creditStatus = v)}
+              />
+            </div>
+            <div class="col-span-2 flex flex-col gap-1.5">
+              <Label>Notiz zur Bonität</Label>
+              <Textarea
+                rows={2}
+                bind:value={form.creditNote}
+                placeholder="z. B. Zahlungsverzug bei RE-2026-0042, nur gegen Vorkasse."
+              />
+            </div>
           </div>
         </section>
       </CardContent>
