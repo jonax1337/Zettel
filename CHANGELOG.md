@@ -6,6 +6,46 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-05-18
+
+> **Nacherfassung & Sandbox.** Drei zusammenhängende UX-Lücken im Buchhaltungs-Workflow geschlossen, dazu ein eigener DatePicker mit Quick-Navigation, neues App-Icon und Indigo als Default-Akzent.
+
+### Added
+- **Lazy Invoice Numbering.** Neue Rechnungs-Entwürfe ziehen erst beim „Festschreiben" (Versand oder PDF-Generierung) eine echte Nummer aus dem `RE-YYYY-NNNN`-Counter. Bis dahin tragen sie einen `DRAFT-<hex>`-Platzhalter und werden in Listen/Detail als „Entwurf" angezeigt. Test-Drafts oder verworfene Erfassungen hinterlassen damit keine Lücken mehr im fortlaufenden Nummernkreis — GoBD-relevant. PDF-Generierung issued einen Draft automatisch, damit kein Dokument mit Platzhalter-Nummer rausgeht. Gilt nur für Rechnungen; Angebote/Mahnungen/Ausgaben behalten Eager-Numbering. (#51, PR #50)
+- **Backdating für Status-Übergänge.** `markSent(id, sentAt?)` und `markPaid(id, paidAt?)` akzeptieren ein optionales Unix-Timestamp (Default = jetzt). InvoiceDetail zeigt jetzt einen Date-Picker-Dialog statt direkt durchzuschalten — bei Nacherfassung kann das echte Versand-/Zahldatum eingetragen werden. Soft-Validation warnt bei Plausibilitäts-Verletzungen (Zahldatum vor Versand, Zukunftsdatum). Fixt latente Bugs in Dashboard YTD, Monats-Chart und DATEV-Datumsspalten bei nachträglich erfassten Rechnungen. (#51, PR #50)
+- **Sandbox-Modus.** Settings-Toggle „Sandbox aktivieren" schaltet die App auf eine separate Test-Datenbank `zettel-sandbox.db` um (App-Restart via `plugin-process::relaunch`). Echte Buchhaltungs-DB bleibt unberührt. Status wird in einem Flag-File `sandbox.flag` im AppData-Dir gehalten (out-of-DB, da es bestimmt _welche_ DB geöffnet wird). Migrations werden für beide DB-URLs registriert. Klickbarer Badge in der Titlebar und Info-Card auf dem Dashboard machen den Modus jederzeit sichtbar; Klick führt zurück zu den Settings. (#52, PR #50)
+- **DatePicker-Komponente** in `src/lib/ui/DatePicker.svelte` (bits-ui `DatePicker.Root` + `Calendar` mit shadcn-Styling). Segmentiertes Eingabefeld `TT.MM.JJJJ` mit Zahlentastatur + Pfeiltasten-Steppen, Kalender-Icon rechts öffnet Popover. Quick-Navigation: Klick auf Monatsname → 3×4 Monatsgrid, Klick auf Jahr → 4×3 Jahresgrid mit 12er-Pages. Locale `de-DE`, Woche startet Montag, aktuelles Datum mit Ring-Akzent. Ersetzt alle 14 nativen `<input type="date">` in InvoiceEdit/OfferEdit/ExpenseEdit/RecurringEdit/ReminderEdit/Export/InvoiceDetail. (#53, PR #50)
+- **Neues App-Icon.** SVG-Source mit stilisiertem Beleg (Inhalts-Zeilen, gerissene Unterkante, grünes Check-Siegel) auf Indigo→Violett-Gradient-Squircle. Alle Plattform-Größen via `pnpm tauri icon` regeneriert (Windows ICO, macOS ICNS, Linux/Android/iOS PNGs). (#54, PR #50)
+
+### Changed
+- **Default-Akzentfarbe Indigo statt Slate-Fallback.** `src/lib/accent.svelte.ts` mappt frische Installs ohne gespeicherte Präferenz jetzt auf Indigo (matched die Icon-Palette). Bestehende User mit gespeicherter Auswahl behalten ihre Farbe; „System" bleibt eine eigenständige Option mit OS-Akzent-Lookup auf Windows.
+
+### Notes
+- **Kein Schema-Migration in v0.9.** Sandbox ist Flag-File-basiert, Lazy Numbering nutzt die existierende `number`-Spalte mit Platzhalter-Werten — der UNIQUE-Constraint ist erfüllt, ohne dass nullable gemacht werden müsste. Bestands-Drafts mit schon vergebenen `RE-…`-Nummern bleiben unangetastet.
+- Neue Transitive-Dep `@internationalized/date` als direkter Dep nachgezogen (bits-ui hatte sie schon transitive).
+
+## [0.8.0] — 2026-05-17
+
+> **Compliance-Garantie.** Jeder ZUGFeRD-Output wird automatisch lokal gegen den offiziellen KoSIT-Validator geprüft, eine jlink-minimierte JRE wird mitgeliefert, und 80 Tests decken die kritischen Pfade ab.
+
+### Added
+- **Built-in KoSIT-Validator.** `src-tauri/src/validator.rs` spawnt `java -jar`, parsed das VARL-Report-XML zu strukturierten Findings. Drei Tauri-Commands: `validator_status`, `validate_einvoice_pdf`, `validate_einvoice_xml`. erechnungs-validator.de wird damit überflüssig — Validierung ist offline und sofort. (PR #49)
+- **Soft-Gate in beiden Workflows.** Ausgehend: nach jeder PDF-Generierung wird automatisch validiert, Status persistiert in `invoices.last_validation_status` / `last_validated_at` / `last_validation_findings_count`. Eingehend: die ZUGFeRD-Drop-Zone im ExpenseEdit validiert die Lieferanten-XML direkt nach dem Extract. Neue Komponente `ValidationBadge.svelte` zeigt grün/rot/grau auf InvoiceDetail + ExpenseEdit.
+- **JRE mitgeliefert** (`tools/build-jre.sh` baut per `jlink` eine ~56 MB Runtime: `java.base/xml/scripting/desktop/...`). CI zieht Temurin 17 vor `pnpm tauri build`. Endnutzer brauchen kein System-Java mehr.
+- **Pflichtfeld-Enforcement im UI.** CustomerEdit + Settings markieren EN16931-Pflichtfelder mit Sternchen + HTML5 `required`, Land als ISO-2-Code geprüft. Settings erzwingt Steuernummer XOR USt-IdNr. (BR-CO-26).
+- **Test Foundation** (`.github/workflows/test.yml` auf jedem PR): 29 Vitest (money, invoice-number, datev), 41 Pytest (golden ZUGFeRD-XML, semantic invariants, missing-fields exploration, end-to-end Sidecar, KoSIT-Cross-Validation), 10 Cargo (AES-GCM-Crypto, Validator-Report-Parser).
+
+### Changed
+- **InvoiceDetail-Action-Bar konsolidiert** von 8 auf max. 4 sichtbare Elemente. Split-Button-Pattern (`[ PDF erzeugen ]  [ Öffnen ▾ ]  [ Versenden ]  [ ⋯ ]`). Storno-Badge ins Status-Label gemerged (`Storno · Versendet`).
+- PDF öffnet nicht mehr automatisch nach Erzeugen — Toast hat eine „Öffnen"-Action.
+- `/validate` aus der Sidebar entfernt (Workflow ist jetzt automatisch); Route bleibt per Direkt-URL erreichbar.
+
+### Fixed
+- **Compliance BR-IC-12.** Reverse-Charge intra-EU emittiert jetzt BT-80 (Deliver-to-country) im korrekten Schema-Slot. Cross-Test verifiziert über den echten KoSIT-Validator.
+
+### Migration
+- `0011_validation_status.sql` — `user_version = 12`. Fügt drei Spalten (`last_validation_status`, `last_validated_at`, `last_validation_findings_count`) je auf `invoices` und `expenses` hinzu. Idempotent.
+
 ## [0.7.0] — 2026-05-17
 
 > **UI-Polish.** Reine Oberflächen-Iteration: dezente Bewegung, Geist als App-Font, frei wählbare Akzentfarbe (inkl. Windows-System-Akzent), und der letzte native Form-Primitive ist weg.
