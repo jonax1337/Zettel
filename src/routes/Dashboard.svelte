@@ -3,6 +3,7 @@
   import { listCustomers } from "$lib/db/queries";
   import {
     dashboardStats,
+    displayInvoiceNumber,
     monthlyRevenue,
     recentInvoices,
     topCustomers,
@@ -34,8 +35,14 @@
     type RecurringListRow,
   } from "$lib/db/recurring";
   import { sumExpensesYtd, sumOpenExpenses } from "$lib/db/expenses";
-  import { Wallet, ReceiptText, Scale } from "@lucide/svelte";
+  import { Wallet, ReceiptText, Scale, FlaskConical } from "@lucide/svelte";
   import { toast } from "$lib/ui";
+  import { isSandboxActive } from "$lib/db/client";
+
+  let sandbox = $state(false);
+  $effect(() => {
+    isSandboxActive().then((v) => (sandbox = v));
+  });
 
   let customerCount = $state(0);
   let stats = $state({
@@ -119,6 +126,21 @@
 
   const topMax = $derived(Math.max(1, ...top.map((c) => c.paidTotal)));
 </script>
+
+{#if sandbox}
+  <button
+    type="button"
+    onclick={() => push("/settings")}
+    class="mb-6 w-full rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15 transition-colors p-4 flex items-center gap-3 text-left cursor-pointer"
+  >
+    <FlaskConical class="size-5 text-amber-600 dark:text-amber-400 shrink-0" />
+    <div class="flex-1">
+      <h2 class="text-sm font-semibold text-amber-900 dark:text-amber-200">Sandbox aktiv</h2>
+      <p class="text-xs text-amber-800/80 dark:text-amber-200/80">Hier kannst du gefahrlos testen. Echte Daten sind nicht betroffen.</p>
+    </div>
+    <span class="text-xs text-amber-900/70 dark:text-amber-200/70">Einstellungen →</span>
+  </button>
+{/if}
 
 <header class="mb-6 flex items-end justify-between gap-4">
   <div>
@@ -376,7 +398,7 @@
               class="border-t first:border-t-0 hover:bg-muted/40 cursor-pointer transition-colors"
               onclick={() => push(`/invoices/${inv.id}`)}
             >
-              <td class="px-4 py-3 font-mono text-xs">{inv.number}</td>
+              <td class="px-4 py-3 font-mono text-xs">{displayInvoiceNumber(inv)}</td>
               <td class="px-4 py-3 text-muted-foreground">{formatDate(inv.issueDate)}</td>
               <td class="px-4 py-3">{inv.customerName}</td>
               <td class="px-4 py-3">

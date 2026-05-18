@@ -1,6 +1,7 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
   import {
+    displayInvoiceNumber,
     getInvoiceYears,
     listInvoices,
     type InvoiceFilter,
@@ -167,7 +168,7 @@
           >
             <td class="px-4 py-3 font-mono text-xs">
               <span class="inline-flex items-center gap-1.5">
-                {inv.number}
+                {displayInvoiceNumber(inv)}
                 {#if inv.isCreditNote}
                   <Badge variant="destructive" class="text-[10px] px-1.5 py-0">Storno</Badge>
                 {/if}

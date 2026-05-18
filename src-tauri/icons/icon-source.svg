@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="55%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <linearGradient id="topHighlight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="55%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="paperFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F1F5F9"/>
+    </linearGradient>
+    <filter id="paperShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="16"/>
+      <feOffset dx="0" dy="20"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.32"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Squircle gradient background -->
+  <rect width="1024" height="1024" rx="224" ry="224" fill="url(#bg)"/>
+  <rect width="1024" height="1024" rx="224" ry="224" fill="url(#topHighlight)"/>
+
+  <!-- Hero receipt, centered, slightly rotated for character -->
+  <g transform="translate(512 512) rotate(-4) translate(-235 -340)" filter="url(#paperShadow)">
+    <!-- Receipt body: rounded top, torn zigzag bottom -->
+    <path d="M 0 40
+             Q 0 0 40 0
+             L 430 0
+             Q 470 0 470 40
+             L 470 620
+             L 440 600 L 410 625 L 380 600 L 350 625 L 320 600
+             L 290 625 L 260 600 L 230 625 L 200 600 L 170 625
+             L 140 600 L 110 625 L 80 600 L 50 625 L 30 600 L 0 625
+             Z"
+          fill="url(#paperFill)"/>
+
+    <!-- Content lines on the receipt -->
+    <g fill="#94A3B8">
+      <!-- Header bar (logo-ish) -->
+      <rect x="60" y="70"  width="180" height="22" rx="11"/>
+      <rect x="60" y="110" width="120" height="14" rx="7" opacity="0.55"/>
+
+      <!-- Separator -->
+      <rect x="60" y="170" width="350" height="4" rx="2" opacity="0.35"/>
+
+      <!-- Items: each row = description + price -->
+      <rect x="60" y="200" width="220" height="14" rx="7" opacity="0.65"/>
+      <rect x="320" y="200" width="90" height="14" rx="7" opacity="0.65"/>
+
+      <rect x="60" y="240" width="180" height="14" rx="7" opacity="0.65"/>
+      <rect x="320" y="240" width="90" height="14" rx="7" opacity="0.65"/>
+
+      <rect x="60" y="280" width="240" height="14" rx="7" opacity="0.65"/>
+      <rect x="320" y="280" width="90" height="14" rx="7" opacity="0.65"/>
+
+      <!-- Separator -->
+      <rect x="60" y="330" width="350" height="4" rx="2" opacity="0.35"/>
+
+      <!-- Total row (bolder) -->
+      <rect x="60" y="365" width="120" height="22" rx="11" fill="#475569"/>
+      <rect x="280" y="365" width="130" height="22" rx="11" fill="#475569"/>
+    </g>
+
+    <!-- Big checkmark seal in the lower portion -->
+    <g transform="translate(345 480)">
+      <circle cx="0" cy="0" r="72" fill="#10B981"/>
+      <circle cx="0" cy="0" r="72" fill="url(#topHighlight)" opacity="0.5"/>
+      <path d="M -28 4 L -8 24 L 30 -18"
+            stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </g>
+  </g>
+</svg>

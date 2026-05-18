@@ -4,6 +4,7 @@
     cancelInvoice,
     createCreditNoteFromInvoice,
     deleteInvoice,
+    displayInvoiceNumber,
     findCreditNoteFor,
     getInvoice,
     markPaid,
@@ -17,7 +18,7 @@
     InvoiceStatus,
   } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
-  import { formatDate } from "$lib/utils/date";
+  import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { generateInvoicePdf } from "$lib/sidecar/invoice";
   import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
   import {
@@ -26,9 +27,13 @@
     CardContent,
     Badge,
     ConfirmDialog,
+    DatePicker,
+    Dialog,
     DropdownMenu,
     DropdownItem,
     DropdownSeparator,
+    Input,
+    Label,
     toast,
   } from "$lib/ui";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
@@ -71,6 +76,67 @@
   let confirmCreditNoteOpen = $state(false);
   let creatingCreditNote = $state(false);
   let revalidating = $state(false);
+  let sendDialogOpen = $state(false);
+  let paidDialogOpen = $state(false);
+  let dialogDate = $state(toIsoDate(nowUnix()));
+  let dialogWarning = $state<string | null>(null);
+
+  function openSendDialog() {
+    dialogDate = toIsoDate(nowUnix());
+    dialogWarning = null;
+    sendDialogOpen = true;
+  }
+
+  function openPaidDialog() {
+    dialogDate = toIsoDate(nowUnix());
+    dialogWarning = null;
+    paidDialogOpen = true;
+  }
+
+  $effect(() => {
+    if (!invoice || !dialogDate) return;
+    if (sendDialogOpen) validateSendDate(dialogDate);
+    else if (paidDialogOpen) validatePaidDate(dialogDate);
+  });
+
+  function validateSendDate(iso: string) {
+    if (!invoice) return;
+    const ts = fromIsoDate(iso);
+    if (ts < invoice.issueDate) {
+      dialogWarning = "Versanddatum liegt vor dem Rechnungsdatum.";
+    } else if (ts > nowUnix() + 86400) {
+      dialogWarning = "Versanddatum liegt in der Zukunft.";
+    } else {
+      dialogWarning = null;
+    }
+  }
+
+  function validatePaidDate(iso: string) {
+    if (!invoice) return;
+    const ts = fromIsoDate(iso);
+    const sentRef = invoice.sentAt ?? invoice.issueDate;
+    if (ts < sentRef) {
+      dialogWarning = "Zahldatum liegt vor dem Versand-/Rechnungsdatum.";
+    } else if (ts > nowUnix() + 86400) {
+      dialogWarning = "Zahldatum liegt in der Zukunft.";
+    } else {
+      dialogWarning = null;
+    }
+  }
+
+  async function confirmSend() {
+    if (!invoice) return;
+    const ts = fromIsoDate(dialogDate);
+    sendDialogOpen = false;
+    await action("Als versendet markiert", () => markSent(invoice!.id, ts).then(() => undefined));
+  }
+
+  async function confirmPaid() {
+    if (!invoice) return;
+    const ts = fromIsoDate(dialogDate);
+    paidDialogOpen = false;
+    await action("Als bezahlt markiert", () => markPaid(invoice!.id, ts));
+  }
 
   const customer = $derived.by(() => {
     if (!invoice) return null;
@@ -368,7 +434,7 @@
     <div>
       <div class="flex items-center gap-3">
         <h1 class="text-3xl font-semibold tracking-tight font-mono">
-          {invoice.isCreditNote ? "Storno " : ""}{invoice.number}
+          {invoice.isCreditNote ? "Storno " : ""}{displayInvoiceNumber(invoice)}
         </h1>
         <Badge variant={invoice.isCreditNote ? "destructive" : statusVariant[invoice.status]}>
           {invoice.isCreditNote ? `Storno · ${statusLabel[invoice.status]}` : statusLabel[invoice.status]}
@@ -424,12 +490,12 @@
       {/if}
 
       {#if invoice.status === "draft"}
-        <Button disabled={busy} onclick={() => action("Als versendet markiert", () => markSent(invoice!.id))}>
+        <Button disabled={busy} onclick={openSendDialog}>
           <Send />
           Versenden
         </Button>
       {:else if invoice.status === "sent"}
-        <Button disabled={busy} onclick={() => action("Als bezahlt markiert", () => markPaid(invoice!.id))}>
+        <Button disabled={busy} onclick={openPaidDialog}>
           <CheckCircle2 />
           Bezahlt
         </Button>
@@ -637,7 +703,7 @@
   <ConfirmDialog
     bind:open={confirmDeleteOpen}
     title="Rechnung löschen?"
-    description={invoice ? `${invoice.number} wird unwiderruflich entfernt.` : ""}
+    description={invoice ? `${displayInvoiceNumber(invoice)} wird unwiderruflich entfernt.` : ""}
     confirmLabel="Löschen"
     destructive
     onConfirm={performDelete}
@@ -647,10 +713,54 @@
     bind:open={confirmCreditNoteOpen}
     title="Stornorechnung erstellen?"
     description={invoice
-      ? `Erstellt einen Entwurf, der ${invoice.number} vollständig storniert. Mengen lassen sich anschließend für Teilstornos anpassen.`
+      ? `Erstellt einen Entwurf, der ${displayInvoiceNumber(invoice)} vollständig storniert. Mengen lassen sich anschließend für Teilstornos anpassen.`
       : ""}
     confirmLabel="Erstellen"
     destructive
     onConfirm={performCreateCreditNote}
   />
+
+  <Dialog bind:open={sendDialogOpen} title="Als versendet markieren" description="Festschreiben unter neuer Rechnungsnummer.">
+    <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-1.5">
+        <Label for="send-date">Versanddatum</Label>
+        <DatePicker
+          id="send-date"
+          bind:value={dialogDate}
+        />
+        <p class="text-xs text-muted-foreground">Standard ist heute. Für Nacherfassung das tatsächliche Versanddatum eintragen.</p>
+        {#if dialogWarning}
+          <p class="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+            <AlertTriangle class="size-3.5" /> {dialogWarning}
+          </p>
+        {/if}
+      </div>
+    </div>
+    {#snippet footer()}
+      <Button variant="outline" onclick={() => (sendDialogOpen = false)}>Abbrechen</Button>
+      <Button onclick={confirmSend} disabled={!dialogDate}>Versenden</Button>
+    {/snippet}
+  </Dialog>
+
+  <Dialog bind:open={paidDialogOpen} title="Als bezahlt markieren" description="Zahldatum für Statistik und DATEV-Export.">
+    <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-1.5">
+        <Label for="paid-date">Zahldatum</Label>
+        <DatePicker
+          id="paid-date"
+          bind:value={dialogDate}
+        />
+        <p class="text-xs text-muted-foreground">Standard ist heute. Bei Nacherfassung das echte Zahldatum eintragen — Dashboard und Monats-Charts hängen davon ab.</p>
+        {#if dialogWarning}
+          <p class="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+            <AlertTriangle class="size-3.5" /> {dialogWarning}
+          </p>
+        {/if}
+      </div>
+    </div>
+    {#snippet footer()}
+      <Button variant="outline" onclick={() => (paidDialogOpen = false)}>Abbrechen</Button>
+      <Button onclick={confirmPaid} disabled={!dialogDate}>Bestätigen</Button>
+    {/snippet}
+  </Dialog>
 {/if}

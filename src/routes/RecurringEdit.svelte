@@ -19,6 +19,7 @@
     Label,
     Card,
     CardContent,
+    DatePicker,
     Select,
     Checkbox,
     toast,
@@ -299,7 +300,7 @@
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>Erste Fälligkeit</Label>
-            <Input type="date" bind:value={startDateIso} required />
+            <DatePicker bind:value={startDateIso} required />
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>Zahlungsfrist (Tage)</Label>

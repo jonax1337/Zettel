@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
 import { execute } from "$lib/db/client";
-import { getInvoice } from "$lib/db/invoices";
+import { getInvoice, isDraftNumber, issueInvoice } from "$lib/db/invoices";
 import { loadSettings } from "$lib/db/queries";
 import type { CustomerSnapshot, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
 import { validatePdf, type ValidationReport } from "$lib/validator";
@@ -103,8 +103,15 @@ function buildPayload(opts: {
 }
 
 export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResponse> {
-  const data = await getInvoice(invoiceId);
+  let data = await getInvoice(invoiceId);
   if (!data) throw new Error(`Invoice ${invoiceId} not found`);
+  // A draft still carrying a DRAFT-… placeholder must be issued before render.
+  // PDFs are durable artifacts — they must not reference placeholder numbers.
+  if (data.invoice.status === "draft" && isDraftNumber(data.invoice.number)) {
+    await issueInvoice(invoiceId);
+    data = await getInvoice(invoiceId);
+    if (!data) throw new Error(`Invoice ${invoiceId} not found after issue`);
+  }
   const company = await loadSettings();
   let customer: CustomerSnapshot;
   try {

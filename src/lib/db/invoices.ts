@@ -279,6 +279,29 @@ async function writeItems(
   }
 }
 
+function draftPlaceholder(): string {
+  // Random placeholder satisfies the UNIQUE constraint without burning a real
+  // counter slot. Real number is assigned in issueInvoice() when the draft is
+  // sent / PDF is generated. "DRAFT-" prefix never collides with RE-/AN-/MA-.
+  const rand =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID().replace(/-/g, "").slice(0, 16)
+      : Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return `DRAFT-${rand}`;
+}
+
+export function isDraftNumber(n: string | null | undefined): boolean {
+  return !!n && n.startsWith("DRAFT-");
+}
+
+export function displayInvoiceNumber(inv: {
+  number: string;
+  status: InvoiceStatus;
+}): string {
+  if (inv.status === "draft" && isDraftNumber(inv.number)) return "Entwurf";
+  return inv.number;
+}
+
 export async function createInvoice(input: InvoiceFormInput): Promise<number> {
   const settings = await loadSettings();
   const snapshot = await buildCustomerSnapshot(input.customerId);
@@ -287,7 +310,7 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
     isKleinunternehmer: settings.isKleinunternehmer,
     isReverseCharge,
   });
-  const { number } = await nextInvoiceNumber();
+  const number = draftPlaceholder();
 
   const sign = input.isCreditNote ? -1 : 1;
   const res = await execute(
@@ -432,17 +455,54 @@ export async function createCreditNoteFromInvoice(originalId: number): Promise<n
 
 // --- Status transitions ---
 
-export async function markSent(id: number): Promise<void> {
+/**
+ * Assigns the final invoice number (if still a DRAFT-… placeholder) and
+ * transitions status draft → sent. Counter is only consumed here, never on
+ * createInvoice — so deleted/abandoned drafts leave no gaps.
+ *
+ * sentAt is optional and defaults to "now". For nacherfassung of an old
+ * invoice, pass the original send date as unix seconds.
+ */
+export async function issueInvoice(
+  id: number,
+  sentAt?: number,
+): Promise<string> {
+  const existing = await getInvoice(id);
+  if (!existing) throw new Error(`Rechnung ${id} nicht gefunden.`);
+  const cur = existing.invoice;
+  if (cur.status !== "draft") {
+    return cur.number;
+  }
+  const ts = sentAt ?? Math.floor(Date.now() / 1000);
+  let finalNumber = cur.number;
+  if (isDraftNumber(cur.number)) {
+    const { number } = await nextInvoiceNumber();
+    finalNumber = number;
+  }
   await execute(
-    "UPDATE invoices SET status = 'sent', sent_at = unixepoch(), updated_at = unixepoch() WHERE id = ? AND status = 'draft'",
-    [id],
+    `UPDATE invoices SET number = ?, status = 'sent', sent_at = ?, updated_at = unixepoch()
+     WHERE id = ? AND status = 'draft'`,
+    [finalNumber, ts, id],
   );
+  return finalNumber;
 }
 
-export async function markPaid(id: number): Promise<void> {
+export async function markSent(id: number, sentAt?: number): Promise<string> {
+  return issueInvoice(id, sentAt);
+}
+
+export async function markPaid(id: number, paidAt?: number): Promise<void> {
+  const existing = await getInvoice(id);
+  if (!existing) return;
+  // Drafts must be issued first so they get a real number.
+  if (existing.invoice.status === "draft") {
+    await issueInvoice(id, paidAt);
+  }
+  const ts = paidAt ?? Math.floor(Date.now() / 1000);
   await execute(
-    "UPDATE invoices SET status = 'paid', paid_at = unixepoch(), updated_at = unixepoch() WHERE id = ? AND status IN ('sent','draft')",
-    [id],
+    `UPDATE invoices SET status = 'paid', paid_at = ?, updated_at = unixepoch()
+     WHERE id = ? AND status IN ('sent','draft')`,
+    [ts, id],
   );
 }
 

@@ -13,6 +13,7 @@
     Label,
     Select,
     Checkbox,
+    DatePicker,
     toast,
   } from "$lib/ui";
   import { loadInvoicesForExport } from "$lib/db/invoices";
@@ -126,11 +127,11 @@
       <div class="grid grid-cols-2 gap-4">
         <div class="flex flex-col gap-1.5">
           <Label>Zeitraum von</Label>
-          <Input type="date" bind:value={dateFromIso} />
+          <DatePicker bind:value={dateFromIso} />
         </div>
         <div class="flex flex-col gap-1.5">
           <Label>Zeitraum bis</Label>
-          <Input type="date" bind:value={dateToIso} />
+          <DatePicker bind:value={dateToIso} />
         </div>
         <div class="flex flex-col gap-1.5">
           <Label>Kontenrahmen</Label>

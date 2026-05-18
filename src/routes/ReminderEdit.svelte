@@ -19,7 +19,7 @@
   import { fromIsoDate, toIsoDate, formatDate } from "$lib/utils/date";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
   import { generateReminderPdf } from "$lib/sidecar/reminder";
-  import { Button, Card, Input, Label, Textarea, toast } from "$lib/ui";
+  import { Button, Card, DatePicker, Input, Label, Textarea, toast } from "$lib/ui";
   import { ArrowLeft, FileText, Send, Trash2 } from "@lucide/svelte";
   import { open as openShell } from "@tauri-apps/plugin-shell";
 
@@ -252,11 +252,11 @@
         </h3>
         <div class="flex flex-col gap-1.5">
           <Label>Mahnungsdatum</Label>
-          <Input type="date" bind:value={issueIso} disabled={status !== "draft"} />
+          <DatePicker bind:value={issueIso} disabled={status !== "draft"} />
         </div>
         <div class="flex flex-col gap-1.5">
           <Label>Neue Zahlungsfrist</Label>
-          <Input type="date" bind:value={dueIso} disabled={status !== "draft"} />
+          <DatePicker bind:value={dueIso} disabled={status !== "draft"} />
         </div>
       </div>
     </Card>

@@ -3,11 +3,14 @@
   import { Minus, Square, Copy, X } from "@lucide/svelte";
   import { onMount } from "svelte";
 
+  import type { Snippet } from "svelte";
+
   type Props = {
     title?: string;
     showAppMark?: boolean;
+    children?: Snippet;
   };
-  let { title = "Zettel", showAppMark = true }: Props = $props();
+  let { title = "Zettel", showAppMark = true, children }: Props = $props();
 
   const win = getCurrentWindow();
   let maximized = $state(false);
@@ -44,9 +47,10 @@
 
   <div
     data-tauri-drag-region
-    class="flex-1 flex items-center text-xs font-medium text-muted-foreground tracking-tight"
+    class="flex-1 flex items-center gap-3 text-xs font-medium text-muted-foreground tracking-tight"
   >
     {title}
+    {@render children?.()}
   </div>
 
   <div class="flex items-center h-full">
