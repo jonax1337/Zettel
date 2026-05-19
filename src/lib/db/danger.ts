@@ -112,18 +112,38 @@ export async function autoBackupBeforeWipe(
     .replace(/[:.]/g, "-")
     .replace("T", "_")
     .slice(0, 19);
-  const target = await invoke<string>("auto_backup_target", {
-    filename: `pre-wipe-${ts}.zip`,
-  });
+  let target: string;
+  try {
+    target = await invoke<string>("auto_backup_target", {
+      filename: `pre-wipe-${ts}.zip`,
+    });
+  } catch (e) {
+    throw new Error(`auto_backup_target: ${e}`);
+  }
 
-  const snapshotPath = await invoke<string>("snapshot_db_path");
-  await execute(`VACUUM INTO ?`, [snapshotPath]);
-  await invoke<string>("bundle_backup", {
-    snapshotPath,
-    targetZip: target,
-    invoiceCount: null,
-    dbSchemaVersion,
-    password: null,
-  });
+  let snapshotPath: string;
+  try {
+    snapshotPath = await invoke<string>("snapshot_db_path");
+  } catch (e) {
+    throw new Error(`snapshot_db_path: ${e}`);
+  }
+
+  try {
+    await execute(`VACUUM INTO ?`, [snapshotPath]);
+  } catch (e) {
+    throw new Error(`VACUUM INTO '${snapshotPath}': ${e}`);
+  }
+
+  try {
+    await invoke<string>("bundle_backup", {
+      snapshotPath,
+      targetZip: target,
+      invoiceCount: null,
+      dbSchemaVersion,
+      password: null,
+    });
+  } catch (e) {
+    throw new Error(`bundle_backup → '${target}': ${e}`);
+  }
   return target;
 }
