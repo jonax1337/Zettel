@@ -156,6 +156,7 @@ pub fn run() {
             fs_export::save_text_file,
             fs_export::import_expense_pdf,
             backup::snapshot_db_path,
+            backup::auto_backup_target,
             backup::bundle_backup,
             backup::stage_restore,
             backup::apply_pending_partial_restore,

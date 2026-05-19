@@ -80,6 +80,15 @@ fn documents_zettel_dir_static() -> Option<PathBuf> {
 }
 
 #[tauri::command]
+pub async fn auto_backup_target(app: AppHandle, filename: String) -> Result<String, String> {
+    // Resolves <Documents>/Zettel/Backups/<filename> and ensures the parent
+    // dir exists. Used by Danger-Zone-Auto-Backup, sidesteps the JS path API.
+    let dir = documents_zettel_dir(&app)?.join("Backups");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join(filename).to_string_lossy().into_owned())
+}
+
+#[tauri::command]
 pub async fn snapshot_db_path(app: AppHandle) -> Result<String, String> {
     // The frontend issues `VACUUM INTO ?` against the live SQLite connection
     // to produce a consistent snapshot at this path.

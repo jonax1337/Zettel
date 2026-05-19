@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { join, documentDir } from "@tauri-apps/api/path";
 import { execute } from "./client";
 
 export type WipeableTable =
@@ -113,8 +112,9 @@ export async function autoBackupBeforeWipe(
     .replace(/[:.]/g, "-")
     .replace("T", "_")
     .slice(0, 19);
-  const docs = await documentDir();
-  const target = await join(docs, "Zettel", "Backups", `pre-wipe-${ts}.zip`);
+  const target = await invoke<string>("auto_backup_target", {
+    filename: `pre-wipe-${ts}.zip`,
+  });
 
   const snapshotPath = await invoke<string>("snapshot_db_path");
   await execute(`VACUUM INTO ?`, [snapshotPath]);
