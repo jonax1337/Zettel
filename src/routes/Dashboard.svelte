@@ -85,9 +85,10 @@
     followUps = fu;
     offerStats = os;
     due = dr;
-    // Tax-Rücklage parallel — kann BMF anrufen (8s timeout), Dashboard
-    // soll trotzdem schnell sichtbar werden, also nicht ins Promise.all.
-    computeTaxRücklage()
+    // Steuer-Rücklage immer am Jahr der gewählten Periode hängen (das Konzept
+    // ist annual; Monat/Quartal-Selektionen mappen auf ihr Containerjahr).
+    const taxYear = new Date(p.start * 1000).getFullYear();
+    computeTaxRücklage(taxYear)
       .then((t) => (taxRücklage = t))
       .catch(() => (taxRücklage = null));
     loading = false;

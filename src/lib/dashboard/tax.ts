@@ -147,14 +147,24 @@ function computeScenario(i: ScenarioInput): TaxScenario {
   };
 }
 
-export async function computeTaxRücklage(): Promise<TaxRücklageResult> {
+/**
+ * @param year Steuerjahr (Default = aktuelles Kalenderjahr). Aggregiert wird
+ *   Jan 1 → 31. Dez des Jahres, capped bei „jetzt" für laufende Jahre.
+ *   Vergangene Jahre nehmen das volle Jahr, zukünftige Jahre fallen auf das
+ *   aktuelle Datum zurück (zeigt dann nichts).
+ */
+export async function computeTaxRücklage(year?: number): Promise<TaxRücklageResult> {
   const settings = await loadSettings();
-  const year = new Date().getFullYear();
-  const yearStart = Math.floor(new Date(year, 0, 1).getTime() / 1000);
+  const targetYear = year ?? new Date().getFullYear();
+  const yearStart = Math.floor(new Date(targetYear, 0, 1).getTime() / 1000);
+  const yearEnd = Math.floor(new Date(targetYear + 1, 0, 1).getTime() / 1000);
   const now = Math.floor(Date.now() / 1000);
-  const daysElapsed = Math.max(1, Math.floor((now - yearStart) / 86_400) + 1);
+  // Für vergangene Jahre: volles Jahr. Für laufendes Jahr: bis jetzt.
+  const cutoff = Math.min(now, yearEnd);
+  const elapsedSeconds = Math.max(86_400, cutoff - yearStart);
+  const daysElapsed = Math.min(365, Math.floor(elapsedSeconds / 86_400) + 1);
 
-  const agg = await loadYearAgg(yearStart, now);
+  const agg = await loadYearAgg(yearStart, cutoff);
   const profitYtdCent = agg.revenueNet - agg.expense;
   const projectedAnnualProfitCent = Math.floor((profitYtdCent / daysElapsed) * 365);
 
@@ -162,7 +172,7 @@ export async function computeTaxRücklage(): Promise<TaxRücklageResult> {
     ? 0
     : Math.max(0, agg.invoiceVat - agg.expenseVat);
 
-  const prepaymentsCent = await sumPrepaymentsForYear(year);
+  const prepaymentsCent = await sumPrepaymentsForYear(targetYear);
   const otherIncomeCent = Math.max(0, settings.otherIncomeAnnualCent);
 
   const baseInput = {
@@ -173,7 +183,7 @@ export async function computeTaxRücklage(): Promise<TaxRücklageResult> {
     churchRate: settings.churchTaxRate,
     tradeTaxRate: settings.tradeTaxRate,
     isFreelancer: settings.legalForm === "freelancer",
-    year,
+    year: targetYear,
   };
 
   const ytd = computeScenario({ ...baseInput, profitCent: profitYtdCent });
@@ -187,7 +197,7 @@ export async function computeTaxRücklage(): Promise<TaxRücklageResult> {
   const pauschalDeltaCent = projected.recommendedReserveCent - pauschalReserveCent;
 
   return {
-    year,
+    year: targetYear,
     daysElapsed,
     profitYtdCent,
     projectedAnnualProfitCent,

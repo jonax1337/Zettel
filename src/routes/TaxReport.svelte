@@ -1,9 +1,15 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
   import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "$lib/ui";
-  import { ArrowLeft, Calculator } from "@lucide/svelte";
+  import { ArrowLeft } from "@lucide/svelte";
   import { centsToEur } from "$lib/utils/money";
   import { computeTaxRücklage, type TaxRücklageResult, type TaxScenario } from "$lib/dashboard/tax";
+  import { loadDefaultPeriod } from "$lib/dashboard/period";
+
+  // Steuerjahr aus der Dashboard-Periode ableiten — bei Quartal/Monat/Custom
+  // wird das Containerjahr genutzt (ESt ist annual).
+  const initialYear = new Date(loadDefaultPeriod().start * 1000).getFullYear();
+  let year = $state(initialYear);
 
   let result = $state<TaxRücklageResult | null>(null);
   let loading = $state(true);
@@ -14,10 +20,10 @@
     result === null ? null : mode === "ytd" ? result.ytd : result.projected,
   );
 
-  async function reload() {
+  async function reload(y: number) {
     loading = result === null;
     try {
-      result = await computeTaxRücklage();
+      result = await computeTaxRücklage(y);
       error = null;
     } catch (e) {
       error = String(e);
@@ -27,24 +33,36 @@
   }
 
   $effect(() => {
-    reload();
+    reload(year);
   });
 </script>
 
-<header class="mb-6">
-  <a use:link href="/" class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-2">
-    <ArrowLeft class="size-4" />
-    Dashboard
-  </a>
-  <h1 class="text-3xl font-semibold tracking-tight flex items-center gap-3">
-    <Calculator class="size-7 text-muted-foreground" />
-    Steuer-Rücklage {result?.year ?? new Date().getFullYear()}
-  </h1>
-  <p class="text-sm text-muted-foreground mt-1.5 max-w-2xl">
-    Vorhersage zur Liquiditätsplanung — <strong>keine Steuerberatung</strong>.
-    Tarif nach § 32a EStG VZ {active?.income.tarifYear ?? new Date().getFullYear()},
-    Konstanten aus amtlicher BMF-Bekanntmachung.
-  </p>
+<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
+  <div>
+    <a use:link href="/" class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-2">
+      <ArrowLeft class="size-4" />
+      Dashboard
+    </a>
+    <h1 class="text-3xl font-semibold tracking-tight">
+      Steuer-Rücklage {result?.year ?? year}
+    </h1>
+    <p class="text-sm text-muted-foreground mt-1.5 max-w-2xl">
+      Vorhersage zur Liquiditätsplanung — <strong>keine Steuerberatung</strong>.
+      Tarif nach § 32a EStG VZ {active?.income.tarifYear ?? year},
+      Konstanten aus amtlicher BMF-Bekanntmachung.
+    </p>
+  </div>
+  <label class="flex items-center gap-2 text-sm">
+    <span class="text-muted-foreground">Jahr</span>
+    <select
+      bind:value={year}
+      class="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none"
+    >
+      {#each [2024, 2025, 2026, 2027] as y (y)}
+        <option value={y}>{y}</option>
+      {/each}
+    </select>
+  </label>
 </header>
 
 {#if loading}
