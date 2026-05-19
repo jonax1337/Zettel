@@ -369,29 +369,34 @@
   async function executeDanger() {
     if (!dangerPending || !dangerConfirmValid || dangerBusy) return;
     dangerBusy = true;
+    let phase = "init";
     try {
+      phase = "backup";
       const backupPath = await autoBackupBeforeWipe(CURRENT_DB_SCHEMA_VERSION);
       toast.success("Sicherheits-Backup angelegt", backupPath);
       const a = dangerPending;
       if (a.kind === "wipeAll") {
+        phase = "wipeAll";
         await wipeAllBusinessData();
         toast.success("Alle Geschäftsdaten gelöscht.");
       } else if (a.kind === "wipeTables") {
+        phase = "wipeTables";
         await wipeTables(a.tables);
         toast.success(
           `Geleert: ${a.tables.map((t) => WIPEABLE_TABLE_LABELS[t]).join(", ")}`,
         );
       } else {
+        phase = "resetCounters";
         await resetNumberingCounters();
         toast.success("Counter zurückgesetzt.");
-        // Settings neu laden, damit angezeigte Counter-Stände aktuell sind.
         s = await loadSettings();
       }
       dangerSelectedTables = new Set();
       dangerPending = null;
       dangerConfirmText = "";
     } catch (e) {
-      toast.error("Aktion fehlgeschlagen", String(e));
+      console.error(`[danger:${phase}]`, e);
+      toast.error(`Fehlgeschlagen (Phase: ${phase})`, String(e));
     } finally {
       dangerBusy = false;
     }
