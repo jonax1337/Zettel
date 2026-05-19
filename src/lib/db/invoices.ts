@@ -42,6 +42,8 @@ type InvoiceRow = {
   eur_total_cent: number | null;
   notes_internal: string | null;
   follow_up_date: number | null;
+  service_period_start: number | null;
+  service_period_end: number | null;
 };
 
 type InvoiceItemRow = {
@@ -54,6 +56,9 @@ type InvoiceItemRow = {
   unit_price: number;
   vat_rate: number;
   line_total: number;
+  long_description: string | null;
+  line_period_start: number | null;
+  line_period_end: number | null;
 };
 
 function mapInvoice(r: InvoiceRow): Invoice {
@@ -89,6 +94,8 @@ function mapInvoice(r: InvoiceRow): Invoice {
     eurTotalCent: r.eur_total_cent,
     notesInternal: r.notes_internal,
     followUpDate: r.follow_up_date,
+    servicePeriodStart: r.service_period_start,
+    servicePeriodEnd: r.service_period_end,
   };
 }
 
@@ -103,6 +110,9 @@ function mapItem(r: InvoiceItemRow): InvoiceItem {
     unitPrice: r.unit_price,
     vatRate: r.vat_rate,
     lineTotal: r.line_total,
+    longDescription: r.long_description,
+    linePeriodStart: r.line_period_start,
+    linePeriodEnd: r.line_period_end,
   };
 }
 
@@ -114,6 +124,9 @@ export type InvoiceItemInput = {
   unit: string;
   unitPrice: number; // cents
   vatRate: number; // percent
+  longDescription?: string | null;
+  linePeriodStart?: number | null;
+  linePeriodEnd?: number | null;
 };
 
 export type ReverseChargeType = "none" | "intra_eu" | "third_country";
@@ -134,6 +147,8 @@ export type InvoiceFormInput = {
   eurTotalCent?: number | null;
   notesInternal?: string | null;
   followUpDate?: number | null;
+  servicePeriodStart?: number | null;
+  servicePeriodEnd?: number | null;
 };
 
 // --- Totals ---
@@ -287,9 +302,22 @@ async function writeItems(
     const line = computeLineTotal(it);
     await execute(
       `INSERT INTO invoice_items
-        (invoice_id, position, description, quantity, unit, unit_price, vat_rate, line_total)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [invoiceId, i + 1, it.description, it.quantity, it.unit, it.unitPrice, it.vatRate, line],
+        (invoice_id, position, description, quantity, unit, unit_price, vat_rate, line_total,
+         long_description, line_period_start, line_period_end)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        invoiceId,
+        i + 1,
+        it.description,
+        it.quantity,
+        it.unit,
+        it.unitPrice,
+        it.vatRate,
+        line,
+        it.longDescription ?? null,
+        it.linePeriodStart ?? null,
+        it.linePeriodEnd ?? null,
+      ],
     );
   }
 }
@@ -335,8 +363,9 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
       (number, customer_id, customer_snapshot, issue_date, delivery_date, due_date,
        status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
        reverse_charge_type, notes, payment_terms, is_credit_note, corrects_invoice_id,
-       currency, exchange_rate, eur_total_cent, notes_internal, follow_up_date)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       currency, exchange_rate, eur_total_cent, notes_internal, follow_up_date,
+       service_period_start, service_period_end)
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.customerId,
@@ -359,6 +388,8 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
       input.eurTotalCent != null ? input.eurTotalCent * sign : null,
       input.notesInternal ?? null,
       input.followUpDate ?? null,
+      input.servicePeriodStart ?? null,
+      input.servicePeriodEnd ?? null,
     ],
   );
   const id = Number(res.lastInsertId ?? 0);
@@ -397,6 +428,7 @@ export async function updateInvoice(
       notes = ?, payment_terms = ?,
       currency = ?, exchange_rate = ?, eur_total_cent = ?,
       notes_internal = ?, follow_up_date = ?,
+      service_period_start = ?, service_period_end = ?,
       updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -417,6 +449,8 @@ export async function updateInvoice(
       input.eurTotalCent != null ? input.eurTotalCent * sign : existing.invoice.eurTotalCent ?? null,
       input.notesInternal ?? existing.invoice.notesInternal ?? null,
       input.followUpDate ?? existing.invoice.followUpDate ?? null,
+      input.servicePeriodStart ?? null,
+      input.servicePeriodEnd ?? null,
       id,
     ],
   );
@@ -483,12 +517,17 @@ export async function createCreditNoteFromInvoice(originalId: number): Promise<n
     reverseChargeType: invoice.reverseChargeType,
     isCreditNote: true,
     correctsInvoiceId: originalId,
+    servicePeriodStart: invoice.servicePeriodStart,
+    servicePeriodEnd: invoice.servicePeriodEnd,
     items: items.map((it) => ({
       description: it.description,
       quantity: it.quantity,
       unit: it.unit,
       unitPrice: it.unitPrice,
       vatRate: it.vatRate,
+      longDescription: it.longDescription,
+      linePeriodStart: it.linePeriodStart,
+      linePeriodEnd: it.linePeriodEnd,
     })),
   };
   return createInvoice(input);

@@ -377,6 +377,10 @@
           <dd>{formatDate(offer.issueDate)}</dd>
           <dt class="text-muted-foreground">Gültig bis</dt>
           <dd>{formatDate(offer.validUntil)}</dd>
+          {#if offer.servicePeriodStart && offer.servicePeriodEnd}
+            <dt class="text-muted-foreground">Leistungszeitraum</dt>
+            <dd>{formatDate(offer.servicePeriodStart)} – {formatDate(offer.servicePeriodEnd)}</dd>
+          {/if}
           {#if offer.sentAt}
             <dt class="text-muted-foreground">Versendet</dt>
             <dd>{formatDate(offer.sentAt)}</dd>
@@ -421,15 +425,29 @@
       <tbody>
         {#each items as it (it.id)}
           <tr class="border-t border-border">
-            <td class="px-4 py-3 text-xs text-muted-foreground">{it.position}</td>
-            <td class="px-4 py-3">{it.description}</td>
-            <td class="px-4 py-3 text-right">{it.quantity}</td>
-            <td class="px-4 py-3">{it.unit}</td>
-            <td class="px-4 py-3 text-right font-mono">{centsToEur(it.unitPrice)}</td>
+            <td class="px-4 py-3 text-xs text-muted-foreground align-top">{it.position}</td>
+            <td class="px-4 py-3 align-top">
+              <div>{it.description}</div>
+              {#if it.longDescription}
+                <div class="mt-0.5 text-xs text-muted-foreground whitespace-pre-wrap">{it.longDescription}</div>
+              {/if}
+              {#if it.linePeriodStart && it.linePeriodEnd}
+                <div class="mt-0.5 text-xs text-muted-foreground italic">
+                  {#if it.linePeriodStart === it.linePeriodEnd}
+                    Leistungsdatum {formatDate(it.linePeriodStart)}
+                  {:else}
+                    Leistungszeitraum {formatDate(it.linePeriodStart)} – {formatDate(it.linePeriodEnd)}
+                  {/if}
+                </div>
+              {/if}
+            </td>
+            <td class="px-4 py-3 text-right align-top">{it.quantity}</td>
+            <td class="px-4 py-3 align-top">{it.unit}</td>
+            <td class="px-4 py-3 text-right font-mono align-top">{centsToEur(it.unitPrice)}</td>
             {#if !offer.isKleinunternehmer}
-              <td class="px-4 py-3 text-right">{it.vatRate}</td>
+              <td class="px-4 py-3 text-right align-top">{it.vatRate}</td>
             {/if}
-            <td class="px-4 py-3 text-right font-mono">{centsToEur(it.lineTotal)}</td>
+            <td class="px-4 py-3 text-right font-mono align-top">{centsToEur(it.lineTotal)}</td>
           </tr>
         {/each}
       </tbody>

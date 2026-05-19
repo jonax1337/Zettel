@@ -47,7 +47,12 @@
         <span class="meta-label">Rechnungsdatum</span>
         <span class="meta-value">{{ invoice.issueDate | date_unix }}</span>
       </div>
-      {% if invoice.deliveryDate %}
+      {% if invoice.servicePeriodStart and invoice.servicePeriodEnd %}
+      <div class="meta-row">
+        <span class="meta-label">Leistungszeitraum</span>
+        <span class="meta-value">{{ invoice.servicePeriodStart | date_unix }} – {{ invoice.servicePeriodEnd | date_unix }}</span>
+      </div>
+      {% elif invoice.deliveryDate %}
       <div class="meta-row">
         <span class="meta-label">Leistungsdatum</span>
         <span class="meta-value">{{ invoice.deliveryDate | date_unix }}</span>
@@ -84,7 +89,19 @@
       {% for it in items %}
         <tr>
           <td class="col-pos">{{ it.position }}</td>
-          <td class="col-desc">{{ it.description }}</td>
+          <td class="col-desc">
+            <div class="item-name">{{ it.description }}</div>
+            {% if it.longDescription %}
+            <div class="item-detail">{{ it.longDescription | replace('\n', '<br>') | safe }}</div>
+            {% endif %}
+            {% if it.linePeriodStart and it.linePeriodEnd %}
+              {% if it.linePeriodStart == it.linePeriodEnd %}
+            <div class="item-period">Leistungsdatum {{ it.linePeriodStart | date_unix }}</div>
+              {% else %}
+            <div class="item-period">Leistungszeitraum {{ it.linePeriodStart | date_unix }} – {{ it.linePeriodEnd | date_unix }}</div>
+              {% endif %}
+            {% endif %}
+          </td>
           <td class="col-qty">{{ it.quantity | qty }}</td>
           <td class="col-unit">{{ it.unit }}</td>
           <td class="col-price">{{ it.unitPrice | eur(invoice.currency) }}</td>

@@ -70,7 +70,7 @@
   const accentLabel = (k: AccentKey) => (k === "system" ? "System" : ACCENT_PRESETS[k].label);
 
   // aktueller DB-Schema-Stand (siehe src-tauri/src/lib.rs Migrations-Vektor)
-  const CURRENT_DB_SCHEMA_VERSION = 19;
+  const CURRENT_DB_SCHEMA_VERSION = 20;
 
   let s = $state<Settings | null>(null);
   let loading = $state(true);

@@ -54,6 +54,9 @@
       </ram:AssociatedDocumentLineDocument>
       <ram:SpecifiedTradeProduct>
         <ram:Name>{{ it.description }}</ram:Name>
+        {% if it.longDescription %}
+        <ram:Description>{{ it.longDescription }}</ram:Description>
+        {% endif %}
       </ram:SpecifiedTradeProduct>
       <ram:SpecifiedLineTradeAgreement>
         <ram:NetPriceProductTradePrice>
@@ -80,6 +83,16 @@
           <ram:RateApplicablePercent>{{ it.vatRate }}</ram:RateApplicablePercent>
           {% endif %}
         </ram:ApplicableTradeTax>
+        {% if it.linePeriodStart and it.linePeriodEnd %}
+        <ram:BillingSpecifiedPeriod>
+          <ram:StartDateTime>
+            <udt:DateTimeString format="102">{{ it.linePeriodStart | date_xml }}</udt:DateTimeString>
+          </ram:StartDateTime>
+          <ram:EndDateTime>
+            <udt:DateTimeString format="102">{{ it.linePeriodEnd | date_xml }}</udt:DateTimeString>
+          </ram:EndDateTime>
+        </ram:BillingSpecifiedPeriod>
+        {% endif %}
         <ram:SpecifiedTradeSettlementLineMonetarySummation>
           <ram:LineTotalAmount>{{ (it.lineTotal * -1 if invoice.isCreditNote else it.lineTotal) | cents_xml }}</ram:LineTotalAmount>
         </ram:SpecifiedTradeSettlementLineMonetarySummation>
@@ -195,6 +208,17 @@
         {% endif %}
       </ram:ApplicableTradeTax>
       {% endfor %}
+
+      {% if invoice.servicePeriodStart and invoice.servicePeriodEnd %}
+      <ram:BillingSpecifiedPeriod>
+        <ram:StartDateTime>
+          <udt:DateTimeString format="102">{{ invoice.servicePeriodStart | date_xml }}</udt:DateTimeString>
+        </ram:StartDateTime>
+        <ram:EndDateTime>
+          <udt:DateTimeString format="102">{{ invoice.servicePeriodEnd | date_xml }}</udt:DateTimeString>
+        </ram:EndDateTime>
+      </ram:BillingSpecifiedPeriod>
+      {% endif %}
 
       {% if not invoice.isCreditNote and (invoice.paymentTerms or invoice.dueDate) %}
       <ram:SpecifiedTradePaymentTerms>

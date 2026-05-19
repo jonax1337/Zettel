@@ -35,6 +35,8 @@ function buildPayload(opts: {
       isReverseCharge: offer.isReverseCharge,
       notes: offer.notes,
       introText: offer.introText,
+      servicePeriodStart: offer.servicePeriodStart,
+      servicePeriodEnd: offer.servicePeriodEnd,
     },
     items: items.map((it) => ({
       position: it.position,
@@ -44,6 +46,9 @@ function buildPayload(opts: {
       unitPrice: it.unitPrice,
       vatRate: it.vatRate,
       lineTotal: it.lineTotal,
+      longDescription: it.longDescription,
+      linePeriodStart: it.linePeriodStart,
+      linePeriodEnd: it.linePeriodEnd,
     })),
     company: {
       companyName: company.companyName,

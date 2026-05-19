@@ -45,6 +45,12 @@
         <span class="meta-label">Gültig bis</span>
         <span class="meta-value">{{ offer.validUntil | date_unix }}</span>
       </div>
+      {% if offer.servicePeriodStart and offer.servicePeriodEnd %}
+      <div class="meta-row">
+        <span class="meta-label">Leistungszeitraum</span>
+        <span class="meta-value">{{ offer.servicePeriodStart | date_unix }} – {{ offer.servicePeriodEnd | date_unix }}</span>
+      </div>
+      {% endif %}
       {% if customer.vatId %}
       <div class="meta-row">
         <span class="meta-label">USt-IdNr. Kunde</span>
@@ -76,7 +82,19 @@
       {% for it in items %}
         <tr>
           <td class="col-pos">{{ it.position }}</td>
-          <td class="col-desc">{{ it.description }}</td>
+          <td class="col-desc">
+            <div class="item-name">{{ it.description }}</div>
+            {% if it.longDescription %}
+            <div class="item-detail">{{ it.longDescription | replace('\n', '<br>') | safe }}</div>
+            {% endif %}
+            {% if it.linePeriodStart and it.linePeriodEnd %}
+              {% if it.linePeriodStart == it.linePeriodEnd %}
+            <div class="item-period">Leistungsdatum {{ it.linePeriodStart | date_unix }}</div>
+              {% else %}
+            <div class="item-period">Leistungszeitraum {{ it.linePeriodStart | date_unix }} – {{ it.linePeriodEnd | date_unix }}</div>
+              {% endif %}
+            {% endif %}
+          </td>
           <td class="col-qty">{{ it.quantity | qty }}</td>
           <td class="col-unit">{{ it.unit }}</td>
           <td class="col-price">{{ it.unitPrice | eur(offer.currency) }}</td>
