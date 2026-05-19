@@ -81,11 +81,18 @@ fn documents_zettel_dir_static() -> Option<PathBuf> {
 
 #[tauri::command]
 pub async fn auto_backup_target(app: AppHandle, filename: String) -> Result<String, String> {
-    // Resolves <Documents>/Zettel/Backups/<filename> and ensures the parent
-    // dir exists. Used by Danger-Zone-Auto-Backup, sidesteps the JS path API.
-    let dir = documents_zettel_dir(&app)?.join("Backups");
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir.join(filename).to_string_lossy().into_owned())
+    // Bevorzugt <Documents>/Zettel/Backups/. Wenn Documents nicht erreichbar
+    // ist (OneDrive offline, Known-Folder leer, OS error 2 …), fallback in
+    // den App-Data-Dir — der existiert immer (App läuft ja daraus).
+    let primary = documents_zettel_dir(&app).map(|d| d.join("Backups"));
+    if let Ok(p) = primary {
+        if fs::create_dir_all(&p).is_ok() {
+            return Ok(p.join(filename).to_string_lossy().into_owned());
+        }
+    }
+    let fallback = app_data_dir(&app)?.join("Backups");
+    fs::create_dir_all(&fallback).map_err(|e| e.to_string())?;
+    Ok(fallback.join(filename).to_string_lossy().into_owned())
 }
 
 #[tauri::command]

@@ -1151,7 +1151,7 @@
       </p>
       <div class="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
         <strong>Irreversibel.</strong> Vor der Ausführung wird ein unverschlüsseltes
-        Backup unter <code>~/Dokumente/Zettel/Backups/</code> angelegt — damit bleibt
+        Backup unter <code>Dokumente/Zettel/Backups/</code> (oder dem App-Datenordner als Fallback) angelegt — damit bleibt
         ein Rettungsanker, falls du dich vertippt hast.
       </div>
       <div class="space-y-1.5">
