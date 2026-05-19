@@ -6,6 +6,17 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.13.0]
+
+> **Settings-Refactor + UI-Konsistenz.** Die Einstellungen leben jetzt in fünf klar getrennten Kategorien — Stamm­daten, Dokumente, Darstellung, Daten und Erweitert — statt einer 1.180-Zeilen-Endlos-Liste. Pfeil-Animationen und Lift-Hover sind durch die ganze App konsistent gemacht; Toast-Notifications gleiten endlich rein und raus statt zu poppen.
+
+### Changed
+- **Settings als Kategorie-Hub.** `/settings` zeigt jetzt fünf klickbare Kategorie-Cards (Unternehmen / Dokumente / Darstellung / Daten / Erweitert). Jede Kategorie ist eine eigene Route unter `/settings/<kategorie>` mit Breadcrumb-Back-Nav. Die alte Single-Page-Liste ist weg. Inhaltlich keine Settings verloren — nur neu sortiert. Darstellung bekommt zusätzlich einen expliziten Theme-Picker (light/dark/system), vorher nur im Sidebar-Dropdown.
+- **Einheitliche Hover-/Pfeil-Animationen.** Back-Nav-Links auf zehn Detail-Routen (Customer/Vendor/Invoice/Offer/Recurring/Reminder/Expense Edit + Invoice/Offer Detail + TaxReport) bekommen einen Slide-Effekt: `ArrowLeft` wandert beim Hover sanft nach links. Dashboard Steuer-Rücklage-Card und Sandbox-Banner kriegen die volle Lift-Animation (`-translate-y-0.5 + shadow-md`) wie die Offer/Expense-Cards; literale „→"-Zeichen sind durch animierte `ArrowRight`-Icons ersetzt. ReminderEdit-Back-Button auf das Standard-`<a use:link>`-Muster vereinheitlicht.
+
+### Fixed
+- **Toast-Animation.** Der Toaster hatte gar keine Svelte-Transitions — Toasts erschienen und verschwanden ohne Animation. Mit `in:fly` (von unten reinwischen), `out:fly` (nach rechts rausschieben) und `animate:flip` (smooth Nachrutschen, wenn ein Toast aus der Mitte des Stacks dismissed wird) fühlt sich das jetzt richtig an.
+
 ### Added
 - **Danger Zone in Settings.** Drei klar getrennte irreversible Aktionen: „Alle Geschäftsdaten löschen" (Settings bleiben), „Einzelne Tabellen leeren" (Multi-Select mit Cascade auf Children/Mahnungen), „Nummerierungs-Counter zurücksetzen". Bestätigung per Tippen von `LÖSCHEN`; vor jeder Aktion wird automatisch ein unverschlüsseltes Backup nach `~/Dokumente/Zettel/Backups/pre-wipe-<ts>.zip` geschrieben als Rettungsanker.
 - **YTD-Modus in der Steuer-Rücklage.** Zwei klickbare Cards in `/reports/taxes` und nebeneinander im Dashboard-Widget: „Bisher ausgelöst (YTD)" zeigt die Steuerlast aus dem realen YTD-Gewinn (konservativ, ohne Hochrechnung), „Aufs Jahr hochgerechnet" extrapoliert linear. Beim Schalten wechselt die Aufschlüsselung darunter mit. Hilft besonders früh im Jahr und bei stark schwankenden Einnahmen, weil eine einzelne Rechnung im April nicht mehr zu absurden Jahresprognosen führt.
