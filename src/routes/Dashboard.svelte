@@ -18,7 +18,6 @@
     Hourglass,
     Bell,
     AlertTriangle,
-    Calculator,
   } from "@lucide/svelte";
   import PeriodSwitcher from "$lib/components/PeriodSwitcher.svelte";
   import BarChart from "$lib/components/BarChart.svelte";
@@ -349,9 +348,7 @@
     <Card class="hover:border-foreground/30 transition-colors">
       <CardContent>
         <div class="flex items-center justify-between gap-6">
-          <div class="flex items-center gap-4 min-w-0">
-            <Calculator class="size-5 text-muted-foreground shrink-0" />
-            <div class="min-w-0">
+          <div class="min-w-0">
               <div class="text-xs text-muted-foreground uppercase tracking-wider">
                 Steuer-Rücklage {taxRücklage.year} · Tarif {taxRücklage.projected.income.tarifYear}
               </div>
@@ -379,7 +376,6 @@
                   </div>
                 {/if}
               </div>
-            </div>
           </div>
           <div class="text-xs text-muted-foreground group-hover:text-foreground transition-colors shrink-0">
             Details →
