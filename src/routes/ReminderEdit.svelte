@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { push, link } from "svelte-spa-router";
   import {
     buildReminderDraft,
     createReminder,
@@ -209,10 +209,13 @@
 </script>
 
 <div class="mb-6">
-  <Button variant="ghost" size="sm" onclick={() => push("/reminders")}>
-    <ArrowLeft class="size-4" />
-    Zurück
-  </Button>
+  <a
+    href="/reminders"
+    use:link
+    class="group inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+  >
+    <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" /> Mahnungen
+  </a>
 </div>
 
 {#if error}
