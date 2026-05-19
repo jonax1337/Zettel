@@ -55,6 +55,7 @@ type SettingsRow = {
   est_prepayment_q4_cent: number | null;
   use_pauschal_tax_reserve: number | null;
   pauschal_tax_percent: number | null;
+  other_income_annual_cent: number | null;
   created_at: number;
   updated_at: number;
 };
@@ -112,6 +113,7 @@ function mapSettings(r: SettingsRow): Settings {
     estPrepaymentQ4Cent: r.est_prepayment_q4_cent ?? 0,
     usePauschalTaxReserve: (r.use_pauschal_tax_reserve ?? 0) === 1,
     pauschalTaxPercent: r.pauschal_tax_percent ?? 30.0,
+    otherIncomeAnnualCent: r.other_income_annual_cent ?? 0,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -181,6 +183,7 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       est_prepayment_q4_cent = ?,
       use_pauschal_tax_reserve = ?,
       pauschal_tax_percent = ?,
+      other_income_annual_cent = ?,
       updated_at = unixepoch()
     WHERE id = 1`,
     [
@@ -234,6 +237,7 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       s.estPrepaymentQ4Cent ?? 0,
       s.usePauschalTaxReserve ? 1 : 0,
       s.pauschalTaxPercent ?? 30.0,
+      s.otherIncomeAnnualCent ?? 0,
     ],
   );
 }

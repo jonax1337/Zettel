@@ -195,3 +195,36 @@ export function estimateIncomeTax(
     tarifYear,
   };
 }
+
+/**
+ * Marginale ESt-Last durch ein zusätzliches Selbst-Einkommen, wenn schon
+ * `otherIncomeCent` aus anderer Quelle (Anstellung etc.) versteuert wird.
+ *
+ * = ESt(otherIncome + selbst) − ESt(otherIncome alleine)
+ *
+ * Bei otherIncome = 0 ist das Ergebnis identisch zum direkten Solo-Fall.
+ * Die Lohnsteuer auf den otherIncome führt der AG bereits ab; dieser
+ * marginale Aufschlag ist exakt das, was zusätzlich zurückzulegen ist.
+ */
+export function marginalIncomeTax(
+  selbstProfitCent: number,
+  otherIncomeCent: number,
+  status: FilingStatus,
+  churchRate: number,
+  year: number = new Date().getFullYear(),
+): IncomeTaxResult {
+  const other = Math.max(0, otherIncomeCent);
+  const self = Math.max(0, selbstProfitCent);
+  const total = estimateIncomeTax(other + self, status, churchRate, year);
+  const otherAlone = estimateIncomeTax(other, status, churchRate, year);
+  const est = Math.max(0, total.est - otherAlone.est);
+  const soli = Math.max(0, total.soli - otherAlone.soli);
+  const kist = Math.max(0, total.kist - otherAlone.kist);
+  return {
+    est,
+    soli,
+    kist,
+    total: est + soli + kist,
+    tarifYear: total.tarifYear,
+  };
+}

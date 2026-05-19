@@ -1,21 +1,23 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
-  import { Button, Card, CardContent, CardHeader, CardTitle, CardDescription, Label } from "$lib/ui";
-  import { ArrowLeft, Calculator, Sparkles } from "@lucide/svelte";
+  import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "$lib/ui";
+  import { ArrowLeft, Calculator } from "@lucide/svelte";
   import { centsToEur } from "$lib/utils/money";
-  import { computeTaxRücklage, type TaxRücklageResult } from "$lib/dashboard/tax";
+  import { computeTaxRücklage, type TaxRücklageResult, type TaxScenario } from "$lib/dashboard/tax";
 
   let result = $state<TaxRücklageResult | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let overrideEuro = $state<string>("");
+  let mode = $state<"ytd" | "projected">("projected");
 
-  async function reload(overrideCent?: number) {
-    loading = true;
+  const active: TaxScenario | null = $derived(
+    result === null ? null : mode === "ytd" ? result.ytd : result.projected,
+  );
+
+  async function reload() {
+    loading = result === null;
     try {
-      result = await computeTaxRücklage(
-        overrideCent !== undefined ? { remainingProfitOverrideCent: overrideCent } : undefined,
-      );
+      result = await computeTaxRücklage();
       error = null;
     } catch (e) {
       error = String(e);
@@ -27,21 +29,6 @@
   $effect(() => {
     reload();
   });
-
-  function applyOverride() {
-    const v = overrideEuro.trim().replace(/\./g, "").replace(",", ".");
-    const n = Number.parseFloat(v);
-    if (Number.isNaN(n)) {
-      reload();
-      return;
-    }
-    reload(Math.round(n * 100));
-  }
-
-  function resetOverride() {
-    overrideEuro = "";
-    reload();
-  }
 </script>
 
 <header class="mb-6">
@@ -55,7 +42,7 @@
   </h1>
   <p class="text-sm text-muted-foreground mt-1.5 max-w-2xl">
     Vorhersage zur Liquiditätsplanung — <strong>keine Steuerberatung</strong>.
-    Tarif nach § 32a EStG VZ {result?.income.tarifYear ?? new Date().getFullYear()},
+    Tarif nach § 32a EStG VZ {active?.income.tarifYear ?? new Date().getFullYear()},
     Konstanten aus amtlicher BMF-Bekanntmachung.
   </p>
 </header>
@@ -64,44 +51,50 @@
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else if error}
   <p class="text-sm text-destructive">Fehler: {error}</p>
-{:else if result}
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-    <Card class="lg:col-span-2">
+{:else if result && active}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+    <Card
+      class={mode === "ytd"
+        ? "ring-2 ring-primary cursor-pointer"
+        : "cursor-pointer hover:bg-muted/40 transition-colors"}
+      onclick={() => (mode = "ytd")}
+    >
       <CardHeader>
-        <CardTitle>Empfohlene Rücklage</CardTitle>
+        <CardTitle>Bisher ausgelöst (YTD)</CardTitle>
         <CardDescription>
-          Auf Basis der bisherigen YTD-Zahlen, hochgerechnet aufs Jahr.
+          Steuerlast aus dem, was du wirklich bis heute erwirtschaftet hast.
+          Konservativ — keine Hochrechnung.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div class="text-5xl font-semibold tabular-nums">
-          {centsToEur(result.recommendedReserveCent)}
+        <div class="text-4xl font-semibold tabular-nums">
+          {centsToEur(result.ytd.recommendedReserveCent)}
         </div>
-        <p class="text-sm text-muted-foreground mt-2">
-          {#if result.recommendedReserveCent === 0 && result.totalTaxBurdenCent > 0}
-            Vorauszahlungen decken die geschätzte Last bereits vollständig ab.
-          {:else if result.totalTaxBurdenCent === 0}
-            Bisher keine relevante Steuerlast erwartet.
-          {:else}
-            Davon ESt + Soli + KiSt: {centsToEur(result.income.total)} ·
-            GewSt (netto): {centsToEur(Math.max(0, result.trade.tradeTax - result.trade.estCredit))} ·
-            USt: {centsToEur(result.ustSchuldYtdCent)} ·
-            abzgl. Vorauszahlungen: {centsToEur(result.prepaymentsCent)}
-          {/if}
+        <p class="text-xs text-muted-foreground mt-2">
+          aus {centsToEur(result.profitYtdCent)} Gewinn YTD
         </p>
       </CardContent>
     </Card>
 
-    <Card>
+    <Card
+      class={mode === "projected"
+        ? "ring-2 ring-primary cursor-pointer"
+        : "cursor-pointer hover:bg-muted/40 transition-colors"}
+      onclick={() => (mode = "projected")}
+    >
       <CardHeader>
-        <CardTitle class="text-base">Tarifjahr</CardTitle>
+        <CardTitle>Aufs Jahr hochgerechnet</CardTitle>
+        <CardDescription>
+          Linear extrapoliert — sinnvoll wenn deine YTD-Zahlen ein
+          repräsentatives Bild abgeben.
+        </CardDescription>
       </CardHeader>
-      <CardContent class="space-y-2">
-        <div class="text-2xl font-semibold tabular-nums">{result.income.tarifYear}</div>
-        <p class="text-xs text-muted-foreground">
-          § 32a EStG mit den Konstanten der amtlichen BMF-Bekanntmachung
-          für VZ {result.income.tarifYear}. Verifizierbar gegen den
-          Lohnsteuer-Rechner auf bmf-steuerrechner.de.
+      <CardContent>
+        <div class="text-4xl font-semibold tabular-nums">
+          {centsToEur(result.projected.recommendedReserveCent)}
+        </div>
+        <p class="text-xs text-muted-foreground mt-2">
+          aus {centsToEur(result.projectedAnnualProfitCent)} Jahres-Prognose
         </p>
       </CardContent>
     </Card>
@@ -110,38 +103,28 @@
   <Card class="mb-6">
     <CardHeader>
       <CardTitle>Hochrechnung</CardTitle>
+      <CardDescription>
+        Aus dem YTD-Gewinn linear aufs Jahr extrapoliert.
+      </CardDescription>
     </CardHeader>
     <CardContent>
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="grid grid-cols-3 gap-6">
         <div>
           <div class="text-xs text-muted-foreground uppercase tracking-wider">Gewinn YTD</div>
           <div class="text-2xl font-semibold tabular-nums mt-1">{centsToEur(result.profitYtdCent)}</div>
           <div class="text-xs text-muted-foreground mt-0.5">Tag {result.daysElapsed} / 365</div>
         </div>
         <div>
-          <div class="text-xs text-muted-foreground uppercase tracking-wider">Jahres-Prognose</div>
-          <div class="text-2xl font-semibold tabular-nums mt-1">{centsToEur(result.projectedAnnualProfitCent)}</div>
+          <div class="text-xs text-muted-foreground uppercase tracking-wider">+ noch erwartet</div>
+          <div class="text-2xl font-semibold tabular-nums mt-1">
+            {centsToEur(result.projectedAnnualProfitCent - result.profitYtdCent)}
+          </div>
           <div class="text-xs text-muted-foreground mt-0.5">linear extrapoliert</div>
         </div>
-        <div class="col-span-2 md:col-span-2">
-          <Label class="text-xs uppercase tracking-wider">Was wenn — Restjahres-Gewinn (€)</Label>
-          <div class="flex gap-2 mt-1">
-            <input
-              type="text"
-              inputmode="decimal"
-              bind:value={overrideEuro}
-              placeholder="z. B. 8.000"
-              class="flex-1 h-9 px-3 rounded-md border bg-background text-sm"
-            />
-            <Button variant="outline" onclick={applyOverride}>
-              <Sparkles class="size-4" />
-              Neu rechnen
-            </Button>
-            <Button variant="ghost" onclick={resetOverride}>Reset</Button>
-          </div>
-          <p class="text-xs text-muted-foreground mt-1">
-            Override: was vermutest du noch zusätzlich bis Jahresende?
-          </p>
+        <div>
+          <div class="text-xs text-muted-foreground uppercase tracking-wider">= Jahres-Prognose</div>
+          <div class="text-2xl font-semibold tabular-nums mt-1">{centsToEur(result.projectedAnnualProfitCent)}</div>
+          <div class="text-xs text-muted-foreground mt-0.5">Basis der Projektion</div>
         </div>
       </div>
     </CardContent>
@@ -161,9 +144,9 @@
           <div>
             <div class="text-xs text-muted-foreground uppercase tracking-wider">Detail-Rücklage</div>
             <div class="text-2xl font-semibold tabular-nums mt-1">
-              {centsToEur(result.recommendedReserveCent)}
+              {centsToEur(result.projected.recommendedReserveCent)}
             </div>
-            <div class="text-xs text-muted-foreground mt-0.5">aus dem Tarif</div>
+            <div class="text-xs text-muted-foreground mt-0.5">aus dem Tarif (Projektion)</div>
           </div>
           <div>
             <div class="text-xs text-muted-foreground uppercase tracking-wider">
@@ -198,22 +181,27 @@
 
   <Card class="mb-6">
     <CardHeader>
-      <CardTitle>Aufschlüsselung</CardTitle>
+      <CardTitle>
+        Aufschlüsselung — {mode === "ytd" ? "YTD" : "Jahres-Projektion"}
+      </CardTitle>
+      <CardDescription>
+        Basis: {centsToEur(active.profitCent)} {mode === "ytd" ? "Gewinn YTD" : "Jahres-Prognose"}
+      </CardDescription>
     </CardHeader>
     <CardContent>
       <table class="w-full text-sm">
         <tbody class="divide-y">
           <tr class="text-base">
             <td class="py-3 font-medium">Einkommensteuer (§ 32a EStG)</td>
-            <td class="py-3 text-right tabular-nums">{centsToEur(result.income.est)}</td>
+            <td class="py-3 text-right tabular-nums">{centsToEur(active.income.est)}</td>
           </tr>
           <tr>
             <td class="py-3 pl-6 text-muted-foreground">+ Solidaritätszuschlag</td>
-            <td class="py-3 text-right tabular-nums text-muted-foreground">{centsToEur(result.income.soli)}</td>
+            <td class="py-3 text-right tabular-nums text-muted-foreground">{centsToEur(active.income.soli)}</td>
           </tr>
           <tr>
             <td class="py-3 pl-6 text-muted-foreground">+ Kirchensteuer</td>
-            <td class="py-3 text-right tabular-nums text-muted-foreground">{centsToEur(result.income.kist)}</td>
+            <td class="py-3 text-right tabular-nums text-muted-foreground">{centsToEur(active.income.kist)}</td>
           </tr>
 
           {#if result.flags.isFreelancer}
@@ -224,15 +212,15 @@
           {:else}
             <tr>
               <td class="py-3 font-medium">Gewerbesteuer (vor Anrechnung)</td>
-              <td class="py-3 text-right tabular-nums">{centsToEur(result.trade.tradeTax)}</td>
+              <td class="py-3 text-right tabular-nums">{centsToEur(active.trade.tradeTax)}</td>
             </tr>
             <tr>
               <td class="py-3 pl-6 text-muted-foreground">− Anrechnung auf ESt (§ 35 EStG)</td>
-              <td class="py-3 text-right tabular-nums text-muted-foreground">{centsToEur(result.trade.estCredit)}</td>
+              <td class="py-3 text-right tabular-nums text-muted-foreground">{centsToEur(active.trade.estCredit)}</td>
             </tr>
             <tr>
               <td class="py-3 pl-6 text-muted-foreground">= GewSt-Restbelastung</td>
-              <td class="py-3 text-right tabular-nums">{centsToEur(Math.max(0, result.trade.tradeTax - result.trade.estCredit))}</td>
+              <td class="py-3 text-right tabular-nums">{centsToEur(active.gewStNetCent)}</td>
             </tr>
           {/if}
 
@@ -249,7 +237,7 @@
 
           <tr class="text-base font-medium border-t-2">
             <td class="py-3">Summe Steuer-Last</td>
-            <td class="py-3 text-right tabular-nums">{centsToEur(result.totalTaxBurdenCent)}</td>
+            <td class="py-3 text-right tabular-nums">{centsToEur(active.totalTaxBurdenCent)}</td>
           </tr>
           <tr>
             <td class="py-3 pl-6 text-muted-foreground">− geleistete Vorauszahlungen Q1-Q4</td>
@@ -257,7 +245,7 @@
           </tr>
           <tr class="text-base font-semibold border-t">
             <td class="py-4">Empfohlene Rücklage</td>
-            <td class="py-4 text-right tabular-nums">{centsToEur(result.recommendedReserveCent)}</td>
+            <td class="py-4 text-right tabular-nums">{centsToEur(active.recommendedReserveCent)}</td>
           </tr>
         </tbody>
       </table>
@@ -267,7 +255,10 @@
   <div class="text-xs text-muted-foreground space-y-1 max-w-3xl">
     <p>
       <strong>Disclaimer:</strong> Diese Schätzung ist eine Liquiditätshilfe, keine Steuerberatung.
-      Saisonale Schwankungen bleiben unberücksichtigt — die Jahresprognose ist lineare Extrapolation der YTD-Werte.
+      <strong>YTD-Modus</strong> zeigt die Steuerlast aus dem bisherigen Gewinn — konservativ,
+      besonders sinnvoll früh im Jahr oder bei stark schwankenden Einnahmen.
+      <strong>Hochrechnungs-Modus</strong> extrapoliert linear aufs Jahr — passend wenn deine
+      YTD-Zahlen den Jahresverlauf gut repräsentieren.
     </p>
     <p>
       USt-Schuld-Approximation: Rechnungs-USt minus Vorsteuer aus Eingangsrechnungen.

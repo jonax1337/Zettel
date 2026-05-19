@@ -27,12 +27,12 @@
     type Period,
   } from "$lib/dashboard/period";
   import {
-    loadKpisWithYoY,
+    loadKpis,
     monthlyRevenueInPeriod,
     topCustomersInPeriod,
     oldestOverdue,
     loadFollowUps,
-    type KpisWithYoY,
+    type Kpis,
     type MonthPoint,
     type TopCustomerRow,
     type OldestOverdue,
@@ -50,7 +50,7 @@
 
   let sandbox = $state(false);
   let customerCount = $state(0);
-  let kpis = $state<KpisWithYoY | null>(null);
+  let kpis = $state<Kpis | null>(null);
   let monthly = $state<MonthPoint[]>([]);
   let top = $state<TopCustomerRow[]>([]);
   let aging = $state<OldestOverdue>({ daysOverdue: null, openTotal: 0, openCount: 0 });
@@ -69,7 +69,7 @@
     await expireDueOffers().catch(() => {});
     const [cs, k, mon, tc, ag, fu, os, dr] = await Promise.all([
       listCustomers(),
-      loadKpisWithYoY(p),
+      loadKpis(p),
       monthlyRevenueInPeriod(p),
       topCustomersInPeriod(p, 5),
       oldestOverdue(),
@@ -109,19 +109,6 @@
     } catch (e) {
       toast.error("Erzeugen fehlgeschlagen", String(e));
     }
-  }
-
-  function fmtPct(v: number | null): string {
-    if (v === null) return "—";
-    const sign = v >= 0 ? "+" : "";
-    return `${sign}${v.toFixed(1).replace(".", ",")} %`;
-  }
-
-  /** higherIsBetter: revenue/balance true; expense false (less is better). */
-  function yoyClass(v: number | null, higherIsBetter: boolean): string {
-    if (v === null || v === 0) return "text-muted-foreground";
-    const good = higherIsBetter ? v > 0 : v < 0;
-    return good ? "text-success" : "text-destructive";
   }
 
   const topMax = $derived(Math.max(1, ...top.map((c) => c.total)));
@@ -182,11 +169,6 @@
       <div class="text-2xl font-semibold mt-2 tabular-nums">
         {loading || !kpis ? "…" : centsToEur(kpis.revenueNet)}
       </div>
-      {#if kpis}
-        <div class={"text-xs mt-1 " + yoyClass(kpis.yoy.revenueNet, true)}>
-          {fmtPct(kpis.yoy.revenueNet)} ggü. Vorjahr
-        </div>
-      {/if}
     </CardContent>
   </Card>
 
@@ -199,11 +181,6 @@
       <div class="text-2xl font-semibold mt-2 tabular-nums">
         {loading || !kpis ? "…" : centsToEur(kpis.revenueGross)}
       </div>
-      {#if kpis}
-        <div class={"text-xs mt-1 " + yoyClass(kpis.yoy.revenueGross, true)}>
-          {fmtPct(kpis.yoy.revenueGross)} ggü. Vorjahr
-        </div>
-      {/if}
     </CardContent>
   </Card>
 
@@ -216,11 +193,6 @@
       <div class="text-2xl font-semibold mt-2 tabular-nums">
         {loading || !kpis ? "…" : centsToEur(kpis.expenseNet)}
       </div>
-      {#if kpis}
-        <div class={"text-xs mt-1 " + yoyClass(kpis.yoy.expenseNet, false)}>
-          {fmtPct(kpis.yoy.expenseNet)} ggü. Vorjahr
-        </div>
-      {/if}
     </CardContent>
   </Card>
 
@@ -236,11 +208,6 @@
       >
         {loading || !kpis ? "…" : centsToEur(kpis.balance)}
       </div>
-      {#if kpis}
-        <div class={"text-xs mt-1 " + yoyClass(kpis.yoy.balance, true)}>
-          {fmtPct(kpis.yoy.balance)} ggü. Vorjahr
-        </div>
-      {/if}
     </CardContent>
   </Card>
 
@@ -385,33 +352,30 @@
             <Calculator class="size-5 text-muted-foreground shrink-0" />
             <div class="min-w-0">
               <div class="text-xs text-muted-foreground uppercase tracking-wider">
-                Steuer-Rücklage {taxRücklage.year} · Tarif {taxRücklage.income.tarifYear}
+                Steuer-Rücklage {taxRücklage.year} · Tarif {taxRücklage.projected.income.tarifYear}
               </div>
-              <div class="flex items-baseline gap-4 mt-0.5">
-                <div class="text-2xl font-semibold tabular-nums">
-                  {centsToEur(taxRücklage.recommendedReserveCent)}
+              <div class="flex items-baseline gap-6 mt-0.5">
+                <div>
+                  <div class="text-2xl font-semibold tabular-nums">
+                    {centsToEur(taxRücklage.ytd.recommendedReserveCent)}
+                  </div>
+                  <div class="text-[10px] text-muted-foreground uppercase tracking-wider">YTD</div>
+                </div>
+                <div>
+                  <div class="text-2xl font-semibold tabular-nums text-muted-foreground">
+                    {centsToEur(taxRücklage.projected.recommendedReserveCent)}
+                  </div>
+                  <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Hochgerechnet</div>
                 </div>
                 {#if taxRücklage.flags.usePauschal}
-                  <div class="text-sm text-muted-foreground tabular-nums">
-                    pauschal {taxRücklage.flags.pauschalPercent}%:
-                    <span class="font-medium">{centsToEur(taxRücklage.pauschalReserveCent)}</span>
+                  <div>
+                    <div class="text-2xl font-semibold tabular-nums text-muted-foreground">
+                      {centsToEur(taxRücklage.pauschalReserveCent)}
+                    </div>
+                    <div class="text-[10px] text-muted-foreground uppercase tracking-wider">
+                      Pauschal {taxRücklage.flags.pauschalPercent}%
+                    </div>
                   </div>
-                {/if}
-              </div>
-              <div class="text-xs text-muted-foreground mt-1 truncate">
-                {#if taxRücklage.totalTaxBurdenCent === 0}
-                  Bisher keine relevante Steuerlast erwartet.
-                {:else if taxRücklage.recommendedReserveCent === 0}
-                  Vorauszahlungen decken die Last bereits ab.
-                {:else}
-                  ESt+Soli+KiSt {centsToEur(taxRücklage.income.total)}
-                  {#if !taxRücklage.flags.isFreelancer}
-                    · GewSt {centsToEur(Math.max(0, taxRücklage.trade.tradeTax - taxRücklage.trade.estCredit))}
-                  {/if}
-                  {#if !taxRücklage.flags.isKleinunternehmer}
-                    · USt {centsToEur(taxRücklage.ustSchuldYtdCent)}
-                  {/if}
-                  · Vorauszahlungen −{centsToEur(taxRücklage.prepaymentsCent)}
                 {/if}
               </div>
             </div>

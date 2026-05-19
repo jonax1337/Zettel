@@ -6,6 +6,19 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+- **Danger Zone in Settings.** Drei klar getrennte irreversible Aktionen: „Alle Geschäftsdaten löschen" (Settings bleiben), „Einzelne Tabellen leeren" (Multi-Select mit Cascade auf Children/Mahnungen), „Nummerierungs-Counter zurücksetzen". Bestätigung per Tippen von `LÖSCHEN`; vor jeder Aktion wird automatisch ein unverschlüsseltes Backup nach `~/Dokumente/Zettel/Backups/pre-wipe-<ts>.zip` geschrieben als Rettungsanker.
+- **YTD-Modus in der Steuer-Rücklage.** Zwei klickbare Cards in `/reports/taxes` und nebeneinander im Dashboard-Widget: „Bisher ausgelöst (YTD)" zeigt die Steuerlast aus dem realen YTD-Gewinn (konservativ, ohne Hochrechnung), „Aufs Jahr hochgerechnet" extrapoliert linear. Beim Schalten wechselt die Aufschlüsselung darunter mit. Hilft besonders früh im Jahr und bei stark schwankenden Einnahmen, weil eine einzelne Rechnung im April nicht mehr zu absurden Jahresprognosen führt.
+
+### Fixed
+- **Storno-Bug im Dashboard.** Beim Bearbeiten/Speichern einer Stornorechnung wurde `eur_total_cent` positiv gespeichert, während `total` korrekt negativ war. Die KPI-Queries (`COALESCE(eur_total_cent, total)` und `eur_total_cent * subtotal / total`) nettoeten Stornos dadurch nicht aus — der Saldo wurde so um den doppelten Storno-Betrag zu hoch angezeigt. Fix: `eurTotalCent` bekommt jetzt in `createInvoice` / `updateInvoice` das gleiche Vorzeichen wie subtotal/total. Migration `0018_v0.11_fix_storno_eur_total.sql` flippt bestehende falsche Werte in der DB.
+- **Storno-Aggregation in der Steuer-Rücklage.** Die separate Storno-Spalte in der YTD-Aggregation zog vom Gewinn ab, was — weil Stornos schon negativ gespeichert sind — den Storno-Betrag doppelt addierte statt abzuziehen. Gleicher Bug bei der USt-Schuld-YTD. Query auf simples `SUM(subtotal)` umgestellt, da das natürliche Vorzeichen der Stornos das richtige Ergebnis liefert.
+- **Draft-Ausgaben im Dashboard-Saldo.** Die Expense-Aggregation hatte keinen Status-Filter und summierte auch Entwürfe mit, die noch nicht final sind. Auf `status IN ('open','paid')` gezogen — konsistent mit dem Tax-Aggregator und dem mentalen Modell „Drafts zählen erst nach Übernahme".
+
+### Changed
+- **„ggü. Vorjahr" entfernt.** Der prozentuale YoY-Vergleich unter den Dashboard-KPIs ist raus — der Periode-Selector macht das Vergleichsbedürfnis ohnehin uneindeutig, und die kleine ±%-Zeile war mehr Rauschen als Signal. `loadKpisWithYoY` / `KpisWithYoY` / `previousYearPeriod` als toter Code mit gelöscht.
+- **Sonstige Einkünfte / Nebenberuf-Bug.** Wer hauptberuflich angestellt ist und nebenbei selbst rechnet, hat die selbst-Einnahmen ja oben drauf auf den Anstellungs-Lohn — also schon im höheren Grenzsteuersatz. Neue Settings-Spalte `other_income_annual_cent` (Brutto-Jahres-Lohn) füttert eine *marginale* ESt-Berechnung: `ESt(other + selbst) − ESt(other)`. Bei `other = 0` identisch zum Solo-Fall. Migration `0017_v0.11_other_income.sql`.
+
 ## [0.11.0] — 2026-05-18
 
 > **Steuer-Rücklage.** Eine fokussierte Story — Zettel sagt dir jetzt im Dashboard, wieviel Geld du von deinem YTD-Gewinn für die Einkommensteuer am Jahresende zurücklegen solltest. § 32a EStG-Tarif für VZ 2024, 2025 und 2026 hartcodiert aus amtlicher BMF-Bekanntmachung, durchgetestet mit 38 Vitest-Cases gegen Eckpunkte aller Zonen.

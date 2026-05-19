@@ -87,6 +87,7 @@ export const settings = sqliteTable("settings", {
     .notNull()
     .default(false),
   pauschalTaxPercent: real("pauschal_tax_percent").notNull().default(30.0),
+  otherIncomeAnnualCent: integer("other_income_annual_cent").notNull().default(0),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),

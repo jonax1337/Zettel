@@ -113,6 +113,18 @@ fn build_migrations() -> Vec<Migration> {
             sql: include_str!("../../src/lib/db/migrations/0016_v0.11_tax_prepayments.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 18,
+            description: "v0.11_other_income",
+            sql: include_str!("../../src/lib/db/migrations/0017_v0.11_other_income.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 19,
+            description: "v0.11_fix_storno_eur_total",
+            sql: include_str!("../../src/lib/db/migrations/0018_v0.11_fix_storno_eur_total.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
