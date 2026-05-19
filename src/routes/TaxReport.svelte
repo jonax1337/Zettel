@@ -39,8 +39,8 @@
 
 <header class="mb-6 flex flex-wrap items-end justify-between gap-4">
   <div>
-    <a use:link href="/" class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-2">
-      <ArrowLeft class="size-4" />
+    <a use:link href="/" class="group inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-2">
+      <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" />
       Dashboard
     </a>
     <h1 class="text-3xl font-semibold tracking-tight">

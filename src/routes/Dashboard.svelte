@@ -18,6 +18,7 @@
     Hourglass,
     Bell,
     AlertTriangle,
+    ArrowRight,
   } from "@lucide/svelte";
   import PeriodSwitcher from "$lib/components/PeriodSwitcher.svelte";
   import BarChart from "$lib/components/BarChart.svelte";
@@ -126,14 +127,17 @@
   <button
     type="button"
     onclick={() => push("/settings")}
-    class="mb-6 w-full rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15 transition-colors p-4 flex items-center gap-3 text-left cursor-pointer"
+    class="group mb-6 w-full rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200 p-4 flex items-center gap-3 text-left cursor-pointer"
   >
     <FlaskConical class="size-5 text-amber-600 dark:text-amber-400 shrink-0" />
     <div class="flex-1">
       <h2 class="text-sm font-semibold text-amber-900 dark:text-amber-200">Sandbox aktiv</h2>
       <p class="text-xs text-amber-800/80 dark:text-amber-200/80">Hier kannst du gefahrlos testen. Echte Daten sind nicht betroffen.</p>
     </div>
-    <span class="text-xs text-amber-900/70 dark:text-amber-200/70">Einstellungen →</span>
+    <span class="inline-flex items-center gap-1 text-xs text-amber-900/70 dark:text-amber-200/70">
+      Einstellungen
+      <ArrowRight class="size-3.5 transition-transform group-hover:translate-x-0.5" />
+    </span>
   </button>
 {/if}
 
@@ -345,7 +349,7 @@
     onclick={() => push("/reports/taxes")}
     class="block w-full text-left mb-6 group"
   >
-    <Card class="hover:border-foreground/30 transition-colors">
+    <Card class="cursor-pointer hover:bg-muted/30 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
       <CardContent>
         <div class="flex items-center justify-between gap-6">
           <div class="min-w-0">
@@ -377,8 +381,9 @@
                 {/if}
               </div>
           </div>
-          <div class="text-xs text-muted-foreground group-hover:text-foreground transition-colors shrink-0">
-            Details →
+          <div class="inline-flex items-center gap-1 text-xs text-muted-foreground group-hover:text-foreground transition-colors shrink-0">
+            Details
+            <ArrowRight class="size-3.5 transition-transform group-hover:translate-x-0.5" />
           </div>
         </div>
       </CardContent>

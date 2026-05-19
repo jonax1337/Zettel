@@ -1,6 +1,9 @@
 <script lang="ts">
   import { toasts, dismiss } from "./toast.svelte";
   import { CheckCircle2, XCircle, AlertCircle, Info, X } from "@lucide/svelte";
+  import { fly } from "svelte/transition";
+  import { flip } from "svelte/animate";
+  import { cubicOut, cubicIn } from "svelte/easing";
 
   const icons = {
     default: Info,
@@ -34,6 +37,9 @@
         t.variant
       ]}"
       role="status"
+      in:fly={{ y: 24, duration: 260, easing: cubicOut }}
+      out:fly={{ x: 320, duration: 220, easing: cubicIn }}
+      animate:flip={{ duration: 240, easing: cubicOut }}
     >
       <Icon class="size-5 shrink-0 mt-0.5 {iconColors[t.variant]}" />
       <div class="flex-1 min-w-0">

@@ -23,6 +23,11 @@
   import TaxReport from "./routes/TaxReport.svelte";
   import Validate from "./routes/Validate.svelte";
   import Settings from "./routes/Settings.svelte";
+  import SettingsCompany from "./routes/settings/Company.svelte";
+  import SettingsDocuments from "./routes/settings/Documents.svelte";
+  import SettingsAppearance from "./routes/settings/Appearance.svelte";
+  import SettingsData from "./routes/settings/Data.svelte";
+  import SettingsAdvanced from "./routes/settings/Advanced.svelte";
   import Export from "./routes/Export.svelte";
   import NotFound from "./routes/NotFound.svelte";
   import { onMount } from "svelte";
@@ -128,6 +133,11 @@
     "/reports/taxes": TaxReport,
     "/validate": Validate,
     "/settings": Settings,
+    "/settings/company": SettingsCompany,
+    "/settings/documents": SettingsDocuments,
+    "/settings/appearance": SettingsAppearance,
+    "/settings/data": SettingsData,
+    "/settings/advanced": SettingsAdvanced,
     "/export": Export,
     "*": NotFound,
   } as never;

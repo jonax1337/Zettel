@@ -532,9 +532,9 @@
     <a
       href="/expenses"
       use:link
-      class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      class="group inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
     >
-      <ArrowLeft class="size-4" /> Eingangsrechnungen
+      <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" /> Eingangsrechnungen
     </a>
     <h1 class="text-3xl font-semibold tracking-tight mt-2">
       {mode === "new" ? "Neue Eingangsrechnung" : existing ? existing.internalNumber : "—"}
