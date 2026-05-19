@@ -25,7 +25,7 @@ body:
     id: scope
     attributes:
       label: Passt das in den Scope?
-      description: Zettel ist explizit kein Buchhaltungs-Tool. Siehe `PLAN.md` Abschnitt 3 (Non-Goals).
+      description: "Zettel ist explizit kein Buchhaltungs-Tool. Non-Goals (kein Banking, kein ELSTER-Upload, kein Cloud-Sync, keine Mobile-App, kein SMTP-Versand, kein Scan-OCR, keine Telemetrie, keine vollständige doppelte Buchhaltung) sind in der README und in CONTRIBUTING.md gelistet."
       options:
-        - label: Ich habe die Non-Goals in `PLAN.md` gelesen und mein Vorschlag ist kein explizites Non-Goal.
+        - label: Ich habe die Non-Goals gelesen (README → „Was Zettel nicht ist") und mein Vorschlag ist kein explizites Non-Goal.
           required: true

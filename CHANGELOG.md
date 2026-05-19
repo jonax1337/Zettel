@@ -236,7 +236,7 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 - **„Als Vorlage speichern" in Rechnungs-Detail.** Erzeugt aus einer Rechnung eine wiederkehrende Vorlage mit vorausgefülltem Kunde, Positionen, Reverse-Charge-Flag und Zahlungsfrist. User setzt nur noch Intervall + Erst-Fälligkeit. (#22, PR #23)
 
 ### Fixed
-- **Storno-XML Schema-Reihenfolge.** `InvoiceReferencedDocument` lag im CII-Schema an falscher Position (vor statt nach `SpecifiedTradeSettlementHeaderMonetarySummation`). Audit + Korrektur, Report unter `docs/v0.3.1-storno-validation.md`. (#17, PR #24)
+- **Storno-XML Schema-Reihenfolge.** `InvoiceReferencedDocument` lag im CII-Schema an falscher Position (vor statt nach `SpecifiedTradeSettlementHeaderMonetarySummation`). Audit + Korrektur. (#17, PR #24)
 - **Backup-Restore lehnte v0.4-Backups ab.** `CURRENT_SCHEMA`-Konstante in `backup.rs` war seit v0.2 nicht mehr mitgewachsen; der Manifest-Check hätte jedes v0.4-Backup mit „Schema neuer als App-Version" abgelehnt. Auf 9 angehoben.
 - **Settings-Schema-Mirror.** `CURRENT_DB_SCHEMA_VERSION` im Frontend wurde mit Migration 0008 nicht mitgezogen — auf 9 korrigiert.
 

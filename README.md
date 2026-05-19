@@ -8,14 +8,7 @@ ZUGFeRD- / Factur-X-konforme PDF/A-3 mit eingebettetem EN-16931-XML — lokal, o
 [![Release](https://img.shields.io/github/v/release/jonax1337/zettel?style=for-the-badge&logo=github&color=4f46e5)](https://github.com/jonax1337/zettel/releases)
 [![Build](https://img.shields.io/github/actions/workflow/status/jonax1337/zettel/build.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/jonax1337/zettel/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/github/license/jonax1337/zettel?style=for-the-badge&color=4f46e5)](./LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/jonax1337/zettel/total?style=for-the-badge&logo=github&color=4f46e5)](https://github.com/jonax1337/zettel/releases)
 [![Stars](https://img.shields.io/github/stars/jonax1337/zettel?style=for-the-badge&logo=github&color=4f46e5)](https://github.com/jonax1337/zettel/stargazers)
-
-[![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/jonax1337/zettel/releases)
-[![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/jonax1337/zettel/releases)
-[![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/jonax1337/zettel/releases)
-[![ZUGFeRD](https://img.shields.io/badge/ZUGFeRD-EN%2016931-10b981?style=for-the-badge)](https://www.ferd-net.de/)
-[![Made in Germany](https://img.shields.io/badge/Made%20in-Germany-000000?style=for-the-badge&labelColor=DD0000)](https://laux.digital)
 
 [![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?style=for-the-badge&logo=tauri&logoColor=white)](https://tauri.app)
 [![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev)
@@ -24,33 +17,77 @@ ZUGFeRD- / Factur-X-konforme PDF/A-3 mit eingebettetem EN-16931-XML — lokal, o
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![SQLite](https://img.shields.io/badge/SQLite-local-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org)
 
-[Releases](https://github.com/jonax1337/zettel/releases)&nbsp;&nbsp;•&nbsp;&nbsp;
-[Discussions](https://github.com/jonax1337/zettel/discussions)&nbsp;&nbsp;•&nbsp;&nbsp;
-[Plan](./PLAN.md)&nbsp;&nbsp;•&nbsp;&nbsp;
-[Changelog](./CHANGELOG.md)&nbsp;&nbsp;•&nbsp;&nbsp;
-[Contributing](./CONTRIBUTING.md)
+[Download](https://github.com/jonax1337/zettel/releases/latest) · [Diskutieren](https://github.com/jonax1337/zettel/discussions) · [Changelog](./CHANGELOG.md) · [Mitmachen](./CONTRIBUTING.md)
 
 </div>
 
 <br />
 
-<!-- TODO: Screenshot oder Demo-GIF -->
+## Warum Zettel?
 
-Ich bin Solo-Selbstständiger und hatte keine Lust auf weitere 20–30 € pro Monat für SaaS-Buchhaltung, nur um ein paar Rechnungen pro Quartal zu schreiben. Zettel ist das, was dabei rausgekommen ist: ein kleines Desktop-Tool, das **lokal** läuft, die deutsche E-Rechnungs-Norm **EN 16931** korrekt umsetzt und den **Kleinunternehmer-Modus (§ 19 UStG)** als First-Class-Feature behandelt — nicht als Häkchen, das man hinter einem Premium-Tarif suchen muss.
+Ich bin Solo-Selbstständig und hatte keine Lust auf weitere 20–30 € pro Monat für SaaS-Buchhaltung, nur um ein paar Rechnungen pro Quartal zu schreiben. Erst recht nicht, wenn meine Buchhaltungs-Daten dann irgendwo in einem AWS-Bucket eines deutschen GmbH-mit-niederländischer-Holding-Konstrukts liegen.
 
-Stand 0.2: fünf von fünf v0.1-Test-Rechnungen sind grün bei [erechnungs-validator.de](https://erechnungs-validator.de). v0.2 bringt Reverse-Charge, BASIC/EXTENDED-Profile, DATEV-Export, Backup/Restore und wiederkehrende Rechnungen dazu. Reicht für mich, reicht hoffentlich auch für dich.
+Zettel ist das, was dabei rausgekommen ist: ein kleines Desktop-Tool, das **lokal** läuft, die **deutsche E-Rechnungs-Norm EN 16931** korrekt umsetzt, den **Kleinunternehmer-Modus (§ 19 UStG)** als First-Class-Feature behandelt — und keine Telemetrie sendet, weil es keinen Server gibt, an den es senden könnte.
+
+|  | SaaS-Tools | Zettel |
+|---|---|---|
+| Hosting | Cloud (DSGVO-AVV nötig) | Dein Rechner |
+| Kosten | 15–40 €/Monat | Einmalig 0 € |
+| Daten-Eigentum | Vendor-Lockin | SQLite-File auf deiner Disk |
+| ZUGFeRD-XML | Häufig nur ab Premium | Standard, alle Profile |
+| Funktioniert offline | Selten | Immer |
+| Internet weg → kein Backup? | Problem | Egal |
+
+## Features
+
+### Rechnungen, die EN 16931 wirklich erfüllen
+- PDF/A-3 mit eingebettetem **Factur-X-XML** in den Profilen **BASIC**, **EN 16931** und **EXTENDED**
+- **Kleinunternehmer-Modus** mit korrektem `CategoryCode E` und BR-CO-26-konformem `BT-29`-Fallback ohne USt-IdNr.
+- **Reverse-Charge** intra-EU (CategoryCode K) und Drittland (CategoryCode G) inkl. Pflicht-Hinweistexte
+- **Stornorechnungen** als first-class Credit-Notes mit korrektem CII-Schema
+- Mehrere USt-Sätze pro Rechnung (0 %, 7 %, 19 %), Multi-Currency mit eingefrorenem EUR-Wert
+- Drei PDF-Themes (classic / modern / minimal) per CSS-Variablen
+- **Leistungszeiträume** (BG-14 / BG-26) auf Header- und Positions-Ebene, lange Positions-Beschreibungen (BT-154)
+
+### Buchhaltungs-Light
+- **Eingangsrechnungen** mit Drop-Zone für ZUGFeRD-PDFs (automatisches Parsing) und OCR-Light-Fallback (Text-Layer-Extraktion, kein Tesseract)
+- **Lieferanten-Verwaltung** mit USt-IdNr.-Matching beim Drop
+- **DATEV-Export** (Format 700, SKR03/SKR04) — Erlöse, Aufwände und Stornos in einem Buchungsstapel
+- **UStVA-Vorbereitung** (Kennzahlen 81/86/41/21/66 pro Quartal, zum Abtippen)
+- **Mahnungen** als eigene Dokumentenklasse mit Nummernkreis `MA-…`
+
+### Steuer-Rücklage
+- § 32a EStG-Tarif für **VZ 2024, 2025 und 2026** hartcodiert aus amtlicher BMF-Bekanntmachung, 38 Testfälle
+- Splittingtarif für Verheiratete, Soli mit Milderungszone, KiSt 8/9 %, GewSt mit § 35-Anrechnung
+- Pauschal-Modus (% × Umsatz) als zusätzliche Sanity-Check-Anzeige
+- YTD-Modus vs. Hochrechnung; Quartals-Vorauszahlungen werden gegengerechnet
+- Nebenberuf: marginale ESt-Berechnung wenn `other_income_annual_cent` gesetzt ist
+
+### Dashboard & Workflow
+- Zeitraum-Switcher (Jahr / Quartal / Monat / Custom) mit YoY-Kontext
+- **Globale Suche** (`Cmd/Ctrl+K`) über alle Entities inkl. Item-Beschreibungen
+- **Wiedervorlage**-Liste pro Kunde/Rechnung mit `follow_up_date`
+- Interne Notizen (nicht auf der PDF)
+- **Wiederkehrende Rechnungen** (monatlich / quartalsweise / jährlich) — explizit per Klick erzeugen, kein stilles Background-Cron
+
+### Daten gehören dir
+- **Backup** als verschlüsseltes ZIP (AES-256-GCM + Argon2id) oder unverschlüsselt
+- **Granularer Restore** (Kunden / Rechnungen+PDFs / Settings unabhängig)
+- **Sandbox-Modus** mit separater DB zum Ausprobieren
+- **Auto-Update** Ed25519-signiert via GitHub Releases
+- **Danger Zone** mit Auto-Backup vor jeder destruktiven Aktion
 
 ## Install
 
-Installer für Windows, macOS und Linux gibt's unter [Releases](https://github.com/jonax1337/zettel/releases).
+Vorgebaute Installer für Windows, macOS und Linux: [latest release](https://github.com/jonax1337/zettel/releases/latest).
 
 | Plattform | Format | Hinweis |
 |---|---|---|
-| Windows 10/11 | `.msi`, `.exe` (NSIS) | Erster Start: SmartScreen → *Weitere Informationen → Trotzdem ausführen* |
-| macOS 14+ | `.dmg` (Apple Silicon) | Nicht notarisiert — Rechtsklick → *Öffnen* beim ersten Start. Intel-Build vorübergehend ausgesetzt (CI-Capacity). |
-| Linux | `.deb` (Ubuntu 22.04+) | Pango/Cairo nötig (s. u.) |
+| Windows 10/11 | `.msi`, `.exe` (NSIS) | Beim ersten Start: SmartScreen → *Weitere Informationen → Trotzdem ausführen* |
+| macOS 14+ (Apple Silicon) | `.dmg` | Nicht notarisiert — Rechtsklick → *Öffnen*. Intel-Build pausiert (CI-Capacity) |
+| Linux (Ubuntu 22.04+) | `.deb` | System-Pango/Cairo nötig (siehe unten) |
 
-Auf Linux und macOS braucht WeasyPrint Pango, Cairo und gdk-pixbuf aus dem System:
+**Linux / macOS Systempakete** (WeasyPrint lädt Pango und Cairo dynamisch):
 
 ```bash
 # Ubuntu / Debian
@@ -60,55 +97,113 @@ sudo apt install libpango1.0-0 libcairo2 libgdk-pixbuf2.0-0
 brew install pango cairo gdk-pixbuf
 ```
 
+Auto-Update ist ab v0.4.3 aktiv. Ältere Installationen einmal manuell auf die aktuelle Version ziehen.
+
 ## Quickstart
 
-1. **Einstellungen** öffnen, Firmendaten und Steuernummer eintragen
-2. **Kunde** anlegen
-3. **Neue Rechnung** → Kunde wählen → Positionen eintragen → speichern
-4. **PDF erzeugen** → liegt unter `~/Documents/Zettel/Rechnungen/RE-2026-0001.pdf`
+1. **Einstellungen → Unternehmen** öffnen, Firmendaten + Steuernummer (bzw. USt-IdNr.) eintragen
+2. **Einstellungen → Steuerprofil** ausfüllen, damit das Dashboard die Steuer-Rücklage berechnen kann
+3. **Kunde** anlegen (`/customers/new`)
+4. **Neue Rechnung** → Kunde wählen → Positionen → speichern
+5. **PDF erzeugen** → `~/Documents/Zettel/Rechnungen/RE-2026-0001.pdf`
 
-## Was drin ist
+Für eingehende Rechnungen: `/expenses` öffnen, PDF in die Drop-Zone ziehen — ZUGFeRD-XML wird automatisch geparsed, Vendor via USt-IdNr. gematcht.
 
-**Rechnungen & Kunden lokal.** SQLite, kein Cloud-Sync. Status-Workflow Entwurf → Versandt → Bezahlt → Storniert. Customer-Snapshot pro Rechnung (rechtssicher zum Rechnungszeitpunkt). Konfigurierbare Nummernkreise, Logo-Upload.
+## Was Zettel nicht ist
 
-**E-Rechnung konform.** PDF/A-3 mit eingebettetem Factur-X-XML in den Profilen **BASIC**, **EN 16931** und **EXTENDED**. Kleinunternehmer-Modus mit korrektem `CategoryCode E` und BR-CO-26-konformem `BT-29`-Fallback ohne USt-IdNr. Mehrere USt-Sätze pro Rechnung (0 %, 7 %, 19 %).
+Bewusst ausgeschlossen — diese Dinge sind im Scope anderer Tools besser aufgehoben:
 
-**Reverse-Charge / intra-EU B2B.** Toggle pro Rechnung, automatischer 0 %-Ausweis, ZUGFeRD `CategoryCode K` + `ExemptionReason`, deutscher und englischer Hinweistext auf der PDF.
+- **Keine vollständige Buchhaltung** (kein doppelter Eintrag, kein Konten-Plan, kein Jahresabschluss)
+- **Kein Banking / Kontoabgleich** — Zahlungen werden manuell gemarkt
+- **Kein ELSTER-Upload** und kein UStVA-Versand — Zettel bereitet vor, du tippst ab oder gibst es dem Steuerberater
+- **Keine Cloud, kein Sync, keine Mobile-App** — bewusst nicht in Scope
+- **Kein SMTP-Versand** — Rechnungen landen als PDF, du schickst sie wie du willst
+- **Kein Tesseract-OCR** — gescannte Belege funktionieren nicht und sollen es auch nicht
+- **Keine Telemetrie** — es gibt buchstäblich keinen Server, der was empfangen könnte
 
-**DATEV-Export.** Buchungsstapel (Format 700, SKR03/SKR04) für den Steuerberater — eine Buchungszeile pro USt-Rate pro Rechnung. Kleinunternehmer- und Reverse-Charge-Rechnungen auf den passenden Erlöskonten. UTF-8-BOM, CRLF, importierbar in DATEV Kanzlei-Rechnungswesen.
+## Architektur
 
-**Wiederkehrende Rechnungen.** Vorlagen für Retainer/Subscriptions (monatlich / quartalsweise / jährlich). Fällige Vorlagen erscheinen auf dem Dashboard — ein Klick erzeugt einen Entwurf. Keine stille Auto-Generierung im Hintergrund.
+```
+┌─────────────────────────────────────────────────────────┐
+│  Frontend  Svelte 5 (runes) · Tailwind v4 · Bits UI     │
+│            svelte-spa-router (hash)                     │
+└────────────────────────┬────────────────────────────────┘
+                         │ Tauri Commands
+┌────────────────────────┴────────────────────────────────┐
+│  Rust       Tauri 2 · plugin-sql · Updater · ureq       │
+│             AES-256-GCM Backup · Sandbox · ECB-Kurs     │
+└──────────┬──────────────────────────┬───────────────────┘
+           │ spawn(stdio JSON)        │ SQLite
+           ▼                          ▼
+   ┌───────────────────┐      ┌──────────────┐
+   │  Python Sidecar   │      │  zettel.db   │
+   │  WeasyPrint       │      │  (SQLite)    │
+   │  factur-x · lxml  │      └──────────────┘
+   │  pypdf            │
+   └───────────────────┘
+```
 
-**Backup & Restore.** ZIP mit konsistentem SQLite-Snapshot (`VACUUM INTO`), allen PDFs und einem Manifest. Restore wird beim nächsten App-Start eingespielt; die alte DB landet vorsichtshalber als `zettel.db.bak`.
+- **Frontend** (`src/`) — Svelte 5 mit Runes, hash-Routing via `svelte-spa-router`, UI als shadcn-Style-Wrapper über Bits UI in `src/lib/ui/`
+- **Persistenz** (`src/lib/db/`) — SQLite direkt via `@tauri-apps/plugin-sql`. Schema-Typen aus Drizzle (nur compile-time), Queries als raw parameterized SQL. Migrations werden compile-time via `include_str!` in den Rust-Layer eingebettet
+- **Rust** (`src-tauri/src/`) — Tauri-Commands, Backup, Crypto, Sandbox, ECB-Wechselkurs, Sidecar-Bridge
+- **Python-Sidecar** (`sidecar/`) — JSON-RPC über stdin/stdout. PDF-Rendering via WeasyPrint + Jinja2, ZUGFeRD-XML via `factur-x`, eingehende PDFs via `factur-x.extract` oder `pypdf`-Heuristik. PyInstaller-gebundelt im Release-Build
 
-## Was nicht drin ist
+Implementierungs-Details und Konventionen: [`CLAUDE.md`](./CLAUDE.md). DATEV-Mapping: [`docs/datev-export.md`](./docs/datev-export.md).
 
-Keine vollständige Buchhaltung, kein Banking, kein Cloud-Sync, keine Mobile-App. Eingangsrechnungen einlesen und Drittland-Reverse-Charge sind für v0.3+ geplant. Vollständige Non-Goals in [`PLAN.md`](./PLAN.md#3-non-goals-explizit-ausgeschlossen).
-
-## Stack
-
-Tauri 2 + Svelte 5 (Runes) + TypeScript strict + Tailwind v4. UI als shadcn-Style-Layer über Bits-UI-Primitives unter `src/lib/ui/`. Persistenz über `tauri-plugin-sql` direkt auf SQLite. PDF und ZUGFeRD-XML rendert ein Python-Sidecar (WeasyPrint, factur-x, Jinja2), gebundelt per PyInstaller und als Tauri-Resource ausgeliefert. Architektur, Datenmodell und Sidecar-Protokoll: [`PLAN.md`](./PLAN.md) und [`CLAUDE.md`](./CLAUDE.md).
-
-## Entwicklung
+## Build from source
 
 ```bash
+git clone https://github.com/jonax1337/zettel
+cd zettel
 pnpm install
+
+# Sidecar-Venv für dev
+cd sidecar
+python -m venv .venv
+# Windows:
+.\.venv\Scripts\Activate.ps1
+# macOS / Linux:
+source .venv/bin/activate
+pip install -r requirements.txt
+cd ..
+
 pnpm tauri:dev
 ```
 
-Release-Build inklusive Sidecar-Bundle:
+**Release-Build** (mit gebundeltem Sidecar):
 
 ```bash
 cd sidecar && python build.py && cd ..
 pnpm tauri:build
 ```
 
-Contributor-Setup, Konventionen und Bauanleitung pro Plattform: [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+Vollständige Plattform-Voraussetzungen (GTK3-Runtime auf Windows, Tauri-System-Deps, Python 3.12) und Konventionen: [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
+## Roadmap
+
+Geplant — siehe [Issues](https://github.com/jonax1337/zettel/issues) und [Discussions](https://github.com/jonax1337/zettel/discussions). Größere Themen, die in Diskussion sind:
+
+- I18n (englische UI als zweite Sprache)
+- AfA / Anlageverzeichnis
+- EÜR-Export
+- Mandanten-Profile (mehrere Firmen in einer Installation)
+
+Was bereits drin ist: [`CHANGELOG.md`](./CHANGELOG.md).
+
+## Mitmachen
+
+Issues, Patches und Vorschläge sind willkommen. Setup, Konventionen und PR-Workflow in [`CONTRIBUTING.md`](./CONTRIBUTING.md). Code of Conduct in [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md).
+
+Gute Einstiegspunkte: Issues mit Label [`good first issue`](https://github.com/jonax1337/zettel/issues?q=is%3Aopen+label%3A%22good+first+issue%22) und [`help wanted`](https://github.com/jonax1337/zettel/issues?q=is%3Aopen+label%3A%22help+wanted%22).
 
 ## Disclaimer
 
-Zettel ist keine Rechts- oder Steuerberatung und gibt keinerlei Garantie auf rechtliche Korrektheit der erzeugten Rechnungen. Nutzung auf eigene Verantwortung. Die ersten Rechnungen vor dem Versand vom Steuerberater prüfen lassen.
+Zettel ist keine Rechts- oder Steuerberatung. Die erzeugten Rechnungen sind nach bestem Wissen EN-16931-konform, aber **ohne Garantie**. Die ersten Rechnungen vor dem Versand vom Steuerberater prüfen lassen. Die Steuer-Rücklage-Berechnung ist eine Vorhersage, kein Steuerbescheid — Quartals-Vorauszahlungen, individuelle Sonderausgaben und außergewöhnliche Belastungen werden nicht berücksichtigt.
 
 ## Lizenz
 
 [MIT](./LICENSE) — © Jonas Laux & Contributors · [laux.digital](https://laux.digital)
+
+## Acknowledgments
+
+Dieses Projekt würde ohne diese tollen Open-Source-Tools nicht existieren: [Tauri](https://tauri.app), [Svelte](https://svelte.dev), [WeasyPrint](https://weasyprint.org), [factur-x](https://github.com/akretion/factur-x), [Bits UI](https://www.bits-ui.com), [Lucide](https://lucide.dev). Validierung über [erechnungs-validator.de](https://erechnungs-validator.de) und den [KoSIT-Validator](https://github.com/itplr-kosit/validator).
