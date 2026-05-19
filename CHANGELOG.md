@@ -6,6 +6,50 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+- **Danger Zone in Settings.** Drei klar getrennte irreversible Aktionen: „Alle Geschäftsdaten löschen" (Settings bleiben), „Einzelne Tabellen leeren" (Multi-Select mit Cascade auf Children/Mahnungen), „Nummerierungs-Counter zurücksetzen". Bestätigung per Tippen von `LÖSCHEN`; vor jeder Aktion wird automatisch ein unverschlüsseltes Backup nach `~/Dokumente/Zettel/Backups/pre-wipe-<ts>.zip` geschrieben als Rettungsanker.
+- **YTD-Modus in der Steuer-Rücklage.** Zwei klickbare Cards in `/reports/taxes` und nebeneinander im Dashboard-Widget: „Bisher ausgelöst (YTD)" zeigt die Steuerlast aus dem realen YTD-Gewinn (konservativ, ohne Hochrechnung), „Aufs Jahr hochgerechnet" extrapoliert linear. Beim Schalten wechselt die Aufschlüsselung darunter mit. Hilft besonders früh im Jahr und bei stark schwankenden Einnahmen, weil eine einzelne Rechnung im April nicht mehr zu absurden Jahresprognosen führt.
+
+### Fixed
+- **Storno-Bug im Dashboard.** Beim Bearbeiten/Speichern einer Stornorechnung wurde `eur_total_cent` positiv gespeichert, während `total` korrekt negativ war. Die KPI-Queries (`COALESCE(eur_total_cent, total)` und `eur_total_cent * subtotal / total`) nettoeten Stornos dadurch nicht aus — der Saldo wurde so um den doppelten Storno-Betrag zu hoch angezeigt. Fix: `eurTotalCent` bekommt jetzt in `createInvoice` / `updateInvoice` das gleiche Vorzeichen wie subtotal/total. Migration `0018_v0.11_fix_storno_eur_total.sql` flippt bestehende falsche Werte in der DB.
+- **Storno-Aggregation in der Steuer-Rücklage.** Die separate Storno-Spalte in der YTD-Aggregation zog vom Gewinn ab, was — weil Stornos schon negativ gespeichert sind — den Storno-Betrag doppelt addierte statt abzuziehen. Gleicher Bug bei der USt-Schuld-YTD. Query auf simples `SUM(subtotal)` umgestellt, da das natürliche Vorzeichen der Stornos das richtige Ergebnis liefert.
+- **Draft-Ausgaben im Dashboard-Saldo.** Die Expense-Aggregation hatte keinen Status-Filter und summierte auch Entwürfe mit, die noch nicht final sind. Auf `status IN ('open','paid')` gezogen — konsistent mit dem Tax-Aggregator und dem mentalen Modell „Drafts zählen erst nach Übernahme".
+
+### Changed
+- **„ggü. Vorjahr" entfernt.** Der prozentuale YoY-Vergleich unter den Dashboard-KPIs ist raus — der Periode-Selector macht das Vergleichsbedürfnis ohnehin uneindeutig, und die kleine ±%-Zeile war mehr Rauschen als Signal. `loadKpisWithYoY` / `KpisWithYoY` / `previousYearPeriod` als toter Code mit gelöscht.
+- **Sonstige Einkünfte / Nebenberuf-Bug.** Wer hauptberuflich angestellt ist und nebenbei selbst rechnet, hat die selbst-Einnahmen ja oben drauf auf den Anstellungs-Lohn — also schon im höheren Grenzsteuersatz. Neue Settings-Spalte `other_income_annual_cent` (Brutto-Jahres-Lohn) füttert eine *marginale* ESt-Berechnung: `ESt(other + selbst) − ESt(other)`. Bei `other = 0` identisch zum Solo-Fall. Migration `0017_v0.11_other_income.sql`.
+
+## [0.11.0] — 2026-05-18
+
+> **Steuer-Rücklage.** Eine fokussierte Story — Zettel sagt dir jetzt im Dashboard, wieviel Geld du von deinem YTD-Gewinn für die Einkommensteuer am Jahresende zurücklegen solltest. § 32a EStG-Tarif für VZ 2024, 2025 und 2026 hartcodiert aus amtlicher BMF-Bekanntmachung, durchgetestet mit 38 Vitest-Cases gegen Eckpunkte aller Zonen.
+
+### Added
+- **Steuerprofil in Settings.** Neue Card mit Rechtsform (Freiberufler / Gewerbetreibender), Hebesatz für Gewerbe-Steuer (Default 400 % = Bundesdurchschnitt, nur bei Gewerbe sichtbar), Kirchensteuersatz (0 / 8 / 9 %), Familienstand (ledig / verheiratet-Splittingtarif) und 4× Quartals-Vorauszahlungen (Q1-Q4). Klar gelabelt als Vorhersage, keine Steuerberatung. (#64)
+- **Tarif-Library** in `src/lib/tax/` — pure Functions, voll testbar:
+  - `income.ts` — § 32a EStG mit 5-Zonen-Formel, Splittingtarif für `married`, Soli mit Milderungszone (§ 4 Abs. 2 SolzG), KiSt 0/8/9 %. Konstanten in `TARIF_2024` ausgelagert, Update-Pfad dokumentiert.
+  - `trade.ts` — Gewerbesteuer (Freibetrag 24.500 €, Messzahl 3,5 %, Hebesatz), § 35 EStG Anrechnung auf ESt (3,8 × Messbetrag, gedeckelt). Freiberufler-Pfad: sofort 0.
+  - 23 Vitest-Tests gegen amtliche BMF-Tarifrechner-Werte (Grundtarif + Splittingtarif × 6 Einkommensstufen, Soli-Freigrenze + Milderungszone + voller Satz, KiSt 8/9, GewSt-Freibetrag, ESt-Anrechnung bei niedrigem vs. hohem Hebesatz). (#65)
+- **Tarif für VZ 2024, 2025 und 2026** als hartcodierte Konstanten aus der amtlichen BMF-Bekanntmachung (Steuerfortentwicklungsgesetz Dez 2024). `estimateIncomeTax(profit, status, churchRate, year)` wählt automatisch den Tarif für das angegebene Jahr; bei Zukunfts-Jahren wird der jeweils neueste hinterlegte Tarif genutzt (mit Code-Kommentar zum Update-Pfad pro Bekanntmachung). 38 Vitest-Cases verifizieren jede Zone (Grundfreibetrag → Reichensteuer), Splittingtarif, Soli-Milderungszone und KiSt 8/9 % pro Jahr — plus Cross-Year-Eigenschaftstest (Steuerlast sinkt 2024→2026 wegen Grundfreibetrag-Anhebung).
+- **Dashboard-Card „Steuer-Rücklage".** Kompakt unter den KPI-Cards, vor Aging/Wiedervorlage. Headline-Betrag + ein-Zeilen-Aufschlüsselung (ESt+Soli+KiSt · GewSt · USt · Vorauszahlungen). Klick → Detail-Route. (#66)
+- **Detail-Route `/reports/taxes`** (neue Komponente `TaxReport.svelte`):
+  - Headline mit empfohlener Rücklage
+  - Tarifjahr-Card mit Quellen-Hinweis (§ 32a EStG, BMF-Bekanntmachung)
+  - Hochrechnungs-Card mit Was-wenn-Input („Restjahres-Gewinn (€)") für Szenarien
+  - Aufschlüsselungs-Tabelle inkl. § 35 EStG-Anrechnung sichtbar
+  - Drei Disclaimer-Absätze: keine Steuerberatung, USt-Approximation, kein ELSTER
+- **Pauschal-Modus (optional).** Settings-Toggle „Pauschal-Modus zusätzlich anzeigen" + Prozent-Input (Default 30 %, Range 0-50 %). Wenn aktiv: Dashboard-Card zeigt den Pauschal-Wert (`% × Brutto-Umsatz YTD`) neben der Detail-Rücklage; Detail-Route hat eine zusätzliche „Detail vs. Pauschal"-Card mit Differenz-Sublabel („Detail höher — Pauschal unterschätzt" o. ä.). Lernhilfe für User, die ihren Daumen-Wert kalibrieren wollen. (#67)
+
+### Migration
+- `0014_v0.11_tax_profile.sql` — `user_version = 15`. Erweitert `settings` um `legal_form`, `trade_tax_rate`, `church_tax_rate`, `tax_filing_status`, `est_prepayment_q1..q4_cent`. Default `freelancer` / Hebesatz 400 % / keine KiSt / `single` / 0 € Vorauszahlungen — Bestandsuser sehen die Card direkt nutzbar ohne Konfigurations-Pflicht.
+- `0015_v0.11_pauschal_mode.sql` — `user_version = 16`. `use_pauschal_tax_reserve` (Bool, Default off) + `pauschal_tax_percent` (Real, Default 30).
+- `CURRENT_SCHEMA` in `backup.rs` auf 16, `CURRENT_DB_SCHEMA_VERSION` in `Settings.svelte` synchron.
+
+### Notes
+- **Kein BMF-Live-API-Call.** Wir hatten in einer Zwischen-Iteration einen Tauri-Command auf `bmf-steuerrechner.de/interface/<JAHR>Version1.xhtml` integriert — der Service verlangt aber einen **partnerregistrierten Zugriffscode**, den wir nicht haben (`<information>Der angegebene Zugriffscode existiert nicht!</information>`). Deshalb rausgenommen. Die Konstanten der amtlichen BMF-Bekanntmachung liefern dasselbe Ergebnis offline + deterministisch + testbar.
+- **Tarif-Update jährlich.** Neue BMF-Bekanntmachung im Spätsommer/Herbst → `TARIF_YYYY`-Block in `src/lib/tax/income.ts` ergänzen, Tests dazu. `getTarifYear(year)` fällt für Jahre > letztem hinterlegtem Jahr auf den jüngsten Tarif zurück.
+- **USt-Schuld YTD im Tax-Report ist eine Approximation** (Rechnungs-USt − Vorsteuer ohne RC). Für die echte UStVA bleibt `/reports/ustva` der maßgebliche Workflow.
+- **Kein ELSTER, kein EÜR-Export, kein AfA, kein Bankabgleich, kein Krankenversicherungs-Rechner** — alles als Roadmap-Kandidaten dokumentiert, keiner davon in v0.11.
+
 ## [0.10.0] — 2026-05-18
 
 > **Flexibilität & Datenpflege.** Sechs Module, die das Tagesgeschäft flexibler machen und den wachsenden Datenbestand handhabbar halten — kein Funktions-Sprung, sondern gezielte UX-Aufwertung. Plus ein neuer Sidecar-Pfad für PDF-Anhänge an Rechnungen und ein dev/bundle-Config-Split, der Cargo-Build-Probleme auf Windows behebt.

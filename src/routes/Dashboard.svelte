@@ -26,17 +26,18 @@
     type Period,
   } from "$lib/dashboard/period";
   import {
-    loadKpisWithYoY,
+    loadKpis,
     monthlyRevenueInPeriod,
     topCustomersInPeriod,
     oldestOverdue,
     loadFollowUps,
-    type KpisWithYoY,
+    type Kpis,
     type MonthPoint,
     type TopCustomerRow,
     type OldestOverdue,
     type FollowUpItem,
   } from "$lib/dashboard/queries";
+  import { computeTaxRücklage, type TaxRücklageResult } from "$lib/dashboard/tax";
   import { listCustomers } from "$lib/db/queries";
   import { openOffersStats, expireDueOffers } from "$lib/db/offers";
   import { dueRecurring, generateInvoiceFromRecurring, type RecurringListRow } from "$lib/db/recurring";
@@ -48,13 +49,14 @@
 
   let sandbox = $state(false);
   let customerCount = $state(0);
-  let kpis = $state<KpisWithYoY | null>(null);
+  let kpis = $state<Kpis | null>(null);
   let monthly = $state<MonthPoint[]>([]);
   let top = $state<TopCustomerRow[]>([]);
   let aging = $state<OldestOverdue>({ daysOverdue: null, openTotal: 0, openCount: 0 });
   let followUps = $state<FollowUpItem[]>([]);
   let offerStats = $state({ count: 0, total: 0, expiringSoonCount: 0 });
   let due = $state<RecurringListRow[]>([]);
+  let taxRücklage = $state<TaxRücklageResult | null>(null);
   let loading = $state(true);
 
   $effect(() => {
@@ -66,7 +68,7 @@
     await expireDueOffers().catch(() => {});
     const [cs, k, mon, tc, ag, fu, os, dr] = await Promise.all([
       listCustomers(),
-      loadKpisWithYoY(p),
+      loadKpis(p),
       monthlyRevenueInPeriod(p),
       topCustomersInPeriod(p, 5),
       oldestOverdue(),
@@ -82,6 +84,12 @@
     followUps = fu;
     offerStats = os;
     due = dr;
+    // Steuer-Rücklage immer am Jahr der gewählten Periode hängen (das Konzept
+    // ist annual; Monat/Quartal-Selektionen mappen auf ihr Containerjahr).
+    const taxYear = new Date(p.start * 1000).getFullYear();
+    computeTaxRücklage(taxYear)
+      .then((t) => (taxRücklage = t))
+      .catch(() => (taxRücklage = null));
     loading = false;
   }
 
@@ -101,19 +109,6 @@
     } catch (e) {
       toast.error("Erzeugen fehlgeschlagen", String(e));
     }
-  }
-
-  function fmtPct(v: number | null): string {
-    if (v === null) return "—";
-    const sign = v >= 0 ? "+" : "";
-    return `${sign}${v.toFixed(1).replace(".", ",")} %`;
-  }
-
-  /** higherIsBetter: revenue/balance true; expense false (less is better). */
-  function yoyClass(v: number | null, higherIsBetter: boolean): string {
-    if (v === null || v === 0) return "text-muted-foreground";
-    const good = higherIsBetter ? v > 0 : v < 0;
-    return good ? "text-success" : "text-destructive";
   }
 
   const topMax = $derived(Math.max(1, ...top.map((c) => c.total)));
@@ -174,11 +169,6 @@
       <div class="text-2xl font-semibold mt-2 tabular-nums">
         {loading || !kpis ? "…" : centsToEur(kpis.revenueNet)}
       </div>
-      {#if kpis}
-        <div class={"text-xs mt-1 " + yoyClass(kpis.yoy.revenueNet, true)}>
-          {fmtPct(kpis.yoy.revenueNet)} ggü. Vorjahr
-        </div>
-      {/if}
     </CardContent>
   </Card>
 
@@ -191,11 +181,6 @@
       <div class="text-2xl font-semibold mt-2 tabular-nums">
         {loading || !kpis ? "…" : centsToEur(kpis.revenueGross)}
       </div>
-      {#if kpis}
-        <div class={"text-xs mt-1 " + yoyClass(kpis.yoy.revenueGross, true)}>
-          {fmtPct(kpis.yoy.revenueGross)} ggü. Vorjahr
-        </div>
-      {/if}
     </CardContent>
   </Card>
 
@@ -208,11 +193,6 @@
       <div class="text-2xl font-semibold mt-2 tabular-nums">
         {loading || !kpis ? "…" : centsToEur(kpis.expenseNet)}
       </div>
-      {#if kpis}
-        <div class={"text-xs mt-1 " + yoyClass(kpis.yoy.expenseNet, false)}>
-          {fmtPct(kpis.yoy.expenseNet)} ggü. Vorjahr
-        </div>
-      {/if}
     </CardContent>
   </Card>
 
@@ -228,11 +208,6 @@
       >
         {loading || !kpis ? "…" : centsToEur(kpis.balance)}
       </div>
-      {#if kpis}
-        <div class={"text-xs mt-1 " + yoyClass(kpis.yoy.balance, true)}>
-          {fmtPct(kpis.yoy.balance)} ggü. Vorjahr
-        </div>
-      {/if}
     </CardContent>
   </Card>
 
@@ -363,6 +338,53 @@
     </CardContent>
   </Card>
 </div>
+
+{#if taxRücklage}
+  <button
+    type="button"
+    onclick={() => push("/reports/taxes")}
+    class="block w-full text-left mb-6 group"
+  >
+    <Card class="hover:border-foreground/30 transition-colors">
+      <CardContent>
+        <div class="flex items-center justify-between gap-6">
+          <div class="min-w-0">
+              <div class="text-xs text-muted-foreground uppercase tracking-wider">
+                Steuer-Rücklage {taxRücklage.year} · Tarif {taxRücklage.projected.income.tarifYear}
+              </div>
+              <div class="flex items-baseline gap-6 mt-0.5">
+                <div>
+                  <div class="text-2xl font-semibold tabular-nums">
+                    {centsToEur(taxRücklage.ytd.recommendedReserveCent)}
+                  </div>
+                  <div class="text-[10px] text-muted-foreground uppercase tracking-wider">YTD</div>
+                </div>
+                <div>
+                  <div class="text-2xl font-semibold tabular-nums text-muted-foreground">
+                    {centsToEur(taxRücklage.projected.recommendedReserveCent)}
+                  </div>
+                  <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Hochgerechnet</div>
+                </div>
+                {#if taxRücklage.flags.usePauschal}
+                  <div>
+                    <div class="text-2xl font-semibold tabular-nums text-muted-foreground">
+                      {centsToEur(taxRücklage.pauschalReserveCent)}
+                    </div>
+                    <div class="text-[10px] text-muted-foreground uppercase tracking-wider">
+                      Pauschal {taxRücklage.flags.pauschalPercent}%
+                    </div>
+                  </div>
+                {/if}
+              </div>
+          </div>
+          <div class="text-xs text-muted-foreground group-hover:text-foreground transition-colors shrink-0">
+            Details →
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  </button>
+{/if}
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
   <Card class="lg:col-span-2">

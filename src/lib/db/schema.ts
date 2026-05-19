@@ -71,6 +71,23 @@ export const settings = sqliteTable("settings", {
   })
     .notNull()
     .default("classic"),
+  legalForm: text("legal_form", { enum: ["freelancer", "trade"] })
+    .notNull()
+    .default("freelancer"),
+  tradeTaxRate: real("trade_tax_rate").notNull().default(4.0),
+  churchTaxRate: real("church_tax_rate").notNull().default(0.0),
+  taxFilingStatus: text("tax_filing_status", { enum: ["single", "married"] })
+    .notNull()
+    .default("single"),
+  estPrepaymentQ1Cent: integer("est_prepayment_q1_cent").notNull().default(0),
+  estPrepaymentQ2Cent: integer("est_prepayment_q2_cent").notNull().default(0),
+  estPrepaymentQ3Cent: integer("est_prepayment_q3_cent").notNull().default(0),
+  estPrepaymentQ4Cent: integer("est_prepayment_q4_cent").notNull().default(0),
+  usePauschalTaxReserve: integer("use_pauschal_tax_reserve", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  pauschalTaxPercent: real("pauschal_tax_percent").notNull().default(30.0),
+  otherIncomeAnnualCent: integer("other_income_annual_cent").notNull().default(0),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),
@@ -390,6 +407,21 @@ export type VendorSnapshot = {
   email: string | null;
   vatId: string | null;
 };
+
+export const taxPrepayments = sqliteTable("tax_prepayments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  year: integer("year").notNull(),
+  quarter: integer("quarter").notNull(),
+  amountCent: integer("amount_cent").notNull().default(0),
+  createdAt: integer("created_at")
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at")
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export type TaxPrepayment = typeof taxPrepayments.$inferSelect;
 
 export type CustomerSnapshot = {
   customerNumber: string;

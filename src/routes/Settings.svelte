@@ -17,12 +17,44 @@
     ConfirmDialog,
     Select,
     Checkbox,
+    Dialog,
     toast,
   } from "$lib/ui";
-  import { Image, X, Download, Upload, RefreshCw, Check, MonitorCog } from "@lucide/svelte";
+  import { Image, X, Download, Upload, RefreshCw, Check, MonitorCog, AlertTriangle } from "@lucide/svelte";
+  import {
+    autoBackupBeforeWipe,
+    resetNumberingCounters,
+    wipeAllBusinessData,
+    wipeTables,
+    WIPEABLE_TABLE_LABELS,
+    type WipeableTable,
+  } from "$lib/db/danger";
   import { version as appVersion } from "../../package.json";
   import { checkForUpdate } from "$lib/updater";
   import { accent, ACCENT_PRESETS, type AccentKey } from "$lib/accent.svelte";
+  import { centsToEur, eurStringToCents } from "$lib/utils/money";
+  import {
+    listPrepayments,
+    upsertPrepayment,
+    type PrepaymentRow,
+    type Quarter,
+  } from "$lib/db/tax-prepayments";
+  import { Slider } from "$lib/ui";
+  import { ChevronLeft, ChevronRight } from "@lucide/svelte";
+
+  const legalFormItems = [
+    { value: "freelancer", label: "Freiberufler (keine Gewerbesteuer)" },
+    { value: "trade", label: "Gewerbetreibender" },
+  ];
+  const filingStatusItems = [
+    { value: "single", label: "ledig" },
+    { value: "married", label: "verheiratet (Splittingtarif)" },
+  ];
+  const churchRateItems = [
+    { value: "0", label: "keine Kirchensteuer" },
+    { value: "0.08", label: "8 % (BY, BW)" },
+    { value: "0.09", label: "9 % (übrige Länder)" },
+  ];
   import { theme } from "$lib/theme.svelte";
 
   const accentKeys: AccentKey[] = [
@@ -38,13 +70,37 @@
   const accentLabel = (k: AccentKey) => (k === "system" ? "System" : ACCENT_PRESETS[k].label);
 
   // aktueller DB-Schema-Stand (siehe src-tauri/src/lib.rs Migrations-Vektor)
-  const CURRENT_DB_SCHEMA_VERSION = 14;
+  const CURRENT_DB_SCHEMA_VERSION = 19;
 
   let s = $state<Settings | null>(null);
   let loading = $state(true);
   let saving = $state(false);
   let error = $state<string | null>(null);
   let sandbox = $state(false);
+
+  let prepaymentYear = $state(new Date().getFullYear());
+  let prepayments = $state<PrepaymentRow[]>([]);
+  let prepaymentBusy = $state(false);
+
+  async function loadPrepayments(year: number) {
+    prepaymentBusy = true;
+    try {
+      prepayments = await listPrepayments(year);
+    } finally {
+      prepaymentBusy = false;
+    }
+  }
+
+  $effect(() => {
+    loadPrepayments(prepaymentYear);
+  });
+
+  async function savePrepayment(quarter: Quarter, euroStr: string) {
+    const cents = eurStringToCents(euroStr);
+    await upsertPrepayment(prepaymentYear, quarter, cents);
+    await loadPrepayments(prepaymentYear);
+  }
+
   let sandboxBusy = $state(false);
   let confirmSandboxToggleOpen = $state(false);
   let pendingSandbox = $state(false);
@@ -270,6 +326,89 @@
     }
   }
 
+  // --- Danger Zone ---
+  type DangerAction =
+    | { kind: "wipeAll" }
+    | { kind: "wipeTables"; tables: WipeableTable[] }
+    | { kind: "resetCounters" };
+
+  let dangerSelectedTables = $state<Set<WipeableTable>>(new Set());
+  let dangerConfirmText = $state("");
+  let dangerBusy = $state(false);
+  let dangerPending = $state<DangerAction | null>(null);
+
+  const dangerConfirmValid = $derived(dangerConfirmText.trim() === "LÖSCHEN");
+
+  function dangerActionLabel(a: DangerAction): string {
+    if (a.kind === "wipeAll") return "Alle Geschäftsdaten löschen";
+    if (a.kind === "resetCounters") return "Nummerierungs-Counter zurücksetzen";
+    return `${a.tables.length} Tabelle${a.tables.length === 1 ? "" : "n"} leeren`;
+  }
+
+  function dangerActionDescription(a: DangerAction): string {
+    if (a.kind === "wipeAll") {
+      return "Rechnungen, Angebote, Mahnungen, Ausgaben, Kunden, Lieferanten, wiederkehrende Rechnungen und Steuer-Vorauszahlungen werden gelöscht. Settings (Firma, Steuerprofil, Logo, Counter-Stand) bleiben.";
+    }
+    if (a.kind === "resetCounters") {
+      return "Counter für Rechnungs-/Angebots-/Ausgaben-/Mahnungs-/Lieferanten-Nummern springen auf 0. Bestehende Datensätze bleiben unangetastet — passt nur zum Stand wenn du vorher die Tabellen geleert hast.";
+    }
+    const labels = a.tables.map((t) => WIPEABLE_TABLE_LABELS[t]).join(", ");
+    return `Die folgenden Daten werden gelöscht: ${labels}. Verknüpfte Datensätze (z. B. Positionen, abhängige Mahnungen) werden automatisch mitgelöscht.`;
+  }
+
+  function startDanger(a: DangerAction) {
+    dangerPending = a;
+    dangerConfirmText = "";
+  }
+
+  function cancelDanger() {
+    dangerPending = null;
+    dangerConfirmText = "";
+  }
+
+  async function executeDanger() {
+    if (!dangerPending || !dangerConfirmValid || dangerBusy) return;
+    dangerBusy = true;
+    let phase = "init";
+    try {
+      phase = "backup";
+      const backupPath = await autoBackupBeforeWipe(CURRENT_DB_SCHEMA_VERSION);
+      toast.success("Sicherheits-Backup angelegt", backupPath);
+      const a = dangerPending;
+      if (a.kind === "wipeAll") {
+        phase = "wipeAll";
+        await wipeAllBusinessData();
+        toast.success("Alle Geschäftsdaten gelöscht.");
+      } else if (a.kind === "wipeTables") {
+        phase = "wipeTables";
+        await wipeTables(a.tables);
+        toast.success(
+          `Geleert: ${a.tables.map((t) => WIPEABLE_TABLE_LABELS[t]).join(", ")}`,
+        );
+      } else {
+        phase = "resetCounters";
+        await resetNumberingCounters();
+        toast.success("Counter zurückgesetzt.");
+        s = await loadSettings();
+      }
+      dangerSelectedTables = new Set();
+      dangerPending = null;
+      dangerConfirmText = "";
+    } catch (e) {
+      console.error(`[danger:${phase}]`, e);
+      toast.error(`Fehlgeschlagen (Phase: ${phase})`, String(e));
+    } finally {
+      dangerBusy = false;
+    }
+  }
+
+  function toggleDangerTable(t: WipeableTable) {
+    const next = new Set(dangerSelectedTables);
+    if (next.has(t)) next.delete(t);
+    else next.add(t);
+    dangerSelectedTables = next;
+  }
+
   async function onConfirmRestore() {
     if (!pendingRestoreZip) return;
     restoreBusy = true;
@@ -425,6 +564,163 @@
               <Textarea rows={2} bind:value={s.kleinunternehmerNote} />
             </div>
           {/if}
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Steuerprofil</CardTitle>
+        <CardDescription>
+          Grundlage für die Steuer-Rücklage-Schätzung im Dashboard. Keine Steuerberatung — nur eine Vorhersage zur Liquiditätsplanung.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="col-span-2 flex flex-col gap-1.5">
+            <Label>Rechtsform</Label>
+            <Select
+              items={legalFormItems}
+              value={s.legalForm}
+              onValueChange={(v) => (s!.legalForm = v as Settings["legalForm"])}
+            />
+          </div>
+
+          {#if s.legalForm === "trade"}
+            <div class="flex flex-col gap-1.5">
+              <Label>Gewerbe-Hebesatz (%)</Label>
+              <Input
+                type="number"
+                min="200"
+                max="900"
+                step="10"
+                value={Math.round(s.tradeTaxRate * 100)}
+                oninput={(e) => {
+                  const n = Number.parseInt((e.currentTarget as HTMLInputElement).value, 10);
+                  if (!Number.isNaN(n)) s!.tradeTaxRate = n / 100;
+                }}
+              />
+              <p class="text-xs text-muted-foreground">
+                Hebesatz deiner Gemeinde. Bundesdurchschnitt ~400 %.
+              </p>
+            </div>
+          {/if}
+
+          <div class="flex flex-col gap-1.5">
+            <Label>Kirchensteuer</Label>
+            <Select
+              items={churchRateItems}
+              value={String(s.churchTaxRate)}
+              onValueChange={(v) => (s!.churchTaxRate = Number.parseFloat(v))}
+            />
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <Label>Familienstand (Steuer)</Label>
+            <Select
+              items={filingStatusItems}
+              value={s.taxFilingStatus}
+              onValueChange={(v) => (s!.taxFilingStatus = v as Settings["taxFilingStatus"])}
+            />
+          </div>
+
+          <div class="col-span-2 flex flex-col gap-1.5 border-t pt-4 mt-2">
+            <Label>Weitere Jahres-Einkünfte (zu versteuerndes Einkommen, €/Jahr)</Label>
+            <Input
+              type="text"
+              inputmode="decimal"
+              value={centsToEur(s.otherIncomeAnnualCent)}
+              onblur={(e) => (s!.otherIncomeAnnualCent = eurStringToCents((e.currentTarget as HTMLInputElement).value))}
+              class="max-w-xs"
+            />
+            <p class="text-xs text-muted-foreground">
+              Brutto-Jahresgehalt aus Anstellung, Rente, Kapitalerträge oder andere zvE-relevante Einkünfte abseits von Zettel. Die ESt ist progressiv — ohne diesen Wert würde Zettel den Grenzsteuersatz auf deine Selbstständigkeit unterschätzen (Nebenberuf-Bug). Die Rücklage rechnet als <em>Aufschlag</em>: ESt(Gesamt-zvE) minus ESt(nur hier eingetragene Einkünfte) — den Lohnsteuer-Anteil führt dein AG ja bereits ab.
+            </p>
+          </div>
+
+          <div class="col-span-2 mt-2">
+            <div class="flex items-center justify-between mb-1.5">
+              <Label>Geleistete ESt-Vorauszahlungen</Label>
+              <div class="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onclick={() => (prepaymentYear = prepaymentYear - 1)}
+                  disabled={prepaymentBusy}
+                  aria-label="Vorjahr"
+                >
+                  <ChevronLeft class="size-4" />
+                </Button>
+                <span class="tabular-nums font-medium px-2 min-w-[3.5rem] text-center">
+                  {prepaymentYear}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onclick={() => (prepaymentYear = prepaymentYear + 1)}
+                  disabled={prepaymentBusy}
+                  aria-label="Folgejahr"
+                >
+                  <ChevronRight class="size-4" />
+                </Button>
+              </div>
+            </div>
+            <div class="grid grid-cols-4 gap-2">
+              {#each prepayments as p (p.quarter)}
+                <div class="flex flex-col gap-1">
+                  <span class="text-xs text-muted-foreground">Q{p.quarter}</span>
+                  <Input
+                    type="text"
+                    inputmode="decimal"
+                    value={centsToEur(p.amountCent)}
+                    disabled={prepaymentBusy}
+                    onblur={(e) => savePrepayment(p.quarter, (e.currentTarget as HTMLInputElement).value)}
+                  />
+                </div>
+              {/each}
+            </div>
+            <p class="text-xs text-muted-foreground mt-1.5">
+              Pro Steuerjahr getrennt. Die Steuer-Rücklage im Dashboard rechnet immer mit den Werten des aktuellen Kalenderjahres ({new Date().getFullYear()}). Andere Jahre kannst du hier zur Historie erfassen — z. B. Folgejahres-Vorauszahlungen aus einem Anpassungsbescheid.
+            </p>
+          </div>
+
+          <div class="col-span-2 border-t pt-4 mt-2">
+            <label class="flex items-start gap-2.5 text-sm cursor-pointer select-none">
+              <Checkbox bind:checked={s.usePauschalTaxReserve} />
+              <span>
+                <span class="font-medium">Pauschal-Modus zusätzlich anzeigen</span>
+                <span class="block text-xs text-muted-foreground mt-0.5">
+                  Statt der detaillierten Tarif-Rechnung einfach „X % vom Umsatz brutto zurücklegen". Wird neben der Detail-Rücklage angezeigt — du entscheidest, welcher Wert dir besser dient.
+                </span>
+              </span>
+            </label>
+            {#if s.usePauschalTaxReserve}
+              <div class="mt-4 ml-7 space-y-2">
+                <div class="flex items-center justify-between">
+                  <Label class="text-xs">Prozentsatz vom Brutto-Umsatz</Label>
+                  <span class="text-base font-semibold tabular-nums">{Math.round(s.pauschalTaxPercent)} %</span>
+                </div>
+                <Slider
+                  type="single"
+                  min={0}
+                  max={50}
+                  step={1}
+                  value={Math.round(s.pauschalTaxPercent)}
+                  onValueChange={(v) => (s!.pauschalTaxPercent = typeof v === "number" ? v : v[0])}
+                />
+                <div class="flex justify-between text-[10px] text-muted-foreground tabular-nums">
+                  <span>0 %</span>
+                  <span>25 %</span>
+                  <span>50 %</span>
+                </div>
+                <p class="text-xs text-muted-foreground">
+                  Daumenwert für Solo-Selbstständige: <strong>30 %</strong>.
+                </p>
+              </div>
+            {/if}
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -732,6 +1028,96 @@
     </div>
   </form>
 
+  <Card class="mt-10 border-destructive/40">
+    <CardHeader>
+      <CardTitle class="flex items-center gap-2 text-destructive">
+        <AlertTriangle class="size-5" />
+        Danger Zone
+      </CardTitle>
+      <CardDescription>
+        Irreversible Aktionen. Vor jeder Ausführung wird automatisch ein unverschlüsseltes
+        Backup nach <code>~/Dokumente/Zettel/Backups/pre-wipe-…zip</code> geschrieben.
+      </CardDescription>
+    </CardHeader>
+    <CardContent class="space-y-6">
+      <div class="rounded-md border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+        <div>
+          <h3 class="text-sm font-semibold">Alle Geschäftsdaten löschen</h3>
+          <p class="text-xs text-muted-foreground mt-0.5">
+            Rechnungen, Angebote, Mahnungen, Ausgaben, Kunden, Lieferanten, Recurring &
+            Vorauszahlungen — Settings (Firma, Steuerprofil, Logo) bleiben.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="destructive"
+          size="sm"
+          disabled={dangerBusy}
+          onclick={() => startDanger({ kind: "wipeAll" })}
+        >
+          Alle Geschäftsdaten löschen…
+        </Button>
+      </div>
+
+      <div class="rounded-md border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+        <div>
+          <h3 class="text-sm font-semibold">Einzelne Tabellen leeren</h3>
+          <p class="text-xs text-muted-foreground mt-0.5">
+            Wähle gezielt, was gelöscht wird. Abhängige Daten (Positionen, Mahnungen)
+            werden automatisch mitgelöscht.
+          </p>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {#each Object.entries(WIPEABLE_TABLE_LABELS) as [table, label] (table)}
+            <label class="flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox
+                checked={dangerSelectedTables.has(table as WipeableTable)}
+                onCheckedChange={() => toggleDangerTable(table as WipeableTable)}
+              />
+              {label}
+            </label>
+          {/each}
+        </div>
+        <Button
+          type="button"
+          variant="destructive"
+          size="sm"
+          disabled={dangerBusy || dangerSelectedTables.size === 0}
+          onclick={() =>
+            startDanger({
+              kind: "wipeTables",
+              tables: Array.from(dangerSelectedTables),
+            })}
+        >
+          {dangerSelectedTables.size === 0
+            ? "Tabellen leeren…"
+            : `${dangerSelectedTables.size} Tabelle${dangerSelectedTables.size === 1 ? "" : "n"} leeren…`}
+        </Button>
+      </div>
+
+      <div class="rounded-md border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+        <div>
+          <h3 class="text-sm font-semibold">Nummerierungs-Counter zurücksetzen</h3>
+          <p class="text-xs text-muted-foreground mt-0.5">
+            Setzt die Counter für Rechnung / Angebot / Ausgabe / Mahnung / Lieferant
+            auf 0. Sinnvoll <strong>nur</strong> nach einem vorherigen Tabellen-Wipe.
+            Bestehende Nummern bleiben unverändert — neue Datensätze starten dann
+            wieder bei 0001.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="destructive"
+          size="sm"
+          disabled={dangerBusy}
+          onclick={() => startDanger({ kind: "resetCounters" })}
+        >
+          Counter zurücksetzen…
+        </Button>
+      </div>
+    </CardContent>
+  </Card>
+
   <ConfirmDialog
     bind:open={confirmSandboxToggleOpen}
     title={pendingSandbox ? "Sandbox aktivieren?" : "Sandbox verlassen?"}
@@ -751,4 +1137,45 @@
     cancelLabel="Abbrechen"
     onConfirm={onConfirmRestore}
   />
+
+  <Dialog
+    open={dangerPending !== null}
+    onOpenChange={(o) => {
+      if (!o) cancelDanger();
+    }}
+    title={dangerPending ? dangerActionLabel(dangerPending) : ""}
+  >
+    <div class="space-y-4">
+      <p class="text-sm text-muted-foreground">
+        {dangerPending ? dangerActionDescription(dangerPending) : ""}
+      </p>
+      <div class="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+        <strong>Irreversibel.</strong> Vor der Ausführung wird ein unverschlüsseltes
+        Backup unter <code>Dokumente/Zettel/Backups/</code> (oder dem App-Datenordner als Fallback) angelegt — damit bleibt
+        ein Rettungsanker, falls du dich vertippt hast.
+      </div>
+      <div class="space-y-1.5">
+        <Label for="dangerConfirm">Zum Bestätigen <code>LÖSCHEN</code> tippen:</Label>
+        <Input
+          id="dangerConfirm"
+          bind:value={dangerConfirmText}
+          placeholder="LÖSCHEN"
+          autocomplete="off"
+          spellcheck={false}
+        />
+      </div>
+    </div>
+    {#snippet footer()}
+      <Button variant="outline" onclick={cancelDanger} disabled={dangerBusy}>
+        Abbrechen
+      </Button>
+      <Button
+        variant="destructive"
+        onclick={executeDanger}
+        disabled={!dangerConfirmValid || dangerBusy}
+      >
+        {dangerBusy ? "Lösche…" : "Endgültig löschen"}
+      </Button>
+    {/snippet}
+  </Dialog>
 {/if}

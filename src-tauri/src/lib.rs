@@ -95,6 +95,36 @@ fn build_migrations() -> Vec<Migration> {
             sql: include_str!("../../src/lib/db/migrations/0013_v0.10_cleanup.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 15,
+            description: "v0.11_tax_profile",
+            sql: include_str!("../../src/lib/db/migrations/0014_v0.11_tax_profile.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 16,
+            description: "v0.11_pauschal_mode",
+            sql: include_str!("../../src/lib/db/migrations/0015_v0.11_pauschal_mode.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 17,
+            description: "v0.11_tax_prepayments",
+            sql: include_str!("../../src/lib/db/migrations/0016_v0.11_tax_prepayments.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 18,
+            description: "v0.11_other_income",
+            sql: include_str!("../../src/lib/db/migrations/0017_v0.11_other_income.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 19,
+            description: "v0.11_fix_storno_eur_total",
+            sql: include_str!("../../src/lib/db/migrations/0018_v0.11_fix_storno_eur_total.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -126,6 +156,7 @@ pub fn run() {
             fs_export::save_text_file,
             fs_export::import_expense_pdf,
             backup::snapshot_db_path,
+            backup::auto_backup_target,
             backup::bundle_backup,
             backup::stage_restore,
             backup::apply_pending_partial_restore,

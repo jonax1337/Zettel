@@ -1,6 +1,6 @@
 import { select } from "$lib/db/client";
 import type { Period } from "./period";
-import { monthsIn, previousYearPeriod } from "./period";
+import { monthsIn } from "./period";
 
 /**
  * Revenue figure: invoices issued in [period.start, period.end), status sent or
@@ -37,7 +37,8 @@ export async function loadKpis(p: Period): Promise<Kpis> {
   const [exp] = await select<{ net: number }>(
     `SELECT COALESCE(SUM(subtotal), 0) AS net
      FROM expenses
-     WHERE issue_date >= ? AND issue_date < ?`,
+     WHERE status IN ('open','paid')
+       AND issue_date >= ? AND issue_date < ?`,
     [p.start, p.end],
   );
 
@@ -59,36 +60,6 @@ export async function loadKpis(p: Period): Promise<Kpis> {
     balance: net - expNet,
     openCount: open?.c ?? 0,
     openTotal: open?.t ?? 0,
-  };
-}
-
-export type KpisWithYoY = Kpis & {
-  prev: Kpis;
-  yoy: {
-    revenueNet: number | null;
-    revenueGross: number | null;
-    expenseNet: number | null;
-    balance: number | null;
-  };
-};
-
-function pct(cur: number, prev: number): number | null {
-  if (prev === 0) return null;
-  return ((cur - prev) / Math.abs(prev)) * 100;
-}
-
-export async function loadKpisWithYoY(p: Period): Promise<KpisWithYoY> {
-  const prevP = previousYearPeriod(p);
-  const [cur, prev] = await Promise.all([loadKpis(p), loadKpis(prevP)]);
-  return {
-    ...cur,
-    prev,
-    yoy: {
-      revenueNet: pct(cur.revenueNet, prev.revenueNet),
-      revenueGross: pct(cur.revenueGross, prev.revenueGross),
-      expenseNet: pct(cur.expenseNet, prev.expenseNet),
-      balance: pct(cur.balance, prev.balance),
-    },
   };
 }
 

@@ -45,6 +45,17 @@ type SettingsRow = {
   reminder_text_l1: string | null;
   reminder_text_l2: string | null;
   reminder_text_l3: string | null;
+  legal_form: string | null;
+  trade_tax_rate: number | null;
+  church_tax_rate: number | null;
+  tax_filing_status: string | null;
+  est_prepayment_q1_cent: number | null;
+  est_prepayment_q2_cent: number | null;
+  est_prepayment_q3_cent: number | null;
+  est_prepayment_q4_cent: number | null;
+  use_pauschal_tax_reserve: number | null;
+  pauschal_tax_percent: number | null;
+  other_income_annual_cent: number | null;
   created_at: number;
   updated_at: number;
 };
@@ -92,6 +103,17 @@ function mapSettings(r: SettingsRow): Settings {
     reminderTextL1: r.reminder_text_l1 ?? "",
     reminderTextL2: r.reminder_text_l2 ?? "",
     reminderTextL3: r.reminder_text_l3 ?? "",
+    legalForm: (r.legal_form ?? "freelancer") as Settings["legalForm"],
+    tradeTaxRate: r.trade_tax_rate ?? 4.0,
+    churchTaxRate: r.church_tax_rate ?? 0.0,
+    taxFilingStatus: (r.tax_filing_status ?? "single") as Settings["taxFilingStatus"],
+    estPrepaymentQ1Cent: r.est_prepayment_q1_cent ?? 0,
+    estPrepaymentQ2Cent: r.est_prepayment_q2_cent ?? 0,
+    estPrepaymentQ3Cent: r.est_prepayment_q3_cent ?? 0,
+    estPrepaymentQ4Cent: r.est_prepayment_q4_cent ?? 0,
+    usePauschalTaxReserve: (r.use_pauschal_tax_reserve ?? 0) === 1,
+    pauschalTaxPercent: r.pauschal_tax_percent ?? 30.0,
+    otherIncomeAnnualCent: r.other_income_annual_cent ?? 0,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -151,6 +173,17 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       reminder_text_l1 = ?,
       reminder_text_l2 = ?,
       reminder_text_l3 = ?,
+      legal_form = ?,
+      trade_tax_rate = ?,
+      church_tax_rate = ?,
+      tax_filing_status = ?,
+      est_prepayment_q1_cent = ?,
+      est_prepayment_q2_cent = ?,
+      est_prepayment_q3_cent = ?,
+      est_prepayment_q4_cent = ?,
+      use_pauschal_tax_reserve = ?,
+      pauschal_tax_percent = ?,
+      other_income_annual_cent = ?,
       updated_at = unixepoch()
     WHERE id = 1`,
     [
@@ -194,6 +227,17 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       s.reminderTextL1 ?? "",
       s.reminderTextL2 ?? "",
       s.reminderTextL3 ?? "",
+      s.legalForm ?? "freelancer",
+      s.tradeTaxRate ?? 4.0,
+      s.churchTaxRate ?? 0.0,
+      s.taxFilingStatus ?? "single",
+      s.estPrepaymentQ1Cent ?? 0,
+      s.estPrepaymentQ2Cent ?? 0,
+      s.estPrepaymentQ3Cent ?? 0,
+      s.estPrepaymentQ4Cent ?? 0,
+      s.usePauschalTaxReserve ? 1 : 0,
+      s.pauschalTaxPercent ?? 30.0,
+      s.otherIncomeAnnualCent ?? 0,
     ],
   );
 }

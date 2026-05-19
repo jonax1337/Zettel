@@ -59,20 +59,6 @@ export function periodCustom(startUnix: number, endUnixExclusive: number): Perio
   };
 }
 
-/** Same period shifted back by one year (for YoY comparisons). */
-export function previousYearPeriod(p: Period): Period {
-  const s = new Date(p.start * 1000);
-  const e = new Date(p.end * 1000);
-  const ps = new Date(s.getFullYear() - 1, s.getMonth(), s.getDate());
-  const pe = new Date(e.getFullYear() - 1, e.getMonth(), e.getDate());
-  return {
-    type: p.type,
-    start: unix(ps),
-    end: unix(pe),
-    label: `Vorjahr (${p.label})`,
-  };
-}
-
 export function currentDefaultPeriod(): Period {
   const now = new Date();
   return periodForYear(now.getFullYear());
