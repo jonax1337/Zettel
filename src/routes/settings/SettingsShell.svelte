@@ -1,36 +1,39 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
-  import { ChevronLeft } from "@lucide/svelte";
-  import { Button } from "$lib/ui";
+  import { ArrowLeft } from "@lucide/svelte";
   import type { Snippet } from "svelte";
 
   interface Props {
     title: string;
     description?: string;
+    actions?: Snippet;
     children: Snippet;
   }
 
-  const { title, description, children }: Props = $props();
+  const { title, description, actions, children }: Props = $props();
 </script>
 
-<div class="container mx-auto max-w-4xl space-y-8 py-10">
-  <div class="space-y-3">
-    <Button
-      variant="ghost"
-      size="sm"
-      class="-ml-2 h-8 px-2 text-muted-foreground hover:text-foreground"
-      onclick={() => push("/settings")}
-    >
-      <ChevronLeft class="size-4" />
-      Einstellungen
-    </Button>
-    <div class="space-y-1">
-      <h1 class="text-3xl font-semibold tracking-tight">{title}</h1>
-      {#if description}
-        <p class="text-sm text-muted-foreground">{description}</p>
-      {/if}
-    </div>
-  </div>
+<button
+  type="button"
+  class="group mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+  onclick={() => push("/settings")}
+>
+  <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" />
+  Einstellungen
+</button>
 
-  {@render children()}
-</div>
+<header class="mb-6 flex items-end justify-between gap-4">
+  <div>
+    <h1 class="text-3xl font-semibold tracking-tight">{title}</h1>
+    {#if description}
+      <p class="text-sm text-muted-foreground mt-1">{description}</p>
+    {/if}
+  </div>
+  {#if actions}
+    <div class="flex items-center gap-2">
+      {@render actions()}
+    </div>
+  {/if}
+</header>
+
+{@render children()}

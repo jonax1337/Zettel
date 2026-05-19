@@ -28,7 +28,6 @@
   import SettingsAppearance from "./routes/settings/Appearance.svelte";
   import SettingsData from "./routes/settings/Data.svelte";
   import SettingsAdvanced from "./routes/settings/Advanced.svelte";
-  import SettingsLegacy from "./routes/settings/Legacy.svelte";
   import Export from "./routes/Export.svelte";
   import NotFound from "./routes/NotFound.svelte";
   import { onMount } from "svelte";
@@ -139,7 +138,6 @@
     "/settings/appearance": SettingsAppearance,
     "/settings/data": SettingsData,
     "/settings/advanced": SettingsAdvanced,
-    "/settings/legacy": SettingsLegacy,
     "/export": Export,
     "*": NotFound,
   } as never;
