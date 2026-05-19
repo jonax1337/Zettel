@@ -4,7 +4,13 @@
 Offline-first invoice generator (Tauri 2 + Svelte 5 + Python sidecar) for German freelancers / Kleinunternehmer. ZUGFeRD/Factur-X PDF/A-3 output. Full plan in `PLAN.md`.
 
 ## Current state
-**v0.5.0 released** on `main` (2026-05-16). Auto-Update aktiv ab v0.4.3. `release/v0.6` ist die nächste Entwicklungslinie.
+**v0.5.0 released** on `main` (2026-05-16). Auto-Update aktiv ab v0.4.3. `release/v0.12` ist die aktuelle Entwicklungslinie.
+
+### v0.12.0 (in Arbeit) — Leistungszeiträume + lange Positionsbeschreibung
+- **Leistungszeitraum auf Header-Ebene** (`invoices.service_period_start/end`, `offers.service_period_start/end`): EN-16931 BG-14 (BT-73/74). UI-Toggle „Einzeltag/Zeitraum" über dem Datumsfeld; wenn beide Period-Felder gesetzt sind gewinnt der Zeitraum, sonst Fallback auf `delivery_date` (BT-72).
+- **Lange Positionsbeschreibung** (`*_items.long_description`): EN-16931 BT-154 (`SpecifiedTradeProduct/Description`) zusätzlich zu BT-153 `Name`. UI per „+ Detail-Beschreibung" pro Zeile aufklappbar.
+- **Leistungsdatum/-zeitraum pro Position** (`*_items.line_period_start/end`): BG-26 (BT-134/135). Toggle pro Zeile zwischen Einzeltag und Zeitraum; bei Einzeltag wird `start = end = date` gespeichert und im PDF/Detail als „Leistungsdatum X" gerendert. Migration `0019_v0.12_service_periods.sql`, `user_version = 20`.
+- Gilt für **Rechnungen, Stornorechnungen (geerbt), Angebote, Recurring-Vorlagen** (Header-Period nur Rechnungen+Angebote; Recurring nur Item-Felder).
 
 ### v0.6.0 (in Arbeit) — Mahnwesen + OCR-Light
 - **Mahnungen als first-class Dokumente** (`reminders` Tabelle, eigener Nummernkreis `MA-...`, eigene PDF-Vorlage `reminder.html.j2`, Routen `/reminders` + `/reminders/new/:invoiceId`).

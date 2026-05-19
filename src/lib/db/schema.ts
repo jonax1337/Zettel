@@ -170,6 +170,8 @@ export const invoices = sqliteTable("invoices", {
   eurTotalCent: integer("eur_total_cent"),
   notesInternal: text("notes_internal"),
   followUpDate: integer("follow_up_date"),
+  servicePeriodStart: integer("service_period_start"),
+  servicePeriodEnd: integer("service_period_end"),
 });
 
 export const invoiceItems = sqliteTable("invoice_items", {
@@ -182,6 +184,9 @@ export const invoiceItems = sqliteTable("invoice_items", {
   unitPrice: integer("unit_price").notNull().default(0),
   vatRate: integer("vat_rate").notNull().default(0),
   lineTotal: integer("line_total").notNull().default(0),
+  longDescription: text("long_description"),
+  linePeriodStart: integer("line_period_start"),
+  linePeriodEnd: integer("line_period_end"),
 });
 
 export const recurringInvoices = sqliteTable("recurring_invoices", {
@@ -210,6 +215,9 @@ export const recurringInvoiceItems = sqliteTable("recurring_invoice_items", {
   unit: text("unit").notNull().default("Stk"),
   unitPrice: integer("unit_price").notNull().default(0),
   vatRate: integer("vat_rate").notNull().default(0),
+  longDescription: text("long_description"),
+  linePeriodStart: integer("line_period_start"),
+  linePeriodEnd: integer("line_period_end"),
 });
 
 export type Settings = typeof settings.$inferSelect;
@@ -257,6 +265,8 @@ export const offers = sqliteTable("offers", {
   rejectedAt: integer("rejected_at"),
   currency: text("currency").notNull().default("EUR"),
   exchangeRate: text("exchange_rate"),
+  servicePeriodStart: integer("service_period_start"),
+  servicePeriodEnd: integer("service_period_end"),
 });
 
 export const offerItems = sqliteTable("offer_items", {
@@ -269,6 +279,9 @@ export const offerItems = sqliteTable("offer_items", {
   unitPrice: integer("unit_price").notNull().default(0),
   vatRate: integer("vat_rate").notNull().default(0),
   lineTotal: integer("line_total").notNull().default(0),
+  longDescription: text("long_description"),
+  linePeriodStart: integer("line_period_start"),
+  linePeriodEnd: integer("line_period_end"),
 });
 
 export type Offer = typeof offers.$inferSelect;

@@ -24,7 +24,7 @@
     Checkbox,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2 } from "@lucide/svelte";
+  import { ArrowLeft, Plus, Trash2, CalendarRange, FileText, X } from "@lucide/svelte";
 
   type Props = {
     mode: "new" | "edit";
@@ -59,9 +59,34 @@
   let active = $state(true);
   let notes = $state("");
   let paymentTerms = $state("");
-  let items = $state<Array<RecurringItemInput & { priceText: string }>>([
-    { description: "", quantity: 1, unit: "Stk", unitPrice: 0, vatRate: 0, priceText: "" },
-  ]);
+  type ItemUI = RecurringItemInput & {
+    priceText: string;
+    longDescription: string;
+    linePeriodMode: "single" | "range";
+    linePeriodSingleIso: string;
+    linePeriodStartIso: string;
+    linePeriodEndIso: string;
+    showDetail: boolean;
+    showPeriod: boolean;
+  };
+  function emptyItem(vatRate = 0): ItemUI {
+    return {
+      description: "",
+      quantity: 1,
+      unit: "Stk",
+      unitPrice: 0,
+      vatRate,
+      priceText: "",
+      longDescription: "",
+      linePeriodMode: "single",
+      linePeriodSingleIso: "",
+      linePeriodStartIso: "",
+      linePeriodEndIso: "",
+      showDetail: false,
+      showPeriod: false,
+    };
+  }
+  let items = $state<ItemUI[]>([emptyItem()]);
 
   const selectedCustomer = $derived(
     customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
@@ -114,14 +139,27 @@
               );
               paymentTermsDays = days || s.defaultPaymentTermsDays;
               if (res.items.length > 0) {
-                items = res.items.map((it) => ({
-                  description: it.description,
-                  quantity: it.quantity,
-                  unit: it.unit,
-                  unitPrice: it.unitPrice,
-                  vatRate: it.vatRate,
-                  priceText: (it.unitPrice / 100).toFixed(2).replace(".", ","),
-                }));
+                items = res.items.map((it) => {
+                  const isSingle =
+                    !!it.linePeriodStart &&
+                    !!it.linePeriodEnd &&
+                    it.linePeriodStart === it.linePeriodEnd;
+                  return {
+                    description: it.description,
+                    quantity: it.quantity,
+                    unit: it.unit,
+                    unitPrice: it.unitPrice,
+                    vatRate: it.vatRate,
+                    priceText: (it.unitPrice / 100).toFixed(2).replace(".", ","),
+                    longDescription: it.longDescription ?? "",
+                    linePeriodMode: (isSingle ? "single" : "range") as "single" | "range",
+                    linePeriodSingleIso: isSingle ? toIsoDate(it.linePeriodStart!) : "",
+                    linePeriodStartIso: it.linePeriodStart ? toIsoDate(it.linePeriodStart) : "",
+                    linePeriodEndIso: it.linePeriodEnd ? toIsoDate(it.linePeriodEnd) : "",
+                    showDetail: !!it.longDescription,
+                    showPeriod: !!(it.linePeriodStart && it.linePeriodEnd),
+                  };
+                });
               }
               startDateIso = "";
             }
@@ -151,14 +189,27 @@
           active = res.recurring.active;
           notes = res.recurring.notes ?? "";
           paymentTerms = res.recurring.paymentTerms ?? "";
-          items = res.items.map((it) => ({
-            description: it.description,
-            quantity: it.quantity,
-            unit: it.unit,
-            unitPrice: it.unitPrice,
-            vatRate: it.vatRate,
-            priceText: (it.unitPrice / 100).toFixed(2).replace(".", ","),
-          }));
+          items = res.items.map((it) => {
+            const isSingle =
+              !!it.linePeriodStart &&
+              !!it.linePeriodEnd &&
+              it.linePeriodStart === it.linePeriodEnd;
+            return {
+              description: it.description,
+              quantity: it.quantity,
+              unit: it.unit,
+              unitPrice: it.unitPrice,
+              vatRate: it.vatRate,
+              priceText: (it.unitPrice / 100).toFixed(2).replace(".", ","),
+              longDescription: it.longDescription ?? "",
+              linePeriodMode: (isSingle ? "single" : "range") as "single" | "range",
+              linePeriodSingleIso: isSingle ? toIsoDate(it.linePeriodStart!) : "",
+              linePeriodStartIso: it.linePeriodStart ? toIsoDate(it.linePeriodStart) : "",
+              linePeriodEndIso: it.linePeriodEnd ? toIsoDate(it.linePeriodEnd) : "",
+              showDetail: !!it.longDescription,
+              showPeriod: !!(it.linePeriodStart && it.linePeriodEnd),
+            };
+          });
         })
         .catch((e) => (error = String(e)))
         .finally(() => (loaded = true));
@@ -166,17 +217,7 @@
   });
 
   function addItem() {
-    items = [
-      ...items,
-      {
-        description: "",
-        quantity: 1,
-        unit: "Stk",
-        unitPrice: 0,
-        vatRate: settings?.isKleinunternehmer ? 0 : 19,
-        priceText: "",
-      },
-    ];
+    items = [...items, emptyItem(settings?.isKleinunternehmer ? 0 : 19)];
   }
 
   function removeItem(idx: number) {
@@ -242,7 +283,31 @@
         notes: notes.trim() || null,
         paymentTerms: paymentTerms.trim() || null,
         active,
-        items: items.map(({ priceText: _p, ...rest }) => rest),
+        items: items.map((it) => {
+          let lpStart: number | null = null;
+          let lpEnd: number | null = null;
+          if (it.showPeriod) {
+            if (it.linePeriodMode === "single" && it.linePeriodSingleIso) {
+              const d = fromIsoDate(it.linePeriodSingleIso);
+              lpStart = d;
+              lpEnd = d;
+            } else if (it.linePeriodMode === "range" && it.linePeriodStartIso && it.linePeriodEndIso) {
+              lpStart = fromIsoDate(it.linePeriodStartIso);
+              lpEnd = fromIsoDate(it.linePeriodEndIso);
+            }
+          }
+          return {
+            description: it.description,
+            quantity: it.quantity,
+            unit: it.unit,
+            unitPrice: it.unitPrice,
+            vatRate: it.vatRate,
+            longDescription:
+              it.showDetail && it.longDescription.trim() ? it.longDescription.trim() : null,
+            linePeriodStart: lpStart,
+            linePeriodEnd: lpEnd,
+          };
+        }),
       };
       let savedId: number;
       if (mode === "new") {
@@ -361,13 +426,101 @@
           <tbody>
             {#each items as it, idx (idx)}
               <tr class="border-t">
-                <td class="px-3 py-2 text-xs text-muted-foreground">{idx + 1}</td>
-                <td class="px-2 py-1.5"><Input bind:value={it.description} required /></td>
+                <td class="px-3 py-2 text-xs text-muted-foreground align-top pt-3">{idx + 1}</td>
                 <td class="px-2 py-1.5">
+                  <Input bind:value={it.description} required />
+                  {#if it.showDetail}
+                    <div class="mt-1.5 flex flex-col gap-1">
+                      <Textarea
+                        rows={2}
+                        placeholder="Detail-Beschreibung"
+                        bind:value={it.longDescription}
+                      />
+                      <button
+                        type="button"
+                        class="self-start text-xs text-muted-foreground hover:text-destructive inline-flex items-center gap-1"
+                        onclick={() => {
+                          it.showDetail = false;
+                          it.longDescription = "";
+                          items = [...items];
+                        }}
+                      >
+                        <X class="size-3" /> Detail entfernen
+                      </button>
+                    </div>
+                  {/if}
+                  {#if it.showPeriod}
+                    <div class="mt-1.5 flex flex-col gap-1">
+                      {#if it.linePeriodMode === "single"}
+                        <DatePicker bind:value={it.linePeriodSingleIso} />
+                      {:else}
+                        <div class="grid grid-cols-2 gap-1.5">
+                          <DatePicker bind:value={it.linePeriodStartIso} />
+                          <DatePicker bind:value={it.linePeriodEndIso} />
+                        </div>
+                      {/if}
+                      <div class="flex gap-3">
+                        <button
+                          type="button"
+                          class="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                          onclick={() => {
+                            it.linePeriodMode = it.linePeriodMode === "single" ? "range" : "single";
+                            items = [...items];
+                          }}
+                        >
+                          <CalendarRange class="size-3" />
+                          {it.linePeriodMode === "single" ? "Auf Zeitraum wechseln" : "Auf Einzeltag wechseln"}
+                        </button>
+                        <button
+                          type="button"
+                          class="text-xs text-muted-foreground hover:text-destructive inline-flex items-center gap-1"
+                          onclick={() => {
+                            it.showPeriod = false;
+                            it.linePeriodSingleIso = "";
+                            it.linePeriodStartIso = "";
+                            it.linePeriodEndIso = "";
+                            items = [...items];
+                          }}
+                        >
+                          <X class="size-3" /> Entfernen
+                        </button>
+                      </div>
+                    </div>
+                  {/if}
+                  {#if !it.showDetail || !it.showPeriod}
+                    <div class="mt-1 flex gap-3">
+                      {#if !it.showDetail}
+                        <button
+                          type="button"
+                          class="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                          onclick={() => {
+                            it.showDetail = true;
+                            items = [...items];
+                          }}
+                        >
+                          <FileText class="size-3" /> Detail-Beschreibung
+                        </button>
+                      {/if}
+                      {#if !it.showPeriod}
+                        <button
+                          type="button"
+                          class="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                          onclick={() => {
+                            it.showPeriod = true;
+                            items = [...items];
+                          }}
+                        >
+                          <CalendarRange class="size-3" /> Leistungsdatum / -zeitraum
+                        </button>
+                      {/if}
+                    </div>
+                  {/if}
+                </td>
+                <td class="px-2 py-1.5 align-top pt-1.5">
                   <Input type="number" step="0.01" min="0" bind:value={it.quantity} />
                 </td>
-                <td class="px-2 py-1.5"><Input bind:value={it.unit} /></td>
-                <td class="px-2 py-1.5">
+                <td class="px-2 py-1.5 align-top pt-1.5"><Input bind:value={it.unit} /></td>
+                <td class="px-2 py-1.5 align-top pt-1.5">
                   <Input
                     bind:value={it.priceText}
                     onblur={() => onPriceBlur(idx)}
@@ -376,7 +529,7 @@
                   />
                 </td>
                 {#if !vatExempt}
-                  <td class="px-2 py-1.5">
+                  <td class="px-2 py-1.5 align-top pt-1.5">
                     <Select
                       bind:value={
                         () => String(it.vatRate),
@@ -389,10 +542,10 @@
                     />
                   </td>
                 {/if}
-                <td class="px-3 py-2 text-right font-mono text-xs">
+                <td class="px-3 py-2 text-right font-mono text-xs align-top pt-3">
                   {centsToEur(computeLineTotal(it))}
                 </td>
-                <td class="px-2 py-1.5 text-right">
+                <td class="px-2 py-1.5 text-right align-top pt-1.5">
                   <button
                     type="button"
                     onclick={() => removeItem(idx)}

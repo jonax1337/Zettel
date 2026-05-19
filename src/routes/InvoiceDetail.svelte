@@ -650,8 +650,11 @@
             <dt class="text-muted-foreground">Fällig am</dt>
             <dd>{formatDate(invoice.dueDate)}</dd>
           {/if}
-          {#if invoice.deliveryDate}
-            <dt class="text-muted-foreground">Lieferdatum</dt>
+          {#if invoice.servicePeriodStart && invoice.servicePeriodEnd}
+            <dt class="text-muted-foreground">Leistungszeitraum</dt>
+            <dd>{formatDate(invoice.servicePeriodStart)} – {formatDate(invoice.servicePeriodEnd)}</dd>
+          {:else if invoice.deliveryDate}
+            <dt class="text-muted-foreground">Leistungsdatum</dt>
             <dd>{formatDate(invoice.deliveryDate)}</dd>
           {/if}
           {#if invoice.sentAt}
@@ -699,9 +702,23 @@
       <tbody>
         {#each items as it (it.id)}
           <tr class="border-t border-border">
-            <td class="px-4 py-3 text-xs text-muted-foreground">{it.position}</td>
-            <td class="px-4 py-3">{it.description}</td>
-            <td class="px-4 py-3 text-right">{it.quantity}</td>
+            <td class="px-4 py-3 text-xs text-muted-foreground align-top">{it.position}</td>
+            <td class="px-4 py-3 align-top">
+              <div>{it.description}</div>
+              {#if it.longDescription}
+                <div class="mt-0.5 text-xs text-muted-foreground whitespace-pre-wrap">{it.longDescription}</div>
+              {/if}
+              {#if it.linePeriodStart && it.linePeriodEnd}
+                <div class="mt-0.5 text-xs text-muted-foreground italic">
+                  {#if it.linePeriodStart === it.linePeriodEnd}
+                    Leistungsdatum {formatDate(it.linePeriodStart)}
+                  {:else}
+                    Leistungszeitraum {formatDate(it.linePeriodStart)} – {formatDate(it.linePeriodEnd)}
+                  {/if}
+                </div>
+              {/if}
+            </td>
+            <td class="px-4 py-3 text-right align-top">{it.quantity}</td>
             <td class="px-4 py-3">{it.unit}</td>
             <td class="px-4 py-3 text-right font-mono">{formatMoney(it.unitPrice, invoice.currency)}</td>
             {#if !invoice.isKleinunternehmer}

@@ -59,6 +59,8 @@ function buildPayload(opts: {
       currency: invoice.currency ?? "EUR",
       exchangeRate: invoice.exchangeRate,
       eurTotalCent: invoice.eurTotalCent,
+      servicePeriodStart: invoice.servicePeriodStart,
+      servicePeriodEnd: invoice.servicePeriodEnd,
     },
     items: items.map((it) => ({
       position: it.position,
@@ -68,6 +70,9 @@ function buildPayload(opts: {
       unitPrice: it.unitPrice,
       vatRate: it.vatRate,
       lineTotal: it.lineTotal,
+      longDescription: it.longDescription,
+      linePeriodStart: it.linePeriodStart,
+      linePeriodEnd: it.linePeriodEnd,
     })),
     company: {
       companyName: company.companyName,

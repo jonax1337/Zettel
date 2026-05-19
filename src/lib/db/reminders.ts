@@ -136,6 +136,8 @@ export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
     eur_total_cent: number | null;
     notes_internal: string | null;
     follow_up_date: number | null;
+    service_period_start: number | null;
+    service_period_end: number | null;
     customer_name: string | null;
   }>(
     `SELECT i.*, c.name AS customer_name
@@ -195,6 +197,8 @@ export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
       eurTotalCent: r.eur_total_cent,
       notesInternal: r.notes_internal,
       followUpDate: r.follow_up_date,
+      servicePeriodStart: r.service_period_start,
+      servicePeriodEnd: r.service_period_end,
     },
     customerName: r.customer_name ?? "—",
     daysOverdue: Math.max(0, Math.floor((now - r.due_date) / 86400)),

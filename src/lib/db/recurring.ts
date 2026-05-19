@@ -35,6 +35,9 @@ type RecurringItemRow = {
   unit: string;
   unit_price: number;
   vat_rate: number;
+  long_description: string | null;
+  line_period_start: number | null;
+  line_period_end: number | null;
 };
 
 function mapRecurring(r: RecurringRow): RecurringInvoice {
@@ -66,6 +69,9 @@ function mapRecurringItem(r: RecurringItemRow): RecurringInvoiceItem {
     unit: r.unit,
     unitPrice: r.unit_price,
     vatRate: r.vat_rate,
+    longDescription: r.long_description,
+    linePeriodStart: r.line_period_start,
+    linePeriodEnd: r.line_period_end,
   };
 }
 
@@ -95,6 +101,9 @@ export type RecurringItemInput = {
   unit: string;
   unitPrice: number;
   vatRate: number;
+  longDescription?: string | null;
+  linePeriodStart?: number | null;
+  linePeriodEnd?: number | null;
 };
 
 export type RecurringFormInput = {
@@ -176,9 +185,21 @@ async function writeRecurringItems(
     const it = items[i];
     await execute(
       `INSERT INTO recurring_invoice_items
-        (recurring_id, position, description, quantity, unit, unit_price, vat_rate)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [recurringId, i + 1, it.description, it.quantity, it.unit, it.unitPrice, it.vatRate],
+        (recurring_id, position, description, quantity, unit, unit_price, vat_rate,
+         long_description, line_period_start, line_period_end)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        recurringId,
+        i + 1,
+        it.description,
+        it.quantity,
+        it.unit,
+        it.unitPrice,
+        it.vatRate,
+        it.longDescription ?? null,
+        it.linePeriodStart ?? null,
+        it.linePeriodEnd ?? null,
+      ],
     );
   }
 }
@@ -278,6 +299,9 @@ export async function generateInvoiceFromRecurring(
       unit: it.unit,
       unitPrice: it.unitPrice,
       vatRate: it.vatRate,
+      longDescription: it.longDescription,
+      linePeriodStart: it.linePeriodStart,
+      linePeriodEnd: it.linePeriodEnd,
     })),
   });
 
@@ -298,7 +322,17 @@ export async function generateInvoiceFromRecurring(
  * we mirror its items into a fresh recurring template input shape.
  */
 export function templateInputFromItems(
-  items: Pick<InvoiceItem, "description" | "quantity" | "unit" | "unitPrice" | "vatRate">[],
+  items: Pick<
+    InvoiceItem,
+    | "description"
+    | "quantity"
+    | "unit"
+    | "unitPrice"
+    | "vatRate"
+    | "longDescription"
+    | "linePeriodStart"
+    | "linePeriodEnd"
+  >[],
 ): RecurringItemInput[] {
   return items.map((it) => ({
     description: it.description,
@@ -306,5 +340,8 @@ export function templateInputFromItems(
     unit: it.unit,
     unitPrice: it.unitPrice,
     vatRate: it.vatRate,
+    longDescription: it.longDescription,
+    linePeriodStart: it.linePeriodStart,
+    linePeriodEnd: it.linePeriodEnd,
   }));
 }

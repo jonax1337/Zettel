@@ -267,6 +267,19 @@ table.items tbody tr:last-child td {
 
 .col-pos    { width: 9mm;  text-align: right; color: var(--color-faint); }
 .col-desc   { }
+.col-desc .item-name { }
+.col-desc .item-detail {
+  margin-top: 0.6mm;
+  font-size: 0.88em;
+  color: var(--color-faint);
+  white-space: pre-wrap;
+}
+.col-desc .item-period {
+  margin-top: 0.6mm;
+  font-size: 0.85em;
+  color: var(--color-faint);
+  font-style: italic;
+}
 .col-qty    { width: 14mm; text-align: right; font-variant-numeric: tabular-nums; }
 .col-unit   { width: 16mm; }
 .col-price  { width: 24mm; text-align: right; font-variant-numeric: tabular-nums; }

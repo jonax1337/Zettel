@@ -36,6 +36,8 @@ type OfferRow = {
   rejected_at: number | null;
   currency: string;
   exchange_rate: string | null;
+  service_period_start: number | null;
+  service_period_end: number | null;
 };
 
 type OfferItemRow = {
@@ -48,6 +50,9 @@ type OfferItemRow = {
   unit_price: number;
   vat_rate: number;
   line_total: number;
+  long_description: string | null;
+  line_period_start: number | null;
+  line_period_end: number | null;
 };
 
 function mapOffer(r: OfferRow): Offer {
@@ -75,6 +80,8 @@ function mapOffer(r: OfferRow): Offer {
     rejectedAt: r.rejected_at,
     currency: r.currency ?? "EUR",
     exchangeRate: r.exchange_rate,
+    servicePeriodStart: r.service_period_start,
+    servicePeriodEnd: r.service_period_end,
   };
 }
 
@@ -89,6 +96,9 @@ function mapItem(r: OfferItemRow): OfferItem {
     unitPrice: r.unit_price,
     vatRate: r.vat_rate,
     lineTotal: r.line_total,
+    longDescription: r.long_description,
+    linePeriodStart: r.line_period_start,
+    linePeriodEnd: r.line_period_end,
   };
 }
 
@@ -98,6 +108,9 @@ export type OfferItemInput = {
   unit: string;
   unitPrice: number;
   vatRate: number;
+  longDescription?: string | null;
+  linePeriodStart?: number | null;
+  linePeriodEnd?: number | null;
 };
 
 export type OfferFormInput = {
@@ -110,6 +123,8 @@ export type OfferFormInput = {
   items: OfferItemInput[];
   currency?: string;
   exchangeRate?: string | null;
+  servicePeriodStart?: number | null;
+  servicePeriodEnd?: number | null;
 };
 
 export function computeLineTotal(item: OfferItemInput): number {
@@ -252,9 +267,22 @@ async function writeItems(
     const line = computeLineTotal(it);
     await execute(
       `INSERT INTO offer_items
-        (offer_id, position, description, quantity, unit, unit_price, vat_rate, line_total)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [offerId, i + 1, it.description, it.quantity, it.unit, it.unitPrice, it.vatRate, line],
+        (offer_id, position, description, quantity, unit, unit_price, vat_rate, line_total,
+         long_description, line_period_start, line_period_end)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        offerId,
+        i + 1,
+        it.description,
+        it.quantity,
+        it.unit,
+        it.unitPrice,
+        it.vatRate,
+        line,
+        it.longDescription ?? null,
+        it.linePeriodStart ?? null,
+        it.linePeriodEnd ?? null,
+      ],
     );
   }
 }
@@ -272,8 +300,9 @@ export async function createOffer(input: OfferFormInput): Promise<number> {
     `INSERT INTO offers
       (number, customer_id, customer_snapshot, issue_date, valid_until,
        status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
-       notes, intro_text, currency, exchange_rate)
-     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       notes, intro_text, currency, exchange_rate,
+       service_period_start, service_period_end)
+     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.customerId,
@@ -289,6 +318,8 @@ export async function createOffer(input: OfferFormInput): Promise<number> {
       input.introText,
       input.currency ?? "EUR",
       input.exchangeRate ?? null,
+      input.servicePeriodStart ?? null,
+      input.servicePeriodEnd ?? null,
     ],
   );
   const id = Number(res.lastInsertId ?? 0);
@@ -323,6 +354,7 @@ export async function updateOffer(
       is_reverse_charge = ?,
       notes = ?, intro_text = ?,
       currency = ?, exchange_rate = ?,
+      service_period_start = ?, service_period_end = ?,
       updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -338,6 +370,8 @@ export async function updateOffer(
       input.introText,
       input.currency ?? existing.offer.currency ?? "EUR",
       input.exchangeRate ?? existing.offer.exchangeRate ?? null,
+      input.servicePeriodStart ?? null,
+      input.servicePeriodEnd ?? null,
       id,
     ],
   );
@@ -441,9 +475,14 @@ export async function convertToInvoice(
       unit: it.unit,
       unitPrice: it.unitPrice,
       vatRate: it.vatRate,
+      longDescription: it.longDescription,
+      linePeriodStart: it.linePeriodStart,
+      linePeriodEnd: it.linePeriodEnd,
     })),
     currency: data.offer.currency,
     exchangeRate: data.offer.exchangeRate,
+    servicePeriodStart: data.offer.servicePeriodStart,
+    servicePeriodEnd: data.offer.servicePeriodEnd,
   };
 
   const invoiceId = await createInvoice(invoiceInput);
