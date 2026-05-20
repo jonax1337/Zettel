@@ -17,11 +17,31 @@ ZUGFeRD- / Factur-X-konforme PDF/A-3 mit eingebettetem EN-16931-XML — lokal, o
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![SQLite](https://img.shields.io/badge/SQLite-local-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org)
 
-[Download](https://github.com/jonax1337/zettel/releases/latest) · [Diskutieren](https://github.com/jonax1337/zettel/discussions) · [Changelog](./CHANGELOG.md) · [Mitmachen](./CONTRIBUTING.md)
+[Download](https://github.com/jonax1337/zettel/releases/latest) · [Diskutieren](https://github.com/jonax1337/zettel/discussions) · [Changelog](./CHANGELOG.md) · [Mitmachen](./CONTRIBUTING.md) · [Security](./SECURITY.md)
 
 </div>
 
 <br />
+
+## Screenshots
+
+<!--
+  Bilder leben unter `docs/screenshots/` — siehe `docs/screenshots/README.md` für Konventionen.
+  Wenn du Screenshots beisteuern magst, gerne PR mit anonymisierten Sandbox-Daten.
+-->
+
+<table>
+  <tr>
+    <td align="center"><a href="./docs/screenshots/dashboard.png"><img src="./docs/screenshots/dashboard.png" alt="Dashboard mit KPIs, Steuer-Rücklage und Period-Switcher" /></a><br /><sub>Dashboard</sub></td>
+    <td align="center"><a href="./docs/screenshots/invoice-edit.png"><img src="./docs/screenshots/invoice-edit.png" alt="Rechnungs-Editor mit Multi-Currency und Leistungszeitraum" /></a><br /><sub>Rechnung erstellen</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="./docs/screenshots/expense-drop-zone.png"><img src="./docs/screenshots/expense-drop-zone.png" alt="Eingangsrechnungen-Drop-Zone mit ZUGFeRD-Auto-Parse" /></a><br /><sub>Eingangsrechnungen</sub></td>
+    <td align="center"><a href="./docs/screenshots/pdf-preview.png"><img src="./docs/screenshots/pdf-preview.png" alt="PDF/A-3 mit eingebettetem Factur-X-XML" /></a><br /><sub>PDF/A-3 + ZUGFeRD</sub></td>
+  </tr>
+</table>
+
+> Die Bilder im Repo sind noch Platzhalter — wer ein paar saubere Sandbox-Screenshots erzeugen mag: PR willkommen. Konventionen in [`docs/screenshots/README.md`](./docs/screenshots/README.md).
 
 ## Warum Zettel?
 
@@ -196,13 +216,21 @@ Issues, Patches und Vorschläge sind willkommen. Setup, Konventionen und PR-Work
 
 Gute Einstiegspunkte: Issues mit Label [`good first issue`](https://github.com/jonax1337/zettel/issues?q=is%3Aopen+label%3A%22good+first+issue%22) und [`help wanted`](https://github.com/jonax1337/zettel/issues?q=is%3Aopen+label%3A%22help+wanted%22).
 
+## Sicherheit, Datenschutz, Compliance
+
+- **Schwachstelle melden:** [`SECURITY.md`](./SECURITY.md) — bitte keine öffentlichen Issues für Security-Bugs
+- **Was wird gespeichert, was geht raus:** [`PRIVACY.md`](./PRIVACY.md) — keine Telemetrie, alle Daten lokal
+- **GoBD, § 14 UStG, Aufbewahrung, Verfahrensdokumentation:** [`COMPLIANCE.md`](./COMPLIANCE.md)
+
 ## Disclaimer
 
-Zettel ist keine Rechts- oder Steuerberatung. Die erzeugten Rechnungen sind nach bestem Wissen EN-16931-konform, aber **ohne Garantie**. Die ersten Rechnungen vor dem Versand vom Steuerberater prüfen lassen. Die Steuer-Rücklage-Berechnung ist eine Vorhersage, kein Steuerbescheid — Quartals-Vorauszahlungen, individuelle Sonderausgaben und außergewöhnliche Belastungen werden nicht berücksichtigt.
+Zettel ist keine Rechts- oder Steuerberatung. Die erzeugten Rechnungen sind nach bestem Wissen EN-16931-konform, aber **ohne Garantie**. Die ersten Rechnungen vor dem Versand vom Steuerberater prüfen lassen. Die Steuer-Rücklage-Berechnung ist eine Vorhersage, kein Steuerbescheid — Quartals-Vorauszahlungen, individuelle Sonderausgaben und außergewöhnliche Belastungen werden nicht berücksichtigt. Details zu den Grenzen (insbesondere GoBD, Audit-Log, Aufbewahrungsfristen): [`COMPLIANCE.md`](./COMPLIANCE.md).
 
 ## Lizenz
 
 [MIT](./LICENSE) — © Jonas Laux & Contributors · [laux.digital](https://laux.digital)
+
+Lizenzen der verwendeten Open-Source-Komponenten: [`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md).
 
 ## Acknowledgments
 
