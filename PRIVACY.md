@@ -81,5 +81,5 @@ Keine. Kein einziger.
 
 ## Kontakt
 
-Fragen zum Datenschutz: `privacy@laux.digital`
+Fragen zum Datenschutz: Issue im [GitHub-Repo](https://github.com/jonax1337/zettel/issues) öffnen.
 Security-relevante Themen: siehe [`SECURITY.md`](./SECURITY.md)

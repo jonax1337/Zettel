@@ -13,11 +13,9 @@ Sicherheits-Fixes erhält ausschließlich die **neueste Release-Version** auf `m
 
 ## Schwachstelle melden
 
-**Bitte keine öffentlichen GitHub Issues für Security-Bugs.** Stattdessen einen der folgenden Wege nutzen:
+**Bitte keine öffentlichen GitHub Issues für Security-Bugs.** Stattdessen ein privates **GitHub Security Advisory** öffnen:
 
-1. **GitHub Security Advisory (bevorzugt):**
-   <https://github.com/jonax1337/zettel/security/advisories/new>
-2. **E-Mail:** `security@laux.digital` — PGP optional, Inhalt darf Klartext sein.
+<https://github.com/jonax1337/zettel/security/advisories/new>
 
 Bitte enthalten:
 - Betroffene Version (`Über Zettel` → Version + Commit)
