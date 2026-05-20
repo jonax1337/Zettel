@@ -228,7 +228,7 @@ Zettel ist keine Rechts- oder Steuerberatung. Die erzeugten Rechnungen sind nach
 
 ## Lizenz
 
-[MIT](./LICENSE) — © Jonas Laux & Contributors · [laux.digital](https://laux.digital)
+[MIT](./LICENSE) — © Jonas Laux & Contributors
 
 Lizenzen der verwendeten Open-Source-Komponenten: [`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md).
 
