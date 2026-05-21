@@ -11,6 +11,7 @@ from weasyprint import CSS, HTML
 
 from .templates import build_env
 from .zugferd import render_zugferd_xml
+from .qr import build_epc_payload, epc_qr_svg_data_uri, should_emit_qr
 
 # Factur-X levels accepted by the factur-x library. We surface them under our
 # own profile names so the UI can present "BASIC / EN 16931 / EXTENDED" labels.
@@ -40,6 +41,33 @@ def _logo_data_uri(logo_path: str | None) -> str | None:
     return f"data:{mime};base64,{encoded}"
 
 
+def _maybe_epc_qr(invoice: dict[str, Any], company: dict[str, Any]) -> str | None:
+    """Build the EPC-QR data URI if the invoice qualifies, else None."""
+    iban = (company.get("bankIban") or "").strip()
+    currency = invoice.get("currency") or "EUR"
+    amount_cent = int(invoice.get("total") or 0)
+    is_credit_note = bool(invoice.get("isCreditNote"))
+    rc = invoice.get("reverseChargeType") or "none"
+    if not should_emit_qr(
+        currency=currency,
+        iban=iban,
+        amount_cent=amount_cent,
+        is_credit_note=is_credit_note,
+        reverse_charge_type=rc,
+    ):
+        return None
+    name = company.get("companyName") or company.get("ownerName") or ""
+    remittance = f"Rechnung {invoice.get('number', '')}".strip()
+    payload = build_epc_payload(
+        beneficiary_name=name,
+        iban=iban,
+        amount_cent=amount_cent,
+        bic=company.get("bankBic"),
+        remittance=remittance,
+    )
+    return epc_qr_svg_data_uri(payload)
+
+
 def _render_html_pdf(payload: dict[str, Any]) -> bytes:
     """Render the visible PDF using Jinja + WeasyPrint, return raw bytes."""
     env = build_env()
@@ -47,12 +75,14 @@ def _render_html_pdf(payload: dict[str, Any]) -> bytes:
     company = dict(payload["company"])
     company["logoDataUri"] = _logo_data_uri(company.get("logoPath"))
     settings = payload.get("settings") or {"pdf_theme": "classic"}
+    qr_uri = _maybe_epc_qr(payload["invoice"], company)
     html_str = template.render(
         invoice=payload["invoice"],
         items=payload["items"],
         company=company,
         customer=payload["customer"],
         settings=settings,
+        epc_qr_uri=qr_uri,
     )
     css_path = Path(template.environment.loader.searchpath[0]) / "invoice.css"
     stylesheets = [CSS(filename=str(css_path))] if css_path.exists() else []

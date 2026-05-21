@@ -15,6 +15,8 @@
   import RecurringEdit from "./routes/RecurringEdit.svelte";
   import VendorsList from "./routes/VendorsList.svelte";
   import VendorEdit from "./routes/VendorEdit.svelte";
+  import CatalogList from "./routes/CatalogList.svelte";
+  import CatalogEdit from "./routes/CatalogEdit.svelte";
   import ExpensesList from "./routes/ExpensesList.svelte";
   import ExpenseEdit from "./routes/ExpenseEdit.svelte";
   import RemindersList from "./routes/RemindersList.svelte";
@@ -96,6 +98,15 @@
     }),
     "/recurring/:id": wrap({
       component: RecurringEdit as unknown as never,
+      props: { mode: "edit" },
+    }),
+    "/catalog": CatalogList,
+    "/catalog/new": wrap({
+      component: CatalogEdit as unknown as never,
+      props: { mode: "new" },
+    }),
+    "/catalog/:id": wrap({
+      component: CatalogEdit as unknown as never,
       props: { mode: "edit" },
     }),
     "/vendors": VendorsList,

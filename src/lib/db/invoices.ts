@@ -44,6 +44,8 @@ type InvoiceRow = {
   follow_up_date: number | null;
   service_period_start: number | null;
   service_period_end: number | null;
+  skonto_percent: number | null;
+  skonto_days: number | null;
 };
 
 type InvoiceItemRow = {
@@ -96,6 +98,8 @@ function mapInvoice(r: InvoiceRow): Invoice {
     followUpDate: r.follow_up_date,
     servicePeriodStart: r.service_period_start,
     servicePeriodEnd: r.service_period_end,
+    skontoPercent: r.skonto_percent,
+    skontoDays: r.skonto_days,
   };
 }
 
@@ -149,6 +153,8 @@ export type InvoiceFormInput = {
   followUpDate?: number | null;
   servicePeriodStart?: number | null;
   servicePeriodEnd?: number | null;
+  skontoPercent?: number | null;
+  skontoDays?: number | null;
 };
 
 // --- Totals ---
@@ -364,8 +370,8 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
        status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
        reverse_charge_type, notes, payment_terms, is_credit_note, corrects_invoice_id,
        currency, exchange_rate, eur_total_cent, notes_internal, follow_up_date,
-       service_period_start, service_period_end)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       service_period_start, service_period_end, skonto_percent, skonto_days)
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.customerId,
@@ -390,6 +396,8 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
       input.followUpDate ?? null,
       input.servicePeriodStart ?? null,
       input.servicePeriodEnd ?? null,
+      input.isCreditNote ? null : input.skontoPercent ?? null,
+      input.isCreditNote ? null : input.skontoDays ?? null,
     ],
   );
   const id = Number(res.lastInsertId ?? 0);
@@ -429,6 +437,7 @@ export async function updateInvoice(
       currency = ?, exchange_rate = ?, eur_total_cent = ?,
       notes_internal = ?, follow_up_date = ?,
       service_period_start = ?, service_period_end = ?,
+      skonto_percent = ?, skonto_days = ?,
       updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -451,6 +460,8 @@ export async function updateInvoice(
       input.followUpDate ?? existing.invoice.followUpDate ?? null,
       input.servicePeriodStart ?? null,
       input.servicePeriodEnd ?? null,
+      existing.invoice.isCreditNote ? null : input.skontoPercent ?? null,
+      existing.invoice.isCreditNote ? null : input.skontoDays ?? null,
       id,
     ],
   );

@@ -10,10 +10,12 @@
     DropdownMenu,
     DropdownItem,
     DropdownSeparator,
+    SortableTh,
     toast,
   } from "$lib/ui";
   import { Plus, MoreHorizontal, Pencil, Trash2, Search } from "@lucide/svelte";
   import { push } from "svelte-spa-router";
+  import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
 
   let search = $state("");
   let onlyFollowUp = $state(false);
@@ -21,7 +23,20 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
 
-  const filtered = $derived(customers);
+  type SortKey = "customerNumber" | "name" | "city" | "email";
+  let sort = $state<SortState<SortKey>>(loadSortState<SortKey>("customers", { key: "name", dir: "asc" }));
+  function setSort(key: SortKey, dir: SortState<SortKey>["dir"]) {
+    sort = { key: dir === null ? null : key, dir };
+    saveSortState("customers", sort);
+  }
+  const filtered = $derived(
+    applySort(customers, sort, {
+      customerNumber: (r) => r.customerNumber,
+      name: (r) => r.name,
+      city: (r) => r.city,
+      email: (r) => r.email,
+    }),
+  );
 
   let confirmOpen = $state(false);
   let toDelete = $state<Customer | null>(null);
@@ -114,11 +129,11 @@
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
-        <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-          <th class="px-4 py-3 font-medium">Nr.</th>
-          <th class="px-4 py-3 font-medium">Name</th>
-          <th class="px-4 py-3 font-medium">Ort</th>
-          <th class="px-4 py-3 font-medium">E-Mail</th>
+        <tr>
+          <SortableTh column="customerNumber" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Nr.</SortableTh>
+          <SortableTh column="name" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Name</SortableTh>
+          <SortableTh column="city" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Ort</SortableTh>
+          <SortableTh column="email" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">E-Mail</SortableTh>
           <th class="px-4 py-3 font-medium w-12"></th>
         </tr>
       </thead>

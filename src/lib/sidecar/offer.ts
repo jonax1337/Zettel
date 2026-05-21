@@ -5,6 +5,7 @@ import { getOffer } from "$lib/db/offers";
 import { loadSettings } from "$lib/db/queries";
 import type { CustomerSnapshot, Offer, OfferItem, Settings } from "$lib/db/schema";
 import type { SidecarResponse } from "./invoice";
+import { computeSkonto } from "$lib/utils/skonto";
 
 function safeFilename(s: string): string {
   return s.replace(/[\\/:*?"<>|]+/g, "_");
@@ -23,6 +24,13 @@ function buildPayload(opts: {
   outputPath: string;
 }) {
   const { offer, items, customer, company, outputPath } = opts;
+  const skonto = computeSkonto({
+    totalCent: Math.abs(offer.total),
+    percent: offer.skontoPercent,
+    days: offer.skontoDays,
+    issueDate: offer.issueDate,
+    isCreditNote: false,
+  });
   return {
     offer: {
       number: offer.number,
@@ -37,6 +45,10 @@ function buildPayload(opts: {
       introText: offer.introText,
       servicePeriodStart: offer.servicePeriodStart,
       servicePeriodEnd: offer.servicePeriodEnd,
+      skontoPercent: skonto?.percent ?? null,
+      skontoDays: skonto?.days ?? null,
+      skontoAmountCent: skonto?.discountCent ?? null,
+      skontoDeadline: skonto?.deadlineUnix ?? null,
     },
     items: items.map((it) => ({
       position: it.position,

@@ -32,12 +32,14 @@
     Label,
     Card,
     CardContent,
+    CatalogPicker,
     DatePicker,
     Select,
     Checkbox,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2, CalendarRange, FileText, X } from "@lucide/svelte";
+  import { ArrowLeft, Plus, Trash2, CalendarRange, FileText, X, Package } from "@lucide/svelte";
+  import type { CatalogItem } from "$lib/db/schema";
 
   type Props = {
     mode: "new" | "edit";
@@ -96,6 +98,10 @@
   let currency = $state<string>("EUR");
   let exchangeRate = $state<string>("");
   let fetchingRate = $state(false);
+
+  let skontoEnabled = $state(false);
+  let skontoPercent = $state<number>(2);
+  let skontoDays = $state<number>(7);
 
   async function fetchEcbRate() {
     if (currency === "EUR") return;
@@ -162,6 +168,11 @@
           validUntilIso = toIsoDate(addDaysUnix(nowUnix(), s.defaultOfferValidityDays));
           for (const it of items) it.vatRate = s.isKleinunternehmer ? 0 : 19;
           items = [...items];
+          if (s.defaultSkontoActive) {
+            skontoEnabled = true;
+            skontoPercent = s.defaultSkontoPercent;
+            skontoDays = s.defaultSkontoDays;
+          }
         }
       })
       .catch((e) => (error = String(e)));
@@ -201,6 +212,11 @@
           isReverseCharge = res.offer.isReverseCharge;
           currency = res.offer.currency ?? "EUR";
           exchangeRate = res.offer.exchangeRate ?? "";
+          if (res.offer.skontoPercent != null && res.offer.skontoDays != null) {
+            skontoEnabled = true;
+            skontoPercent = res.offer.skontoPercent;
+            skontoDays = res.offer.skontoDays;
+          }
           if (res.offer.servicePeriodStart && res.offer.servicePeriodEnd) {
             serviceMode = "period";
             servicePeriodStartIso = toIsoDate(res.offer.servicePeriodStart);
@@ -238,6 +254,23 @@
       ...items,
       emptyItem(isReverseCharge ? 0 : settings?.isKleinunternehmer ? 0 : 19),
     ];
+  }
+
+  let catalogPickerOpen = $state(false);
+  function addFromCatalog(it: CatalogItem) {
+    const vatExemptLocal = !!settings?.isKleinunternehmer || isReverseCharge;
+    const vatRate = vatExemptLocal ? 0 : it.defaultVatRate;
+    const next = emptyItem(vatRate);
+    next.description = it.name;
+    next.quantity = 1;
+    next.unit = it.unit;
+    next.unitPrice = it.defaultUnitPrice;
+    next.priceText = (it.defaultUnitPrice / 100).toFixed(2).replace(".", ",");
+    if (it.descriptionDe) {
+      next.longDescription = it.descriptionDe;
+      next.showDetail = true;
+    }
+    items = [...items, next];
   }
 
   function removeItem(idx: number) {
@@ -368,6 +401,8 @@
         exchangeRate: currency === "EUR" ? null : exchangeRate.trim(),
         servicePeriodStart: usePeriod ? fromIsoDate(servicePeriodStartIso) : null,
         servicePeriodEnd: usePeriod ? fromIsoDate(servicePeriodEndIso) : null,
+        skontoPercent: skontoEnabled ? skontoPercent : null,
+        skontoDays: skontoEnabled ? skontoDays : null,
       };
       let savedId: number;
       if (mode === "new") {
@@ -551,10 +586,16 @@
         <h2 class="text-sm font-semibold uppercase text-muted-foreground tracking-wider">
           Positionen
         </h2>
-        <Button type="button" size="sm" variant="outline" onclick={addItem} disabled={readOnly}>
-          <Plus />
-          Position
-        </Button>
+        <div class="inline-flex items-center gap-2">
+          <Button type="button" size="sm" variant="outline" onclick={() => (catalogPickerOpen = true)} disabled={readOnly}>
+            <Package />
+            Aus Katalog…
+          </Button>
+          <Button type="button" size="sm" variant="outline" onclick={addItem} disabled={readOnly}>
+            <Plus />
+            Position
+          </Button>
+        </div>
       </div>
       <Card class="overflow-hidden py-0">
         <table class="w-full text-sm">
@@ -757,6 +798,42 @@
           <Label>Notizen (intern)</Label>
           <Textarea rows={3} bind:value={notes} disabled={readOnly} />
         </div>
+
+        <div class="border-t pt-4">
+          <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+            <Checkbox bind:checked={skontoEnabled} disabled={readOnly} />
+            <span class="font-medium">Skonto bei Frühzahlung anbieten</span>
+          </label>
+          {#if skontoEnabled}
+            <div class="mt-3 ml-7 grid grid-cols-2 gap-3 max-w-md">
+              <div class="flex flex-col gap-1.5">
+                <Label class="text-xs">Prozent</Label>
+                <Input
+                  type="number"
+                  min="0.1"
+                  max="20"
+                  step="0.1"
+                  bind:value={skontoPercent}
+                  disabled={readOnly}
+                />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <Label class="text-xs">Innerhalb (Tage)</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="60"
+                  step="1"
+                  bind:value={skontoDays}
+                  disabled={readOnly}
+                />
+              </div>
+              <p class="col-span-2 text-xs text-muted-foreground">
+                Erscheint als Hinweis auf der Angebots-PDF und wird auf die abgeleitete Rechnung übernommen.
+              </p>
+            </div>
+          {/if}
+        </div>
       </CardContent>
     </Card>
 
@@ -771,3 +848,5 @@
     </div>
   </form>
 {/if}
+
+<CatalogPicker bind:open={catalogPickerOpen} onPick={addFromCatalog} context="offer" />

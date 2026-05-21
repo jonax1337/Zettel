@@ -38,6 +38,8 @@ type OfferRow = {
   exchange_rate: string | null;
   service_period_start: number | null;
   service_period_end: number | null;
+  skonto_percent: number | null;
+  skonto_days: number | null;
 };
 
 type OfferItemRow = {
@@ -82,6 +84,8 @@ function mapOffer(r: OfferRow): Offer {
     exchangeRate: r.exchange_rate,
     servicePeriodStart: r.service_period_start,
     servicePeriodEnd: r.service_period_end,
+    skontoPercent: r.skonto_percent,
+    skontoDays: r.skonto_days,
   };
 }
 
@@ -125,6 +129,8 @@ export type OfferFormInput = {
   exchangeRate?: string | null;
   servicePeriodStart?: number | null;
   servicePeriodEnd?: number | null;
+  skontoPercent?: number | null;
+  skontoDays?: number | null;
 };
 
 export function computeLineTotal(item: OfferItemInput): number {
@@ -301,8 +307,8 @@ export async function createOffer(input: OfferFormInput): Promise<number> {
       (number, customer_id, customer_snapshot, issue_date, valid_until,
        status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
        notes, intro_text, currency, exchange_rate,
-       service_period_start, service_period_end)
-     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       service_period_start, service_period_end, skonto_percent, skonto_days)
+     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.customerId,
@@ -320,6 +326,8 @@ export async function createOffer(input: OfferFormInput): Promise<number> {
       input.exchangeRate ?? null,
       input.servicePeriodStart ?? null,
       input.servicePeriodEnd ?? null,
+      input.skontoPercent ?? null,
+      input.skontoDays ?? null,
     ],
   );
   const id = Number(res.lastInsertId ?? 0);
@@ -355,6 +363,7 @@ export async function updateOffer(
       notes = ?, intro_text = ?,
       currency = ?, exchange_rate = ?,
       service_period_start = ?, service_period_end = ?,
+      skonto_percent = ?, skonto_days = ?,
       updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -372,6 +381,8 @@ export async function updateOffer(
       input.exchangeRate ?? existing.offer.exchangeRate ?? null,
       input.servicePeriodStart ?? null,
       input.servicePeriodEnd ?? null,
+      input.skontoPercent ?? null,
+      input.skontoDays ?? null,
       id,
     ],
   );
@@ -483,6 +494,8 @@ export async function convertToInvoice(
     exchangeRate: data.offer.exchangeRate,
     servicePeriodStart: data.offer.servicePeriodStart,
     servicePeriodEnd: data.offer.servicePeriodEnd,
+    skontoPercent: data.offer.skontoPercent,
+    skontoDays: data.offer.skontoDays,
   };
 
   const invoiceId = await createInvoice(invoiceInput);

@@ -11,6 +11,7 @@
     CardTitle,
     CardDescription,
     CardContent,
+    Checkbox,
     Select,
     toast,
   } from "$lib/ui";
@@ -113,6 +114,50 @@
               <Input type="number" min="1" bind:value={s.defaultOfferValidityDays} />
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Skonto-Default</CardTitle>
+          <CardDescription>
+            Vorbelegung für neue Rechnungen und Angebote. Pro Beleg
+            überschreibbar oder deaktivierbar.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+            <Checkbox bind:checked={s.defaultSkontoActive} />
+            <span>Standardmäßig Skonto anbieten</span>
+          </label>
+          {#if s.defaultSkontoActive}
+            <div class="mt-3 ml-7 grid grid-cols-2 gap-3 max-w-md">
+              <div class="flex flex-col gap-1.5">
+                <Label class="text-xs">Prozent</Label>
+                <Input
+                  type="number"
+                  min="0.1"
+                  max="20"
+                  step="0.1"
+                  bind:value={s.defaultSkontoPercent}
+                />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <Label class="text-xs">Innerhalb (Tage)</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="60"
+                  step="1"
+                  bind:value={s.defaultSkontoDays}
+                />
+              </div>
+              <p class="col-span-2 text-xs text-muted-foreground">
+                Wird strukturiert im ZUGFeRD-XML (BT-20) und als Textzeile auf
+                der PDF ausgewiesen. Branchenüblich: 2 % / 7 Tage.
+              </p>
+            </div>
+          {/if}
         </CardContent>
       </Card>
 

@@ -18,7 +18,7 @@
   } from "$lib/ui";
   import { Download, Upload, FlaskConical } from "@lucide/svelte";
 
-  const CURRENT_DB_SCHEMA_VERSION = 20;
+  const CURRENT_DB_SCHEMA_VERSION = 22;
 
   let sandbox = $state(false);
   let sandboxBusy = $state(false);

@@ -5,6 +5,7 @@ import { getInvoice, isDraftNumber, issueInvoice } from "$lib/db/invoices";
 import { loadSettings } from "$lib/db/queries";
 import type { CustomerSnapshot, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
 import { validatePdf, type ValidationReport } from "$lib/validator";
+import { computeSkonto } from "$lib/utils/skonto";
 
 export type SidecarSuccess = {
   success: true;
@@ -40,6 +41,13 @@ function buildPayload(opts: {
   correctsInvoice?: { number: string; issueDate: number } | null;
 }) {
   const { invoice, items, customer, company, outputPath, correctsInvoice } = opts;
+  const skonto = computeSkonto({
+    totalCent: Math.abs(invoice.total),
+    percent: invoice.skontoPercent,
+    days: invoice.skontoDays,
+    issueDate: invoice.issueDate,
+    isCreditNote: invoice.isCreditNote,
+  });
   return {
     invoice: {
       number: invoice.number,
@@ -61,6 +69,10 @@ function buildPayload(opts: {
       eurTotalCent: invoice.eurTotalCent,
       servicePeriodStart: invoice.servicePeriodStart,
       servicePeriodEnd: invoice.servicePeriodEnd,
+      skontoPercent: skonto?.percent ?? null,
+      skontoDays: skonto?.days ?? null,
+      skontoAmountCent: skonto?.discountCent ?? null,
+      skontoDeadline: skonto?.deadlineUnix ?? null,
     },
     items: items.map((it) => ({
       position: it.position,

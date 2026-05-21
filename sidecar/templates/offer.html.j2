@@ -139,6 +139,17 @@
     Bei Annahme erstellen wir eine entsprechende Rechnung.
   </p>
 
+  {% if offer.skontoPercent and offer.skontoDays and offer.skontoAmountCent %}
+  <section class="block">
+    <div class="block-title">Skonto-Angebot</div>
+    <p class="skonto-line">
+      Bei Zahlung der späteren Rechnung innerhalb von <strong>{{ offer.skontoDays }} Tagen</strong>
+      ab Rechnungsdatum gewähren wir
+      <strong>{{ "%.1f"|format(offer.skontoPercent) }} %</strong> Skonto.
+    </p>
+  </section>
+  {% endif %}
+
   {% if offer.notes %}
     <section class="block">
       <div class="block-title">Hinweise</div>

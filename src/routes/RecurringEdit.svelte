@@ -19,12 +19,14 @@
     Label,
     Card,
     CardContent,
+    CatalogPicker,
     DatePicker,
     Select,
     Checkbox,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2, CalendarRange, FileText, X } from "@lucide/svelte";
+  import { ArrowLeft, Plus, Trash2, CalendarRange, FileText, X, Package } from "@lucide/svelte";
+  import type { CatalogItem } from "$lib/db/schema";
 
   type Props = {
     mode: "new" | "edit";
@@ -220,6 +222,22 @@
     items = [...items, emptyItem(settings?.isKleinunternehmer ? 0 : 19)];
   }
 
+  let catalogPickerOpen = $state(false);
+  function addFromCatalog(it: CatalogItem) {
+    const vatRate = vatExempt ? 0 : it.defaultVatRate;
+    const next = emptyItem(vatRate);
+    next.description = it.name;
+    next.quantity = 1;
+    next.unit = it.unit;
+    next.unitPrice = it.defaultUnitPrice;
+    next.priceText = (it.defaultUnitPrice / 100).toFixed(2).replace(".", ",");
+    if (it.descriptionDe) {
+      next.longDescription = it.descriptionDe;
+      next.showDetail = true;
+    }
+    items = [...items, next];
+  }
+
   function removeItem(idx: number) {
     items = items.filter((_, i) => i !== idx);
   }
@@ -402,10 +420,16 @@
         <h2 class="text-sm font-semibold uppercase text-muted-foreground tracking-wider">
           Positionen
         </h2>
-        <Button type="button" size="sm" variant="outline" onclick={addItem}>
-          <Plus />
-          Position
-        </Button>
+        <div class="inline-flex items-center gap-2">
+          <Button type="button" size="sm" variant="outline" onclick={() => (catalogPickerOpen = true)}>
+            <Package />
+            Aus Katalog…
+          </Button>
+          <Button type="button" size="sm" variant="outline" onclick={addItem}>
+            <Plus />
+            Position
+          </Button>
+        </div>
       </div>
       <Card class="overflow-hidden py-0">
         <table class="w-full text-sm">
@@ -597,4 +621,6 @@
       {/if}
     </div>
   </form>
+
+  <CatalogPicker bind:open={catalogPickerOpen} onPick={addFromCatalog} context="recurring" />
 {/if}

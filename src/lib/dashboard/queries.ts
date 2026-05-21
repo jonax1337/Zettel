@@ -248,3 +248,83 @@ export async function loadFollowUps(): Promise<FollowUpItem[]> {
   items.sort((a, b) => a.followUpDate - b.followUpDate);
   return items;
 }
+
+// --- Cash-Flow-Forecast (next 30 days) ---
+
+export type CashFlowForecast = {
+  /** Open `sent` invoices with due_date in [now, now + 30d]. EUR-Cent. */
+  openDue: number;
+  openDueCount: number;
+  /** Sum of overdue `sent` invoices (due_date < now). EUR-Cent. */
+  overdue: number;
+  overdueCount: number;
+  /** Estimated gross sum from active recurring templates with next_due_date in window. */
+  recurringEstimate: number;
+  recurringCount: number;
+  /** Total = openDue + overdue + recurringEstimate. EUR-Cent. */
+  total: number;
+};
+
+export async function cashFlowForecast30d(): Promise<CashFlowForecast> {
+  const now = Math.floor(Date.now() / 1000);
+  const horizon = now + 30 * 86400;
+
+  const [open] = await select<{ c: number; t: number }>(
+    `SELECT COUNT(*) AS c, COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS t
+     FROM invoices
+     WHERE status = 'sent'
+       AND due_date >= ? AND due_date <= ?`,
+    [now, horizon],
+  );
+
+  const [over] = await select<{ c: number; t: number }>(
+    `SELECT COUNT(*) AS c, COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS t
+     FROM invoices
+     WHERE status = 'sent'
+       AND due_date < ?`,
+    [now],
+  );
+
+  // Recurring estimate: for each active template due in window, sum line totals
+  // gross. Reverse-charge templates emit 0 VAT, others get the items' VAT-rate.
+  const recurringRows = await select<{
+    id: number;
+    is_reverse_charge: number;
+    line_net: number;
+    line_vat: number;
+  }>(
+    `SELECT r.id,
+            r.is_reverse_charge,
+            COALESCE(SUM(ri.quantity * ri.unit_price), 0) AS line_net,
+            COALESCE(SUM(
+              CASE WHEN r.is_reverse_charge = 1 THEN 0
+                   ELSE ROUND(ri.quantity * ri.unit_price * ri.vat_rate / 100.0)
+              END
+            ), 0) AS line_vat
+     FROM recurring_invoices r
+     LEFT JOIN recurring_invoice_items ri ON ri.recurring_id = r.id
+     WHERE r.active = 1
+       AND r.next_due_date <= ?
+     GROUP BY r.id`,
+    [horizon],
+  );
+  let recurringEstimate = 0;
+  for (const row of recurringRows) {
+    recurringEstimate += Math.round(row.line_net + row.line_vat);
+  }
+  const recurringCount = recurringRows.length;
+
+  const openDue = Math.round(open?.t ?? 0);
+  const openDueCount = open?.c ?? 0;
+  const overdue = Math.round(over?.t ?? 0);
+  const overdueCount = over?.c ?? 0;
+  return {
+    openDue,
+    openDueCount,
+    overdue,
+    overdueCount,
+    recurringEstimate,
+    recurringCount,
+    total: openDue + overdue + recurringEstimate,
+  };
+}
