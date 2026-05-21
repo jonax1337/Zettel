@@ -59,6 +59,8 @@ type SettingsRow = {
   default_skonto_active: number | null;
   default_skonto_percent: number | null;
   default_skonto_days: number | null;
+  auto_backup_interval_days: number | null;
+  last_auto_backup_at: number | null;
   created_at: number;
   updated_at: number;
 };
@@ -120,6 +122,8 @@ function mapSettings(r: SettingsRow): Settings {
     defaultSkontoActive: (r.default_skonto_active ?? 0) === 1,
     defaultSkontoPercent: r.default_skonto_percent ?? 2.0,
     defaultSkontoDays: r.default_skonto_days ?? 7,
+    autoBackupIntervalDays: r.auto_backup_interval_days ?? 0,
+    lastAutoBackupAt: r.last_auto_backup_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -193,6 +197,8 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       default_skonto_active = ?,
       default_skonto_percent = ?,
       default_skonto_days = ?,
+      auto_backup_interval_days = ?,
+      last_auto_backup_at = ?,
       updated_at = unixepoch()
     WHERE id = 1`,
     [
@@ -250,6 +256,8 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       s.defaultSkontoActive ? 1 : 0,
       s.defaultSkontoPercent ?? 2.0,
       s.defaultSkontoDays ?? 7,
+      s.autoBackupIntervalDays ?? 0,
+      s.lastAutoBackupAt ?? null,
     ],
   );
 }

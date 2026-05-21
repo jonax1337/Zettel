@@ -57,11 +57,14 @@
     FileWarning,
     ShieldCheck,
     ChevronDown,
+    Plus,
   } from "@lucide/svelte";
   import { execute } from "$lib/db/client";
   import { validatePdf } from "$lib/validator";
   import { listRemindersForInvoice } from "$lib/db/reminders";
-  import type { Reminder, ReminderLevel } from "$lib/db/schema";
+  import type { InvoicePayment, Reminder, ReminderLevel } from "$lib/db/schema";
+  import { addPayment, deletePayment, listPayments } from "$lib/db/invoice-payments";
+  import { eurStringToCents } from "$lib/utils/money";
   import { computeSkonto } from "$lib/utils/skonto";
   type Props = { params?: { id?: string } };
   let { params }: Props = $props();
@@ -317,6 +320,7 @@
   const statusLabel: Record<InvoiceStatus, string> = {
     draft: "Entwurf",
     sent: "Versendet",
+    partial: "Teilbezahlt",
     paid: "Bezahlt",
     cancelled: "Storniert",
   };
@@ -324,6 +328,7 @@
   const statusVariant: Record<InvoiceStatus, "secondary" | "warning" | "success" | "outline"> = {
     draft: "secondary",
     sent: "warning",
+    partial: "warning",
     paid: "success",
     cancelled: "outline",
   };
@@ -334,6 +339,69 @@
       (invoice.status === "sent" || invoice.status === "paid") &&
       !cancelledByCreditNote,
   );
+
+  let payments = $state<InvoicePayment[]>([]);
+  let addPaymentDialogOpen = $state(false);
+  let addPaymentDate = $state(toIsoDate(nowUnix()));
+  let addPaymentAmountText = $state("");
+  let addPaymentNotes = $state("");
+  let addPaymentBusy = $state(false);
+
+  $effect(() => {
+    if (invoice) {
+      listPayments(invoice.id).then((p) => (payments = p)).catch(() => (payments = []));
+    } else {
+      payments = [];
+    }
+  });
+
+  const totalAbs = $derived(invoice ? Math.abs(invoice.total) : 0);
+  const paidSum = $derived(invoice?.amountPaidCent ?? 0);
+  const remainingCent = $derived(Math.max(0, totalAbs - paidSum));
+
+  function openAddPayment() {
+    if (!invoice) return;
+    addPaymentDate = toIsoDate(nowUnix());
+    addPaymentAmountText = (remainingCent / 100).toFixed(2).replace(".", ",");
+    addPaymentNotes = "";
+    addPaymentDialogOpen = true;
+  }
+
+  async function confirmAddPayment() {
+    if (!invoice || addPaymentBusy) return;
+    const amountCent = eurStringToCents(addPaymentAmountText);
+    if (amountCent <= 0) {
+      toast.error("Betrag ungültig", "Bitte einen positiven Betrag eintragen.");
+      return;
+    }
+    addPaymentBusy = true;
+    try {
+      await addPayment({
+        invoiceId: invoice.id,
+        paidAt: fromIsoDate(addPaymentDate),
+        amountCent,
+        source: "manual",
+        notes: addPaymentNotes.trim() || null,
+      });
+      addPaymentDialogOpen = false;
+      await load();
+      toast.success("Zahlung erfasst");
+    } catch (e) {
+      toast.error("Erfassen fehlgeschlagen", String(e));
+    } finally {
+      addPaymentBusy = false;
+    }
+  }
+
+  async function removePayment(p: InvoicePayment) {
+    try {
+      await deletePayment(p.id);
+      await load();
+      toast.success("Zahlung entfernt");
+    } catch (e) {
+      toast.error("Entfernen fehlgeschlagen", String(e));
+    }
+  }
 
   let existingReminderLevels = $state<ReminderLevel[]>([]);
   let existingReminders = $state<Reminder[]>([]);
@@ -798,6 +866,70 @@
     </section>
   {/if}
 
+  {#if invoice.status === "sent" || invoice.status === "partial" || invoice.status === "paid"}
+    {#if payments.length > 0 || invoice.status === "partial"}
+      <Card class="mb-6">
+        <CardContent>
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
+              Zahlungen
+            </h3>
+            {#if invoice.status !== "paid" && !invoice.isCreditNote}
+              <Button size="sm" variant="outline" onclick={openAddPayment}>
+                <Plus class="size-3.5" />
+                Zahlung erfassen
+              </Button>
+            {/if}
+          </div>
+
+          <div class="grid grid-cols-3 gap-4 mb-3 text-sm">
+            <div>
+              <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Total</div>
+              <div class="font-medium tabular-nums">{formatMoney(totalAbs, invoice.currency)}</div>
+            </div>
+            <div>
+              <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Bezahlt</div>
+              <div class="font-medium tabular-nums text-green-600 dark:text-green-500">{formatMoney(paidSum, invoice.currency)}</div>
+            </div>
+            <div>
+              <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Offen</div>
+              <div class="font-medium tabular-nums {remainingCent > 0 ? 'text-amber-600 dark:text-amber-500' : ''}">{formatMoney(remainingCent, invoice.currency)}</div>
+            </div>
+          </div>
+
+          {#if payments.length > 0}
+            <div class="border-t pt-3 space-y-2">
+              {#each payments as p (p.id)}
+                <div class="flex items-center justify-between gap-3 text-sm">
+                  <div class="flex items-center gap-3">
+                    <span class="text-muted-foreground tabular-nums text-xs">{formatDate(p.paidAt)}</span>
+                    <span class="tabular-nums font-medium">{formatMoney(p.amountCent, invoice.currency)}</span>
+                    {#if p.source !== "manual"}
+                      <Badge variant="secondary" class="text-[10px]">{p.source}</Badge>
+                    {/if}
+                    {#if p.notes}
+                      <span class="text-xs text-muted-foreground truncate">{p.notes}</span>
+                    {/if}
+                  </div>
+                  {#if invoice.status !== "paid" || payments.length > 1}
+                    <button
+                      type="button"
+                      onclick={() => removePayment(p)}
+                      class="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                      aria-label="Zahlung entfernen"
+                    >
+                      <Trash2 class="size-3.5" />
+                    </button>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </CardContent>
+      </Card>
+    {/if}
+  {/if}
+
   {#if skontoInfo}
     <Card class="mb-6 border-primary/30">
       <CardContent class="flex items-center justify-between gap-3">
@@ -932,6 +1064,32 @@
     {#snippet footer()}
       <Button variant="outline" onclick={() => (sendDialogOpen = false)}>Abbrechen</Button>
       <Button onclick={confirmSend} disabled={!dialogDate}>Versenden</Button>
+    {/snippet}
+  </Dialog>
+
+  <Dialog bind:open={addPaymentDialogOpen} title="Zahlung erfassen" description="Wird als invoice_payments-Eintrag protokolliert. Voller Saldo → Rechnung wird automatisch als bezahlt markiert.">
+    <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-1.5">
+        <Label for="pay-date">Zahldatum</Label>
+        <DatePicker id="pay-date" bind:value={addPaymentDate} />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label for="pay-amount">Betrag ({invoice?.currency ?? "EUR"})</Label>
+        <Input id="pay-amount" type="text" inputmode="decimal" bind:value={addPaymentAmountText} />
+        <p class="text-xs text-muted-foreground">
+          Offen: <strong>{formatMoney(remainingCent, invoice?.currency ?? "EUR")}</strong>
+        </p>
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label for="pay-notes">Notiz (optional)</Label>
+        <Input id="pay-notes" bind:value={addPaymentNotes} placeholder="z. B. Banküberweisung von Customer X" />
+      </div>
+    </div>
+    {#snippet footer()}
+      <Button variant="outline" onclick={() => (addPaymentDialogOpen = false)} disabled={addPaymentBusy}>Abbrechen</Button>
+      <Button onclick={confirmAddPayment} disabled={addPaymentBusy}>
+        {addPaymentBusy ? "Erfasse…" : "Erfassen"}
+      </Button>
     {/snippet}
   </Dialog>
 

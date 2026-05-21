@@ -189,3 +189,16 @@ pub async fn generate_reminder(app: AppHandle, payload: Value) -> Result<Value, 
     });
     run_sidecar(&app, &request)
 }
+
+#[tauri::command]
+pub async fn parse_bank_statement(
+    app: AppHandle,
+    path: String,
+    format: String,
+) -> Result<Value, String> {
+    let request = serde_json::json!({
+        "command": "parse_bank_statement",
+        "payload": { "path": path, "format": format },
+    });
+    run_sidecar(&app, &request)
+}

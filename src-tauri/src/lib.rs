@@ -143,6 +143,18 @@ fn build_migrations() -> Vec<Migration> {
             sql: include_str!("../../src/lib/db/migrations/0021_v0.14_skonto.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 23,
+            description: "v0.15_partial_payments",
+            sql: include_str!("../../src/lib/db/migrations/0022_v0.15_partial_payments.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 24,
+            description: "v0.15_auto_backup",
+            sql: include_str!("../../src/lib/db/migrations/0023_v0.15_auto_backup.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -171,6 +183,7 @@ pub fn run() {
             sidecar::extract_zugferd,
             sidecar::extract_text_pdf,
             sidecar::generate_reminder,
+            sidecar::parse_bank_statement,
             fs_export::save_text_file,
             fs_export::import_expense_pdf,
             backup::snapshot_db_path,

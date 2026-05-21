@@ -13,9 +13,10 @@
   import { centsToEur } from "$lib/utils/money";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
-  import { Button, Card, Input, Select, Badge, Label, Checkbox, SortableTh } from "$lib/ui";
-  import { Plus, Search } from "@lucide/svelte";
+  import { Button, Card, Input, Select, Badge, Label, Checkbox, SortableTh, BulkActionBar, ConfirmDialog, toast } from "$lib/ui";
+  import { Plus, Search, Send, Trash2, CheckCircle2 } from "@lucide/svelte";
   import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
+  import { deleteInvoice, markSent, markPaid } from "$lib/db/invoices";
 
   let invoices = $state<InvoiceListRow[]>([]);
   let customers = $state<Customer[]>([]);
@@ -73,6 +74,7 @@
   const statusLabel: Record<InvoiceStatus, string> = {
     draft: "Entwurf",
     sent: "Versendet",
+    partial: "Teilbezahlt",
     paid: "Bezahlt",
     cancelled: "Storniert",
   };
@@ -80,6 +82,7 @@
   const statusVariant: Record<InvoiceStatus, "secondary" | "warning" | "success" | "outline"> = {
     draft: "secondary",
     sent: "warning",
+    partial: "warning",
     paid: "success",
     cancelled: "outline",
   };
@@ -88,6 +91,7 @@
     { value: "all", label: "Alle Status" },
     { value: "draft", label: "Entwurf" },
     { value: "sent", label: "Versendet" },
+    { value: "partial", label: "Teilbezahlt" },
     { value: "paid", label: "Bezahlt" },
     { value: "cancelled", label: "Storniert" },
   ]);
@@ -118,6 +122,90 @@
       dueDate: (r) => r.dueDate,
     }),
   );
+
+  let selectedIds = $state<Set<number>>(new Set());
+  let bulkBusy = $state(false);
+  let bulkDeleteConfirmOpen = $state(false);
+
+  const selectedInvoices = $derived(
+    sortedInvoices.filter((i) => selectedIds.has(i.id)),
+  );
+
+  // Welche Bulk-Aktionen sind sinnvoll? Nur wenn alle Markierten denselben
+  // Bedingungen entsprechen — wir zeigen Buttons konservativ:
+  const canBulkMarkSent = $derived(
+    selectedInvoices.length > 0 && selectedInvoices.every((i) => i.status === "draft" && !i.isCreditNote),
+  );
+  const canBulkMarkPaid = $derived(
+    selectedInvoices.length > 0 && selectedInvoices.every((i) => i.status === "sent" || i.status === "partial"),
+  );
+  const canBulkDelete = $derived(
+    selectedInvoices.length > 0 && selectedInvoices.every((i) => i.status === "draft" || i.status === "cancelled"),
+  );
+
+  function toggleSelect(id: number) {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    selectedIds = next;
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === sortedInvoices.length) {
+      selectedIds = new Set();
+    } else {
+      selectedIds = new Set(sortedInvoices.map((i) => i.id));
+    }
+  }
+
+  async function bulkMarkSent() {
+    bulkBusy = true;
+    try {
+      for (const inv of selectedInvoices) {
+        await markSent(inv.id);
+      }
+      toast.success(`${selectedInvoices.length} als versandt markiert`);
+      selectedIds = new Set();
+      await reload();
+    } catch (e) {
+      toast.error("Bulk-Aktion fehlgeschlagen", String(e));
+    } finally {
+      bulkBusy = false;
+    }
+  }
+
+  async function bulkMarkPaid() {
+    bulkBusy = true;
+    try {
+      for (const inv of selectedInvoices) {
+        await markPaid(inv.id);
+      }
+      toast.success(`${selectedInvoices.length} als bezahlt markiert`);
+      selectedIds = new Set();
+      await reload();
+    } catch (e) {
+      toast.error("Bulk-Aktion fehlgeschlagen", String(e));
+    } finally {
+      bulkBusy = false;
+    }
+  }
+
+  async function bulkDelete() {
+    bulkBusy = true;
+    try {
+      for (const inv of selectedInvoices) {
+        await deleteInvoice(inv.id);
+      }
+      toast.success(`${selectedInvoices.length} gelöscht`);
+      selectedIds = new Set();
+      await reload();
+    } catch (e) {
+      toast.error("Bulk-Löschen fehlgeschlagen", String(e));
+    } finally {
+      bulkBusy = false;
+      bulkDeleteConfirmOpen = false;
+    }
+  }
 </script>
 
 <header class="mb-6 flex items-end justify-between gap-4">
@@ -181,6 +269,13 @@
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
         <tr>
+          <th class="px-4 py-3 w-10">
+            <Checkbox
+              checked={selectedIds.size > 0 && selectedIds.size === sortedInvoices.length}
+              onCheckedChange={toggleSelectAll}
+              aria-label="Alle auswählen"
+            />
+          </th>
           <SortableTh column="number" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Nummer</SortableTh>
           <SortableTh column="issueDate" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Datum</SortableTh>
           <SortableTh column="customer" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Kunde</SortableTh>
@@ -195,6 +290,13 @@
             class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
             onclick={() => push(`/invoices/${inv.id}`)}
           >
+            <td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
+              <Checkbox
+                checked={selectedIds.has(inv.id)}
+                onCheckedChange={() => toggleSelect(inv.id)}
+                aria-label={`Rechnung ${inv.number} auswählen`}
+              />
+            </td>
             <td class="px-4 py-3 font-mono text-xs">
               <span class="inline-flex items-center gap-1.5">
                 {displayInvoiceNumber(inv)}
@@ -229,3 +331,33 @@
     </table>
   </Card>
 {/if}
+
+<BulkActionBar count={selectedIds.size} label="Rechnung{selectedIds.size === 1 ? '' : 'en'}" onClear={() => (selectedIds = new Set())}>
+  {#if canBulkMarkSent}
+    <Button size="sm" variant="outline" onclick={bulkMarkSent} disabled={bulkBusy}>
+      <Send class="size-3.5" />
+      Versenden
+    </Button>
+  {/if}
+  {#if canBulkMarkPaid}
+    <Button size="sm" variant="outline" onclick={bulkMarkPaid} disabled={bulkBusy}>
+      <CheckCircle2 class="size-3.5" />
+      Als bezahlt
+    </Button>
+  {/if}
+  {#if canBulkDelete}
+    <Button size="sm" variant="destructive" onclick={() => (bulkDeleteConfirmOpen = true)} disabled={bulkBusy}>
+      <Trash2 class="size-3.5" />
+      Löschen
+    </Button>
+  {/if}
+</BulkActionBar>
+
+<ConfirmDialog
+  bind:open={bulkDeleteConfirmOpen}
+  title="{selectedIds.size} Rechnung{selectedIds.size === 1 ? '' : 'en'} löschen?"
+  description="Nur Entwürfe und stornierte Rechnungen werden gelöscht. Versendete bleiben unangetastet."
+  confirmLabel="Löschen"
+  destructive
+  onConfirm={bulkDelete}
+/>

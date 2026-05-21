@@ -17,6 +17,7 @@
   import VendorEdit from "./routes/VendorEdit.svelte";
   import CatalogList from "./routes/CatalogList.svelte";
   import CatalogEdit from "./routes/CatalogEdit.svelte";
+  import BankImport from "./routes/BankImport.svelte";
   import ExpensesList from "./routes/ExpensesList.svelte";
   import ExpenseEdit from "./routes/ExpenseEdit.svelte";
   import RemindersList from "./routes/RemindersList.svelte";
@@ -140,6 +141,7 @@
       component: ReminderEdit as unknown as never,
       props: { mode: "edit" },
     }),
+    "/bank-import": BankImport,
     "/reports/ustva": UstvaReport,
     "/reports/taxes": TaxReport,
     "/validate": Validate,

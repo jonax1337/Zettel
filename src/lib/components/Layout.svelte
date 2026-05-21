@@ -12,6 +12,7 @@
     Download,
     BarChart3,
     Package,
+    Landmark,
     Settings as SettingsIcon,
     Monitor,
     Sun,
@@ -26,6 +27,7 @@
   import { version as appVersion } from "../../../package.json";
   import { isSandboxActive } from "$lib/db/client";
   import { loadSettings } from "$lib/db/queries";
+  import { maybeRunAutoBackup } from "$lib/utils/auto-backup";
   import { FlaskConical } from "@lucide/svelte";
   import { push } from "svelte-spa-router";
   import OnboardingWizard from "./OnboardingWizard.svelte";
@@ -56,6 +58,11 @@
   onMount(async () => {
     sandbox = await isSandboxActive();
     checkOnboarding();
+    // Silent best-effort. Sandbox-Modus überspringt das Auto-Backup, weil
+    // dort eh keine Echtdaten liegen.
+    if (!sandbox) {
+      maybeRunAutoBackup().catch(() => undefined);
+    }
   });
 
   function isEditable(el: EventTarget | null): boolean {
@@ -122,6 +129,7 @@
       label: "Auswertung",
       items: [
         { href: "/reports/ustva", label: "UStVA", icon: BarChart3 },
+        { href: "/bank-import", label: "Bank-Import", icon: Landmark },
         { href: "/export", label: "DATEV-Export", icon: Download },
       ],
     },

@@ -143,7 +143,7 @@ export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
     `SELECT i.*, c.name AS customer_name
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
-     WHERE i.status = 'sent' AND i.due_date < ? AND (i.is_credit_note IS NULL OR i.is_credit_note = 0)
+     WHERE i.status IN ('sent','partial') AND i.due_date < ? AND (i.is_credit_note IS NULL OR i.is_credit_note = 0)
      ORDER BY i.due_date ASC`,
     [now],
   );
@@ -201,6 +201,7 @@ export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
       servicePeriodEnd: r.service_period_end,
       skontoPercent: null,
       skontoDays: null,
+      amountPaidCent: 0,
     },
     customerName: r.customer_name ?? "—",
     daysOverdue: Math.max(0, Math.floor((now - r.due_date) / 86400)),
