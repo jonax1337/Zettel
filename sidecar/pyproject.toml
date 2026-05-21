@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "weasyprint==65.1",
     "Jinja2==3.1.4",
-    "factur-x==3.4",
+    "factur-x==4.2",
 ]
 
 [build-system]
