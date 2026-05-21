@@ -13,8 +13,9 @@
   import { centsToEur } from "$lib/utils/money";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
-  import { Button, Card, Input, Select, Badge, Label, Checkbox } from "$lib/ui";
+  import { Button, Card, Input, Select, Badge, Label, Checkbox, SortableTh } from "$lib/ui";
   import { Plus, Search } from "@lucide/svelte";
+  import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
 
   let invoices = $state<InvoiceListRow[]>([]);
   let customers = $state<Customer[]>([]);
@@ -100,6 +101,23 @@
     { value: "all", label: "Alle Kunden" },
     ...customers.map((c) => ({ value: String(c.id), label: c.name })),
   ]);
+
+  type SortKey = "number" | "issueDate" | "customer" | "total" | "status" | "dueDate";
+  let sort = $state<SortState<SortKey>>(loadSortState<SortKey>("invoices", { key: "issueDate", dir: "desc" }));
+  function setSort(key: SortKey, dir: SortState<SortKey>["dir"]) {
+    sort = { key: dir === null ? null : key, dir };
+    saveSortState("invoices", sort);
+  }
+  const sortedInvoices = $derived(
+    applySort(invoices, sort, {
+      number: (r) => r.number,
+      issueDate: (r) => r.issueDate,
+      customer: (r) => r.customerName,
+      total: (r) => r.total,
+      status: (r) => r.status,
+      dueDate: (r) => r.dueDate,
+    }),
+  );
 </script>
 
 <header class="mb-6 flex items-end justify-between gap-4">
@@ -162,17 +180,17 @@
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
-        <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-          <th class="px-4 py-3 font-medium">Nummer</th>
-          <th class="px-4 py-3 font-medium">Datum</th>
-          <th class="px-4 py-3 font-medium">Kunde</th>
-          <th class="px-4 py-3 font-medium text-right">Betrag</th>
-          <th class="px-4 py-3 font-medium">Status</th>
-          <th class="px-4 py-3 font-medium">Fällig</th>
+        <tr>
+          <SortableTh column="number" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Nummer</SortableTh>
+          <SortableTh column="issueDate" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Datum</SortableTh>
+          <SortableTh column="customer" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Kunde</SortableTh>
+          <SortableTh column="total" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} align="right" class="px-4 py-3 text-right">Betrag</SortableTh>
+          <SortableTh column="status" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Status</SortableTh>
+          <SortableTh column="dueDate" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Fällig</SortableTh>
         </tr>
       </thead>
       <tbody class="stagger">
-        {#each invoices as inv (inv.id)}
+        {#each sortedInvoices as inv (inv.id)}
           <tr
             class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
             onclick={() => push(`/invoices/${inv.id}`)}

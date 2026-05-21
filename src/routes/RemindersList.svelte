@@ -10,8 +10,9 @@
   import type { ReminderLevel } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
-  import { Button, Card, Badge } from "$lib/ui";
+  import { Button, Card, Badge, SortableTh } from "$lib/ui";
   import { Plus, AlertTriangle } from "@lucide/svelte";
+  import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
 
   let reminders = $state<ReminderListRow[]>([]);
   let overdue = $state<OverdueInvoice[]>([]);
@@ -40,6 +41,24 @@
     if (existing.includes(1)) return 2;
     return 1;
   }
+
+  type SortKey = "number" | "issueDate" | "invoice" | "customer" | "level" | "totalDue" | "status";
+  let sort = $state<SortState<SortKey>>(loadSortState<SortKey>("reminders", { key: "issueDate", dir: "desc" }));
+  function setSort(key: SortKey, dir: SortState<SortKey>["dir"]) {
+    sort = { key: dir === null ? null : key, dir };
+    saveSortState("reminders", sort);
+  }
+  const sortedReminders = $derived(
+    applySort(reminders, sort, {
+      number: (r) => r.number,
+      issueDate: (r) => r.issueDate,
+      invoice: (r) => r.invoiceNumber,
+      customer: (r) => r.customerName,
+      level: (r) => r.level,
+      totalDue: (r) => r.totalDueCents,
+      status: (r) => r.status,
+    }),
+  );
 </script>
 
 <header class="mb-6 flex items-end justify-between gap-4">
@@ -125,18 +144,18 @@
       <Card class="overflow-hidden py-0">
         <table class="w-full text-sm">
           <thead class="bg-muted/40 text-left">
-            <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-              <th class="px-4 py-3 font-medium">Nummer</th>
-              <th class="px-4 py-3 font-medium">Datum</th>
-              <th class="px-4 py-3 font-medium">Rechnung</th>
-              <th class="px-4 py-3 font-medium">Kunde</th>
-              <th class="px-4 py-3 font-medium">Stufe</th>
-              <th class="px-4 py-3 font-medium text-right">Zu zahlen</th>
-              <th class="px-4 py-3 font-medium">Status</th>
+            <tr>
+              <SortableTh column="number" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Nummer</SortableTh>
+              <SortableTh column="issueDate" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Datum</SortableTh>
+              <SortableTh column="invoice" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Rechnung</SortableTh>
+              <SortableTh column="customer" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Kunde</SortableTh>
+              <SortableTh column="level" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Stufe</SortableTh>
+              <SortableTh column="totalDue" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} align="right" class="px-4 py-3 text-right">Zu zahlen</SortableTh>
+              <SortableTh column="status" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Status</SortableTh>
             </tr>
           </thead>
           <tbody class="stagger">
-            {#each reminders as r (r.id)}
+            {#each sortedReminders as r (r.id)}
               <tr
                 class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
                 onclick={() => push(`/reminders/${r.id}`)}

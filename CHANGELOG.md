@@ -6,6 +6,36 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.14.0]
+
+> **Daily-Driver-UX.** Sieben fokussierte Verbesserungen, die im Tagesgeschäft Reibung rausnehmen: ein wiederverwendbarer **Artikel-Katalog** spart das ständige Neutippen, **EPC-QR-Codes** auf jeder EUR-Rechnung ersetzen das Überweisungs-Abtippen, **Skonto** wird strukturiert ins ZUGFeRD-XML geschrieben, der **Liquiditäts-Forecast** auf dem Dashboard zeigt die nächsten 30 Tage, alle Listen sind **sortierbar**, und ein **Onboarding-Wizard** holt frische Installationen sauber ab.
+
+### Added
+- **Artikel-/Leistungs-Katalog** (`/catalog`). Wiederverwendbare Positionen mit Name, Beschreibung (DE + optional EN für v0.16), Standardpreis, USt-Satz, Einheit, optionalem DATEV-Konto und Tags. Picker (`Aus Katalog…`-Button) in InvoiceEdit, OfferEdit, RecurringEdit und ExpenseEdit fügt eine vorbefüllte Position mit einem Klick ein. Volltext-Suche, Archivierungs-Modus. Migration `0020_v0.14_catalog.sql`.
+- **EPC-QR-Code** (Girocode, EPC069-12) im Rechnungs-PDF. Wird automatisch generiert, wenn Currency = EUR, IBAN hinterlegt, kein Storno, kein Reverse-Charge. Empfänger scannt mit der Banking-App, die Überweisung ist vorbefüllt (Empfänger, IBAN, Betrag, Verwendungszweck = Rechnungsnummer). Neue Sidecar-Dep `segno==1.6.1`. Renderpfad rein client-seitig — kein Cloud-Call.
+- **Skonto** (Frühzahler-Rabatt). Pro Rechnung und Angebot konfigurierbar (Prozent + Tage). Settings → Dokumente trägt einen Default (Standard: 2 % / 7 Tage, off). Strukturierte Ausgabe als `ApplicableTradePaymentDiscountTerms` im ZUGFeRD-XML (EN-16931 BT-20 ff.) plus prominente Textzeile auf der PDF. Beim Konvertieren Angebot → Rechnung wird der Skonto übernommen. Migration `0021_v0.14_skonto.sql`.
+- **Mahn-Eskalations-Strip in InvoiceDetail.** Übersicht aller bisher zur Rechnung erzeugten Mahnstufen (M1/M2/M3) mit Datum und Status, plus „Nächste Stufe"-Vorschlag wenn überfällig. Klick führt direkt in den Mahn-Editor.
+- **Skonto-Anzeige in InvoiceDetail.** Wenn die Rechnung Skonto bietet: Card mit Frist, Betrag und Status („noch gültig" / „abgelaufen" / „bezahlt").
+- **Liquiditäts-Vorschau im Dashboard.** Card unter den KPIs: Summe aller offenen `sent`-Rechnungen mit Fälligkeit in den nächsten 30 Tagen + überfällige Posten + Schätzung aus aktiven Wiederkehrenden. Hilft bei der Cashflow-Planung ohne Banking-Anbindung. Nur sichtbar wenn > 0.
+- **Sortierbare Tabellen** in allen Listen (Rechnungen, Angebote, Eingangsrechnungen, Kunden, Lieferanten, Mahnungen, Wiederkehrende, Katalog). Klick auf Spaltenkopf zyklisch: asc → desc → off. Persistiert in localStorage je Liste.
+- **Onboarding-Wizard** beim ersten Start. 4-Step-Modal: Firma → Steuer (Klein/Regular + IDs, BR-CO-26-Check) → Bank → Fertig. ESC-bar mit „Später erinnern". Sandbox-Modus löst keinen Wizard aus.
+
+### Changed
+- **EN-16931-Payment-Terms-Block** im ZUGFeRD-XML emittiert jetzt zusätzlich zu `Description` + `DueDateDateTime` einen `ApplicableTradePaymentDiscountTerms`-Block, wenn Skonto gesetzt ist.
+- **PDF-Footer-Layout** für Zahlungsbedingungen umgebaut: zweispaltig (Text links, QR-Code rechts), Skonto-Zeile als visuell hervorgehobener Akzent.
+- **Stammdaten-Sidebar** erweitert um „Katalog" als drittes Item neben Kunden und Lieferanten.
+
+### Migration
+- `0020_v0.14_catalog.sql` — `user_version = 21`. `catalog_items`-Tabelle mit DE/EN-Beschreibungs-Spalten (EN bleibt für v0.16 vorbereitet, aber das Schema steht heute).
+- `0021_v0.14_skonto.sql` — `user_version = 22`. `default_skonto_*` (3 Spalten) in `settings`; `skonto_percent` + `skonto_days` in `invoices` und `offers`.
+- `CURRENT_SCHEMA` in `backup.rs` auf **22**, `CURRENT_DB_SCHEMA_VERSION` in `Advanced.svelte` und `Data.svelte` synchron auf **22**.
+
+### Notes
+- **EPC-QR funktioniert nur für EUR-SEPA** (Spezifikation der EPC). Bei USD/GBP/CHF-Rechnungen wird der QR-Block einfach weggelassen — kein Hinweis nötig, weil reine Inland-Use-Cases den nicht erwarten.
+- **Skonto-Frist** wird ab Issue-Date gerechnet, nicht ab Due-Date — entspricht der Verkehrssitte und der EN-16931-Interpretation („Bei Zahlung innerhalb von X Tagen ab Rechnungsausstellung").
+- **Katalog-EN-Beschreibung** ist heute schon einpflegbar, wird aber erst in v0.16 (englische PDF-Variante) ausgewertet. Schema-Vorgriff vermeidet eine zweite Migration auf derselben Tabelle.
+- Onboarding-Trigger ist `companyName === ''` — Sandbox bekommt den Wizard, wenn die Sandbox-DB neu angelegt wird (intentional, da gleiche Logik).
+
 ## [0.13.0]
 
 > **Settings-Refactor + UI-Konsistenz.** Die Einstellungen leben jetzt in fünf klar getrennten Kategorien — Stamm­daten, Dokumente, Darstellung, Daten und Erweitert — statt einer 1.180-Zeilen-Endlos-Liste. Pfeil-Animationen und Lift-Hover sind durch die ganze App konsistent gemacht; Toast-Notifications gleiten endlich rein und raus statt zu poppen.

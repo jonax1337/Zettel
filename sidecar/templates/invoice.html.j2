@@ -150,10 +150,27 @@
       <div class="block-title">Erstattung</div>
       <p>Der Betrag wird auf Ihr Konto erstattet.</p>
     </section>
-  {% elif invoice.paymentTerms %}
-    <section class="block">
-      <div class="block-title">Zahlungsbedingungen</div>
-      <p>{{ invoice.paymentTerms }}</p>
+  {% elif invoice.paymentTerms or invoice.skontoPercent or epc_qr_uri %}
+    <section class="block payment-block">
+      <div class="payment-text">
+        {% if invoice.paymentTerms %}
+        <div class="block-title">Zahlungsbedingungen</div>
+        <p>{{ invoice.paymentTerms }}</p>
+        {% endif %}
+        {% if invoice.skontoPercent and invoice.skontoDays and invoice.skontoAmountCent %}
+        <p class="skonto-line">
+          Bei Zahlung bis <strong>{{ invoice.skontoDeadline | date_unix }}</strong>:
+          {{ "%.1f"|format(invoice.skontoPercent) }} % Skonto =
+          <strong>{{ invoice.skontoAmountCent | eur(invoice.currency) }}</strong>
+        </p>
+        {% endif %}
+      </div>
+      {% if epc_qr_uri %}
+      <div class="payment-qr">
+        <img class="epc-qr" src="{{ epc_qr_uri }}" alt="EPC-QR-Code für SEPA-Überweisung" />
+        <div class="epc-qr-label">QR-Code scannen<br/>für sofortige Überweisung</div>
+      </div>
+      {% endif %}
     </section>
   {% endif %}
 

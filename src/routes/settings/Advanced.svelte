@@ -24,7 +24,7 @@
     type WipeableTable,
   } from "$lib/db/danger";
 
-  const CURRENT_DB_SCHEMA_VERSION = 20;
+  const CURRENT_DB_SCHEMA_VERSION = 22;
 
   type DangerAction =
     | { kind: "wipeAll" }

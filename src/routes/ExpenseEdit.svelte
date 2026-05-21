@@ -36,6 +36,7 @@
     Label,
     Card,
     CardContent,
+    CatalogPicker,
     DatePicker,
     Select,
     Badge,
@@ -54,7 +55,9 @@
     ShieldCheck,
     ShieldAlert,
     Shield,
+    Package,
   } from "@lucide/svelte";
+  import type { CatalogItem } from "$lib/db/schema";
 
   type Props = {
     mode: "new" | "edit";
@@ -175,6 +178,23 @@
         unitPrice: 0,
         vatRate: reverseCharge ? 0 : 19,
         priceText: "",
+      },
+    ];
+  }
+
+  let catalogPickerOpen = $state(false);
+  function addFromCatalog(it: CatalogItem) {
+    items = [
+      ...items,
+      {
+        description: it.name + (it.descriptionDe ? ` — ${it.descriptionDe}` : ""),
+        category: selectedVendor?.defaultCategory ?? null,
+        datevAccount: it.defaultDatevAccount ?? null,
+        quantity: 1,
+        unit: it.unit,
+        unitPrice: it.defaultUnitPrice,
+        vatRate: reverseCharge ? 0 : it.defaultVatRate,
+        priceText: (it.defaultUnitPrice / 100).toFixed(2).replace(".", ","),
       },
     ];
   }
@@ -656,10 +676,16 @@
     <section class="mt-6">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-lg font-medium">Positionen</h2>
-        <Button type="button" variant="outline" onclick={addItem} disabled={!editable}>
-          <Plus />
-          Position
-        </Button>
+        <div class="inline-flex items-center gap-2">
+          <Button type="button" variant="outline" onclick={() => (catalogPickerOpen = true)} disabled={!editable}>
+            <Package />
+            Aus Katalog…
+          </Button>
+          <Button type="button" variant="outline" onclick={addItem} disabled={!editable}>
+            <Plus />
+            Position
+          </Button>
+        </div>
       </div>
       <Card class="overflow-hidden py-0">
         <table class="w-full text-sm">
@@ -826,3 +852,5 @@
   destructive
   onConfirm={onCancel}
 />
+
+<CatalogPicker bind:open={catalogPickerOpen} onPick={addFromCatalog} context="expense" />

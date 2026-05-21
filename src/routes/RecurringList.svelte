@@ -9,8 +9,9 @@
     type RecurringListRow,
   } from "$lib/db/recurring";
   import { formatDate as fmtDate } from "$lib/utils/date";
-  import { Button, Badge, Card, ConfirmDialog, toast } from "$lib/ui";
+  import { Button, Badge, Card, ConfirmDialog, SortableTh, toast } from "$lib/ui";
   import { Plus, FileText, Pencil, Trash2, PowerOff, Power } from "@lucide/svelte";
+  import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
 
   let rows = $state<RecurringListRow[]>([]);
   let loading = $state(true);
@@ -62,6 +63,22 @@
     confirmOpen = true;
   }
 
+  type SortKey = "name" | "customer" | "interval" | "nextDueDate" | "active";
+  let sort = $state<SortState<SortKey>>(loadSortState<SortKey>("recurring", { key: "nextDueDate", dir: "asc" }));
+  function setSort(key: SortKey, dir: SortState<SortKey>["dir"]) {
+    sort = { key: dir === null ? null : key, dir };
+    saveSortState("recurring", sort);
+  }
+  const sortedRows = $derived(
+    applySort(rows, sort, {
+      name: (r) => r.name,
+      customer: (r) => r.customerName,
+      interval: (r) => r.interval,
+      nextDueDate: (r) => r.nextDueDate,
+      active: (r) => (r.active ? 1 : 0),
+    }),
+  );
+
   async function onConfirmDelete() {
     if (confirmDeleteId === null) return;
     try {
@@ -103,17 +120,17 @@
   <Card class="overflow-hidden">
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
-        <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-          <th class="px-3 py-2 font-medium">Name</th>
-          <th class="px-3 py-2 font-medium">Kunde</th>
-          <th class="px-3 py-2 font-medium">Intervall</th>
-          <th class="px-3 py-2 font-medium">Nächste Fälligkeit</th>
-          <th class="px-3 py-2 font-medium">Status</th>
-          <th class="px-3 py-2 font-medium text-right w-px">Aktionen</th>
+        <tr>
+          <SortableTh column="name" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-3 py-2">Name</SortableTh>
+          <SortableTh column="customer" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-3 py-2">Kunde</SortableTh>
+          <SortableTh column="interval" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-3 py-2">Intervall</SortableTh>
+          <SortableTh column="nextDueDate" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-3 py-2">Nächste Fälligkeit</SortableTh>
+          <SortableTh column="active" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-3 py-2">Status</SortableTh>
+          <th class="px-3 py-2 font-medium text-right w-px text-xs uppercase tracking-wider text-muted-foreground">Aktionen</th>
         </tr>
       </thead>
       <tbody class="stagger">
-        {#each rows as row (row.id)}
+        {#each sortedRows as row (row.id)}
           <tr class="border-t">
             <td class="px-3 py-2">
               <a href={`/recurring/${row.id}`} use:link class="font-medium hover:underline">

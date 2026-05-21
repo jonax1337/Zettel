@@ -32,11 +32,13 @@
     topCustomersInPeriod,
     oldestOverdue,
     loadFollowUps,
+    cashFlowForecast30d,
     type Kpis,
     type MonthPoint,
     type TopCustomerRow,
     type OldestOverdue,
     type FollowUpItem,
+    type CashFlowForecast,
   } from "$lib/dashboard/queries";
   import { computeTaxRücklage, type TaxRücklageResult } from "$lib/dashboard/tax";
   import { listCustomers } from "$lib/db/queries";
@@ -58,6 +60,7 @@
   let offerStats = $state({ count: 0, total: 0, expiringSoonCount: 0 });
   let due = $state<RecurringListRow[]>([]);
   let taxRücklage = $state<TaxRücklageResult | null>(null);
+  let cashFlow = $state<CashFlowForecast | null>(null);
   let loading = $state(true);
 
   $effect(() => {
@@ -67,7 +70,7 @@
   async function reload(p: Period) {
     loading = true;
     await expireDueOffers().catch(() => {});
-    const [cs, k, mon, tc, ag, fu, os, dr] = await Promise.all([
+    const [cs, k, mon, tc, ag, fu, os, dr, cf] = await Promise.all([
       listCustomers(),
       loadKpis(p),
       monthlyRevenueInPeriod(p),
@@ -76,6 +79,7 @@
       loadFollowUps(),
       openOffersStats(),
       dueRecurring(),
+      cashFlowForecast30d(),
     ]);
     customerCount = cs.length;
     kpis = k;
@@ -85,6 +89,7 @@
     followUps = fu;
     offerStats = os;
     due = dr;
+    cashFlow = cf;
     // Steuer-Rücklage immer am Jahr der gewählten Periode hängen (das Konzept
     // ist annual; Monat/Quartal-Selektionen mappen auf ihr Containerjahr).
     const taxYear = new Date(p.start * 1000).getFullYear();
@@ -342,6 +347,47 @@
     </CardContent>
   </Card>
 </div>
+
+{#if cashFlow && cashFlow.total > 0}
+  <Card class="mb-6">
+    <CardContent>
+      <div class="flex items-center justify-between gap-6 flex-wrap">
+        <div class="min-w-0">
+          <div class="text-xs text-muted-foreground uppercase tracking-wider">
+            Liquiditäts-Vorschau · nächste 30 Tage
+          </div>
+          <div class="text-2xl font-semibold tabular-nums mt-0.5">
+            {centsToEur(cashFlow.total)}
+          </div>
+        </div>
+        <div class="flex items-baseline gap-6 text-sm">
+          {#if cashFlow.overdue > 0}
+            <div>
+              <div class="text-amber-600 dark:text-amber-500 font-medium tabular-nums">{centsToEur(cashFlow.overdue)}</div>
+              <div class="text-[10px] text-muted-foreground uppercase tracking-wider">
+                überfällig ({cashFlow.overdueCount})
+              </div>
+            </div>
+          {/if}
+          <div>
+            <div class="font-medium tabular-nums">{centsToEur(cashFlow.openDue)}</div>
+            <div class="text-[10px] text-muted-foreground uppercase tracking-wider">
+              fällig ({cashFlow.openDueCount})
+            </div>
+          </div>
+          {#if cashFlow.recurringCount > 0}
+            <div>
+              <div class="font-medium tabular-nums text-muted-foreground">≈ {centsToEur(cashFlow.recurringEstimate)}</div>
+              <div class="text-[10px] text-muted-foreground uppercase tracking-wider">
+                Wiederkehrend ({cashFlow.recurringCount})
+              </div>
+            </div>
+          {/if}
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+{/if}
 
 {#if taxRücklage}
   <button

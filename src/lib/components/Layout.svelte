@@ -11,6 +11,7 @@
     Repeat,
     Download,
     BarChart3,
+    Package,
     Settings as SettingsIcon,
     Monitor,
     Sun,
@@ -24,14 +25,37 @@
   import { onMount } from "svelte";
   import { version as appVersion } from "../../../package.json";
   import { isSandboxActive } from "$lib/db/client";
+  import { loadSettings } from "$lib/db/queries";
   import { FlaskConical } from "@lucide/svelte";
   import { push } from "svelte-spa-router";
+  import OnboardingWizard from "./OnboardingWizard.svelte";
 
   let sandbox = $state(false);
   let paletteOpen = $state(false);
+  let onboardingOpen = $state(false);
+
+  const ONBOARDING_DISMISSED_KEY = "zettel.onboarding.dismissed";
+
+  async function checkOnboarding() {
+    try {
+      const dismissed =
+        typeof localStorage !== "undefined" &&
+        localStorage.getItem(ONBOARDING_DISMISSED_KEY) === "1";
+      if (dismissed) return;
+      const s = await loadSettings();
+      // Trigger nur bei "frischer" Installation — leerer Firmenname ist das
+      // verlässlichste Signal (Standard ist leer-String, kein NULL).
+      if (s.companyName.trim() === "") {
+        onboardingOpen = true;
+      }
+    } catch {
+      /* ignore — sandbox/dev mode etc. */
+    }
+  }
 
   onMount(async () => {
     sandbox = await isSandboxActive();
+    checkOnboarding();
   });
 
   function isEditable(el: EventTarget | null): boolean {
@@ -78,6 +102,7 @@
       items: [
         { href: "/customers", label: "Kunden", icon: Users },
         { href: "/vendors", label: "Lieferanten", icon: Truck },
+        { href: "/catalog", label: "Katalog", icon: Package },
       ],
     },
     {
@@ -235,5 +260,12 @@
 </div>
 
 <CommandPalette bind:open={paletteOpen} />
+
+{#if onboardingOpen}
+  <OnboardingWizard
+    onDone={() => (onboardingOpen = false)}
+    onDismiss={() => (onboardingOpen = false)}
+  />
+{/if}
 
 <Toaster />

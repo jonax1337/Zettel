@@ -220,7 +220,7 @@
       </ram:BillingSpecifiedPeriod>
       {% endif %}
 
-      {% if not invoice.isCreditNote and (invoice.paymentTerms or invoice.dueDate) %}
+      {% if not invoice.isCreditNote and (invoice.paymentTerms or invoice.dueDate or invoice.skontoPercent) %}
       <ram:SpecifiedTradePaymentTerms>
         {% if invoice.paymentTerms %}
         <ram:Description>{{ invoice.paymentTerms }}</ram:Description>
@@ -229,6 +229,13 @@
         <ram:DueDateDateTime>
           <udt:DateTimeString format="102">{{ invoice.dueDate | date_xml }}</udt:DateTimeString>
         </ram:DueDateDateTime>
+        {% endif %}
+        {% if invoice.skontoPercent and invoice.skontoDays and invoice.skontoAmountCent %}
+        <ram:ApplicableTradePaymentDiscountTerms>
+          <ram:BasisPeriodMeasure unitCode="DAY">{{ invoice.skontoDays }}</ram:BasisPeriodMeasure>
+          <ram:CalculationPercent>{{ "%.2f" | format(invoice.skontoPercent) }}</ram:CalculationPercent>
+          <ram:ActualDiscountAmount>{{ invoice.skontoAmountCent | cents_xml }}</ram:ActualDiscountAmount>
+        </ram:ApplicableTradePaymentDiscountTerms>
         {% endif %}
       </ram:SpecifiedTradePaymentTerms>
       {% endif %}

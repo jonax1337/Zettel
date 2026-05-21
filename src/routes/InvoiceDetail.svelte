@@ -61,7 +61,8 @@
   import { execute } from "$lib/db/client";
   import { validatePdf } from "$lib/validator";
   import { listRemindersForInvoice } from "$lib/db/reminders";
-  import type { ReminderLevel } from "$lib/db/schema";
+  import type { Reminder, ReminderLevel } from "$lib/db/schema";
+  import { computeSkonto } from "$lib/utils/skonto";
   type Props = { params?: { id?: string } };
   let { params }: Props = $props();
 
@@ -335,21 +336,49 @@
   );
 
   let existingReminderLevels = $state<ReminderLevel[]>([]);
+  let existingReminders = $state<Reminder[]>([]);
   $effect(() => {
     if (invoice && !invoice.isCreditNote) {
       listRemindersForInvoice(invoice.id)
         .then((list) => {
+          existingReminders = list;
           existingReminderLevels = list
             .map((r) => r.level)
             .filter((l): l is ReminderLevel => l === 1 || l === 2 || l === 3);
         })
         .catch(() => {
+          existingReminders = [];
           existingReminderLevels = [];
         });
     } else {
+      existingReminders = [];
       existingReminderLevels = [];
     }
   });
+
+  const reminderLabels: Record<ReminderLevel, string> = {
+    1: "Zahlungserinnerung",
+    2: "Mahnung",
+    3: "Letzte Mahnung",
+  };
+
+  const skontoInfo = $derived.by(() => {
+    if (!invoice) return null;
+    return computeSkonto({
+      totalCent: Math.abs(invoice.total),
+      percent: invoice.skontoPercent,
+      days: invoice.skontoDays,
+      issueDate: invoice.issueDate,
+      isCreditNote: invoice.isCreditNote,
+    });
+  });
+
+  const skontoStillValid = $derived(
+    !!skontoInfo &&
+      !!invoice &&
+      invoice.status === "sent" &&
+      skontoInfo.deadlineUnix * 1000 >= Date.now(),
+  );
 
   let notesInternalDraft = $state("");
   let followUpIso = $state("");
@@ -767,6 +796,67 @@
       </h3>
       <p class="text-sm whitespace-pre-line">{invoice.notes}</p>
     </section>
+  {/if}
+
+  {#if skontoInfo}
+    <Card class="mb-6 border-primary/30">
+      <CardContent class="flex items-center justify-between gap-3">
+        <div>
+          <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
+            Skonto
+          </h3>
+          <p class="text-sm mt-1">
+            {skontoInfo.percent} % bei Zahlung bis
+            <strong>{formatDate(skontoInfo.deadlineUnix)}</strong>
+            — Rabatt
+            <strong>{formatMoney(skontoInfo.discountCent, invoice.currency)}</strong>
+          </p>
+        </div>
+        <Badge variant={skontoStillValid ? "success" : "outline"} class="shrink-0">
+          {skontoStillValid ? "noch gültig" : invoice.status === "paid" ? "Rechnung bezahlt" : "abgelaufen"}
+        </Badge>
+      </CardContent>
+    </Card>
+  {/if}
+
+  {#if existingReminders.length > 0}
+    <Card class="mb-6">
+      <CardContent>
+        <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-3">
+          Mahnstufen
+        </h3>
+        <div class="flex flex-wrap gap-2">
+          {#each existingReminders as r (r.id)}
+            <a
+              href={`/reminders/${r.id}`}
+              use:link
+              class="group inline-flex items-center gap-2 rounded-md border bg-card px-3 py-1.5 text-sm hover:bg-accent/60 transition-colors"
+            >
+              <span class="inline-flex items-center justify-center size-5 rounded-full bg-primary/10 text-primary text-xs font-semibold tabular-nums">
+                M{r.level}
+              </span>
+              <span class="font-medium">{reminderLabels[r.level as ReminderLevel] ?? `Stufe ${r.level}`}</span>
+              <span class="text-xs text-muted-foreground">{formatDate(r.issueDate)}</span>
+              <Badge variant={r.status === "sent" ? "warning" : "secondary"} class="text-[10px]">
+                {r.status === "sent" ? "versandt" : "Entwurf"}
+              </Badge>
+            </a>
+          {/each}
+          {#if canCreateReminder}
+            <button
+              type="button"
+              onclick={() => push(`/reminders/new/${invoice!.id}/${nextReminderLevel}`)}
+              class="group inline-flex items-center gap-1.5 rounded-md border border-dashed px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+            >
+              <FileWarning class="size-3.5" />
+              <span>
+                Nächste Stufe: {reminderLabels[nextReminderLevel]}
+              </span>
+            </button>
+          {/if}
+        </div>
+      </CardContent>
+    </Card>
   {/if}
 
   <Card class="mb-6">

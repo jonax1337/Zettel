@@ -88,6 +88,11 @@ export const settings = sqliteTable("settings", {
     .default(false),
   pauschalTaxPercent: real("pauschal_tax_percent").notNull().default(30.0),
   otherIncomeAnnualCent: integer("other_income_annual_cent").notNull().default(0),
+  defaultSkontoActive: integer("default_skonto_active", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  defaultSkontoPercent: real("default_skonto_percent").notNull().default(2.0),
+  defaultSkontoDays: integer("default_skonto_days").notNull().default(7),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),
@@ -172,6 +177,8 @@ export const invoices = sqliteTable("invoices", {
   followUpDate: integer("follow_up_date"),
   servicePeriodStart: integer("service_period_start"),
   servicePeriodEnd: integer("service_period_end"),
+  skontoPercent: real("skonto_percent"),
+  skontoDays: integer("skonto_days"),
 });
 
 export const invoiceItems = sqliteTable("invoice_items", {
@@ -267,6 +274,8 @@ export const offers = sqliteTable("offers", {
   exchangeRate: text("exchange_rate"),
   servicePeriodStart: integer("service_period_start"),
   servicePeriodEnd: integer("service_period_end"),
+  skontoPercent: real("skonto_percent"),
+  skontoDays: integer("skonto_days"),
 });
 
 export const offerItems = sqliteTable("offer_items", {
@@ -447,3 +456,21 @@ export type CustomerSnapshot = {
   email: string | null;
   vatId: string | null;
 };
+
+export const catalogItems = sqliteTable("catalog_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  descriptionDe: text("description_de").notNull().default(""),
+  descriptionEn: text("description_en"),
+  unit: text("unit").notNull().default("Stk"),
+  defaultUnitPrice: integer("default_unit_price").notNull().default(0),
+  defaultVatRate: integer("default_vat_rate").notNull().default(19),
+  defaultDatevAccount: text("default_datev_account"),
+  tags: text("tags"),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+});
+
+export type CatalogItem = typeof catalogItems.$inferSelect;
+export type CatalogItemInsert = typeof catalogItems.$inferInsert;

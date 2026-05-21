@@ -131,6 +131,18 @@ fn build_migrations() -> Vec<Migration> {
             sql: include_str!("../../src/lib/db/migrations/0019_v0.12_service_periods.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 21,
+            description: "v0.14_catalog",
+            sql: include_str!("../../src/lib/db/migrations/0020_v0.14_catalog.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 22,
+            description: "v0.14_skonto",
+            sql: include_str!("../../src/lib/db/migrations/0021_v0.14_skonto.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
