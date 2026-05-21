@@ -128,6 +128,16 @@
         <th>Gesamtbetrag</th>
         <td>{{ invoice.total | eur(invoice.currency) }}</td>
       </tr>
+      {% if invoice.amountPaidCent and invoice.amountPaidCent > 0 %}
+      <tr class="paid-line">
+        <th>Bereits gezahlt</th>
+        <td>− {{ invoice.amountPaidCent | eur(invoice.currency) }}</td>
+      </tr>
+      <tr class="grand">
+        <th>Noch offen</th>
+        <td>{{ (invoice.total - invoice.amountPaidCent) | eur(invoice.currency) }}</td>
+      </tr>
+      {% endif %}
     </table>
   </section>
 

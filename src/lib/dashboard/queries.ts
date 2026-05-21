@@ -22,6 +22,11 @@ const REVENUE_NET_SQL = `(CASE
     CAST(eur_total_cent * subtotal AS REAL) / total
   ELSE subtotal
 END)`;
+// Offener Saldo = Brutto-Total − bereits gezahlt. Bei Multi-Currency-Rechnungen
+// stehen total und amount_paid_cent in der Rechnungswährung — die Differenz ist
+// dieselbe Einheit. Wir zeigen also den Rest in Originalwährung; bei einer
+// gemischten Liste bleibt das eine Approximation (so wie REVENUE_AMOUNT_SQL).
+const OPEN_BALANCE_SQL = `(COALESCE(eur_total_cent, total) - COALESCE(amount_paid_cent, 0))`;
 
 export async function loadKpis(p: Period): Promise<Kpis> {
   const [rev] = await select<{ net: number; gross: number }>(
@@ -29,7 +34,7 @@ export async function loadKpis(p: Period): Promise<Kpis> {
        COALESCE(SUM(${REVENUE_NET_SQL}), 0) AS net,
        COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS gross
      FROM invoices
-     WHERE status IN ('sent','paid')
+     WHERE status IN ('sent','partial','paid')
        AND issue_date >= ? AND issue_date < ?`,
     [p.start, p.end],
   );
@@ -43,9 +48,9 @@ export async function loadKpis(p: Period): Promise<Kpis> {
   );
 
   const [open] = await select<{ c: number; t: number }>(
-    `SELECT COUNT(*) AS c, COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS t
+    `SELECT COUNT(*) AS c, COALESCE(SUM(${OPEN_BALANCE_SQL}), 0) AS t
      FROM invoices
-     WHERE status = 'sent'
+     WHERE status IN ('sent','partial')
        AND issue_date >= ? AND issue_date < ?`,
     [p.start, p.end],
   );
@@ -72,7 +77,7 @@ export async function monthlyRevenueInPeriod(p: Period): Promise<MonthPoint[]> {
     `SELECT strftime('%Y-%m', issue_date, 'unixepoch') AS ym,
             COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS t
      FROM invoices
-     WHERE status IN ('sent','paid')
+     WHERE status IN ('sent','partial','paid')
        AND issue_date >= ? AND issue_date < ?
      GROUP BY ym`,
     [p.start, p.end],
@@ -112,7 +117,7 @@ export async function topCustomersInPeriod(
             COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS t
      FROM invoices i
      INNER JOIN customers c ON c.id = i.customer_id
-     WHERE i.status IN ('sent','paid')
+     WHERE i.status IN ('sent','partial','paid')
        AND i.issue_date >= ? AND i.issue_date < ?
      GROUP BY i.customer_id
      ORDER BY t DESC
@@ -146,9 +151,9 @@ export type OldestOverdue = {
 export async function oldestOverdue(): Promise<OldestOverdue> {
   const now = Math.floor(Date.now() / 1000);
   const rows = await select<{ due_date: number; t: number }>(
-    `SELECT due_date, ${REVENUE_AMOUNT_SQL} AS t
+    `SELECT due_date, ${OPEN_BALANCE_SQL} AS t
      FROM invoices
-     WHERE status = 'sent'`,
+     WHERE status IN ('sent','partial')`,
   );
   if (rows.length === 0) {
     return { daysOverdue: null, openTotal: 0, openCount: 0 };
@@ -270,17 +275,17 @@ export async function cashFlowForecast30d(): Promise<CashFlowForecast> {
   const horizon = now + 30 * 86400;
 
   const [open] = await select<{ c: number; t: number }>(
-    `SELECT COUNT(*) AS c, COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS t
+    `SELECT COUNT(*) AS c, COALESCE(SUM(${OPEN_BALANCE_SQL}), 0) AS t
      FROM invoices
-     WHERE status = 'sent'
+     WHERE status IN ('sent','partial')
        AND due_date >= ? AND due_date <= ?`,
     [now, horizon],
   );
 
   const [over] = await select<{ c: number; t: number }>(
-    `SELECT COUNT(*) AS c, COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS t
+    `SELECT COUNT(*) AS c, COALESCE(SUM(${OPEN_BALANCE_SQL}), 0) AS t
      FROM invoices
-     WHERE status = 'sent'
+     WHERE status IN ('sent','partial')
        AND due_date < ?`,
     [now],
   );

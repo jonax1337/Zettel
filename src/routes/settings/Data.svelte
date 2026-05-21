@@ -14,22 +14,63 @@
     CardContent,
     ConfirmDialog,
     Checkbox,
+    Select,
     toast,
   } from "$lib/ui";
-  import { Download, Upload, FlaskConical } from "@lucide/svelte";
+  import { Download, Upload, FlaskConical, History } from "@lucide/svelte";
+  import { loadSettings, saveSettings } from "$lib/db/queries";
 
-  const CURRENT_DB_SCHEMA_VERSION = 22;
+  const CURRENT_DB_SCHEMA_VERSION = 24;
 
   let sandbox = $state(false);
   let sandboxBusy = $state(false);
   let confirmSandboxToggleOpen = $state(false);
   let pendingSandbox = $state(false);
 
+  let autoBackupInterval = $state<string>("0");
+  let lastAutoBackupAt = $state<number | null>(null);
+  let autoBackupSaving = $state(false);
+
   $effect(() => {
     invoke<boolean>("is_sandbox")
       .then((v) => (sandbox = v))
       .catch(() => {});
+    loadSettings()
+      .then((s) => {
+        autoBackupInterval = String(s.autoBackupIntervalDays);
+        lastAutoBackupAt = s.lastAutoBackupAt;
+      })
+      .catch(() => {});
   });
+
+  const intervalOptions = [
+    { value: "0", label: "Aus" },
+    { value: "1", label: "Täglich" },
+    { value: "3", label: "Alle 3 Tage" },
+    { value: "7", label: "Wöchentlich (Standard)" },
+    { value: "14", label: "Alle 2 Wochen" },
+    { value: "30", label: "Monatlich" },
+  ];
+
+  async function saveAutoBackup(newValue: string) {
+    autoBackupSaving = true;
+    try {
+      const current = await loadSettings();
+      await saveSettings({ ...current, autoBackupIntervalDays: Number.parseInt(newValue, 10) });
+      autoBackupInterval = newValue;
+      toast.success("Auto-Backup gespeichert");
+    } catch (e) {
+      toast.error("Speichern fehlgeschlagen", String(e));
+    } finally {
+      autoBackupSaving = false;
+    }
+  }
+
+  function formatLastBackup(unix: number | null): string {
+    if (!unix) return "noch nie";
+    const d = new Date(unix * 1000);
+    return d.toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+  }
 
   function requestSandboxToggle(enabled: boolean) {
     pendingSandbox = enabled;
@@ -309,6 +350,35 @@
           Bei voller Wiederherstellung wird die gesamte Datenbank ersetzt (alte DB bleibt als
           <code>zettel.db.bak</code> erhalten); bei Teil-Wiederherstellung werden nur die
           gewählten Bereiche aus dem Backup übernommen.
+        </p>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle class="flex items-center gap-2">
+          <History class="size-5" />
+          Auto-Backup
+        </CardTitle>
+        <CardDescription>
+          Rotierender Wochen-Snapshot in <code>~/Dokumente/Zettel/Backups/auto-&lt;wochentag&gt;.zip</code>.
+          Unverschlüsselt, läuft beim App-Start. Im Sandbox-Modus deaktiviert.
+        </CardDescription>
+      </CardHeader>
+      <CardContent class="space-y-3">
+        <div class="flex flex-col gap-1.5 max-w-md">
+          <Label>Intervall</Label>
+          <Select
+            items={intervalOptions}
+            value={autoBackupInterval}
+            onValueChange={saveAutoBackup}
+            disabled={autoBackupSaving}
+          />
+        </div>
+        <p class="text-xs text-muted-foreground">
+          Letzte Ausführung: <strong>{formatLastBackup(lastAutoBackupAt)}</strong>.
+          Maximal 7 Slots (ein Slot pro Wochentag) — älteste werden zyklisch
+          überschrieben. Für verschlüsselte oder externe Backups nutze „Backup erstellen" oben.
         </p>
       </CardContent>
     </Card>

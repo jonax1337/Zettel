@@ -93,6 +93,8 @@ export const settings = sqliteTable("settings", {
     .default(false),
   defaultSkontoPercent: real("default_skonto_percent").notNull().default(2.0),
   defaultSkontoDays: integer("default_skonto_days").notNull().default(7),
+  autoBackupIntervalDays: integer("auto_backup_interval_days").notNull().default(0),
+  lastAutoBackupAt: integer("last_auto_backup_at"),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),
@@ -132,7 +134,7 @@ export const invoices = sqliteTable("invoices", {
   deliveryDate: integer("delivery_date"),
   dueDate: integer("due_date").notNull(),
   status: text("status", {
-    enum: ["draft", "sent", "paid", "cancelled"],
+    enum: ["draft", "sent", "partial", "paid", "cancelled"],
   })
     .notNull()
     .default("draft"),
@@ -179,7 +181,23 @@ export const invoices = sqliteTable("invoices", {
   servicePeriodEnd: integer("service_period_end"),
   skontoPercent: real("skonto_percent"),
   skontoDays: integer("skonto_days"),
+  amountPaidCent: integer("amount_paid_cent").notNull().default(0),
 });
+
+export const invoicePayments = sqliteTable("invoice_payments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  invoiceId: integer("invoice_id").notNull(),
+  paidAt: integer("paid_at").notNull(),
+  amountCent: integer("amount_cent").notNull(),
+  eurAmountCent: integer("eur_amount_cent"),
+  source: text("source", { enum: ["manual", "camt053", "mt940", "auto"] }).notNull().default("manual"),
+  notes: text("notes"),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+});
+
+export type InvoicePayment = typeof invoicePayments.$inferSelect;
+export type InvoicePaymentInsert = typeof invoicePayments.$inferInsert;
+export type InvoicePaymentSource = InvoicePayment["source"];
 
 export const invoiceItems = sqliteTable("invoice_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),

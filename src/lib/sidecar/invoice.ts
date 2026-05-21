@@ -73,6 +73,7 @@ function buildPayload(opts: {
       skontoDays: skonto?.days ?? null,
       skontoAmountCent: skonto?.discountCent ?? null,
       skontoDeadline: skonto?.deadlineUnix ?? null,
+      amountPaidCent: invoice.amountPaidCent ?? 0,
     },
     items: items.map((it) => ({
       position: it.position,

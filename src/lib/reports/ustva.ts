@@ -74,7 +74,7 @@ async function loadInvoiceGroups(from: number, to: number): Promise<VatGroupRow[
            END) AS vat
      FROM invoices i
      JOIN invoice_items ii ON ii.invoice_id = i.id
-     WHERE i.status IN ('sent','paid')
+     WHERE i.status IN ('sent','partial','paid')
        AND i.issue_date >= ? AND i.issue_date <= ?
      GROUP BY ii.vat_rate, i.is_credit_note, i.reverse_charge_type`,
     [from, to],

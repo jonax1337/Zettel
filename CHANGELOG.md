@@ -6,6 +6,32 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.15.0]
+
+> **Zahlungs-Workflow.** Vier zusammenhängende Schritte schließen die Lücke zwischen „Rechnung versendet" und „Geld auf dem Konto": **Teilzahlungen** mit eigener Tabelle, **Bank-Import** für CAMT.053/MT940 mit Auto-Match auf Rechnungsnummer, **Bulk-Aktionen** in der Rechnungsliste und **rotierendes Auto-Backup** beim App-Start.
+
+### Added
+- **Teilzahlungen** (Migration `0022_v0.15_partial_payments.sql`). Neue Tabelle `invoice_payments` (id, invoice_id, paid_at, amount_cent, eur_amount_cent, source, notes) und `invoices.amount_paid_cent` als Cache. Neuer Status `partial` zwischen `sent` und `paid` — die Rechnung wird beim Erfassen einer Zahlung automatisch auf `partial` (Saldo < Total) oder `paid` (Saldo = Total) gesetzt. InvoiceDetail bekommt eine Zahlungs-Card mit Saldo-Übersicht (Total / Bezahlt / Offen) und chronologischer Liste aller erfassten Eingänge. Im PDF wird BT-113 `TotalPrepaidAmount` + `DuePayableAmount` strukturiert ausgewiesen, im Totals-Block stehen „Bereits gezahlt" und „Noch offen". KPIs / Dashboard / UStVA / Mahn-Liste / Cash-Flow zählen `partial` korrekt mit; offene Saldi werden überall als `total − amount_paid_cent` berechnet.
+- **Bank-Import** (`/bank-import`). Drag&Drop für CAMT.053-XML oder MT940-Text aus dem Online-Banking. Format-Auto-Detection. Sidecar-Parser für beide Formate (neue Dep `mt-940==4.30.0`), neuer Tauri-Command `parse_bank_statement`. Match-Heuristik in drei Pässen: (1) Rechnungsnummer im Verwendungszweck (high confidence), (2) Betrag matcht offenen Saldo ±1 Cent (medium), (3) Kunde-Substring im Zahler-Namen (low). User bestätigt jede Zuordnung einzeln, dann werden ausgewählte Bookings als `invoice_payments` mit `source='camt053'` oder `'mt940'` erfasst. Keine Online-Banking-Anbindung — reine Datei-Verarbeitung lokal.
+- **Bulk-Aktionen in InvoicesList.** Checkbox-Spalte + „Alle auswählen". Sticky-Bottom-Bar zeigt kontextsensitiv: „Versenden" (nur wenn alle Drafts), „Als bezahlt" (nur wenn alle sent/partial), „Löschen" (nur wenn alle Drafts oder Stornos). Schützt versendete Rechnungen vor versehentlichem Bulk-Delete.
+- **Auto-Backup** (Migration `0023_v0.15_auto_backup.sql`). Rotierender Wochen-Snapshot in `~/Dokumente/Zettel/Backups/auto-<wochentag>.zip`. Settings → Daten neue Card mit Intervall-Selector (täglich / 3-Tage / 7-Tage / 14-Tage / 30-Tage / Aus). Läuft silent beim App-Start in `Layout.svelte`; nur wenn das letzte Auto-Backup länger als `interval` her ist. Sandbox-Modus überspringt komplett. Letzter Lauf sichtbar in der Settings-Card.
+
+### Changed
+- **`InvoiceStatus`-Enum** erweitert um `'partial'`. Anzeigen in `InvoicesList` (neuer Filter-Wert + warning-Badge) und `InvoiceDetail` (Badge mit Label „Teilbezahlt") konsistent aktualisiert. KPI-Queries in `loadKpis`, `oldestOverdue`, `cashFlowForecast30d`, `dashboardStats`, `monthlyRevenueInPeriod`, `topCustomersInPeriod` zählen `'partial'` als offen-und-versendet (Soll-Versteuerung).
+- **`markPaid()`** legt jetzt einen Payment-Eintrag mit `source='auto'` für den Restbetrag an, statt nur den Status zu setzen — die Zahlungsliste bleibt konsistent, egal ob man Teilzahlungen einzeln erfasst oder direkt voll abschließt.
+
+### Migration
+- `0022_v0.15_partial_payments.sql` — `user_version = 23`. `invoice_payments`-Tabelle + Index + `invoices.amount_paid_cent`-Spalte.
+- `0023_v0.15_auto_backup.sql` — `user_version = 24`. `auto_backup_interval_days` (Default 0=aus) + `last_auto_backup_at` in `settings`.
+- `CURRENT_SCHEMA` in `backup.rs` auf **24**, `CURRENT_DB_SCHEMA_VERSION` in `Advanced.svelte` / `Data.svelte` synchron.
+
+### Notes
+- **Multi-Currency-Teilzahlungen** speichern den Betrag in Rechnungswährung. `eur_amount_cent` ist nullable und für FX-Buchhaltung gedacht — wird in v0.15 noch nicht automatisch berechnet (Kurs vom Zahltag fehlt sonst). DATEV-Export greift weiter auf den eingefrorenen `eur_total_cent` auf Rechnungs-Ebene zu — keine Änderung an der Buchungslogik des Steuerberaters.
+- **CAMT.053-Namespaces variieren** (`.001.02` / `.04` / `.08`). Parser strippt Namespaces defensiv statt einzelne XSDs zu pflegen.
+- **MT940-Parser** nutzt die `mt-940`-Library — Bank-spezifische `:86:`-Varianten werden weitgehend abgedeckt, in Sonderfällen kann `transaction_details` als Fallback dienen.
+- **Auto-Backup** verschlüsselt nicht — wer das will, nimmt weiter das manuelle Backup mit Passwort. Auto-Backup ist als Krücken-zur-Cloud-Synchronisation gedacht (man legt `~/Dokumente/Zettel/Backups/` z. B. in OneDrive).
+- **Bulk-Aktionen heute nur in InvoicesList.** OffersList und ExpensesList kommen in v0.16.
+
 ## [0.14.1]
 
 ### Fixed

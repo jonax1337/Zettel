@@ -46,6 +46,7 @@ type InvoiceRow = {
   service_period_end: number | null;
   skonto_percent: number | null;
   skonto_days: number | null;
+  amount_paid_cent: number | null;
 };
 
 type InvoiceItemRow = {
@@ -100,6 +101,7 @@ function mapInvoice(r: InvoiceRow): Invoice {
     servicePeriodEnd: r.service_period_end,
     skontoPercent: r.skonto_percent,
     skontoDays: r.skonto_days,
+    amountPaidCent: r.amount_paid_cent ?? 0,
   };
 }
 
@@ -590,10 +592,26 @@ export async function markPaid(id: number, paidAt?: number): Promise<void> {
     await issueInvoice(id, paidAt);
   }
   const ts = paidAt ?? Math.floor(Date.now() / 1000);
+  // Restbetrag als Payment-Eintrag protokollieren, damit die Zahlungsliste auch
+  // bei einem direkten "voll bezahlt"-Workflow konsistent bleibt. Bei manueller
+  // Teilzahlung markiert addPayment() die Rechnung selbständig als paid sobald
+  // der Saldo den Total-Betrag erreicht.
+  const fresh = await getInvoice(id);
+  if (!fresh) return;
+  const total = Math.abs(fresh.invoice.total);
+  const already = fresh.invoice.amountPaidCent ?? 0;
+  const remaining = total - already;
+  if (remaining > 0) {
+    await execute(
+      `INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent, source)
+       VALUES (?, ?, ?, 'auto')`,
+      [id, ts, remaining],
+    );
+  }
   await execute(
-    `UPDATE invoices SET status = 'paid', paid_at = ?, updated_at = unixepoch()
-     WHERE id = ? AND status IN ('sent','draft')`,
-    [ts, id],
+    `UPDATE invoices SET status = 'paid', paid_at = ?, amount_paid_cent = ?, updated_at = unixepoch()
+     WHERE id = ? AND status IN ('sent','partial','draft')`,
+    [ts, total, id],
   );
 }
 
@@ -624,14 +642,14 @@ export async function dashboardStats(): Promise<{
   const yearStart = Math.floor(new Date(new Date().getFullYear(), 0, 1).getTime() / 1000);
 
   const [open] = await select<{ c: number; t: number }>(
-    "SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS t FROM invoices WHERE status IN ('draft','sent')",
+    "SELECT COUNT(*) AS c, COALESCE(SUM(total - COALESCE(amount_paid_cent, 0)), 0) AS t FROM invoices WHERE status IN ('draft','sent','partial')",
   );
   const [paid] = await select<{ t: number }>(
     "SELECT COALESCE(SUM(total), 0) AS t FROM invoices WHERE status = 'paid' AND paid_at >= ?",
     [yearStart],
   );
   const [overdue] = await select<{ c: number; t: number }>(
-    "SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS t FROM invoices WHERE status = 'sent' AND due_date < ?",
+    "SELECT COUNT(*) AS c, COALESCE(SUM(total - COALESCE(amount_paid_cent, 0)), 0) AS t FROM invoices WHERE status IN ('sent','partial') AND due_date < ?",
     [now],
   );
 
@@ -745,7 +763,7 @@ export async function loadInvoicesForExport(
 ): Promise<InvoiceForExport[]> {
   const invRows = await select<InvoiceRow>(
     `SELECT * FROM invoices
-     WHERE status IN ('sent','paid')
+     WHERE status IN ('sent','partial','paid')
        AND issue_date >= ? AND issue_date <= ?
      ORDER BY issue_date ASC, id ASC`,
     [dateFromUnix, dateToUnix],

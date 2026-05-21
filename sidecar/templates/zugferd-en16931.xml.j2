@@ -245,7 +245,12 @@
         <ram:TaxBasisTotalAmount>{{ invoice.subtotal | cents_xml }}</ram:TaxBasisTotalAmount>
         <ram:TaxTotalAmount currencyID="{{ invoice.currency or 'EUR' }}">{{ invoice.vatAmount | cents_xml }}</ram:TaxTotalAmount>
         <ram:GrandTotalAmount>{{ invoice.total | cents_xml }}</ram:GrandTotalAmount>
+        {% if invoice.amountPaidCent and invoice.amountPaidCent > 0 %}
+        <ram:TotalPrepaidAmount>{{ invoice.amountPaidCent | cents_xml }}</ram:TotalPrepaidAmount>
+        <ram:DuePayableAmount>{{ (invoice.total - invoice.amountPaidCent) | cents_xml }}</ram:DuePayableAmount>
+        {% else %}
         <ram:DuePayableAmount>{{ invoice.total | cents_xml }}</ram:DuePayableAmount>
+        {% endif %}
       </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
       {% if invoice.isCreditNote and invoice.correctsInvoice %}
       <ram:InvoiceReferencedDocument>

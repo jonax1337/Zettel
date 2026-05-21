@@ -62,6 +62,8 @@ _add_gtk_dll_path()
 from invoice.pdf import render_invoice_pdf, render_offer_pdf, render_reminder_pdf  # noqa: E402
 from invoice.extract import extract_from_pdf  # noqa: E402
 from invoice.text_extract import extract_text_heuristic  # noqa: E402
+from bank.camt import detect_format, parse_camt053  # noqa: E402
+from bank.mt940 import parse_mt940  # noqa: E402
 
 
 def _err(code: str, message: str, details: str | None = None) -> dict:
@@ -181,6 +183,28 @@ def handle(req: dict) -> dict:
             return _err("PDF_NOT_FOUND", str(e))
         except Exception as e:
             return _err("EXTRACT_FAILED", str(e), traceback.format_exc())
+
+    if command == "parse_bank_statement":
+        try:
+            path = payload.get("path")
+            fmt = payload.get("format") or "auto"
+            if not path:
+                return _err("MISSING_FIELD", "payload.path is required")
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                content = fh.read()
+            if fmt == "auto":
+                fmt = detect_format(content)
+            if fmt == "camt":
+                bookings = parse_camt053(content)
+            elif fmt == "mt940":
+                bookings = parse_mt940(content)
+            else:
+                return _err("UNKNOWN_FORMAT", f"Unknown bank statement format: {fmt}")
+            return {"success": True, "format": fmt, "bookings": bookings}
+        except FileNotFoundError as e:
+            return _err("FILE_NOT_FOUND", str(e))
+        except Exception as e:
+            return _err("PARSE_FAILED", str(e), traceback.format_exc())
 
     return _err("UNKNOWN_COMMAND", f"Unknown command: {command!r}")
 

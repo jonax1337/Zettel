@@ -397,6 +397,12 @@ table.totals tr.grand td {
   font-size: 9pt;
 }
 
+.totals .paid-line th,
+.totals .paid-line td {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
 /* ----- Footer (every page bottom) ----- */
 
 .doc-footer {

@@ -72,7 +72,7 @@ async function loadYearAgg(yearStart: number, now: number): Promise<YearAggRow> 
        COALESCE(SUM(total), 0) AS revenue_gross,
        COALESCE(SUM(vat_amount), 0) AS invoice_vat
      FROM invoices
-     WHERE status IN ('sent','paid')
+     WHERE status IN ('sent','partial','paid')
        AND issue_date >= ? AND issue_date <= ?`,
     [yearStart, now],
   );
