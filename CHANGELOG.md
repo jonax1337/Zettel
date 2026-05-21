@@ -6,6 +6,11 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.14.1]
+
+### Fixed
+- **`segno`-Sidecar-Dep fehlte in `requirements.txt`.** v0.14.0 hat den EPC-QR-Code-Generator (`sidecar/invoice/qr.py`) eingeführt, der `segno` per Lazy-Import lädt — die Dependency war lokal im venv installiert, aber durch ein verlorenes Edit nicht in `sidecar/requirements.txt` gelandet. Folge: CI-Tests rot, und der Production-PyInstaller-Bundle hatte segno nicht, sodass beim End-Anwender jede PDF-Generierung auf EUR-Rechnungen mit IBAN mit `ModuleNotFoundError: No module named 'segno'` abbrach. Reine `requirements.txt`-Korrektur, keine Code-Änderung. Bestehende v0.14.0-Installer **funktionieren nicht** — bitte auf v0.14.1 updaten.
+
 ## [0.14.0]
 
 > **Daily-Driver-UX.** Sieben fokussierte Verbesserungen, die im Tagesgeschäft Reibung rausnehmen: ein wiederverwendbarer **Artikel-Katalog** spart das ständige Neutippen, **EPC-QR-Codes** auf jeder EUR-Rechnung ersetzen das Überweisungs-Abtippen, **Skonto** wird strukturiert ins ZUGFeRD-XML geschrieben, der **Liquiditäts-Forecast** auf dem Dashboard zeigt die nächsten 30 Tage, alle Listen sind **sortierbar**, und ein **Onboarding-Wizard** holt frische Installationen sauber ab.
