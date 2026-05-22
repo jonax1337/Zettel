@@ -6,6 +6,11 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.16.1]
+
+### Fixed
+- **KoSIT-Validator: `IOException: Unzulässige Funktion` auf Windows.** Der KoSIT-Validator prüft via `FileInputStream.available()`, ob seine stdin gepiped ist (`Validator.isPiped()`). Auf Windows wirft `available()` für character devices (geerbtes Console-Handle, auch `NUL` via `Stdio::null()`) eine `IOException` — KoSIT fängt das nicht und bricht ab, bevor überhaupt ein Report geschrieben wird. Folge: jede Validierung im Dev-Modus und auch in der installierten App lieferte „Kein Report gefunden. stderr: java.io.IOException: Unzulässige Funktion". Fix in `src-tauri/src/validator.rs`: stdin wird jetzt aus einer leeren regulären Datei gefüttert (disk-type-Handle, `available()` liefert sauber 0, `isPiped()` wird false). Datei wird pro Validierungs-Aufruf im Temp-Verzeichnis angelegt und sofort wieder aufgeräumt.
+
 ## [0.16.0]
 
 > **Internationalisierung + Detail-Schliff.** Englische PDF-Variante, mehrsprachige Katalog-Beschreibungen, kuratierte Ausgaben-Kategorien mit SKR03/SKR04-Konten-Mapping, und Bulk-Aktionen jetzt auch für Angebote und Eingangsrechnungen.
