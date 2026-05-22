@@ -47,12 +47,16 @@ def _validate(xml: str, tmp_path: Path) -> dict:
     xf.write_text(xml, encoding="utf-8")
     out = tmp_path / "out"
     out.mkdir(exist_ok=True)
-    subprocess.run(
-        ["java", "-jar", str(VAL / "validator.jar"),
-         "-s", str(VAL / "scenarios.xml"),
-         "-r", str(VAL), "-o", str(out), str(xf)],
-        capture_output=True, timeout=60,
-    )
+    # Empty real file as stdin — see test_end_to_end.py / v0.16.1 for the why.
+    stdin_path = out / ".stdin-empty"
+    stdin_path.write_bytes(b"")
+    with stdin_path.open("rb") as stdin_f:
+        subprocess.run(
+            ["java", "-jar", str(VAL / "validator.jar"),
+             "-s", str(VAL / "scenarios.xml"),
+             "-r", str(VAL), "-o", str(out), str(xf)],
+            capture_output=True, timeout=60, stdin=stdin_f,
+        )
     rep = next(out.glob("*-report.xml"), None)
     if not rep:
         return {"valid": False, "errors": ["no report"], "step_xsd": None, "step_sch": None}

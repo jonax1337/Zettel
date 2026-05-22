@@ -39,18 +39,25 @@ pytestmark = pytest.mark.skipif(
 
 
 def _run_validator(xml_path: Path, out_dir: Path) -> Path:
-    subprocess.run(
-        [
-            "java", "-jar", str(VALIDATOR_JAR),
-            "-s", str(SCENARIOS),
-            "-r", str(VALIDATOR_DIR),
-            "-o", str(out_dir),
-            str(xml_path),
-        ],
-        check=False,
-        capture_output=True,
-        timeout=60,
-    )
+    # Feed an empty real file as stdin (not subprocess.DEVNULL → NUL on Windows,
+    # which KoSIT misreads via FileInputStream.available() and crashes). Same
+    # fix shipped in validator.rs / v0.16.1.
+    stdin_path = out_dir / ".stdin-empty"
+    stdin_path.write_bytes(b"")
+    with stdin_path.open("rb") as stdin_f:
+        subprocess.run(
+            [
+                "java", "-jar", str(VALIDATOR_JAR),
+                "-s", str(SCENARIOS),
+                "-r", str(VALIDATOR_DIR),
+                "-o", str(out_dir),
+                str(xml_path),
+            ],
+            check=False,
+            capture_output=True,
+            timeout=60,
+            stdin=stdin_f,
+        )
     return out_dir / f"{xml_path.stem}-report.xml"
 
 

@@ -6,6 +6,29 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.17.0]
+
+> **Polish-Release.** Detail-Schliff an der UX der drei Editor-Screens — der unschöne Inline-Period-Picker auf Positions-Ebene ist gegen einen kompakten Popover mit Tab-Switcher (Einzeltag/Zeitraum) ausgetauscht. Dazu eine größere Test-Investition (Vitest +47, Pytest +19, Pytest-Stdin-Bug behoben) und die DB-Math-Module dedupliziert.
+
+### Changed
+- **Positions-Zeitraum (BG-26, BT-134/135) bekommt eine eigene Popover-Komponente.** Vorher war die Periode in der schmalen Beschreibungs-Spalte als aufgeklappter Bereich mit zwei nebeneinander stehenden Text-Toggles (Mode-Wechsel + Entfernen) implementiert — visuell beengt, das Umschalten zwischen Einzeltag und Zeitraum war ein zweiter Klick nach dem Öffnen. Neu: ein kompakter Chip-Button in der Description-Cell. Klick öffnet ein Popover (300 px breit) mit einem segmented Tab-Switcher „Einzeltag · Zeitraum" oben, dem passenden DatePicker(s) darunter (Range-Modus mit Min-Date-Constraint auf das Start-Datum), und einem Footer mit „Entfernen" / „Fertig". Befüllt zeigt der Trigger den Wert als Chip mit Akzent-Border an („15.05.2026" oder „15.05.2026 – 22.05.2026"). InvoiceEdit, OfferEdit und RecurringEdit teilen sich die neue Komponente; das Detail-Beschreibungs-Toggle steht als zweiter Chip daneben.
+- **Math-Module dedupliziert.** `computeLineTotal` / `computeTotals` lebten dreimal nahezu identisch in `src/lib/db/{invoices,offers,expenses}.ts`. Neu in `src/lib/utils/totals.ts` als pure Funktion mit einheitlichem `TotalsItem`-Interface; die drei DB-Module re-exportieren sie. Tests in `totals.test.ts` (12 Cases) decken jetzt die Produktions-Math direkt ab. Expenses passt sich semantisch an, indem es `isKleinunternehmer: false` an die generische Variante übergibt — die Rechen-Logik ist identisch.
+
+### Fixed
+- **PeriodSwitcher: 6 svelte-check-Warnings** zu `state_referenced_locally`. Das Anfangs-Snapshot der Period-Props (Year/Quarter/Month/Custom-From/To) wird jetzt via `untrack()` aus `svelte` gelesen — Intent ist „Initial-Wert übernehmen, dann lokal weiter editieren", was die Warnings korrekt adressiert (statt sie nur zu verstecken).
+- **NotFound-Screen poliert.** Raw `text-neutral-500` ersetzt durch das semantische `text-muted-foreground`-Token, Lucide-Icon und animierter Back-Link konsistent mit der „Unified hover"-Konvention aus v0.13.
+- **Pytest-Suite auf Windows: 15 zuvor stille Failures behoben.** Drei Test-Module (`test_validator_golden.py`, `test_end_to_end.py`, `test_missing_fields.py`) riefen `subprocess.run(["java", "-jar", validator.jar, …])` ohne explizite Stdin-Umleitung auf. Auf Windows erbt der Subprozess das Console-Handle, KoSIT prüft via `FileInputStream.available()` ob seine stdin gepiped ist — und crasht beim Character-Device. Symptom: kein Report wird geschrieben, der Test-Assert „report file exists" failt. Same root cause wie der App-seitige v0.16.1-Hotfix (`validator.rs`). Fix: alle drei Module füttern jetzt eine leere reguläre Datei als stdin — disk-type-Handle, `available()` liefert sauber 0.
+
+### Tests
+- **Vitest:** +47 Cases (134 total, vorher 87). Neue Suites für `lib/utils/currency.ts` (24), `lib/utils/date.ts` (11), `lib/utils/totals.ts` (12). Roundtrip-Edge-Cases für Multi-Currency-Konvertierung, DST-Boundary für Datums-Arithmetik, Storno-Vorzeichen-Propagation durch `computeTotals`.
+- **Pytest-Sidecar:** +19 Cases (71 total, vorher 52 effektiv). Neue `test_i18n.py` (14) mit Key-Parität DE/EN, Placeholder-Drift-Check, Fallback-Verhalten. Neue `test_line_period.py` (5) für BillingSpecifiedPeriod-Emission im ZUGFeRD-XML (single-day, range, missing, partial).
+
+### Migration
+- **Keine DB-Migration** — Schema bleibt auf `user_version = 26`. v0.17 ist reine UI-/Code-Polish.
+
+### Notes
+- **`pdf-language`-String im Footer** (Seite N von M) bleibt sprach-fest auf Deutsch in v0.17 — der CSS-Counter-Workaround (`@page` + `string-set`) ist in v0.18 vorgesehen.
+
 ## [0.16.1]
 
 ### Fixed

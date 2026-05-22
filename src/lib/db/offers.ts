@@ -136,26 +136,8 @@ export type OfferFormInput = {
   pdfLanguage?: "de" | "en";
 };
 
-export function computeLineTotal(item: OfferItemInput): number {
-  return Math.round(item.quantity * item.unitPrice);
-}
-
-export function computeTotals(
-  items: OfferItemInput[],
-  opts: { isKleinunternehmer: boolean; isReverseCharge: boolean },
-): { subtotal: number; vatAmount: number; total: number } {
-  const vatExempt = opts.isKleinunternehmer || opts.isReverseCharge;
-  let subtotal = 0;
-  let vatAmount = 0;
-  for (const item of items) {
-    const line = computeLineTotal(item);
-    subtotal += line;
-    if (!vatExempt) {
-      vatAmount += Math.round((line * item.vatRate) / 100);
-    }
-  }
-  return { subtotal, vatAmount, total: subtotal + vatAmount };
-}
+import { computeLineTotal, computeTotals } from "$lib/utils/totals";
+export { computeLineTotal, computeTotals };
 
 // --- List / get ---
 
