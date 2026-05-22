@@ -12,7 +12,7 @@
 use crate::sidecar;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Serialize)]
@@ -175,6 +175,15 @@ pub async fn validate_einvoice_xml(
     std::fs::create_dir_all(&tmp).map_err(|e| format!("tmpdir: {}", e))?;
 
     let java = resolve_java(&app);
+    // KoSIT prüft `FileInputStream.available()` um stdin-Pipe-Mode zu erkennen.
+    // Auf Windows wirft `available()` für character devices (Console-Handle,
+    // NUL) eine `IOException: Unzulässige Funktion` — `Stdio::null()` reicht
+    // also nicht. Wir reichen eine leere reguläre Datei rein: disk-type ist
+    // pollbar, `available()` liefert sauber 0, `isPiped()` wird false.
+    let empty_stdin = tmp.join("empty-stdin");
+    std::fs::write(&empty_stdin, b"").map_err(|e| format!("empty stdin write: {}", e))?;
+    let stdin_file =
+        std::fs::File::open(&empty_stdin).map_err(|e| format!("empty stdin open: {}", e))?;
     let output = Command::new(&java)
         .arg("-jar")
         .arg(&jar)
@@ -185,6 +194,7 @@ pub async fn validate_einvoice_xml(
         .arg("-o")
         .arg(&tmp)
         .arg(input)
+        .stdin(Stdio::from(stdin_file))
         .output()
         .map_err(|e| {
             format!(
@@ -192,6 +202,7 @@ pub async fn validate_einvoice_xml(
                 e
             )
         })?;
+    let _ = std::fs::remove_file(&empty_stdin);
 
     // Validator returns non-zero on rejected input but still writes a report.
     let stderr = String::from_utf8_lossy(&output.stderr);
