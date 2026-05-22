@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { Select, DatePicker } from "$lib/ui";
   import {
     type Period,
@@ -22,12 +23,13 @@
   const currentMonth = now.getMonth() + 1;
   const currentQuarter = (Math.floor(now.getMonth() / 3) + 1) as 1 | 2 | 3 | 4;
 
-  let type = $state<PeriodType>(period.type);
-  let yearStr = $state(String(new Date(period.start * 1000).getFullYear()));
-  let quarterStr = $state(String(Math.floor(new Date(period.start * 1000).getMonth() / 3) + 1));
-  let monthStr = $state(String(new Date(period.start * 1000).getMonth() + 1));
-  let customFrom = $state(toIsoDate(period.start));
-  let customTo = $state(toIsoDate(period.end - 86400));
+  const initialStart = untrack(() => new Date(period.start * 1000));
+  let type = $state<PeriodType>(untrack(() => period.type));
+  let yearStr = $state(String(initialStart.getFullYear()));
+  let quarterStr = $state(String(Math.floor(initialStart.getMonth() / 3) + 1));
+  let monthStr = $state(String(initialStart.getMonth() + 1));
+  let customFrom = $state(untrack(() => toIsoDate(period.start)));
+  let customTo = $state(untrack(() => toIsoDate(period.end - 86400)));
 
   const typeItems = [
     { value: "year", label: "Jahr" },

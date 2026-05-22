@@ -116,24 +116,22 @@ export type ExpenseFormInput = {
   items: ExpenseItemInput[];
 };
 
-export function computeLineTotal(item: ExpenseItemInput): number {
-  return Math.round(item.quantity * item.unitPrice);
-}
+import {
+  computeLineTotal as computeLineTotalPure,
+  computeTotals as computeTotalsPure,
+  type Totals,
+} from "$lib/utils/totals";
+
+export const computeLineTotal = computeLineTotalPure;
 
 export function computeTotals(
   items: ExpenseItemInput[],
   opts: { isReverseCharge: boolean },
-): { subtotal: number; vatAmount: number; total: number } {
-  let subtotal = 0;
-  let vatAmount = 0;
-  for (const item of items) {
-    const line = computeLineTotal(item);
-    subtotal += line;
-    if (!opts.isReverseCharge) {
-      vatAmount += Math.round((line * item.vatRate) / 100);
-    }
-  }
-  return { subtotal, vatAmount, total: subtotal + vatAmount };
+): Totals {
+  return computeTotalsPure(items, {
+    isKleinunternehmer: false,
+    isReverseCharge: opts.isReverseCharge,
+  });
 }
 
 export type ExpenseFilter = {

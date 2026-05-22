@@ -62,16 +62,21 @@ def _run_sidecar(request: dict) -> dict:
 
 
 def _validate_xml(xml_path: Path, out_dir: Path) -> tuple[bool, list[str]]:
-    subprocess.run(
-        [
-            "java", "-jar", str(VALIDATOR_DIR / "validator.jar"),
-            "-s", str(VALIDATOR_DIR / "scenarios.xml"),
-            "-r", str(VALIDATOR_DIR),
-            "-o", str(out_dir),
-            str(xml_path),
-        ],
-        capture_output=True, timeout=60,
-    )
+    # Real empty file as stdin — KoSIT's available() check explodes on NUL on
+    # Windows (same bug fixed in validator.rs / v0.16.1).
+    stdin_path = out_dir / ".stdin-empty"
+    stdin_path.write_bytes(b"")
+    with stdin_path.open("rb") as stdin_f:
+        subprocess.run(
+            [
+                "java", "-jar", str(VALIDATOR_DIR / "validator.jar"),
+                "-s", str(VALIDATOR_DIR / "scenarios.xml"),
+                "-r", str(VALIDATOR_DIR),
+                "-o", str(out_dir),
+                str(xml_path),
+            ],
+            capture_output=True, timeout=60, stdin=stdin_f,
+        )
     report = out_dir / f"{xml_path.stem}-report.xml"
     if not report.exists():
         return False, ["no report produced"]

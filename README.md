@@ -67,14 +67,23 @@ Zettel ist das, was dabei rausgekommen ist: ein kleines Desktop-Tool, das **loka
 - **Stornorechnungen** als first-class Credit-Notes mit korrektem CII-Schema
 - Mehrere USt-Sätze pro Rechnung (0 %, 7 %, 19 %), Multi-Currency mit eingefrorenem EUR-Wert
 - Drei PDF-Themes (classic / modern / minimal) per CSS-Variablen
+- **PDF auf Deutsch oder Englisch** pro Rechnung wählbar (XML bleibt sprach-neutral nach Norm)
 - **Leistungszeiträume** (BG-14 / BG-26) auf Header- und Positions-Ebene, lange Positions-Beschreibungen (BT-154)
+- **Artikel-/Leistungs-Katalog** für wiederverwendbare Positionen (DE + EN-Beschreibungen)
+- **Skonto** (Frühzahler-Rabatt) strukturiert als `ApplicableTradePaymentDiscountTerms` im XML
+- **EPC-QR-Code (Girocode)** automatisch auf EUR-Rechnungen mit IBAN — Empfänger scannt mit Banking-App
+- **Angebote** als eigener Dokumententyp mit One-Click-Konvertierung zur Rechnung
 
 ### Buchhaltungs-Light
 - **Eingangsrechnungen** mit Drop-Zone für ZUGFeRD-PDFs (automatisches Parsing) und OCR-Light-Fallback (Text-Layer-Extraktion, kein Tesseract)
 - **Lieferanten-Verwaltung** mit USt-IdNr.-Matching beim Drop
+- **Kuratierte Ausgaben-Kategorien** mit SKR03- und SKR04-Konten-Mapping (Software, Hardware, Reise, …)
+- **Teilzahlungen** mit eigener Tabelle und automatischem `partial`-Status für teil-bezahlte Rechnungen
+- **Bank-Import** für CAMT.053 (XML) und MT940 (Text) mit Auto-Match auf Rechnungsnummer / Betrag / Kunde
 - **DATEV-Export** (Format 700, SKR03/SKR04) — Erlöse, Aufwände und Stornos in einem Buchungsstapel
 - **UStVA-Vorbereitung** (Kennzahlen 81/86/41/21/66 pro Quartal, zum Abtippen)
-- **Mahnungen** als eigene Dokumentenklasse mit Nummernkreis `MA-…`
+- **Mahnungen** als eigene Dokumentenklasse mit Nummernkreis `MA-…`, Eskalations-Strip pro Rechnung
+- **Bulk-Aktionen** in Rechnungen-, Angebote- und Eingangsrechnungen-Listen
 
 ### Steuer-Rücklage
 - § 32a EStG-Tarif für **VZ 2024, 2025 und 2026** hartcodiert aus amtlicher BMF-Bekanntmachung, 38 Testfälle
@@ -86,12 +95,15 @@ Zettel ist das, was dabei rausgekommen ist: ein kleines Desktop-Tool, das **loka
 ### Dashboard & Workflow
 - Zeitraum-Switcher (Jahr / Quartal / Monat / Custom) mit YoY-Kontext
 - **Globale Suche** (`Cmd/Ctrl+K`) über alle Entities inkl. Item-Beschreibungen
+- **Liquiditäts-Vorschau** über die nächsten 30 Tage (offene Posten + überfällige + wiederkehrend)
 - **Wiedervorlage**-Liste pro Kunde/Rechnung mit `follow_up_date`
+- **Onboarding-Wizard** beim ersten Start, sortierbare Tabellen in allen Listen
 - Interne Notizen (nicht auf der PDF)
 - **Wiederkehrende Rechnungen** (monatlich / quartalsweise / jährlich) — explizit per Klick erzeugen, kein stilles Background-Cron
 
 ### Daten gehören dir
 - **Backup** als verschlüsseltes ZIP (AES-256-GCM + Argon2id) oder unverschlüsselt
+- **Auto-Backup** mit konfigurierbarem Intervall (rotierender Wochen-Snapshot)
 - **Granularer Restore** (Kunden / Rechnungen+PDFs / Settings unabhängig)
 - **Sandbox-Modus** mit separater DB zum Ausprobieren
 - **Auto-Update** Ed25519-signiert via GitHub Releases
@@ -121,6 +133,8 @@ Auto-Update ist ab v0.4.3 aktiv. Ältere Installationen einmal manuell auf die a
 
 ## Quickstart
 
+Beim ersten Start führt der **Onboarding-Wizard** durch Firma, Steuer, Bank — kann mit „Später erinnern" übersprungen werden. Wer manuell loslegen will:
+
 1. **Einstellungen → Unternehmen** öffnen, Firmendaten + Steuernummer (bzw. USt-IdNr.) eintragen
 2. **Einstellungen → Steuerprofil** ausfüllen, damit das Dashboard die Steuer-Rücklage berechnen kann
 3. **Kunde** anlegen (`/customers/new`)
@@ -134,7 +148,7 @@ Für eingehende Rechnungen: `/expenses` öffnen, PDF in die Drop-Zone ziehen —
 Bewusst ausgeschlossen — diese Dinge sind im Scope anderer Tools besser aufgehoben:
 
 - **Keine vollständige Buchhaltung** (kein doppelter Eintrag, kein Konten-Plan, kein Jahresabschluss)
-- **Kein Banking / Kontoabgleich** — Zahlungen werden manuell gemarkt
+- **Keine Online-Banking-Anbindung** — der Bank-Import liest CAMT.053-/MT940-Dateien lokal ein, keine Live-Verbindung zur Bank
 - **Kein ELSTER-Upload** und kein UStVA-Versand — Zettel bereitet vor, du tippst ab oder gibst es dem Steuerberater
 - **Keine Cloud, kein Sync, keine Mobile-App** — bewusst nicht in Scope
 - **Kein SMTP-Versand** — Rechnungen landen als PDF, du schickst sie wie du willst
@@ -203,10 +217,11 @@ Vollständige Plattform-Voraussetzungen (GTK3-Runtime auf Windows, Tauri-System-
 
 Geplant — siehe [Issues](https://github.com/jonax1337/zettel/issues) und [Discussions](https://github.com/jonax1337/zettel/discussions). Größere Themen, die in Diskussion sind:
 
-- I18n (englische UI als zweite Sprache)
+- Englische UI (PDF auf Englisch existiert seit v0.16, die App-UI ist noch nur Deutsch)
 - AfA / Anlageverzeichnis
 - EÜR-Export
 - Mandanten-Profile (mehrere Firmen in einer Installation)
+- Custom Ausgaben-Kategorien-Verwaltung in den Settings (Schema steht, UI fehlt)
 
 Was bereits drin ist: [`CHANGELOG.md`](./CHANGELOG.md).
 
