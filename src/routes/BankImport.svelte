@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { link } from "svelte-spa-router";
   import { open } from "@tauri-apps/plugin-dialog";
   import { parseBankStatement } from "$lib/sidecar/bank";
   import { matchBookings, type BookingMatch } from "$lib/bank/match";
@@ -18,7 +17,7 @@
     Checkbox,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Upload, CheckCircle2, AlertCircle, FileUp } from "@lucide/svelte";
+  import { Upload, CheckCircle2, AlertCircle, FileUp } from "@lucide/svelte";
 
   let busy = $state(false);
   let parsing = $state(false);
@@ -143,14 +142,7 @@
 
 <header class="mb-6 flex items-end justify-between gap-4">
   <div>
-    <a
-      href="/invoices"
-      use:link
-      class="group inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-    >
-      <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" /> Rechnungen
-    </a>
-    <h1 class="text-3xl font-semibold tracking-tight mt-2">Bank-Import</h1>
+    <h1 class="text-3xl font-semibold tracking-tight">Bank-Import</h1>
     <p class="text-sm text-muted-foreground mt-1">
       Kontoauszug im CAMT.053 (XML) oder MT940 (SWIFT) hochladen, Buchungen
       bestehenden Rechnungen zuordnen. Keine Online-Banking-Anbindung — reine
