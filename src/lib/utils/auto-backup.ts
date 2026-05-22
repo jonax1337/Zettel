@@ -19,7 +19,7 @@ function weekdaySlug(date: Date): string {
   return WEEKDAY_SLUGS[date.getDay()];
 }
 
-const CURRENT_DB_SCHEMA_VERSION = 24;
+const CURRENT_DB_SCHEMA_VERSION = 26;
 
 export async function maybeRunAutoBackup(): Promise<{ ran: boolean; reason: string }> {
   let settings;

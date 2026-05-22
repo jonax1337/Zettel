@@ -155,6 +155,18 @@ fn build_migrations() -> Vec<Migration> {
             sql: include_str!("../../src/lib/db/migrations/0023_v0.15_auto_backup.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 25,
+            description: "v0.16_pdf_language",
+            sql: include_str!("../../src/lib/db/migrations/0024_v0.16_pdf_language.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 26,
+            description: "v0.16_expense_categories",
+            sql: include_str!("../../src/lib/db/migrations/0025_v0.16_expense_categories.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

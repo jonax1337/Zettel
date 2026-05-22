@@ -15,7 +15,8 @@
     type ExpenseFormInput,
     type ExpenseItemInput,
   } from "$lib/db/expenses";
-  import type { Expense, ExpenseStatus, Vendor } from "$lib/db/schema";
+  import type { Expense, ExpenseStatus, Vendor, ExpenseCategory } from "$lib/db/schema";
+  import { listCategories as listCuratedCategories, accountForSkr } from "$lib/db/expense-categories";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import {
@@ -67,6 +68,7 @@
 
   let vendors = $state<Vendor[]>([]);
   let categories = $state<string[]>([]);
+  let curatedCategories = $state<ExpenseCategory[]>([]);
   let id = $state<number | null>(null);
   let existing = $state<Expense | null>(null);
   let loaded = $state(false);
@@ -85,6 +87,7 @@
     {
       description: "",
       category: null,
+      categoryId: null,
       datevAccount: null,
       quantity: 1,
       unit: "Stk",
@@ -106,13 +109,40 @@
   let validationFindingsCount = $state<number | null>(null);
 
   $effect(() => {
-    Promise.all([listVendors(), listCategories()])
-      .then(([vs, cs]) => {
+    Promise.all([listVendors(), listCategories(), listCuratedCategories()])
+      .then(([vs, cs, curated]) => {
         vendors = vs;
         categories = cs;
+        curatedCategories = curated;
       })
       .catch((e) => (error = String(e)));
   });
+
+  const curatedCategoryItems = $derived([
+    { value: "", label: "— frei eintragen —" },
+    ...curatedCategories.map((c) => ({ value: String(c.id), label: c.name })),
+  ]);
+
+  function pickCuratedCategory(idx: number, valueStr: string) {
+    const it = items[idx];
+    if (valueStr === "") {
+      it.categoryId = null;
+      // Freitext-Feld bleibt unangetastet — User kann manuell tippen.
+    } else {
+      const cId = Number.parseInt(valueStr, 10);
+      const cat = curatedCategories.find((c) => c.id === cId);
+      if (cat) {
+        it.categoryId = cat.id;
+        it.category = cat.name;
+        // DATEV-Konto vorbefüllen wenn leer (SKR03-Default — DATEV-Export
+        // löst pro Beleg über categoryId neu auf, das hier ist nur UI-Hint).
+        if (!it.datevAccount) {
+          it.datevAccount = accountForSkr(cat, "SKR03");
+        }
+      }
+    }
+    items = [...items];
+  }
 
   // Prefill default category from selected vendor when creating a new expense.
   const selectedVendor = $derived(
@@ -153,6 +183,7 @@
           items = res.items.map((it) => ({
             description: it.description,
             category: it.category,
+            categoryId: it.categoryId ?? null,
             datevAccount: it.datevAccount,
             quantity: it.quantity,
             unit: it.unit,
@@ -172,6 +203,7 @@
       {
         description: "",
         category: selectedVendor?.defaultCategory ?? null,
+        categoryId: null,
         datevAccount: null,
         quantity: 1,
         unit: "Stk",
@@ -189,6 +221,7 @@
       {
         description: it.name + (it.descriptionDe ? ` — ${it.descriptionDe}` : ""),
         category: selectedVendor?.defaultCategory ?? null,
+        categoryId: null,
         datevAccount: it.defaultDatevAccount ?? null,
         quantity: 1,
         unit: it.unit,
@@ -289,6 +322,7 @@
       items = data.lineItems.map((li) => ({
         description: li.description,
         category: matched?.defaultCategory ?? null,
+        categoryId: null,
         datevAccount: null,
         quantity: li.quantity,
         unit: li.unit,
@@ -478,6 +512,7 @@
         items: items.map((it) => ({
           description: it.description,
           category: it.category?.trim() || null,
+          categoryId: it.categoryId ?? null,
           datevAccount: it.datevAccount?.trim() || null,
           quantity: it.quantity,
           unit: it.unit,
@@ -711,12 +746,23 @@
                   <Input bind:value={it.description} required disabled={!editable} />
                 </td>
                 <td class="px-2 py-1.5">
-                  <Input
-                    bind:value={it.category}
-                    list="expense-categories"
-                    placeholder="z. B. Software"
-                    disabled={!editable}
-                  />
+                  <div class="flex flex-col gap-1">
+                    <Select
+                      items={curatedCategoryItems}
+                      value={it.categoryId ? String(it.categoryId) : ""}
+                      onValueChange={(v) => pickCuratedCategory(idx, v)}
+                      disabled={!editable}
+                    />
+                    {#if !it.categoryId}
+                      <Input
+                        bind:value={it.category}
+                        list="expense-categories"
+                        placeholder="oder Freitext…"
+                        disabled={!editable}
+                        class="text-xs"
+                      />
+                    {/if}
+                  </div>
                 </td>
                 <td class="px-2 py-1.5">
                   <Input

@@ -7,6 +7,8 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
+from .i18n import t as translate
+
 
 def _templates_dir() -> Path:
     # When frozen by PyInstaller, templates ship next to the binary in _MEIPASS.
@@ -54,4 +56,7 @@ def build_env() -> Environment:
     env.filters["eur"] = cents_to_eur
     env.filters["qty"] = fmt_qty
     env.filters["date_unix"] = fmt_date_unix
+    # `t()` ist als globale Funktion verfügbar; Templates rufen
+    # {{ t('schluessel', language) }} oder mit kwargs für Interpolation.
+    env.globals["t"] = translate
     return env

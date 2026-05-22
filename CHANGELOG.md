@@ -6,6 +6,31 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.16.0]
+
+> **Internationalisierung + Detail-Schliff.** Englische PDF-Variante, mehrsprachige Katalog-Beschreibungen, kuratierte Ausgaben-Kategorien mit SKR03/SKR04-Konten-Mapping, und Bulk-Aktionen jetzt auch für Angebote und Eingangsrechnungen.
+
+### Added
+- **Englische PDF-Variante** (Migration `0024_v0.16_pdf_language.sql`). Pro Rechnung und Angebot wählbar zwischen Deutsch und Englisch, Default in Settings → Dokumente. Die Übersetzung deckt alle Labels (Tabellenköpfe, Meta-Box, Totals, Rechtshinweise, Footer-Spalten) ab — das eingebettete ZUGFeRD-XML bleibt bewusst sprach-neutral. Neue Sidecar-Module `invoice/i18n.py` mit Translation-Dict für DE und EN, Templates nutzen jetzt `{{ t('key', lang) }}` durchgängig.
+- **Mehrsprachige Katalog-Beschreibungen** sind jetzt im Picker aktiv. Wenn ein Katalog-Eintrag eine `description_en` hat und die Rechnung auf Englisch gestellt ist, wird die englische Beschreibung in den Item-Block eingefügt — sonst Fallback auf Deutsch. Schema (`catalog_items.description_en`) existierte bereits seit v0.14; jetzt wird sie auch genutzt.
+- **Kuratierte Ausgaben-Kategorien** (Migration `0025_v0.16_expense_categories.sql`). Neue Tabelle `expense_categories` mit 10 seed-Einträgen (Software/SaaS, Hardware, Telefon, Reisekosten, Fortbildung, Bürobedarf, Honorare, Werbung, Bankgebühren, Sonstige), jeweils mit SKR03- **und** SKR04-Konto-Mapping. ExpenseEdit-Item-Block bekommt einen Kategorie-Select; bei Auswahl wird das `datev_account`-Feld automatisch mit dem SKR03-Default vorbelegt. Beim DATEV-Export wird das Konto über die `categoryId` zur Laufzeit gegen das jeweils aktive SKR-Profil aufgelöst — ein Eintrag mit `categoryId` wechselt also je nach Export-Auswahl korrekt zwischen SKR03 und SKR04. Legacy-Freitext-Kategorie bleibt als Fallback erhalten und ist editierbar wenn keine kuratierte Kategorie gewählt ist.
+- **Bulk-Aktionen in OffersList.** Checkbox-Spalte + Select-All. Bar zeigt kontextsensitiv: „Versenden" (alle Drafts), „Ablehnen" (alle Drafts/Sent), „Löschen" (alle Drafts/Rejected/Expired). Angenommene Angebote bleiben vor Bulk-Delete geschützt.
+- **Bulk-Aktionen in ExpensesList.** Selbes Muster: „Als bezahlt" (alle Open) und „Löschen" (alle Drafts/Cancelled). Offene und bezahlte Belege werden vor Bulk-Delete geschützt.
+
+### Changed
+- **`Settings.defaultPdfLanguage`** als neue Spalte mit `'de'`-Default. InvoiceEdit und OfferEdit füllen den Sprach-Selector aus dieser Vorgabe vor.
+- **DATEV-Export** löst `categoryId` zur Export-Zeit gegen das gewählte SKR-Profil auf. Explizit gesetzte `datev_account`-Overrides auf Item-Ebene gewinnen weiterhin gegen die Kategorie-Auflösung — User-Intent ist King.
+
+### Migration
+- `0024_v0.16_pdf_language.sql` — `user_version = 25`. `pdf_language`-Spalten in `invoices`, `offers`, `settings`.
+- `0025_v0.16_expense_categories.sql` — `user_version = 26`. `expense_categories`-Tabelle mit 10 builtin-Einträgen + `expense_items.category_id`.
+- `CURRENT_SCHEMA` in `backup.rs` auf **26**, `CURRENT_DB_SCHEMA_VERSION` in `Advanced.svelte` / `Data.svelte` und in `lib/utils/auto-backup.ts` synchron.
+
+### Notes
+- **Page-Counter im PDF-Footer** (`Seite N von M`) ist über CSS-Counter realisiert und bleibt in v0.16 sprach-fest auf Deutsch. Für englische Rechnungen also ein kleiner sichtbarer DE-String am Seitenrand. Korrektur erfordert WeasyPrint-Magic mit `string-set`/`@page`-Pseudo-Selektoren — kommt bei Bedarf in einer späteren Version.
+- **Custom Ausgaben-Kategorien** (über die 10 builtin-Einträge hinaus) sind heute nur direkt in der DB anlegbar — eine Settings-Verwaltungs-UI folgt in v0.17. Die DB-Schicht (`createCategory`/`updateCategory`/`setCategoryArchived`) ist bereits vorhanden.
+- **Legacy-Freitext-Kategorien** in bestehenden Eingangsrechnungen bleiben unangetastet — `expense_items.category` (freier Text) wird weiterhin als Fallback gerendert. Beim Re-Save ohne Kategorie-Pick bleibt der Freitext erhalten.
+
 ## [0.15.0]
 
 > **Zahlungs-Workflow.** Vier zusammenhängende Schritte schließen die Lücke zwischen „Rechnung versendet" und „Geld auf dem Konto": **Teilzahlungen** mit eigener Tabelle, **Bank-Import** für CAMT.053/MT940 mit Auto-Match auf Rechnungsnummer, **Bulk-Aktionen** in der Rechnungsliste und **rotierendes Auto-Backup** beim App-Start.

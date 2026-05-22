@@ -1,8 +1,9 @@
 <!doctype html>
-<html lang="de">
+{% set lang = offer.pdfLanguage or 'de' %}
+<html lang="{{ lang }}">
 <head>
   <meta charset="utf-8" />
-  <title>Angebot {{ offer.number }}</title>
+  <title>{{ t('doctype_offer', lang) }} {{ offer.number }}</title>
 </head>
 <body class="theme-{{ settings.pdf_theme if settings and settings.pdf_theme else 'classic' }}">
 
@@ -13,7 +14,7 @@
       {% if company.ownerName %}<div class="brand-owner">{{ company.ownerName }}</div>{% endif %}
     </div>
     <div class="title-block">
-      <div class="doctype">Angebot</div>
+      <div class="doctype">{{ t('doctype_offer', lang) }}</div>
       <div class="docnumber">{{ offer.number }}</div>
     </div>
   </header>
@@ -26,7 +27,7 @@
         {%- if company.postalCode %} · {{ company.postalCode }} {{ company.city }}{% endif %}
       </div>
       <div class="addressee-name">{{ customer.name }}</div>
-      {% if customer.contactPerson %}<div>z. Hd. {{ customer.contactPerson }}</div>{% endif %}
+      {% if customer.contactPerson %}<div>{{ t('addr_attention', lang) }} {{ customer.contactPerson }}</div>{% endif %}
       <div>{{ customer.street }}</div>
       <div>{{ customer.postalCode }} {{ customer.city }}</div>
       {% if customer.country and customer.country != "DE" %}<div>{{ customer.country }}</div>{% endif %}
@@ -34,26 +35,26 @@
 
     <div class="meta">
       <div class="meta-row">
-        <span class="meta-label">Angebotsnr.</span>
+        <span class="meta-label">{{ t('meta_offer_no', lang) }}</span>
         <span class="meta-value">{{ offer.number }}</span>
       </div>
       <div class="meta-row">
-        <span class="meta-label">Datum</span>
+        <span class="meta-label">{{ t('meta_offer_date', lang) }}</span>
         <span class="meta-value">{{ offer.issueDate | date_unix }}</span>
       </div>
       <div class="meta-row">
-        <span class="meta-label">Gültig bis</span>
+        <span class="meta-label">{{ t('meta_valid_until', lang) }}</span>
         <span class="meta-value">{{ offer.validUntil | date_unix }}</span>
       </div>
       {% if offer.servicePeriodStart and offer.servicePeriodEnd %}
       <div class="meta-row">
-        <span class="meta-label">Leistungszeitraum</span>
+        <span class="meta-label">{{ t('meta_service_period', lang) }}</span>
         <span class="meta-value">{{ offer.servicePeriodStart | date_unix }} – {{ offer.servicePeriodEnd | date_unix }}</span>
       </div>
       {% endif %}
       {% if customer.vatId %}
       <div class="meta-row">
-        <span class="meta-label">USt-IdNr. Kunde</span>
+        <span class="meta-label">{{ t('meta_customer_vatid', lang) }}</span>
         <span class="meta-value">{{ customer.vatId }}</span>
       </div>
       {% endif %}
@@ -69,13 +70,13 @@
   <table class="items">
     <thead>
       <tr>
-        <th class="col-pos">Pos.</th>
-        <th class="col-desc">Beschreibung</th>
-        <th class="col-qty">Menge</th>
-        <th class="col-unit">Einheit</th>
-        <th class="col-price">Einzelpreis</th>
-        {% if not offer.isKleinunternehmer and not offer.isReverseCharge %}<th class="col-vat">USt %</th>{% endif %}
-        <th class="col-total">Gesamt</th>
+        <th class="col-pos">{{ t('col_pos', lang) }}</th>
+        <th class="col-desc">{{ t('col_desc', lang) }}</th>
+        <th class="col-qty">{{ t('col_qty', lang) }}</th>
+        <th class="col-unit">{{ t('col_unit', lang) }}</th>
+        <th class="col-price">{{ t('col_price', lang) }}</th>
+        {% if not offer.isKleinunternehmer and not offer.isReverseCharge %}<th class="col-vat">{{ t('col_vat', lang) }}</th>{% endif %}
+        <th class="col-total">{{ t('col_total', lang) }}</th>
       </tr>
     </thead>
     <tbody>
@@ -89,9 +90,9 @@
             {% endif %}
             {% if it.linePeriodStart and it.linePeriodEnd %}
               {% if it.linePeriodStart == it.linePeriodEnd %}
-            <div class="item-period">Leistungsdatum {{ it.linePeriodStart | date_unix }}</div>
+            <div class="item-period">{{ t('item_period_single', lang) }} {{ it.linePeriodStart | date_unix }}</div>
               {% else %}
-            <div class="item-period">Leistungszeitraum {{ it.linePeriodStart | date_unix }} – {{ it.linePeriodEnd | date_unix }}</div>
+            <div class="item-period">{{ t('item_period_range', lang) }} {{ it.linePeriodStart | date_unix }} – {{ it.linePeriodEnd | date_unix }}</div>
               {% endif %}
             {% endif %}
           </td>
@@ -108,17 +109,17 @@
   <section class="totals-wrap">
     <table class="totals">
       <tr>
-        <th>Zwischensumme</th>
+        <th>{{ t('totals_subtotal', lang) }}</th>
         <td>{{ offer.subtotal | eur(offer.currency) }}</td>
       </tr>
       {% if not offer.isKleinunternehmer and not offer.isReverseCharge %}
         <tr>
-          <th>Umsatzsteuer</th>
+          <th>{{ t('totals_vat', lang) }}</th>
           <td>{{ offer.vatAmount | eur(offer.currency) }}</td>
         </tr>
       {% endif %}
       <tr class="grand">
-        <th>Gesamtbetrag</th>
+        <th>{{ t('totals_grand', lang) }}</th>
         <td>{{ offer.total | eur(offer.currency) }}</td>
       </tr>
     </table>
@@ -129,30 +130,25 @@
   {% endif %}
 
   {% if offer.isReverseCharge %}
-    <p class="callout">
-      Bei Auftragsannahme wird die Rechnung mit dem Hinweis "Steuerschuldnerschaft des Leistungsempfängers" ausgestellt (Reverse Charge).
-    </p>
+    <p class="callout">{{ t('offer_rc_hint', lang) }}</p>
   {% endif %}
 
   <p class="callout">
-    Dieses Angebot ist freibleibend und unverbindlich. Gültig bis {{ offer.validUntil | date_unix }}.
-    Bei Annahme erstellen wir eine entsprechende Rechnung.
+    {{ t('offer_disclaimer', lang, date=offer.validUntil | date_unix) }}
   </p>
 
   {% if offer.skontoPercent and offer.skontoDays and offer.skontoAmountCent %}
   <section class="block">
-    <div class="block-title">Skonto-Angebot</div>
+    <div class="block-title">{{ t('block_skonto_offer', lang) }}</div>
     <p class="skonto-line">
-      Bei Zahlung der späteren Rechnung innerhalb von <strong>{{ offer.skontoDays }} Tagen</strong>
-      ab Rechnungsdatum gewähren wir
-      <strong>{{ "%.1f"|format(offer.skontoPercent) }} %</strong> Skonto.
+      {{ t('skonto_offer_text', lang, days=offer.skontoDays, percent='%.1f'|format(offer.skontoPercent)) }}
     </p>
   </section>
   {% endif %}
 
   {% if offer.notes %}
     <section class="block">
-      <div class="block-title">Hinweise</div>
+      <div class="block-title">{{ t('block_notes', lang) }}</div>
       <div class="notes">{{ offer.notes | replace('\n', '<br>') | safe }}</div>
     </section>
   {% endif %}
@@ -165,15 +161,15 @@
       <div>{{ company.postalCode }} {{ company.city }}</div>
     </div>
     <div class="col">
-      <div class="col-title">Kontakt</div>
+      <div class="col-title">{{ t('footer_contact', lang) }}</div>
       {% if company.email %}<div>{{ company.email }}</div>{% endif %}
       {% if company.phone %}<div>{{ company.phone }}</div>{% endif %}
       {% if company.website %}<div>{{ company.website }}</div>{% endif %}
     </div>
     <div class="col">
-      <div class="col-title">Steuer</div>
-      {% if company.taxNumber %}<div>St-Nr. {{ company.taxNumber }}</div>{% endif %}
-      {% if company.vatId %}<div>USt-IdNr. {{ company.vatId }}</div>{% endif %}
+      <div class="col-title">{{ t('footer_tax', lang) }}</div>
+      {% if company.taxNumber %}<div>{{ t('footer_tax_no', lang) }} {{ company.taxNumber }}</div>{% endif %}
+      {% if company.vatId %}<div>{{ t('footer_vat_id', lang) }} {{ company.vatId }}</div>{% endif %}
     </div>
   </footer>
 

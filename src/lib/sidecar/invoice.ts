@@ -74,6 +74,7 @@ function buildPayload(opts: {
       skontoAmountCent: skonto?.discountCent ?? null,
       skontoDeadline: skonto?.deadlineUnix ?? null,
       amountPaidCent: invoice.amountPaidCent ?? 0,
+      pdfLanguage: invoice.pdfLanguage ?? "de",
     },
     items: items.map((it) => ({
       position: it.position,
