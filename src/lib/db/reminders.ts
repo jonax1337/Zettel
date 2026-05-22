@@ -202,6 +202,7 @@ export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
       skontoPercent: null,
       skontoDays: null,
       amountPaidCent: 0,
+      pdfLanguage: "de" as const,
     },
     customerName: r.customer_name ?? "—",
     daysOverdue: Math.max(0, Math.floor((now - r.due_date) / 86400)),

@@ -95,6 +95,7 @@ export const settings = sqliteTable("settings", {
   defaultSkontoDays: integer("default_skonto_days").notNull().default(7),
   autoBackupIntervalDays: integer("auto_backup_interval_days").notNull().default(0),
   lastAutoBackupAt: integer("last_auto_backup_at"),
+  defaultPdfLanguage: text("default_pdf_language", { enum: ["de", "en"] }).notNull().default("de"),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),
@@ -182,6 +183,7 @@ export const invoices = sqliteTable("invoices", {
   skontoPercent: real("skonto_percent"),
   skontoDays: integer("skonto_days"),
   amountPaidCent: integer("amount_paid_cent").notNull().default(0),
+  pdfLanguage: text("pdf_language", { enum: ["de", "en"] }).notNull().default("de"),
 });
 
 export const invoicePayments = sqliteTable("invoice_payments", {
@@ -198,6 +200,22 @@ export const invoicePayments = sqliteTable("invoice_payments", {
 export type InvoicePayment = typeof invoicePayments.$inferSelect;
 export type InvoicePaymentInsert = typeof invoicePayments.$inferInsert;
 export type InvoicePaymentSource = InvoicePayment["source"];
+
+export type PdfLanguage = "de" | "en";
+
+export const expenseCategories = sqliteTable("expense_categories", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  datevAccountSkr03: text("datev_account_skr03"),
+  datevAccountSkr04: text("datev_account_skr04"),
+  builtin: integer("builtin", { mode: "boolean" }).notNull().default(false),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+});
+
+export type ExpenseCategory = typeof expenseCategories.$inferSelect;
+export type ExpenseCategoryInsert = typeof expenseCategories.$inferInsert;
 
 export const invoiceItems = sqliteTable("invoice_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -294,6 +312,7 @@ export const offers = sqliteTable("offers", {
   servicePeriodEnd: integer("service_period_end"),
   skontoPercent: real("skonto_percent"),
   skontoDays: integer("skonto_days"),
+  pdfLanguage: text("pdf_language", { enum: ["de", "en"] }).notNull().default("de"),
 });
 
 export const offerItems = sqliteTable("offer_items", {
@@ -382,6 +401,7 @@ export const expenseItems = sqliteTable("expense_items", {
   position: integer("position").notNull(),
   description: text("description").notNull().default(""),
   category: text("category"),
+  categoryId: integer("category_id"),
   datevAccount: text("datev_account"),
   quantity: real("quantity").notNull().default(1),
   unit: text("unit").notNull().default("Stk"),

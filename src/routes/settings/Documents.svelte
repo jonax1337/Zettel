@@ -33,6 +33,11 @@
     { value: "minimal", label: "Minimal" },
   ];
 
+  const pdfLanguageItems = [
+    { value: "de", label: "Deutsch" },
+    { value: "en", label: "Englisch" },
+  ];
+
   $effect(() => {
     loadSettings()
       .then((row) => (s = row))
@@ -183,6 +188,19 @@
               <Select bind:value={s.pdfTheme} items={themeItems} />
               <span class="text-xs text-muted-foreground">
                 Beeinflusst nur die visuelle Darstellung der PDF — das eingebettete ZUGFeRD-XML bleibt unverändert.
+              </span>
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+              <Label>Standard-Sprache PDF</Label>
+              <Select
+                items={pdfLanguageItems}
+                value={s.defaultPdfLanguage}
+                onValueChange={(v) => (s!.defaultPdfLanguage = v as "de" | "en")}
+              />
+              <span class="text-xs text-muted-foreground">
+                Vorbelegung für neue Rechnungen und Angebote. Pro Beleg
+                überschreibbar. Das ZUGFeRD-XML bleibt sprach-neutral.
               </span>
             </div>
           </div>

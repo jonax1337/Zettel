@@ -12,9 +12,10 @@
   import type { Customer } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
-  import { Button, Card, Input, Select, Badge, Label, SortableTh } from "$lib/ui";
-  import { Plus, Search } from "@lucide/svelte";
+  import { Button, Card, Input, Select, Badge, Label, Checkbox, SortableTh, BulkActionBar, ConfirmDialog, toast } from "$lib/ui";
+  import { Plus, Search, Send, Ban, Trash2 } from "@lucide/svelte";
   import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
+  import { deleteOffer, markSent as markOfferSent, markRejected } from "$lib/db/offers";
 
   let offers = $state<OfferListRow[]>([]);
   let customers = $state<Customer[]>([]);
@@ -117,6 +118,49 @@
       validUntil: (r) => r.validUntil,
     }),
   );
+
+  let selectedIds = $state<Set<number>>(new Set());
+  let bulkBusy = $state(false);
+  let bulkDeleteConfirmOpen = $state(false);
+
+  const selectedOffers = $derived(sortedOffers.filter((o) => selectedIds.has(o.id)));
+
+  const canBulkMarkSent = $derived(
+    selectedOffers.length > 0 && selectedOffers.every((o) => o.status === "draft"),
+  );
+  const canBulkReject = $derived(
+    selectedOffers.length > 0 && selectedOffers.every((o) => o.status === "sent" || o.status === "draft"),
+  );
+  const canBulkDelete = $derived(
+    selectedOffers.length > 0 &&
+      selectedOffers.every((o) => o.status === "draft" || o.status === "rejected" || o.status === "expired"),
+  );
+
+  function toggleSelect(id: number) {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    selectedIds = next;
+  }
+  function toggleSelectAll() {
+    if (selectedIds.size === sortedOffers.length) selectedIds = new Set();
+    else selectedIds = new Set(sortedOffers.map((o) => o.id));
+  }
+
+  async function bulkAction(label: string, fn: (id: number) => Promise<void>) {
+    bulkBusy = true;
+    try {
+      for (const o of selectedOffers) await fn(o.id);
+      toast.success(`${selectedOffers.length} ${label}`);
+      selectedIds = new Set();
+      await reload();
+    } catch (e) {
+      toast.error("Bulk-Aktion fehlgeschlagen", String(e));
+    } finally {
+      bulkBusy = false;
+      bulkDeleteConfirmOpen = false;
+    }
+  }
 </script>
 
 <header class="mb-6 flex items-end justify-between gap-4">
@@ -169,6 +213,13 @@
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
         <tr>
+          <th class="px-4 py-3 w-10">
+            <Checkbox
+              checked={selectedIds.size > 0 && selectedIds.size === sortedOffers.length}
+              onCheckedChange={toggleSelectAll}
+              aria-label="Alle auswählen"
+            />
+          </th>
           <SortableTh column="number" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Nummer</SortableTh>
           <SortableTh column="issueDate" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Datum</SortableTh>
           <SortableTh column="customer" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Kunde</SortableTh>
@@ -183,6 +234,13 @@
             class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
             onclick={() => push(`/offers/${off.id}`)}
           >
+            <td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
+              <Checkbox
+                checked={selectedIds.has(off.id)}
+                onCheckedChange={() => toggleSelect(off.id)}
+                aria-label={`Angebot ${off.number} auswählen`}
+              />
+            </td>
             <td class="px-4 py-3 font-mono text-xs">{off.number}</td>
             <td class="px-4 py-3 text-muted-foreground">{formatDate(off.issueDate)}</td>
             <td class="px-4 py-3">{off.customerName}</td>
@@ -197,3 +255,33 @@
     </table>
   </Card>
 {/if}
+
+<BulkActionBar count={selectedIds.size} label="Angebot{selectedIds.size === 1 ? '' : 'e'}" onClear={() => (selectedIds = new Set())}>
+  {#if canBulkMarkSent}
+    <Button size="sm" variant="outline" onclick={() => bulkAction('als versandt markiert', markOfferSent)} disabled={bulkBusy}>
+      <Send class="size-3.5" />
+      Versenden
+    </Button>
+  {/if}
+  {#if canBulkReject}
+    <Button size="sm" variant="outline" onclick={() => bulkAction('abgelehnt', markRejected)} disabled={bulkBusy}>
+      <Ban class="size-3.5" />
+      Ablehnen
+    </Button>
+  {/if}
+  {#if canBulkDelete}
+    <Button size="sm" variant="destructive" onclick={() => (bulkDeleteConfirmOpen = true)} disabled={bulkBusy}>
+      <Trash2 class="size-3.5" />
+      Löschen
+    </Button>
+  {/if}
+</BulkActionBar>
+
+<ConfirmDialog
+  bind:open={bulkDeleteConfirmOpen}
+  title="{selectedIds.size} Angebot{selectedIds.size === 1 ? '' : 'e'} löschen?"
+  description="Nur Entwürfe, abgelehnte und abgelaufene Angebote werden gelöscht. Angenommene bleiben unangetastet."
+  confirmLabel="Löschen"
+  destructive
+  onConfirm={() => bulkAction('gelöscht', deleteOffer)}
+/>

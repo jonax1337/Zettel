@@ -40,6 +40,7 @@ type OfferRow = {
   service_period_end: number | null;
   skonto_percent: number | null;
   skonto_days: number | null;
+  pdf_language: string | null;
 };
 
 type OfferItemRow = {
@@ -86,6 +87,7 @@ function mapOffer(r: OfferRow): Offer {
     servicePeriodEnd: r.service_period_end,
     skontoPercent: r.skonto_percent,
     skontoDays: r.skonto_days,
+    pdfLanguage: (r.pdf_language ?? "de") as Offer["pdfLanguage"],
   };
 }
 
@@ -131,6 +133,7 @@ export type OfferFormInput = {
   servicePeriodEnd?: number | null;
   skontoPercent?: number | null;
   skontoDays?: number | null;
+  pdfLanguage?: "de" | "en";
 };
 
 export function computeLineTotal(item: OfferItemInput): number {
@@ -307,8 +310,8 @@ export async function createOffer(input: OfferFormInput): Promise<number> {
       (number, customer_id, customer_snapshot, issue_date, valid_until,
        status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
        notes, intro_text, currency, exchange_rate,
-       service_period_start, service_period_end, skonto_percent, skonto_days)
-     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language)
+     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.customerId,
@@ -328,6 +331,7 @@ export async function createOffer(input: OfferFormInput): Promise<number> {
       input.servicePeriodEnd ?? null,
       input.skontoPercent ?? null,
       input.skontoDays ?? null,
+      input.pdfLanguage ?? settings.defaultPdfLanguage,
     ],
   );
   const id = Number(res.lastInsertId ?? 0);
@@ -364,6 +368,7 @@ export async function updateOffer(
       currency = ?, exchange_rate = ?,
       service_period_start = ?, service_period_end = ?,
       skonto_percent = ?, skonto_days = ?,
+      pdf_language = ?,
       updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -383,6 +388,7 @@ export async function updateOffer(
       input.servicePeriodEnd ?? null,
       input.skontoPercent ?? null,
       input.skontoDays ?? null,
+      input.pdfLanguage ?? existing.offer.pdfLanguage,
       id,
     ],
   );
@@ -496,6 +502,7 @@ export async function convertToInvoice(
     servicePeriodEnd: data.offer.servicePeriodEnd,
     skontoPercent: data.offer.skontoPercent,
     skontoDays: data.offer.skontoDays,
+    pdfLanguage: data.offer.pdfLanguage,
   };
 
   const invoiceId = await createInvoice(invoiceInput);

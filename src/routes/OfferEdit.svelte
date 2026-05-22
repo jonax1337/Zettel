@@ -102,6 +102,12 @@
   let skontoEnabled = $state(false);
   let skontoPercent = $state<number>(2);
   let skontoDays = $state<number>(7);
+  let pdfLanguage = $state<"de" | "en">("de");
+
+  const pdfLanguageItems = [
+    { value: "de", label: "Deutsch" },
+    { value: "en", label: "Englisch" },
+  ];
 
   async function fetchEcbRate() {
     if (currency === "EUR") return;
@@ -173,6 +179,7 @@
             skontoPercent = s.defaultSkontoPercent;
             skontoDays = s.defaultSkontoDays;
           }
+          pdfLanguage = s.defaultPdfLanguage;
         }
       })
       .catch((e) => (error = String(e)));
@@ -217,6 +224,7 @@
             skontoPercent = res.offer.skontoPercent;
             skontoDays = res.offer.skontoDays;
           }
+          pdfLanguage = (res.offer.pdfLanguage ?? "de") as "de" | "en";
           if (res.offer.servicePeriodStart && res.offer.servicePeriodEnd) {
             serviceMode = "period";
             servicePeriodStartIso = toIsoDate(res.offer.servicePeriodStart);
@@ -266,8 +274,9 @@
     next.unit = it.unit;
     next.unitPrice = it.defaultUnitPrice;
     next.priceText = (it.defaultUnitPrice / 100).toFixed(2).replace(".", ",");
-    if (it.descriptionDe) {
-      next.longDescription = it.descriptionDe;
+    const desc = pdfLanguage === "en" && it.descriptionEn ? it.descriptionEn : it.descriptionDe;
+    if (desc) {
+      next.longDescription = desc;
       next.showDetail = true;
     }
     items = [...items, next];
@@ -403,6 +412,7 @@
         servicePeriodEnd: usePeriod ? fromIsoDate(servicePeriodEndIso) : null,
         skontoPercent: skontoEnabled ? skontoPercent : null,
         skontoDays: skontoEnabled ? skontoDays : null,
+        pdfLanguage,
       };
       let savedId: number;
       if (mode === "new") {
@@ -794,6 +804,16 @@
 
     <Card>
       <CardContent class="space-y-4">
+        <div class="flex flex-col gap-1.5 max-w-xs">
+          <Label>Sprache der PDF</Label>
+          <Select
+            items={pdfLanguageItems}
+            value={pdfLanguage}
+            onValueChange={(v) => (pdfLanguage = v as "de" | "en")}
+            disabled={readOnly}
+          />
+        </div>
+
         <div class="flex flex-col gap-1.5">
           <Label>Notizen (intern)</Label>
           <Textarea rows={3} bind:value={notes} disabled={readOnly} />
@@ -849,4 +869,4 @@
   </form>
 {/if}
 
-<CatalogPicker bind:open={catalogPickerOpen} onPick={addFromCatalog} context="offer" />
+<CatalogPicker bind:open={catalogPickerOpen} onPick={addFromCatalog} context="offer" language={pdfLanguage} />

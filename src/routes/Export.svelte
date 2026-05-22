@@ -18,6 +18,7 @@
   } from "$lib/ui";
   import { loadInvoicesForExport } from "$lib/db/invoices";
   import { loadExpensesForExport } from "$lib/db/expenses";
+  import { listCategories as listCuratedCategories, accountForSkr } from "$lib/db/expense-categories";
   import {
     ACCOUNT_MAPS,
     buildDatevCsv,
@@ -60,9 +61,31 @@
       const from = fromIsoDate(dateFromIso);
       const toEnd = fromIsoDate(dateToIso) + 86399; // ganzen Tag inkludieren
       const invoices = includeInvoices ? await loadInvoicesForExport(from, toEnd) : [];
-      const expenses = includeExpenses
+      const rawExpenses = includeExpenses
         ? await loadExpensesForExport(from, toEnd, { includeCancelled })
         : [];
+      // Curated-Category-Override: items mit categoryId bekommen das
+      // SKR-spezifische Konto. Explizites it.datevAccount (Override) gewinnt
+      // weiter — der Picker setzt es aber nur als SKR03-Default, also wenn
+      // der User SKR04 exportiert ohne den Wert manuell zu überschreiben,
+      // nimmt der Resolver hier das SKR04-Konto aus der Kategorie.
+      const categoriesById = new Map<number, Awaited<ReturnType<typeof listCuratedCategories>>[number]>();
+      if (includeExpenses) {
+        const cats = await listCuratedCategories({ includeArchived: true });
+        for (const c of cats) categoriesById.set(c.id, c);
+      }
+      const expenses = rawExpenses.map((e) => ({
+        ...e,
+        items: e.items.map((it) => {
+          if (it.categoryId && !it.datevAccount) {
+            const c = categoriesById.get(it.categoryId);
+            if (c) {
+              return { ...it, datevAccount: accountForSkr(c, skr) };
+            }
+          }
+          return it;
+        }),
+      }));
       const total = invoices.length + expenses.length;
       if (total === 0) {
         toast.error(

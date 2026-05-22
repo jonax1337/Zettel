@@ -61,6 +61,7 @@ type SettingsRow = {
   default_skonto_days: number | null;
   auto_backup_interval_days: number | null;
   last_auto_backup_at: number | null;
+  default_pdf_language: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -124,6 +125,7 @@ function mapSettings(r: SettingsRow): Settings {
     defaultSkontoDays: r.default_skonto_days ?? 7,
     autoBackupIntervalDays: r.auto_backup_interval_days ?? 0,
     lastAutoBackupAt: r.last_auto_backup_at,
+    defaultPdfLanguage: (r.default_pdf_language ?? "de") as Settings["defaultPdfLanguage"],
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -199,6 +201,7 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       default_skonto_days = ?,
       auto_backup_interval_days = ?,
       last_auto_backup_at = ?,
+      default_pdf_language = ?,
       updated_at = unixepoch()
     WHERE id = 1`,
     [
@@ -258,6 +261,7 @@ export async function saveSettings(s: Partial<Settings>): Promise<void> {
       s.defaultSkontoDays ?? 7,
       s.autoBackupIntervalDays ?? 0,
       s.lastAutoBackupAt ?? null,
+      s.defaultPdfLanguage ?? "de",
     ],
   );
 }

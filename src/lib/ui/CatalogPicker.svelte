@@ -12,13 +12,21 @@
     onPick?: (item: CatalogItem) => void;
     /** "invoice" liefert defaultDatevAccount nicht — nur expense-Edit braucht es. */
     context?: "invoice" | "offer" | "recurring" | "expense";
+    /** Sprache der aktiven Rechnung/Angebot — entscheidet welche Beschreibung der Picker zeigt. */
+    language?: "de" | "en";
   };
   let {
     open = $bindable(false),
     onOpenChange,
     onPick,
     context = "invoice",
+    language = "de",
   }: Props = $props();
+
+  function descriptionFor(item: CatalogItem): string {
+    if (language === "en" && item.descriptionEn) return item.descriptionEn;
+    return item.descriptionDe ?? "";
+  }
 
   let query = $state("");
   let results = $state<CatalogItem[]>([]);
@@ -145,8 +153,8 @@
                     <span class="text-[10px] uppercase tracking-wider text-muted-foreground">{item.tags}</span>
                   {/if}
                 </div>
-                {#if item.descriptionDe}
-                  <div class="text-xs text-muted-foreground truncate">{item.descriptionDe}</div>
+                {#if descriptionFor(item)}
+                  <div class="text-xs text-muted-foreground truncate">{descriptionFor(item)}</div>
                 {/if}
               </div>
               <div class="text-right text-xs tabular-nums shrink-0">

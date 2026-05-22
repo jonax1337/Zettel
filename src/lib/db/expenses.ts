@@ -40,6 +40,7 @@ type ExpenseItemRow = {
   position: number;
   description: string;
   category: string | null;
+  category_id: number | null;
   datev_account: string | null;
   quantity: number;
   unit: string;
@@ -83,6 +84,7 @@ function mapItem(r: ExpenseItemRow): ExpenseItem {
     position: r.position,
     description: r.description,
     category: r.category,
+    categoryId: r.category_id,
     datevAccount: r.datev_account,
     quantity: r.quantity,
     unit: r.unit,
@@ -95,6 +97,7 @@ function mapItem(r: ExpenseItemRow): ExpenseItem {
 export type ExpenseItemInput = {
   description: string;
   category: string | null;
+  categoryId?: number | null;
   datevAccount: string | null;
   quantity: number;
   unit: string;
@@ -247,14 +250,15 @@ async function writeItems(expenseId: number, items: ExpenseItemInput[]): Promise
     const line = computeLineTotal(it);
     await execute(
       `INSERT INTO expense_items
-        (expense_id, position, description, category, datev_account,
+        (expense_id, position, description, category, category_id, datev_account,
          quantity, unit, unit_price, vat_rate, line_total)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         expenseId,
         i + 1,
         it.description,
         it.category,
+        it.categoryId ?? null,
         it.datevAccount,
         it.quantity,
         it.unit,

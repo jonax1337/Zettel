@@ -20,7 +20,7 @@
   import { Download, Upload, FlaskConical, History } from "@lucide/svelte";
   import { loadSettings, saveSettings } from "$lib/db/queries";
 
-  const CURRENT_DB_SCHEMA_VERSION = 24;
+  const CURRENT_DB_SCHEMA_VERSION = 26;
 
   let sandbox = $state(false);
   let sandboxBusy = $state(false);
