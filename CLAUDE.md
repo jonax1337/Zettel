@@ -27,7 +27,7 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 - `fs_export.rs` — `save_text_file` (CSV ohne `plugin-fs`), `import_expense_pdf` (kollisionssichere Ablage `~/Documents/Zettel/Eingangsrechnungen/<vendor>/`).
 - `sandbox.rs` — `is_sandbox`/`set_sandbox`, gesteuert über Flag-File `sandbox.flag` im AppData-Dir. Toggle → `plugin-process::relaunch`. `client.ts` wählt die DB-URL beim Open.
 - `exchange.rs` — `fetch_ecb_exchange_rate(currency)`, blocking ureq gegen `eurofxref-daily.xml`, ~8s Timeout.
-- `validator.rs` — ruft die gebundelte KoSIT-Validator-JRE (nur Release-Build).
+- `validator.rs` — E-Rechnungs-Validierung über den gebundelten KoSIT-Validator (**Java**). Extrahiert via Sidecar (`extract_xml_only`) erst die XML aus dem PDF, schreibt sie in eine Temp-Datei und startet Java als CLI-Subprozess (`Command::new(java) -jar validator.jar -s scenarios.xml -r <dir> -o <tmp> <input>`), parst dann den XML-Report (String-Scan: `valid`, Szenario, `failed-assert`-Findings). `resolve_java`: dev `tools/jre/bin/java` → Release `jre/bin/java` aus Resources → System-`java`. Commands: `validator_status`, `validate_einvoice_xml`, `validate_einvoice_pdf`. Nur Release-Build (bzw. dev mit lokalem `tools/jre` + `tools/kosit-validator`). Frontend-Bridge `src/lib/validator.ts`, UI `src/routes/Validate.svelte`. Setup-Skripte: `tools/download-validator.sh` (lädt `validator.jar` + Scenarios), `tools/build-jre.sh` (jlink-minimierte JRE, ~35 MB). Gebundelt via `tauri.bundle.conf.json` (`kosit-validator`, `jre`).
 - `accent.rs` — Accent-Color-Reader (Windows-Registry).
 
 ### Sidecar (`sidecar/`)
@@ -90,6 +90,7 @@ Eine neue Migration `000N_<name>.sql` heißt **immer drei Stellen gleichzeitig a
 | Persistence | `@tauri-apps/plugin-sql` (SQLite); Drizzle nur als Type-Source |
 | PDF | WeasyPrint + Jinja2 (Sidecar) |
 | ZUGFeRD | `factur-x` + `lxml` |
+| E-Rechnung-Validierung | KoSIT-Validator (`validator.jar`, **Java**) auf gebundelter jlink-JRE, von Rust als CLI gespawnt |
 | Money | Cent-Integer (DB) / BigInt fixed-point (EUR-Konversion) |
 | Tests | Vitest (pure TS), Sidecar-Tests in `sidecar/tests/` |
 
