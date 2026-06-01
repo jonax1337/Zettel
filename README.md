@@ -15,6 +15,7 @@ ZUGFeRD- / Factur-X-konforme PDF/A-3 mit eingebettetem EN-16931-XML — lokal, o
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Tailwind](https://img.shields.io/badge/Tailwind-v4-38BDF8?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Java](https://img.shields.io/badge/Java-KoSIT--Validator-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](https://github.com/itplr-kosit/validator)
 [![SQLite](https://img.shields.io/badge/SQLite-local-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org)
 
 [Download](https://github.com/jonax1337/zettel/releases/latest) · [Diskutieren](https://github.com/jonax1337/zettel/discussions) · [Changelog](./CHANGELOG.md) · [Mitmachen](./CONTRIBUTING.md) · [Security](./SECURITY.md)
@@ -65,6 +66,7 @@ Zettel ist das, was dabei rausgekommen ist: ein kleines Desktop-Tool, das **loka
 - **Kleinunternehmer-Modus** mit korrektem `CategoryCode E` und BR-CO-26-konformem `BT-29`-Fallback ohne USt-IdNr.
 - **Reverse-Charge** intra-EU (CategoryCode K) und Drittland (CategoryCode G) inkl. Pflicht-Hinweistexte
 - **Stornorechnungen** als first-class Credit-Notes mit korrektem CII-Schema
+- **Eingebauter KoSIT-Validator** — erzeugte und eingehende Rechnungen direkt in der App gegen die offiziellen XRechnung-Scenarios prüfen, mit Fundstellen-genauem Report (gebundelte JRE, kein System-Java nötig)
 - Mehrere USt-Sätze pro Rechnung (0 %, 7 %, 19 %), Multi-Currency mit eingefrorenem EUR-Wert
 - Drei PDF-Themes (classic / modern / minimal) per CSS-Variablen
 - **PDF auf Deutsch oder Englisch** pro Rechnung wählbar (XML bleibt sprach-neutral nach Norm)
@@ -157,30 +159,33 @@ Bewusst ausgeschlossen — diese Dinge sind im Scope anderer Tools besser aufgeh
 
 ## Architektur
 
+Vier Laufzeiten, sternförmig orchestriert über Rust — Frontend, Python und Java reden nie direkt miteinander:
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Frontend  Svelte 5 (runes) · Tailwind v4 · Bits UI     │
-│            svelte-spa-router (hash)                     │
-└────────────────────────┬────────────────────────────────┘
-                         │ Tauri Commands
-┌────────────────────────┴────────────────────────────────┐
-│  Rust       Tauri 2 · plugin-sql · Updater · ureq       │
-│             AES-256-GCM Backup · Sandbox · ECB-Kurs     │
-└──────────┬──────────────────────────┬───────────────────┘
-           │ spawn(stdio JSON)        │ SQLite
-           ▼                          ▼
-   ┌───────────────────┐      ┌──────────────┐
-   │  Python Sidecar   │      │  zettel.db   │
-   │  WeasyPrint       │      │  (SQLite)    │
-   │  factur-x · lxml  │      └──────────────┘
-   │  pypdf            │
-   └───────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  Frontend  Svelte 5 (runes) · Tailwind v4 · Bits UI         │
+│            svelte-spa-router (hash)                         │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ Tauri Commands (invoke, IPC)
+┌──────────────────────────┴──────────────────────────────────┐
+│  Rust       Tauri 2 · plugin-sql · Updater · ureq           │
+│             AES-256-GCM Backup · Sandbox · ECB-Kurs         │
+└────┬─────────────────┬─────────────────────────┬────────────┘
+     │ SQLite          │ spawn(stdio JSON)        │ spawn(CLI)
+     ▼                 ▼                          ▼
+┌──────────┐  ┌───────────────────┐  ┌───────────────────────┐
+│ zettel.db│  │  Python Sidecar   │  │  Java (gebundelte JRE) │
+│ (SQLite) │  │  WeasyPrint       │  │  KoSIT-Validator       │
+└──────────┘  │  factur-x · lxml  │  │  XRechnung-Scenarios   │
+              │  pypdf            │  └───────────────────────┘
+              └───────────────────┘
 ```
 
-- **Frontend** (`src/`) — Svelte 5 mit Runes, hash-Routing via `svelte-spa-router`, UI als shadcn-Style-Wrapper über Bits UI in `src/lib/ui/`
+- **Frontend** (`src/`) — Svelte 5 mit Runes, hash-Routing via `svelte-spa-router`, UI als shadcn-Style-Wrapper über Bits UI in `src/lib/ui/`. Ruft Rust über Tauri-`invoke()` auf
 - **Persistenz** (`src/lib/db/`) — SQLite direkt via `@tauri-apps/plugin-sql`. Schema-Typen aus Drizzle (nur compile-time), Queries als raw parameterized SQL. Migrations werden compile-time via `include_str!` in den Rust-Layer eingebettet
-- **Rust** (`src-tauri/src/`) — Tauri-Commands, Backup, Crypto, Sandbox, ECB-Wechselkurs, Sidecar-Bridge
-- **Python-Sidecar** (`sidecar/`) — JSON-RPC über stdin/stdout. PDF-Rendering via WeasyPrint + Jinja2, ZUGFeRD-XML via `factur-x`, eingehende PDFs via `factur-x.extract` oder `pypdf`-Heuristik. PyInstaller-gebundelt im Release-Build
+- **Rust** (`src-tauri/src/`) — der zentrale Orchestrator: Tauri-Commands, Backup, Crypto, Sandbox, ECB-Wechselkurs, Sidecar-Bridge (`sidecar.rs`) und Validator-Bridge (`validator.rs`)
+- **Python-Sidecar** (`sidecar/`) — JSON-RPC über stdin/stdout. Rust spawnt pro Aufruf einen frischen Prozess. PDF-Rendering via WeasyPrint + Jinja2, ZUGFeRD-XML via `factur-x`, eingehende PDFs via `factur-x.extract` oder `pypdf`-Heuristik. PyInstaller-gebundelt im Release-Build
+- **Java-Validator** (`tools/kosit-validator`, `tools/jre`) — der offizielle [KoSIT-Validator](https://github.com/itplr-kosit/validator) (`validator.jar`) prüft erzeugte und eingehende E-Rechnungen gegen die XRechnung-Scenarios. Rust extrahiert dazu erst die XML über den Sidecar und startet dann Java als CLI-Subprozess (`java -jar validator.jar …`). Eine per `jlink` minimierte JRE (~35 MB) wird mitgebundelt — **kein System-Java nötig**. Nur im Release-Build aktiv (bzw. in dev mit lokalem `tools/jre` + `tools/kosit-validator`)
 
 Implementierungs-Details und Konventionen: [`CLAUDE.md`](./CLAUDE.md). DATEV-Mapping: [`docs/datev-export.md`](./docs/datev-export.md).
 
@@ -204,10 +209,12 @@ cd ..
 pnpm tauri:dev
 ```
 
-**Release-Build** (mit gebundeltem Sidecar):
+**Release-Build** (mit gebundeltem Sidecar, KoSIT-Validator und JRE):
 
 ```bash
 cd sidecar && python build.py && cd ..
+tools/download-validator.sh   # KoSIT validator.jar + XRechnung-Scenarios
+tools/build-jre.sh            # per jlink minimierte JRE nach tools/jre/
 pnpm tauri:build
 ```
 
