@@ -35,7 +35,7 @@ zeroize = "1.7"
 ureq = "2"
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.52"
+winreg = "0.55"
 
 [profile.release]
 panic = "abort"
