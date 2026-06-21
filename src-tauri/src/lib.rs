@@ -223,6 +223,7 @@ pub fn run() {
             tenants::list_tenants,
             tenants::add_tenant,
             tenants::set_active_tenant,
+            tenants::relocate_active_tenant,
             tenants::remove_tenant,
             exchange::fetch_ecb_exchange_rate,
         ])

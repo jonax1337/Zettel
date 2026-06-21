@@ -169,6 +169,54 @@ pub async fn set_active_tenant(app: AppHandle, id: String) -> Result<(), String>
     write_config(&dir, &cfg)
 }
 
+/// Repoint the **active** tenant to a new DB path. The frontend has already
+/// written a consistent copy there via `VACUUM INTO`; this only updates the
+/// config. For the built-in default it creates a tenant for the moved DB and
+/// activates it (the original local `zettel.db` stays as a backup).
+#[tauri::command]
+pub async fn relocate_active_tenant(
+    app: AppHandle,
+    path: String,
+    label: String,
+) -> Result<(), String> {
+    let path = path.trim().to_string();
+    if path.is_empty() {
+        return Err("Kein Zielpfad.".into());
+    }
+    let dir = app_data_dir(&app)?;
+    let mut cfg = read_config_from(&dir);
+    match cfg.active.clone() {
+        Some(active) if active != DEFAULT_ID => {
+            let t = cfg
+                .tenants
+                .iter_mut()
+                .find(|t| t.id == active)
+                .ok_or_else(|| "Aktiver Tenant nicht gefunden.".to_string())?;
+            t.path = path;
+            let label = label.trim();
+            if !label.is_empty() {
+                t.label = label.to_string();
+            }
+        }
+        _ => {
+            let label = label.trim();
+            let label = if label.is_empty() {
+                "Cloud-DB".to_string()
+            } else {
+                label.to_string()
+            };
+            let id = format!("t{}", now_millis());
+            cfg.tenants.push(Tenant {
+                id: id.clone(),
+                label,
+                path,
+            });
+            cfg.active = Some(id);
+        }
+    }
+    write_config(&dir, &cfg)
+}
+
 #[tauri::command]
 pub async fn remove_tenant(app: AppHandle, id: String) -> Result<(), String> {
     if id == DEFAULT_ID {
