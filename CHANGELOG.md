@@ -6,6 +6,21 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.18.1]
+
+> **Politur zu v0.18.0.** Tenants lassen sich jetzt in einen Cloud-Ordner verschieben, neue DB-Dateien werden nach Firmenname benannt, die PDF-Versionen-Leiste ist kompakter, und die Sidebar unten links zeigt nur noch den Tenant-Switcher.
+
+### Added
+- **Tenant „Verschieben…".** Im Verwalten-Dialog kann die **aktive** Datenbank an einen neuen Ort verschoben werden (z. B. OneDrive für Geräte-Unabhängigkeit). Technisch ein `VACUUM INTO` auf die offene DB (konsistente Kopie, WAL-sicher) → Config zeigt auf den neuen Pfad → Relaunch. Die bisherige lokale Datei bleibt als Sicherung erhalten. Neuer Command `relocate_active_tenant`.
+
+### Changed
+- **DB-Dateiname aus Firmenname/Bezeichnung.** Beim Anlegen oder Verschieben eines Tenants wird der Dateiname aus der Bezeichnung bzw. dem Firmennamen vorgeschlagen (slugify, z. B. `firma-a.db`) statt generisch `zettel.db`.
+- **PDF-Versionen-Leiste kompakter.** Statt einer `Card` (mit `py-6`) jetzt ein schlanker Border-Container mit niedrigen Zeilen; bei nur einer Version entfällt die Kopfzeile. Spürbar flacher in der Rechnungs-Detailansicht.
+- **Sidebar unten links aufgeräumt.** Versions-Anzeige und Theme-Umschalter sind aus der Bottom-Bar verschwunden und in den Tenant-Switcher-Dropdown gewandert (Darstellung + Version als Footer). Unten steht jetzt nur noch der Switcher.
+
+### Migration
+- **Keine DB-Migration** — Schema bleibt auf `user_version = 26`.
+
 ## [0.18.0]
 
 > **Feature-Release.** Positionen lassen sich im Editor frei umsortieren, generierte Rechnungs-PDFs werden versioniert (nichts wird mehr überschrieben), und mehrere getrennte Datenbanken („Tenants") sind über einen Org-Switcher unten in der Sidebar wählbar — inklusive Geräte-Unabhängigkeit über Cloud-Ordner wie OneDrive.

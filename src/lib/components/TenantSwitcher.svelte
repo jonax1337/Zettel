@@ -2,6 +2,10 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { open, save } from "@tauri-apps/plugin-dialog";
+  import { execute } from "$lib/db/client";
+  import { loadSettings } from "$lib/db/queries";
+  import { theme } from "$lib/theme.svelte";
+  import { version as appVersion } from "../../../package.json";
   import {
     Button,
     Input,
@@ -20,6 +24,10 @@
     Database,
     FolderOpen,
     FilePlus2,
+    Upload,
+    Monitor,
+    Sun,
+    Moon,
   } from "@lucide/svelte";
 
   type TenantEntry = {
@@ -30,6 +38,7 @@
   };
 
   let tenants = $state<TenantEntry[]>([]);
+  let companyName = $state("");
   let manageOpen = $state(false);
   let busy = $state(false);
 
@@ -45,6 +54,17 @@
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
 
+  function slugify(s: string): string {
+    const map: Record<string, string> = { ä: "ae", ö: "oe", ü: "ue", ß: "ss" };
+    const base = s
+      .trim()
+      .toLowerCase()
+      .replace(/[äöüß]/g, (m) => map[m] ?? m)
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return base || "zettel";
+  }
+
   async function loadTenants() {
     try {
       tenants = await invoke<TenantEntry[]>("list_tenants");
@@ -53,7 +73,14 @@
     }
   }
 
-  onMount(loadTenants);
+  onMount(async () => {
+    await loadTenants();
+    try {
+      companyName = (await loadSettings()).companyName ?? "";
+    } catch {
+      companyName = "";
+    }
+  });
 
   async function switchTenant(id: string) {
     if (busy) return;
@@ -73,7 +100,7 @@
   async function pickNew() {
     const p = await save({
       title: "Neue Datenbank anlegen",
-      defaultPath: "zettel.db",
+      defaultPath: `${slugify(newLabel || companyName)}.db`,
       filters: [{ name: "SQLite-Datenbank", extensions: ["db"] }],
     });
     if (p) newPath = p;
@@ -102,6 +129,31 @@
       await relaunch();
     } catch (e) {
       toast.error("Tenant konnte nicht angelegt werden", String(e));
+      busy = false;
+    }
+  }
+
+  // Move the *active* DB to a new location (e.g. a cloud folder). Uses
+  // VACUUM INTO for a consistent copy of the open DB; the old local file
+  // stays behind as a backup.
+  async function moveToCloud(t: TenantEntry) {
+    if (busy || !t.current) return;
+    const baseName = t.id === "default" ? companyName || t.label : t.label;
+    const dest = await save({
+      title: "Datenbank verschieben",
+      defaultPath: `${slugify(baseName)}.db`,
+      filters: [{ name: "SQLite-Datenbank", extensions: ["db"] }],
+    });
+    if (!dest) return;
+    busy = true;
+    try {
+      await execute("VACUUM INTO ?", [dest]);
+      const label = t.id === "default" ? companyName || t.label : t.label;
+      await invoke("relocate_active_tenant", { path: dest, label });
+      const { relaunch } = await import("@tauri-apps/plugin-process");
+      await relaunch();
+    } catch (e) {
+      toast.error("Verschieben fehlgeschlagen", String(e));
       busy = false;
     }
   }
@@ -164,11 +216,33 @@
         {/if}
       </DropdownItem>
     {/each}
-    <DropdownSeparator />
     <DropdownItem onSelect={openManage}>
       <Plus class="size-4" />
       <span>Tenants verwalten…</span>
     </DropdownItem>
+
+    <DropdownSeparator />
+    <div class="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      Darstellung
+    </div>
+    <DropdownItem onSelect={() => theme.set("system")}>
+      <Monitor class="size-4" />
+      <span>System</span>
+      {#if theme.mode === "system"}<Check class="ml-auto size-4 text-primary" />{/if}
+    </DropdownItem>
+    <DropdownItem onSelect={() => theme.set("light")}>
+      <Sun class="size-4" />
+      <span>Hell</span>
+      {#if theme.mode === "light"}<Check class="ml-auto size-4 text-primary" />{/if}
+    </DropdownItem>
+    <DropdownItem onSelect={() => theme.set("dark")}>
+      <Moon class="size-4" />
+      <span>Dunkel</span>
+      {#if theme.mode === "dark"}<Check class="ml-auto size-4 text-primary" />{/if}
+    </DropdownItem>
+
+    <DropdownSeparator />
+    <div class="px-2 py-1 text-[10px] text-muted-foreground">v{appVersion} · MIT</div>
   </DropdownMenu>
 </div>
 
@@ -197,7 +271,11 @@
               {t.path || "Lokale Standard-Datenbank"}
             </div>
           </div>
-          {#if !t.current}
+          {#if t.current}
+            <Button variant="outline" size="sm" disabled={busy} onclick={() => moveToCloud(t)} title="Datenbank an einen neuen Ort verschieben (z. B. OneDrive)">
+              <Upload class="size-4" /> Verschieben…
+            </Button>
+          {:else}
             <Button variant="outline" size="sm" disabled={busy} onclick={() => switchTenant(t.id)}>
               Wechseln
             </Button>
@@ -216,6 +294,10 @@
         </div>
       {/each}
     </div>
+
+    <p class="text-[11px] text-muted-foreground">
+      Beim Verschieben bleibt die bisherige lokale Datei als Sicherung erhalten.
+    </p>
 
     <div class="space-y-3 rounded-md border border-dashed p-3">
       <div class="flex items-center gap-2 text-sm font-medium">
@@ -238,6 +320,9 @@
             <FolderOpen class="size-4" /> Vorhandene wählen…
           </Button>
         </div>
+        <p class="text-[11px] text-muted-foreground">
+          Der Dateiname wird aus der Bezeichnung vorgeschlagen.
+        </p>
       </div>
     </div>
   </div>

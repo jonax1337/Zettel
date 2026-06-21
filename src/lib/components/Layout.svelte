@@ -14,17 +14,12 @@
     Package,
     Landmark,
     Settings as SettingsIcon,
-    Monitor,
-    Sun,
-    Moon,
   } from "@lucide/svelte";
-  import { Toaster, DropdownMenu, DropdownItem, Titlebar, CommandPalette } from "$lib/ui";
+  import { Toaster, Titlebar, CommandPalette } from "$lib/ui";
   import { Search } from "@lucide/svelte";
-  import { theme, type ThemeMode } from "$lib/theme.svelte";
   import { cn } from "$lib/utils";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
-  import { version as appVersion } from "../../../package.json";
   import { isSandboxActive } from "$lib/db/client";
   import { loadSettings } from "$lib/db/queries";
   import { maybeRunAutoBackup } from "$lib/utils/auto-backup";
@@ -146,14 +141,6 @@
     return loc === href || loc.startsWith(href + "/");
   }
 
-  const ThemeIcon = $derived(
-    theme.mode === "system" ? Monitor : theme.mode === "light" ? Sun : Moon,
-  );
-  const themeLabel: Record<ThemeMode, string> = {
-    system: "System",
-    light: "Hell",
-    dark: "Dunkel",
-  };
 </script>
 
 <svelte:window onkeydown={onGlobalKey} />
@@ -218,44 +205,6 @@
         </nav>
 
         <TenantSwitcher />
-
-        <div class="p-2 border-t flex items-center justify-between">
-          <span class="px-2 text-[10px] text-muted-foreground">
-            v{appVersion} · MIT
-          </span>
-          <DropdownMenu align="end" side="top">
-            {#snippet trigger()}
-              <button
-                type="button"
-                class="inline-flex items-center justify-center size-8 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-                aria-label="Theme: {themeLabel[theme.mode]}"
-              >
-                <ThemeIcon class="size-4" />
-              </button>
-            {/snippet}
-            <DropdownItem onSelect={() => theme.set("system")}>
-              <Monitor class="size-4" />
-              <span>System</span>
-              {#if theme.mode === "system"}
-                <span class="ml-auto text-xs text-muted-foreground">✓</span>
-              {/if}
-            </DropdownItem>
-            <DropdownItem onSelect={() => theme.set("light")}>
-              <Sun class="size-4" />
-              <span>Hell</span>
-              {#if theme.mode === "light"}
-                <span class="ml-auto text-xs text-muted-foreground">✓</span>
-              {/if}
-            </DropdownItem>
-            <DropdownItem onSelect={() => theme.set("dark")}>
-              <Moon class="size-4" />
-              <span>Dunkel</span>
-              {#if theme.mode === "dark"}
-                <span class="ml-auto text-xs text-muted-foreground">✓</span>
-              {/if}
-            </DropdownItem>
-          </DropdownMenu>
-        </div>
       </aside>
 
     <main class="flex-1 overflow-auto">

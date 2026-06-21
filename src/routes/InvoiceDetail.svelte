@@ -737,43 +737,46 @@
   {/if}
   {#if lastPdfPath && !pdfError}
     {#if pdfVersions.length > 0}
-      <Card class="mb-4">
-        <CardContent class="py-3">
-          <div class="flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <History class="size-4" />
+      <div class="mb-4 rounded-lg border">
+        {#if pdfVersions.length > 1}
+          <div class="flex items-center gap-1.5 border-b px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <History class="size-3.5" />
             PDF-Versionen
-            {#if pdfVersions.length > 1}
-              <Badge variant="secondary" class="normal-case">{pdfVersions.length}</Badge>
-            {/if}
+            <Badge variant="secondary" class="ml-auto">{pdfVersions.length}</Badge>
           </div>
-          <ul class="divide-y divide-border/60 text-sm">
-            {#each pdfVersions as v (v.path)}
-              <li class="flex items-center justify-between gap-3 py-1.5">
-                <div class="flex items-center gap-2 min-w-0">
-                  <Clock class="size-3.5 text-muted-foreground shrink-0" />
-                  <span class="tabular-nums">{formatVersionTime(v.modifiedUnix)}</span>
-                  {#if v.current}
-                    <Badge variant="outline">Aktuell</Badge>
-                  {/if}
-                </div>
-                <div class="flex items-center gap-1 shrink-0">
-                  <Button variant="ghost" size="sm" onclick={() => openPath(v.path)}>
-                    <FileText class="size-4" /> Öffnen
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onclick={() => revealItemInDir(v.path)}
-                    title="Im Ordner zeigen"
-                  >
-                    <FolderOpen class="size-4" />
-                  </Button>
-                </div>
-              </li>
-            {/each}
-          </ul>
-        </CardContent>
-      </Card>
+        {/if}
+        <ul class="divide-y divide-border/60">
+          {#each pdfVersions as v (v.path)}
+            <li class="flex items-center justify-between gap-3 px-3 py-1.5 text-sm">
+              <div class="flex min-w-0 items-center gap-2">
+                <Clock class="size-3.5 shrink-0 text-muted-foreground" />
+                <span class="tabular-nums text-muted-foreground">{formatVersionTime(v.modifiedUnix)}</span>
+                {#if v.current && pdfVersions.length > 1}
+                  <Badge variant="outline">Aktuell</Badge>
+                {/if}
+              </div>
+              <div class="flex shrink-0 items-center gap-0.5">
+                <button
+                  type="button"
+                  onclick={() => openPath(v.path)}
+                  class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  title="Öffnen"
+                >
+                  <FileText class="size-3.5" /> Öffnen
+                </button>
+                <button
+                  type="button"
+                  onclick={() => revealItemInDir(v.path)}
+                  class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  title="Im Ordner zeigen"
+                >
+                  <FolderOpen class="size-3.5" />
+                </button>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      </div>
     {:else}
       <p class="text-xs text-muted-foreground mb-4 font-mono">PDF: {lastPdfPath}</p>
     {/if}
