@@ -64,12 +64,26 @@ jobs:
 
       - name: Install GTK3 runtime (Windows)
         if: matrix.os == 'windows-latest'
+        timeout-minutes: 12
         shell: pwsh
         run: |
           $url = "https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer/releases/download/2022-01-04/gtk3-runtime-3.24.31-2022-01-04-ts-win64.exe"
           $exe = "$env:RUNNER_TEMP\gtk-runtime.exe"
-          Invoke-WebRequest -Uri $url -OutFile $exe
-          Start-Process -FilePath $exe -ArgumentList "/S" -Wait
+          # Download with a per-attempt timeout + retries. A bare Invoke-WebRequest
+          # has no timeout and can stall forever on a flaky CDN connection — that
+          # was hanging the whole release build.
+          $ok = $false
+          for ($i = 1; $i -le 4; $i++) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $exe -TimeoutSec 120
+              if ((Test-Path $exe) -and (Get-Item $exe).Length -gt 1MB) { $ok = $true; break }
+            } catch { Write-Host "GTK download attempt $i failed: $_" }
+            Start-Sleep -Seconds 10
+          }
+          if (-not $ok) { throw "GTK runtime download failed after 4 attempts" }
+          # Silent install, but never wait forever — kill + fail if it stalls.
+          $p = Start-Process -FilePath $exe -ArgumentList "/S" -PassThru
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "GTK installer timed out" }
           echo "C:\Program Files\GTK3-Runtime Win64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       # ---------- Toolchains ----------
