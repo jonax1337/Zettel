@@ -6,6 +6,19 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.18.2]
+
+> **Fix zu v0.18.1.** Lange Datenbank-Pfade sprengen nicht mehr das Layout, der Tenant-Switcher unten in der Sidebar ist aufgeräumt.
+
+### Fixed
+- **Pfad-Overflow im Tenant-Switcher und Verwalten-Dialog.** Lange DB-Pfade verbreiterten die UI, weil der `Menu.Trigger`-Wrapper content-breit ist und `truncate` so ins Leere lief. `DropdownMenu` erhält ein optionales `triggerClass`; der Switcher-Trigger ist nun `w-full`, das Label wird abgeschnitten und der **vollständige Pfad erscheint nur noch im Hover-Tooltip**. Im Dialog werden Pfade ebenfalls abgeschnitten (Hover zeigt den vollen Pfad), `min-w-0` am Container verhindert das Aufblähen.
+
+### Changed
+- **Tenant-Switcher aufgeräumt.** Der Theme-Umschalter ist aus dem Switcher entfernt (Darstellung wird in den Einstellungen geändert). Der Divider über dem Switcher ist weg; der Trigger ist jetzt ein über fast die volle Breite gestreckter Button mit `border` + abgerundeten Ecken.
+
+### Migration
+- **Keine DB-Migration** — Schema bleibt auf `user_version = 26`.
+
 ## [0.18.1]
 
 > **Politur zu v0.18.0.** Tenants lassen sich jetzt in einen Cloud-Ordner verschieben, neue DB-Dateien werden nach Firmenname benannt, die PDF-Versionen-Leiste ist kompakter, und die Sidebar unten links zeigt nur noch den Tenant-Switcher.
