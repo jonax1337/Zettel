@@ -21,7 +21,7 @@
   import { centsToEur } from "$lib/utils/money";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
-  import { generateInvoicePdf } from "$lib/sidecar/invoice";
+  import { generateInvoicePdf, listPdfVersions, type PdfVersion } from "$lib/sidecar/invoice";
   import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
   import {
     Button,
@@ -58,6 +58,8 @@
     ShieldCheck,
     ChevronDown,
     Plus,
+    History,
+    Clock,
   } from "@lucide/svelte";
   import { execute } from "$lib/db/client";
   import { validatePdf } from "$lib/validator";
@@ -78,7 +80,27 @@
   let busy = $state(false);
   let generating = $state(false);
   let lastPdfPath = $state<string | null>(null);
+  let pdfVersions = $state<PdfVersion[]>([]);
   let pdfError = $state<string | null>(null);
+
+  async function refreshPdfVersions() {
+    if (!lastPdfPath) {
+      pdfVersions = [];
+      return;
+    }
+    try {
+      pdfVersions = await listPdfVersions(lastPdfPath);
+    } catch {
+      pdfVersions = [];
+    }
+  }
+
+  function formatVersionTime(unix: number): string {
+    return new Date(unix * 1000).toLocaleString("de-DE", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  }
   let confirmDeleteOpen = $state(false);
   let confirmCreditNoteOpen = $state(false);
   let creatingCreditNote = $state(false);
@@ -168,6 +190,7 @@
       invoice = res.invoice;
       items = res.items;
       lastPdfPath = res.invoice.pdfPath;
+      await refreshPdfVersions();
 
       const [origRes, cnRes] = await Promise.all([
         res.invoice.correctsInvoiceId
@@ -713,7 +736,47 @@
     </Card>
   {/if}
   {#if lastPdfPath && !pdfError}
-    <p class="text-xs text-muted-foreground mb-4 font-mono">PDF: {lastPdfPath}</p>
+    {#if pdfVersions.length > 0}
+      <Card class="mb-4">
+        <CardContent class="py-3">
+          <div class="flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <History class="size-4" />
+            PDF-Versionen
+            {#if pdfVersions.length > 1}
+              <Badge variant="secondary" class="normal-case">{pdfVersions.length}</Badge>
+            {/if}
+          </div>
+          <ul class="divide-y divide-border/60 text-sm">
+            {#each pdfVersions as v (v.path)}
+              <li class="flex items-center justify-between gap-3 py-1.5">
+                <div class="flex items-center gap-2 min-w-0">
+                  <Clock class="size-3.5 text-muted-foreground shrink-0" />
+                  <span class="tabular-nums">{formatVersionTime(v.modifiedUnix)}</span>
+                  {#if v.current}
+                    <Badge variant="outline">Aktuell</Badge>
+                  {/if}
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                  <Button variant="ghost" size="sm" onclick={() => openPath(v.path)}>
+                    <FileText class="size-4" /> Öffnen
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onclick={() => revealItemInDir(v.path)}
+                    title="Im Ordner zeigen"
+                  >
+                    <FolderOpen class="size-4" />
+                  </Button>
+                </div>
+              </li>
+            {/each}
+          </ul>
+        </CardContent>
+      </Card>
+    {:else}
+      <p class="text-xs text-muted-foreground mb-4 font-mono">PDF: {lastPdfPath}</p>
+    {/if}
   {/if}
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">

@@ -31,6 +31,7 @@
   import { FlaskConical } from "@lucide/svelte";
   import { push } from "svelte-spa-router";
   import OnboardingWizard from "./OnboardingWizard.svelte";
+  import TenantSwitcher from "./TenantSwitcher.svelte";
 
   let sandbox = $state(false);
   let paletteOpen = $state(false);
@@ -215,6 +216,8 @@
             </div>
           {/each}
         </nav>
+
+        <TenantSwitcher />
 
         <div class="p-2 border-t flex items-center justify-between">
           <span class="px-2 text-[10px] text-muted-foreground">

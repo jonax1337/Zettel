@@ -6,6 +6,18 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.18.0]
+
+> **Feature-Release.** Positionen lassen sich im Editor frei umsortieren, generierte Rechnungs-PDFs werden versioniert (nichts wird mehr überschrieben), und mehrere getrennte Datenbanken („Tenants") sind über einen Org-Switcher unten in der Sidebar wählbar — inklusive Geräte-Unabhängigkeit über Cloud-Ordner wie OneDrive.
+
+### Added
+- **Positions-Reihenfolge umsortierbar (Rechnungen + Angebote).** Jede Positions-Zeile hat jetzt ein Drag-Handle (Greifen + Ziehen, mit Flip-Animation) sowie Hoch/Runter-Pfeile als tastatur-/klickfreundliche Alternative. Die `position`-Spalte wird beim Speichern weiterhin aus der Array-Reihenfolge vergeben — keine Schema-Änderung nötig. Bei akzeptierten (read-only) Angeboten sind die Controls deaktiviert.
+- **PDF-Versionierung für Rechnungen.** Beim Neu-Erzeugen einer Rechnungs-PDF wird die bisherige Datei nicht mehr überschrieben, sondern nach `Rechnungen/Versionen/<Nummer>__<Zeitstempel>.pdf` archiviert; `<Nummer>.pdf` bleibt stets die aktuelle Version. Die Rechnungs-Detailansicht zeigt einen „PDF-Versionen"-Block mit allen Versionen (Datum/Uhrzeit, Öffnen, im Ordner zeigen) — ein Audit-Trail besonders für Rechnungen, die in mehreren Schritten bezahlt und dabei mehrfach erzeugt werden. Neue Tauri-Commands `archive_pdf_version` / `list_pdf_versions` in `fs_export.rs`.
+- **Mehrere Datenbanken / Tenants mit Org-Switcher.** Unten links in der Sidebar gibt es einen Avatar-/Org-Switcher (shadcn-Stil): zwischen benannten Tenants wechseln (jeder mit eigener DB-Datei) und neue anlegen. Wechsel schreibt die Auswahl in `tenants.json` und startet die App neu (wie der Sandbox-Toggle). DB-Datei in einem Cloud-Ordner (OneDrive o. ä.) ablegen = geräteübergreifend nutzbar (Caveat: nicht gleichzeitig auf zwei Geräten öffnen). Neues Rust-Modul `tenants.rs`; der aktive Custom-DB-Pfad wird beim Start als Migrations-URL registriert (exakter String-Match mit `client.ts`-`Database.load`). Sandbox hat weiterhin Vorrang.
+
+### Migration
+- **Keine DB-Migration** — Schema bleibt auf `user_version = 26`. Alle drei Features kommen ohne Schema-Änderung aus (Positions-Reihenfolge nutzt die bestehende Spalte, PDF-Versionen leben im Dateisystem, Tenant-Auswahl in einer JSON-Config).
+
 ## [0.17.0]
 
 > **Polish-Release.** Detail-Schliff an der UX der drei Editor-Screens — der unschöne Inline-Period-Picker auf Positions-Ebene ist gegen einen kompakten Popover mit Tab-Switcher (Einzeltag/Zeitraum) ausgetauscht. Dazu eine größere Test-Investition (Vitest +47, Pytest +19, Pytest-Stdin-Bug behoben) und die DB-Math-Module dedupliziert.
