@@ -6,6 +6,14 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.18.4]
+
+### Changed
+- **Tenant-Switcher ohne Avatar-Icon.** Das führende Initialen-Icon vor den Tenants ist entfernt — im Sidebar-Trigger, in den Dropdown-Einträgen und im Verwalten-Dialog.
+
+### Migration
+- **Keine DB-Migration** — Schema bleibt auf `user_version = 26`.
+
 ## [0.18.3]
 
 > **Hotfix.** Die E-Rechnungs-Validierung schlug in installierten Builds auf Windows immer fehl — der gebündelte Validator wird jetzt korrekt aufgerufen.
