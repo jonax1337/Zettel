@@ -4,7 +4,6 @@
   import { open, save } from "@tauri-apps/plugin-dialog";
   import { execute } from "$lib/db/client";
   import { loadSettings } from "$lib/db/queries";
-  import { theme } from "$lib/theme.svelte";
   import { version as appVersion } from "../../../package.json";
   import {
     Button,
@@ -25,9 +24,6 @@
     FolderOpen,
     FilePlus2,
     Upload,
-    Monitor,
-    Sun,
-    Moon,
   } from "@lucide/svelte";
 
   type TenantEntry = {
@@ -175,26 +171,21 @@
   }
 </script>
 
-<div class="p-2 border-t">
-  <DropdownMenu align="start" side="top" class="w-56">
+<div class="p-2">
+  <DropdownMenu align="start" side="top" class="w-56" triggerClass="w-full min-w-0">
     {#snippet trigger()}
       <button
         type="button"
-        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent transition-colors"
-        title="Tenant wechseln"
+        class="flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left hover:bg-accent transition-colors"
+        title={current?.path || "Lokale Datenbank"}
       >
         <span
           class="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary text-[11px] font-semibold"
         >
           {initials(current?.label ?? "Standard")}
         </span>
-        <span class="min-w-0 flex-1">
-          <span class="block truncate text-sm font-medium leading-tight">
-            {current?.label ?? "Standard"}
-          </span>
-          <span class="block truncate text-[10px] text-muted-foreground leading-tight">
-            {current && current.path ? current.path : "Lokale Datenbank"}
-          </span>
+        <span class="min-w-0 flex-1 truncate text-sm font-medium">
+          {current?.label ?? "Standard"}
         </span>
         <ChevronsUpDown class="size-4 shrink-0 text-muted-foreground" />
       </button>
@@ -210,35 +201,15 @@
         >
           {initials(t.label)}
         </span>
-        <span class="truncate">{t.label}</span>
+        <span class="min-w-0 flex-1 truncate">{t.label}</span>
         {#if t.current}
-          <Check class="ml-auto size-4 text-primary" />
+          <Check class="ml-auto size-4 shrink-0 text-primary" />
         {/if}
       </DropdownItem>
     {/each}
     <DropdownItem onSelect={openManage}>
       <Plus class="size-4" />
       <span>Tenants verwalten…</span>
-    </DropdownItem>
-
-    <DropdownSeparator />
-    <div class="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-      Darstellung
-    </div>
-    <DropdownItem onSelect={() => theme.set("system")}>
-      <Monitor class="size-4" />
-      <span>System</span>
-      {#if theme.mode === "system"}<Check class="ml-auto size-4 text-primary" />{/if}
-    </DropdownItem>
-    <DropdownItem onSelect={() => theme.set("light")}>
-      <Sun class="size-4" />
-      <span>Hell</span>
-      {#if theme.mode === "light"}<Check class="ml-auto size-4 text-primary" />{/if}
-    </DropdownItem>
-    <DropdownItem onSelect={() => theme.set("dark")}>
-      <Moon class="size-4" />
-      <span>Dunkel</span>
-      {#if theme.mode === "dark"}<Check class="ml-auto size-4 text-primary" />{/if}
     </DropdownItem>
 
     <DropdownSeparator />
@@ -251,7 +222,7 @@
   title="Tenants"
   description="Mehrere getrennte Datenbanken — z. B. pro Mandant. Lege die DB-Datei in einem Cloud-Ordner (OneDrive o. ä.) ab, um sie geräteübergreifend zu nutzen. Wichtig: nicht gleichzeitig auf zwei Geräten öffnen."
 >
-  <div class="space-y-4">
+  <div class="min-w-0 space-y-4">
     <div class="space-y-1">
       {#each tenants as t (t.id)}
         <div class="flex items-center gap-2 rounded-md border px-3 py-2">
@@ -267,7 +238,10 @@
                 <span class="ml-1 text-[10px] font-normal text-primary">· aktiv</span>
               {/if}
             </div>
-            <div class="truncate text-[10px] text-muted-foreground font-mono">
+            <div
+              class="truncate text-[10px] text-muted-foreground font-mono"
+              title={t.path || "Lokale Standard-Datenbank"}
+            >
               {t.path || "Lokale Standard-Datenbank"}
             </div>
           </div>
@@ -310,7 +284,7 @@
       <div class="space-y-1.5">
         <Label>Datenbank-Datei</Label>
         {#if newPath}
-          <div class="truncate text-xs text-muted-foreground font-mono">{newPath}</div>
+          <div class="truncate text-xs text-muted-foreground font-mono" title={newPath}>{newPath}</div>
         {/if}
         <div class="flex gap-2">
           <Button variant="outline" size="sm" onclick={pickNew}>
