@@ -7,6 +7,7 @@ mod exchange;
 mod sandbox;
 mod fs_export;
 mod sidecar;
+mod tenants;
 mod validator;
 
 fn build_migrations() -> Vec<Migration> {
@@ -183,10 +184,17 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(
-            tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:zettel.db", build_migrations())
-                .add_migrations("sqlite:zettel-sandbox.db", build_migrations())
-                .build(),
+            {
+                let mut sql = tauri_plugin_sql::Builder::default()
+                    .add_migrations("sqlite:zettel.db", build_migrations())
+                    .add_migrations("sqlite:zettel-sandbox.db", build_migrations());
+                // The active custom-tenant DB needs its migrations registered
+                // under its exact URL string (read from config before startup).
+                if let Some(url) = tenants::active_custom_db_url_static() {
+                    sql = sql.add_migrations(&url, build_migrations());
+                }
+                sql.build()
+            },
         )
         .invoke_handler(tauri::generate_handler![
             sidecar::generate_invoice,
@@ -198,6 +206,8 @@ pub fn run() {
             sidecar::parse_bank_statement,
             fs_export::save_text_file,
             fs_export::import_expense_pdf,
+            fs_export::archive_pdf_version,
+            fs_export::list_pdf_versions,
             backup::snapshot_db_path,
             backup::auto_backup_target,
             backup::bundle_backup,
@@ -209,6 +219,11 @@ pub fn run() {
             validator::validate_einvoice_pdf,
             sandbox::is_sandbox,
             sandbox::set_sandbox,
+            tenants::get_active_db_url,
+            tenants::list_tenants,
+            tenants::add_tenant,
+            tenants::set_active_tenant,
+            tenants::remove_tenant,
             exchange::fetch_ecb_exchange_rate,
         ])
         .setup(|_app| Ok(()))

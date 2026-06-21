@@ -142,6 +142,13 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
     throw new Error("Customer snapshot is corrupt — cannot render PDF.");
   }
   const outputPath = await buildOutputPath(data.invoice);
+  // Preserve the previous PDF (if any) before the sidecar overwrites it, so
+  // every generation stays available as a version (audit trail).
+  try {
+    await invoke("archive_pdf_version", { path: outputPath });
+  } catch {
+    // Non-fatal: a failed archive must never block PDF generation.
+  }
   let correctsInvoice: { number: string; issueDate: number } | null = null;
   if (data.invoice.isCreditNote && data.invoice.correctsInvoiceId) {
     const orig = await getInvoice(data.invoice.correctsInvoiceId);
@@ -181,6 +188,17 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
     );
   }
   return response;
+}
+
+export type PdfVersion = {
+  path: string;
+  modifiedUnix: number;
+  current: boolean;
+};
+
+/** All preserved versions of an invoice PDF (current + archived), newest first. */
+export async function listPdfVersions(pdfPath: string): Promise<PdfVersion[]> {
+  return invoke<PdfVersion[]>("list_pdf_versions", { path: pdfPath });
 }
 
 export async function pingSidecar(): Promise<SidecarResponse> {

@@ -40,7 +40,8 @@
     Select,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2, AlertTriangle, CalendarRange, FileText, X, Package } from "@lucide/svelte";
+  import { ArrowLeft, Plus, Trash2, AlertTriangle, CalendarRange, FileText, X, Package, GripVertical, ChevronUp, ChevronDown } from "@lucide/svelte";
+  import { flip } from "svelte/animate";
   import type { CatalogItem } from "$lib/db/schema";
 
   type Props = {
@@ -74,14 +75,18 @@
   let correctsInvoiceId = $state<number | null>(null);
 
   type ItemUI = InvoiceItemInput & {
+    uid: number;
     priceText: string;
     longDescription: string;
     periodStartIso: string;
     periodEndIso: string;
     showDetail: boolean;
   };
+  // Stable per-row id so keyed {#each} + animate:flip survive reordering.
+  let itemUid = 0;
   function emptyItem(vatRate = 0): ItemUI {
     return {
+      uid: ++itemUid,
       description: "",
       quantity: 1,
       unit: "Stk",
@@ -240,6 +245,7 @@
           }
           pdfLanguage = (res.invoice.pdfLanguage ?? "de") as "de" | "en";
           items = res.items.map((it) => ({
+            uid: ++itemUid,
             description: it.description,
             quantity: it.quantity,
             unit: it.unit,
@@ -280,6 +286,39 @@
 
   function removeItem(idx: number) {
     items = items.filter((_, i) => i !== idx);
+  }
+
+  function moveItem(from: number, to: number) {
+    if (from === to || to < 0 || to >= items.length) return;
+    const next = [...items];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    items = next;
+  }
+  function moveUp(idx: number) {
+    moveItem(idx, idx - 1);
+  }
+  function moveDown(idx: number) {
+    moveItem(idx, idx + 1);
+  }
+
+  let dragIndex = $state<number | null>(null);
+  let dragOverIndex = $state<number | null>(null);
+  function onDragStart(idx: number) {
+    dragIndex = idx;
+  }
+  function onDragOver(e: DragEvent, idx: number) {
+    e.preventDefault();
+    dragOverIndex = idx;
+  }
+  function onDrop(idx: number) {
+    if (dragIndex !== null) moveItem(dragIndex, idx);
+    dragIndex = null;
+    dragOverIndex = null;
+  }
+  function onDragEnd() {
+    dragIndex = null;
+    dragOverIndex = null;
   }
 
   function onPriceBlur(idx: number) {
@@ -618,7 +657,7 @@
         <table class="w-full text-sm">
           <thead class="bg-muted/40 text-left">
             <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-              <th class="px-3 py-2 w-10 font-medium">#</th>
+              <th class="px-3 py-2 w-14 font-medium">#</th>
               <th class="px-3 py-2 font-medium">Beschreibung</th>
               <th class="px-3 py-2 w-20 font-medium">Menge</th>
               <th class="px-3 py-2 w-20 font-medium">Einheit</th>
@@ -627,13 +666,34 @@
                 <th class="px-3 py-2 w-24 font-medium">USt</th>
               {/if}
               <th class="px-3 py-2 w-28 font-medium text-right">Summe</th>
-              <th class="px-3 py-2 w-10 font-medium"></th>
+              <th class="px-3 py-2 w-24 font-medium"></th>
             </tr>
           </thead>
           <tbody>
-            {#each items as it, idx (idx)}
-              <tr class="border-t">
-                <td class="px-3 py-2 text-xs text-muted-foreground align-top pt-3">{idx + 1}</td>
+            {#each items as it, idx (it.uid)}
+              <tr
+                class="border-t {dragOverIndex === idx && dragIndex !== idx ? 'bg-accent/40' : ''}"
+                class:opacity-50={dragIndex === idx}
+                animate:flip={{ duration: 150 }}
+                ondragover={(e) => onDragOver(e, idx)}
+                ondrop={() => onDrop(idx)}
+              >
+                <td class="px-2 py-2 align-top">
+                  <div class="flex items-center gap-1">
+                    <button
+                      type="button"
+                      draggable="true"
+                      ondragstart={() => onDragStart(idx)}
+                      ondragend={onDragEnd}
+                      class="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-foreground transition-colors"
+                      title="Ziehen zum Sortieren"
+                      aria-label="Position verschieben"
+                    >
+                      <GripVertical class="size-4" />
+                    </button>
+                    <span class="text-xs text-muted-foreground tabular-nums">{idx + 1}</span>
+                  </div>
+                </td>
                 <td class="px-2 py-1.5">
                   <Input bind:value={it.description} required />
                   {#if it.showDetail}
@@ -713,15 +773,39 @@
                   {formatMoney(computeLineTotal(it), currency)}
                 </td>
                 <td class="px-2 py-1.5 text-right align-top pt-1.5">
-                  <button
-                    type="button"
-                    onclick={() => removeItem(idx)}
-                    disabled={items.length === 1}
-                    class="inline-flex items-center justify-center size-8 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                    title="Position entfernen"
-                  >
-                    <Trash2 class="size-4" />
-                  </button>
+                  <div class="inline-flex items-center gap-0.5">
+                    <div class="flex flex-col">
+                      <button
+                        type="button"
+                        onclick={() => moveUp(idx)}
+                        disabled={idx === 0}
+                        class="inline-flex items-center justify-center size-5 rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:pointer-events-none transition-colors"
+                        title="Nach oben"
+                        aria-label="Position nach oben"
+                      >
+                        <ChevronUp class="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onclick={() => moveDown(idx)}
+                        disabled={idx === items.length - 1}
+                        class="inline-flex items-center justify-center size-5 rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:pointer-events-none transition-colors"
+                        title="Nach unten"
+                        aria-label="Position nach unten"
+                      >
+                        <ChevronDown class="size-3.5" />
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onclick={() => removeItem(idx)}
+                      disabled={items.length === 1}
+                      class="inline-flex items-center justify-center size-8 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                      title="Position entfernen"
+                    >
+                      <Trash2 class="size-4" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             {/each}

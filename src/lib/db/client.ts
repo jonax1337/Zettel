@@ -17,8 +17,15 @@ async function resolveSandbox(): Promise<boolean> {
 export function getDb(): Promise<Database> {
   if (!dbPromise) {
     dbPromise = (async () => {
-      const sandbox = await resolveSandbox();
-      const url = sandbox ? "sqlite:zettel-sandbox.db" : "sqlite:zettel.db";
+      // Active DB URL honors sandbox precedence + the selected tenant. The
+      // string must match a migration registration in lib.rs byte-for-byte.
+      let url = "sqlite:zettel.db";
+      try {
+        url = await invoke<string>("get_active_db_url");
+      } catch {
+        const sandbox = await resolveSandbox();
+        url = sandbox ? "sqlite:zettel-sandbox.db" : "sqlite:zettel.db";
+      }
       return Database.load(url);
     })();
   }

@@ -3,7 +3,7 @@
 Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tauri 2 + Svelte 5 + Python sidecar.** ZUGFeRD/Factur-X PDF/A-3 output. Release-Historie in `CHANGELOG.md` — hier nicht duplizieren.
 
 ## Current state
-- **Released:** v0.16.1 on `main`. Auto-Update aktiv seit v0.4.3.
+- **Released:** v0.17.0 on `main`. Auto-Update aktiv seit v0.4.3. v0.18.0 (Positions-Reorder, PDF-Versionierung, Multi-DB-Tenants) in Vorbereitung.
 - **DB schema:** `user_version = 26` (letzte Migration `0025_v0.16_expense_categories.sql`).
 - **Dev-Linie:** neue Arbeit auf `release/vX.Y`-Branches (aktuell `release/v0.17`).
 - **Test-Suite:** 134 Vitest-Cases (`pnpm test`) + 71 Pytest-Cases (`sidecar/tests/`). Pure-Math (Totals/Tax/Skonto/Currency/Date/DATEV) ist voll abgedeckt, Sidecar deckt ZUGFeRD-XML-Goldens + KoSIT-Validator-Roundtrip + i18n ab.
