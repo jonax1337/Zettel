@@ -43,13 +43,6 @@
 
   const current = $derived(tenants.find((t) => t.current) ?? null);
 
-  function initials(label: string): string {
-    const parts = label.trim().split(/\s+/).filter(Boolean);
-    if (parts.length === 0) return "?";
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-
   function slugify(s: string): string {
     const map: Record<string, string> = { ä: "ae", ö: "oe", ü: "ue", ß: "ss" };
     const base = s
@@ -179,11 +172,6 @@
         class="flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left hover:bg-accent transition-colors"
         title={current?.path || "Lokale Datenbank"}
       >
-        <span
-          class="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary text-[11px] font-semibold"
-        >
-          {initials(current?.label ?? "Standard")}
-        </span>
         <span class="min-w-0 flex-1 truncate text-sm font-medium">
           {current?.label ?? "Standard"}
         </span>
@@ -196,11 +184,6 @@
     </div>
     {#each tenants as t (t.id)}
       <DropdownItem onSelect={() => switchTenant(t.id)}>
-        <span
-          class="flex size-5 shrink-0 items-center justify-center rounded bg-primary/10 text-primary text-[9px] font-semibold"
-        >
-          {initials(t.label)}
-        </span>
         <span class="min-w-0 flex-1 truncate">{t.label}</span>
         {#if t.current}
           <Check class="ml-auto size-4 shrink-0 text-primary" />
@@ -226,11 +209,6 @@
     <div class="space-y-1">
       {#each tenants as t (t.id)}
         <div class="flex items-center gap-2 rounded-md border px-3 py-2">
-          <span
-            class="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary text-[11px] font-semibold"
-          >
-            {initials(t.label)}
-          </span>
           <div class="min-w-0 flex-1">
             <div class="truncate text-sm font-medium">
               {t.label}
