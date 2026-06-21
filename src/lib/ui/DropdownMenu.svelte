@@ -9,13 +9,21 @@
     align?: "start" | "center" | "end";
     side?: "top" | "right" | "bottom" | "left";
     class?: string;
+    triggerClass?: string;
   };
 
-  let { trigger, children, align = "end", side = "bottom", class: klass }: Props = $props();
+  let {
+    trigger,
+    children,
+    align = "end",
+    side = "bottom",
+    class: klass,
+    triggerClass,
+  }: Props = $props();
 </script>
 
 <Menu.Root>
-  <Menu.Trigger>
+  <Menu.Trigger class={triggerClass}>
     {@render trigger()}
   </Menu.Trigger>
   <Menu.Portal>
