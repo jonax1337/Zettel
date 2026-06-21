@@ -6,6 +6,17 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.18.3]
+
+> **Hotfix.** Die E-Rechnungs-Validierung schlug in installierten Builds auf Windows immer fehl — der gebündelte Validator wird jetzt korrekt aufgerufen.
+
+### Fixed
+- **KoSIT-Validierung scheiterte mit „Kein Report gefunden … unerwarteter Fehler beim Öffnen der Datei".** Tauris `resource_dir()` liefert auf Windows einen *verbatim* Pfad (`\\?\C:\…`). Die JVM kann ein JAR aber nicht öffnen, wenn es als `\\?\`-präfigiertes `-jar`-Argument übergeben wird → jede Validierung brach ab, der Status blieb „Validator offline". JRE und Validator **waren** also korrekt mitinstalliert; nur der Aufruf war kaputt. Fix: Resource-Pfade (Validator-JAR, Szenarien, Repository, JRE) werden vor der Übergabe an `java` vom `\\?\`-Präfix befreit (`simplify()` in `validator.rs`).
+- **Selbstheilung alter Stati.** Rechnungen, die unter einer älteren Version mit Status `unavailable` validiert wurden, zeigten dauerhaft „Validator offline". Beim Öffnen einer solchen Rechnung mit vorhandener PDF wird nun einmalig still neu validiert und der Status (`gültig`/`ungültig`) aktualisiert.
+
+### Migration
+- **Keine DB-Migration** — Schema bleibt auf `user_version = 26`.
+
 ## [0.18.2]
 
 > **Fix zu v0.18.1.** Lange Datenbank-Pfade sprengen nicht mehr das Layout, der Tenant-Switcher unten in der Sidebar ist aufgeräumt.

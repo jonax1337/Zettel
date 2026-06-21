@@ -3,11 +3,16 @@
 //! structured result the UI can render.
 //!
 //! Validator path resolution:
-//!   1. dev:  <workspace>/tools/kosit-validator/
-//!   2. prod: <appdata>/zettel/validator/   (downloaded on first use)
+//!   1. dev:  <workspace>/tools/kosit-validator/  +  <workspace>/tools/jre/
+//!   2. prod: bundled resources <resource_dir>/kosit-validator/ + /jre/
 //!
-//! The JRE itself is NOT bundled in v0.8 — we require `java` on PATH and
-//! prompt the user to install it (or jlink-bundle in v0.8.x).
+//! Both the KoSIT validator and a jlink-minimized JRE ship as bundled
+//! resources (see `tauri.bundle.conf.json`), so users need no system Java.
+//!
+//! NOTE: on Windows `resource_dir()` returns a *verbatim* path (`\\?\C:\…`).
+//! The JVM cannot open a JAR handed to it as a `\\?\`-prefixed argument, so
+//! resource paths are run through `simplify()` before reaching the `java`
+//! process.
 
 use crate::sidecar;
 use serde::Serialize;
@@ -63,6 +68,23 @@ fn workspace_jre_dir() -> PathBuf {
     p
 }
 
+/// Strip the Windows verbatim prefix (`\\?\`) from a path. `resource_dir()`
+/// returns verbatim paths, which the JVM rejects when they appear as a
+/// `-jar` argument. No-op on non-Windows and on already-simple paths.
+fn simplify(p: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let s = p.to_string_lossy();
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            return PathBuf::from(format!(r"\\{}", rest));
+        }
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            return PathBuf::from(rest.to_string());
+        }
+    }
+    p
+}
+
 fn resolve_validator_dir(app: &AppHandle) -> PathBuf {
     // Dev: workspace tools/ first if it exists. Prod: shipped resources.
     if cfg!(debug_assertions) {
@@ -74,7 +96,7 @@ fn resolve_validator_dir(app: &AppHandle) -> PathBuf {
     if let Ok(res) = app.path().resource_dir() {
         let bundled = res.join("kosit-validator");
         if bundled.join("validator.jar").exists() {
-            return bundled;
+            return simplify(bundled);
         }
     }
     appdata_validator_dir(app).unwrap_or_else(|_| PathBuf::from("validator"))
@@ -94,7 +116,7 @@ fn resolve_java(app: &AppHandle) -> PathBuf {
     if let Ok(res) = app.path().resource_dir() {
         let bundled = res.join("jre").join("bin").join(exe);
         if bundled.exists() {
-            return bundled;
+            return simplify(bundled);
         }
     }
     PathBuf::from("java")
@@ -346,6 +368,20 @@ mod tests {
         assert_eq!(f.code.as_deref(), Some("BR-CO-26"));
         assert_eq!(f.message, "Seller must be identifiable.");
         assert_eq!(f.location.as_deref(), Some("/rsm:CrossIndustryInvoice[1]"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn simplify_strips_verbatim_prefix() {
+        assert_eq!(
+            simplify(PathBuf::from(r"\\?\C:\Users\x\zettel\kosit-validator\validator.jar")),
+            PathBuf::from(r"C:\Users\x\zettel\kosit-validator\validator.jar")
+        );
+        // Already-simple paths pass through unchanged.
+        assert_eq!(
+            simplify(PathBuf::from(r"C:\Users\x\validator.jar")),
+            PathBuf::from(r"C:\Users\x\validator.jar")
+        );
     }
 
     #[test]

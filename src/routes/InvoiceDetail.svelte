@@ -202,6 +202,7 @@
       ]);
       originalInvoice = origRes?.invoice ?? null;
       cancelledByCreditNote = cnRes;
+      void maybeAutoRevalidate();
     } catch (e) {
       error = String(e);
     } finally {
@@ -253,6 +254,28 @@
       toast.error("Stornorechnung fehlgeschlagen", String(e));
     } finally {
       creatingCreditNote = false;
+    }
+  }
+
+  // Self-heal: invoices validated under an older build (no bundled validator)
+  // carry a stale 'unavailable' status that shows "Validator offline" forever.
+  // Re-check once, silently, now that the validator ships with the app.
+  let autoRevalidatedId = $state<number | null>(null);
+  async function maybeAutoRevalidate() {
+    if (!invoice || !lastPdfPath) return;
+    if (invoice.lastValidationStatus !== "unavailable") return;
+    if (autoRevalidatedId === invoice.id) return;
+    autoRevalidatedId = invoice.id;
+    try {
+      const report = await validatePdf(lastPdfPath);
+      const newStatus = report.valid ? "valid" : "invalid";
+      await execute(
+        "UPDATE invoices SET last_validation_status = ?, last_validated_at = unixepoch(), last_validation_findings_count = ? WHERE id = ?",
+        [newStatus, report.findings.length, invoice.id],
+      );
+      invoice = { ...invoice, lastValidationStatus: newStatus };
+    } catch {
+      // Validator still unavailable / no XML — leave status untouched, no noise.
     }
   }
 
