@@ -1,10 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import collect_all
 
 datas = [('templates', 'templates')]
 binaries = []
 hiddenimports = ['lxml', 'lxml.etree']
+datas += collect_data_files('iso4217')
+datas += collect_data_files('stdnum')
 hiddenimports += collect_submodules('jinja2')
 tmp_ret = collect_all('weasyprint')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
