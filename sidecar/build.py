@@ -63,6 +63,8 @@ def run_pyinstaller() -> None:
         "--add-data", f"templates{sep}templates",
         "--collect-all", "weasyprint",
         "--collect-all", "facturx",
+        "--collect-data", "iso4217",
+        "--collect-data", "stdnum",
         "--collect-all", "pydyf",
         "--collect-all", "fontTools",
         "--collect-submodules", "jinja2",
