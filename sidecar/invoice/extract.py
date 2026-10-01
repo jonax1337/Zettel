@@ -156,7 +156,7 @@ def extract_from_pdf(pdf_path: str) -> dict[str, Any]:
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
     pdf_bytes = path.read_bytes()
-    xml_filename, xml_bytes = facturx.get_xml_from_pdf(pdf_bytes)
+    xml_filename, xml_bytes = facturx.get_xml_from_pdf(pdf_bytes, check_schematron=False)
     if not xml_bytes:
         return {"found": False}
 

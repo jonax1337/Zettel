@@ -12,7 +12,7 @@
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use argon2::{Argon2, Params};
-use rand::RngCore;
+use rand::Rng;
 use zeroize::Zeroize;
 
 pub const MAGIC: &[u8; 12] = b"ZETTEL-ENC-1";
@@ -41,8 +41,8 @@ fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; KEY_LEN], String> {
 pub fn encrypt(plaintext: &[u8], password: &mut String) -> Result<Vec<u8>, String> {
     let mut salt = [0u8; SALT_LEN];
     let mut nonce_bytes = [0u8; NONCE_LEN];
-    rand::thread_rng().fill_bytes(&mut salt);
-    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    rand::rng().fill_bytes(&mut salt);
+    rand::rng().fill_bytes(&mut nonce_bytes);
 
     let mut key_bytes = derive_key(password, &salt)?;
     password.zeroize();

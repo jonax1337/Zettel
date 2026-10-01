@@ -25,13 +25,13 @@
   )}
   {...rest}
 >
-  {#snippet children({ thumbs })}
+  {#snippet children({ thumbItems })}
     <span class="relative h-1.5 w-full grow overflow-hidden rounded-full bg-muted">
       <SliderPrimitive.Range class="absolute h-full bg-primary" />
     </span>
-    {#each thumbs as i (i)}
+    {#each thumbItems as { index } (index)}
       <SliderPrimitive.Thumb
-        index={i}
+        {index}
         class={cn(
           "block size-4 shrink-0 rounded-full border-2 border-primary bg-background shadow-sm transition-colors cursor-grab active:cursor-grabbing",
           "hover:ring-4 hover:ring-primary/20",

@@ -108,6 +108,8 @@ def _embed_xml(pdf_bytes: bytes, xml_str: str, profile: str) -> bytes:
         flavor="factur-x",
         level=level,
         check_xsd=False,
+        # Schematron runs via HTTP against a Saxon server; validation is KoSIT's job.
+        check_schematron=False,
     )
     return result
 

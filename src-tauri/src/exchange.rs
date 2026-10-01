@@ -9,13 +9,16 @@ pub fn fetch_ecb_exchange_rate(currency: String) -> Result<String, String> {
         return Ok("1".to_string());
     }
 
-    let body = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(8))
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(8)))
         .build()
+        .into();
+    let body = agent
         .get(ECB_URL)
         .call()
         .map_err(|e| format!("EZB nicht erreichbar: {e}"))?
-        .into_string()
+        .into_body()
+        .read_to_string()
         .map_err(|e| format!("EZB-Antwort unlesbar: {e}"))?;
 
     let needle_currency = format!("currency='{}'", target);

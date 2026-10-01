@@ -160,7 +160,9 @@ def handle(req: dict) -> dict:
             p = _P(pdf_path)
             if not p.is_file():
                 return _err("PDF_NOT_FOUND", f"PDF not found: {pdf_path}")
-            xml_filename, xml_bytes = facturx.get_xml_from_pdf(p.read_bytes())
+            xml_filename, xml_bytes = facturx.get_xml_from_pdf(
+                p.read_bytes(), check_schematron=False
+            )
             if not xml_bytes:
                 return {"success": True, "found": False}
             return {
