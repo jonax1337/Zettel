@@ -6,6 +6,8 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.20.0]
+
 ### Changed
 - **Dependencies auf aktuellen Stand.** Frontend: Vite 8, Vitest 5, TypeScript 6, bits-ui 2, tailwind-merge 3 (versteht jetzt Tailwind-v4-Klassen korrekt), tailwind-variants 3, Drizzle 0.45, Tauri 2.12. Sidecar: WeasyPrint 70, factur-x 7.1, pypdf 6, mt-940 5, PyInstaller 6.22. Rust: rand 0.10, ureq 3, zip 8, dirs 7, winreg 0.56, rusqlite 0.32 (zieht sqlx von 0.8.0 auf 0.8.6 und damit eine neuere gebündelte SQLite).
 - **Node ≥ 22.12** für die Entwicklung (Vitest 5). CI läuft auf Node 24, GitHub Actions auf aktuellen Majors.
