@@ -3,9 +3,9 @@
 Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tauri 2 + Svelte 5 + Python sidecar.** ZUGFeRD/Factur-X PDF/A-3 output. Release-Historie in `CHANGELOG.md` — hier nicht duplizieren.
 
 ## Current state
-- **Released:** v0.17.0 on `main`. Auto-Update aktiv seit v0.4.3. v0.18.0 (Positions-Reorder, PDF-Versionierung, Multi-DB-Tenants) in Vorbereitung.
+- **Released:** v0.19.1 on `main`. Auto-Update aktiv seit v0.4.3.
 - **DB schema:** `user_version = 26` (letzte Migration `0025_v0.16_expense_categories.sql`).
-- **Dev-Linie:** neue Arbeit auf `release/vX.Y`-Branches (aktuell `release/v0.17`).
+- **Dev-Linie:** neue Arbeit auf `release/vX.Y`-Branches.
 - **Test-Suite:** 134 Vitest-Cases (`pnpm test`) + 71 Pytest-Cases (`sidecar/tests/`). Pure-Math (Totals/Tax/Skonto/Currency/Date/DATEV) ist voll abgedeckt, Sidecar deckt ZUGFeRD-XML-Goldens + KoSIT-Validator-Roundtrip + i18n ab.
 
 ## Architecture
@@ -42,7 +42,7 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 - `invoice/extract.py` — Factur-X-XML-Parser für eingehende Rechnungen (`factur-x` + `lxml`, defensiv für BASIC/EN16931/EXTENDED).
 - `invoice/text_extract.py` — OCR-Light via `pypdf` + Regex-Heuristik (Datum/Betrag/Rechnungsnummer/Lieferantenname). Kein Tesseract — Scans sind explizit Non-Goal.
 - `invoice/templates.py` — Jinja-Env mit `autoescape=True` (siehe Quirk unten), `_logo_data_uri` inlined Logos als `data:` URI.
-- **Build:** `cd sidecar && python build.py` (`pyinstaller==6.11.1` im venv). Auf Windows wird **jede** `.dll` aus dem GTK3-Runtime-Dir neben die exe kopiert — keine Allowlist, weil gtk3-classic vs. official MSI verschiedene Lib-Versionen shippen.
+- **Build:** `cd sidecar && python build.py` (`pyinstaller==6.22.3` im venv, gleicher Pin in `build.yml`). Auf Windows wird **jede** `.dll` aus dem GTK3-Runtime-Dir neben die exe kopiert — keine Allowlist, weil gtk3-classic vs. official MSI verschiedene Lib-Versionen shippen.
 - **Dev-Python-Lookup:** `ZETTEL_PYTHON` → `sidecar/.venv/Scripts/python.exe` (Win) bzw. `.../bin/python` (Unix) → `python` aus PATH.
 
 ## Critical conventions
@@ -90,7 +90,7 @@ Eine neue Migration `000N_<name>.sql` heißt **immer drei Stellen gleichzeitig a
 ## Stack quick-ref
 | Layer | Tech |
 |---|---|
-| Frontend | Svelte 5 (runes), TypeScript strict, Vite 6, Tailwind v4, Bits UI |
+| Frontend | Svelte 5 (runes), TypeScript 6 strict, Vite 8, Tailwind v4, Bits UI 2 (Node ≥ 22.12) |
 | Routing | `svelte-spa-router` (hash) |
 | Persistence | `@tauri-apps/plugin-sql` (SQLite); Drizzle nur als Type-Source |
 | PDF | WeasyPrint + Jinja2 (Sidecar) |
