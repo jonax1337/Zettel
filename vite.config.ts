@@ -9,7 +9,7 @@ export default defineConfig(async () => ({
   plugins: [svelte(), tailwindcss()],
   resolve: {
     alias: {
-      $lib: resolve(__dirname, "src/lib"),
+      $lib: resolve(import.meta.dirname, "src/lib"),
     },
   },
   clearScreen: false,
