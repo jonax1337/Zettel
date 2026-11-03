@@ -1,0 +1,651 @@
+{
+  "iconCount": 82,
+  "importStatements": 48,
+  "icons": [
+    {
+      "name": "AlertCircle",
+      "files": [
+        "src/lib/ui/Toaster.svelte",
+        "src/routes/BankImport.svelte",
+        "src/routes/Validate.svelte"
+      ]
+    },
+    {
+      "name": "AlertTriangle",
+      "files": [
+        "src/routes/Dashboard.svelte",
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/InvoiceEdit.svelte",
+        "src/routes/OfferDetail.svelte",
+        "src/routes/RemindersList.svelte",
+        "src/routes/Settings.svelte",
+        "src/routes/UstvaReport.svelte",
+        "src/routes/settings/Advanced.svelte"
+      ]
+    },
+    {
+      "name": "Archive",
+      "files": [
+        "src/routes/CatalogList.svelte"
+      ]
+    },
+    {
+      "name": "ArchiveRestore",
+      "files": [
+        "src/routes/CatalogList.svelte"
+      ]
+    },
+    {
+      "name": "ArrowDown",
+      "files": [
+        "src/lib/ui/SortableTh.svelte"
+      ]
+    },
+    {
+      "name": "ArrowLeft",
+      "files": [
+        "src/lib/components/OnboardingWizard.svelte",
+        "src/routes/CatalogEdit.svelte",
+        "src/routes/CustomerEdit.svelte",
+        "src/routes/ExpenseEdit.svelte",
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/InvoiceEdit.svelte",
+        "src/routes/NotFound.svelte",
+        "src/routes/OfferDetail.svelte",
+        "src/routes/OfferEdit.svelte",
+        "src/routes/RecurringEdit.svelte",
+        "src/routes/ReminderEdit.svelte",
+        "src/routes/TaxReport.svelte",
+        "src/routes/VendorEdit.svelte",
+        "src/routes/settings/SettingsShell.svelte"
+      ]
+    },
+    {
+      "name": "ArrowRight",
+      "files": [
+        "src/lib/components/OnboardingWizard.svelte",
+        "src/routes/Dashboard.svelte",
+        "src/routes/Settings.svelte"
+      ]
+    },
+    {
+      "name": "ArrowUp",
+      "files": [
+        "src/lib/ui/SortableTh.svelte"
+      ]
+    },
+    {
+      "name": "ArrowUpDown",
+      "files": [
+        "src/lib/ui/SortableTh.svelte"
+      ]
+    },
+    {
+      "name": "Ban",
+      "files": [
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/OffersList.svelte"
+      ]
+    },
+    {
+      "name": "BarChart3",
+      "files": [
+        "src/lib/components/Layout.svelte"
+      ]
+    },
+    {
+      "name": "Bell",
+      "files": [
+        "src/routes/Dashboard.svelte"
+      ]
+    },
+    {
+      "name": "Building2",
+      "files": [
+        "src/routes/Settings.svelte"
+      ]
+    },
+    {
+      "name": "Calendar",
+      "files": [
+        "src/lib/ui/DatePicker.svelte"
+      ]
+    },
+    {
+      "name": "CalendarRange",
+      "files": [
+        "src/lib/ui/LinePeriodPopover.svelte",
+        "src/routes/InvoiceEdit.svelte",
+        "src/routes/OfferEdit.svelte"
+      ]
+    },
+    {
+      "name": "Check",
+      "files": [
+        "src/lib/components/TenantSwitcher.svelte",
+        "src/lib/ui/Checkbox.svelte",
+        "src/lib/ui/Select.svelte",
+        "src/routes/ExpenseEdit.svelte",
+        "src/routes/settings/Appearance.svelte"
+      ]
+    },
+    {
+      "name": "CheckCircle2",
+      "files": [
+        "src/lib/ui/Toaster.svelte",
+        "src/routes/BankImport.svelte",
+        "src/routes/ExpensesList.svelte",
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/InvoicesList.svelte",
+        "src/routes/OfferDetail.svelte"
+      ]
+    },
+    {
+      "name": "ChevronDown",
+      "files": [
+        "src/lib/ui/Select.svelte",
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/InvoiceEdit.svelte",
+        "src/routes/OfferEdit.svelte"
+      ]
+    },
+    {
+      "name": "ChevronLeft",
+      "files": [
+        "src/lib/ui/DatePicker.svelte",
+        "src/routes/settings/Company.svelte"
+      ]
+    },
+    {
+      "name": "ChevronRight",
+      "files": [
+        "src/lib/ui/DatePicker.svelte",
+        "src/routes/settings/Company.svelte"
+      ]
+    },
+    {
+      "name": "ChevronUp",
+      "files": [
+        "src/routes/InvoiceEdit.svelte",
+        "src/routes/OfferEdit.svelte"
+      ]
+    },
+    {
+      "name": "ChevronsUpDown",
+      "files": [
+        "src/lib/components/TenantSwitcher.svelte"
+      ]
+    },
+    {
+      "name": "Clock",
+      "files": [
+        "src/routes/Dashboard.svelte",
+        "src/routes/InvoiceDetail.svelte"
+      ]
+    },
+    {
+      "name": "Copy",
+      "files": [
+        "src/lib/ui/Titlebar.svelte"
+      ]
+    },
+    {
+      "name": "Database",
+      "files": [
+        "src/lib/components/TenantSwitcher.svelte",
+        "src/routes/Settings.svelte"
+      ]
+    },
+    {
+      "name": "Download",
+      "files": [
+        "src/lib/components/Layout.svelte",
+        "src/routes/Export.svelte",
+        "src/routes/UstvaReport.svelte",
+        "src/routes/settings/Data.svelte"
+      ]
+    },
+    {
+      "name": "FileDown",
+      "files": [
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/OfferDetail.svelte"
+      ]
+    },
+    {
+      "name": "FileInput",
+      "files": [
+        "src/lib/components/Layout.svelte",
+        "src/lib/ui/CommandPalette.svelte"
+      ]
+    },
+    {
+      "name": "FilePlus2",
+      "files": [
+        "src/lib/components/TenantSwitcher.svelte"
+      ]
+    },
+    {
+      "name": "FileQuestion",
+      "files": [
+        "src/routes/NotFound.svelte"
+      ]
+    },
+    {
+      "name": "FileSearch",
+      "files": [
+        "src/routes/Validate.svelte"
+      ]
+    },
+    {
+      "name": "FileSignature",
+      "files": [
+        "src/lib/components/Layout.svelte",
+        "src/lib/ui/CommandPalette.svelte",
+        "src/routes/Dashboard.svelte",
+        "src/routes/OfferDetail.svelte"
+      ]
+    },
+    {
+      "name": "FileSpreadsheet",
+      "files": [
+        "src/routes/Export.svelte"
+      ]
+    },
+    {
+      "name": "FileText",
+      "files": [
+        "src/lib/components/Layout.svelte",
+        "src/lib/ui/CommandPalette.svelte",
+        "src/routes/Dashboard.svelte",
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/InvoiceEdit.svelte",
+        "src/routes/OfferDetail.svelte",
+        "src/routes/OfferEdit.svelte",
+        "src/routes/RecurringEdit.svelte",
+        "src/routes/RecurringList.svelte",
+        "src/routes/ReminderEdit.svelte",
+        "src/routes/Settings.svelte"
+      ]
+    },
+    {
+      "name": "FileUp",
+      "files": [
+        "src/routes/BankImport.svelte",
+        "src/routes/ExpenseEdit.svelte"
+      ]
+    },
+    {
+      "name": "FileWarning",
+      "files": [
+        "src/lib/components/Layout.svelte",
+        "src/lib/ui/CommandPalette.svelte",
+        "src/routes/InvoiceDetail.svelte"
+      ]
+    },
+    {
+      "name": "FlaskConical",
+      "files": [
+        "src/lib/components/Layout.svelte",
+        "src/routes/Dashboard.svelte",
+        "src/routes/settings/Data.svelte"
+      ]
+    },
+    {
+      "name": "FolderOpen",
+      "files": [
+        "src/lib/components/TenantSwitcher.svelte",
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/OfferDetail.svelte"
+      ]
+    },
+    {
+      "name": "GripVertical",
+      "files": [
+        "src/routes/InvoiceEdit.svelte",
+        "src/routes/OfferEdit.svelte"
+      ]
+    },
+    {
+      "name": "History",
+      "files": [
+        "src/lib/ui/CommandPalette.svelte",
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/settings/Data.svelte"
+      ]
+    },
+    {
+      "name": "Hourglass",
+      "files": [
+        "src/routes/Dashboard.svelte"
+      ]
+    },
+    {
+      "name": "Image",
+      "files": [
+        "src/routes/settings/Company.svelte"
+      ]
+    },
+    {
+      "name": "Info",
+      "files": [
+        "src/lib/ui/Toaster.svelte"
+      ]
+    },
+    {
+      "name": "Landmark",
+      "files": [
+        "src/lib/components/Layout.svelte"
+      ]
+    },
+    {
+      "name": "LayoutDashboard",
+      "files": [
+        "src/lib/components/Layout.svelte"
+      ]
+    },
+    {
+      "name": "Loader2",
+      "files": [
+        "src/routes/ExpenseEdit.svelte"
+      ]
+    },
+    {
+      "name": "Minus",
+      "files": [
+        "src/lib/ui/Checkbox.svelte",
+        "src/lib/ui/Titlebar.svelte"
+      ]
+    },
+    {
+      "name": "Monitor",
+      "files": [
+        "src/routes/settings/Appearance.svelte"
+      ]
+    },
+    {
+      "name": "MonitorCog",
+      "files": [
+        "src/routes/settings/Appearance.svelte"
+      ]
+    },
+    {
+      "name": "Moon",
+      "files": [
+        "src/routes/settings/Appearance.svelte"
+      ]
+    },
+    {
+      "name": "MoreHorizontal",
+      "files": [
+        "src/routes/CatalogList.svelte",
+        "src/routes/CustomersList.svelte",
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/OfferDetail.svelte",
+        "src/routes/VendorsList.svelte"
+      ]
+    },
+    {
+      "name": "Package",
+      "files": [
+        "src/lib/components/Layout.svelte",
+        "src/lib/ui/CatalogPicker.svelte",
+        "src/routes/ExpenseEdit.svelte",
+        "src/routes/InvoiceEdit.svelte",
+        "src/routes/OfferEdit.svelte",
+        "src/routes/RecurringEdit.svelte"
+      ]
+    },
+    {
+      "name": "Palette",
+      "files": [
+        "src/routes/Settings.svelte"
+      ]
+    },
+    {
+      "name": "Pencil",
+      "files": [
+        "src/routes/CatalogList.svelte",
+        "src/routes/CustomersList.svelte",
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/OfferDetail.svelte",
+        "src/routes/RecurringList.svelte",
+        "src/routes/VendorsList.svelte"
+      ]
+    },
+    {
+      "name": "Plus",
+      "files": [
+        "src/lib/components/TenantSwitcher.svelte",
+        "src/routes/CatalogList.svelte",
+        "src/routes/CustomersList.svelte",
+        "src/routes/Dashboard.svelte",
+        "src/routes/ExpenseEdit.svelte",
+        "src/routes/ExpensesList.svelte",
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/InvoiceEdit.svelte",
+        "src/routes/InvoicesList.svelte",
+        "src/routes/OfferEdit.svelte",
+        "src/routes/OffersList.svelte",
+        "src/routes/RecurringEdit.svelte",
+        "src/routes/RecurringList.svelte",
+        "src/routes/RemindersList.svelte",
+        "src/routes/VendorsList.svelte"
+      ]
+    },
+    {
+      "name": "Power",
+      "files": [
+        "src/routes/RecurringList.svelte"
+      ]
+    },
+    {
+      "name": "PowerOff",
+      "files": [
+        "src/routes/RecurringList.svelte"
+      ]
+    },
+    {
+      "name": "RefreshCw",
+      "files": [
+        "src/routes/Settings.svelte"
+      ]
+    },
+    {
+      "name": "Repeat",
+      "files": [
+        "src/lib/components/Layout.svelte",
+        "src/routes/Dashboard.svelte",
+        "src/routes/InvoiceDetail.svelte"
+      ]
+    },
+    {
+      "name": "Scale",
+      "files": [
+        "src/routes/Dashboard.svelte"
+      ]
+    },
+    {
+      "name": "Search",
+      "files": [
+        "src/lib/components/Layout.svelte",
+        "src/lib/ui/CatalogPicker.svelte",
+        "src/lib/ui/CommandPalette.svelte",
+        "src/routes/CatalogList.svelte",
+        "src/routes/CustomersList.svelte",
+        "src/routes/ExpensesList.svelte",
+        "src/routes/InvoicesList.svelte",
+        "src/routes/OffersList.svelte",
+        "src/routes/VendorsList.svelte"
+      ]
+    },
+    {
+      "name": "Send",
+      "files": [
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/InvoicesList.svelte",
+        "src/routes/OfferDetail.svelte",
+        "src/routes/OffersList.svelte",
+        "src/routes/ReminderEdit.svelte"
+      ]
+    },
+    {
+      "name": "Settings",
+      "files": [
+        "src/lib/components/Layout.svelte"
+      ]
+    },
+    {
+      "name": "Shield",
+      "files": [
+        "src/lib/components/ValidationBadge.svelte",
+        "src/routes/ExpenseEdit.svelte"
+      ]
+    },
+    {
+      "name": "ShieldAlert",
+      "files": [
+        "src/lib/components/ValidationBadge.svelte",
+        "src/routes/ExpenseEdit.svelte",
+        "src/routes/Validate.svelte"
+      ]
+    },
+    {
+      "name": "ShieldCheck",
+      "files": [
+        "src/lib/components/ValidationBadge.svelte",
+        "src/routes/ExpenseEdit.svelte",
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/Validate.svelte"
+      ]
+    },
+    {
+      "name": "ShieldX",
+      "files": [
+        "src/lib/components/ValidationBadge.svelte"
+      ]
+    },
+    {
+      "name": "Sparkles",
+      "files": [
+        "src/lib/components/OnboardingWizard.svelte"
+      ]
+    },
+    {
+      "name": "Square",
+      "files": [
+        "src/lib/ui/Titlebar.svelte"
+      ]
+    },
+    {
+      "name": "Sun",
+      "files": [
+        "src/routes/settings/Appearance.svelte"
+      ]
+    },
+    {
+      "name": "Trash2",
+      "files": [
+        "src/lib/components/TenantSwitcher.svelte",
+        "src/routes/CatalogList.svelte",
+        "src/routes/CustomersList.svelte",
+        "src/routes/ExpenseEdit.svelte",
+        "src/routes/ExpensesList.svelte",
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/InvoiceEdit.svelte",
+        "src/routes/InvoicesList.svelte",
+        "src/routes/OfferDetail.svelte",
+        "src/routes/OfferEdit.svelte",
+        "src/routes/OffersList.svelte",
+        "src/routes/RecurringEdit.svelte",
+        "src/routes/RecurringList.svelte",
+        "src/routes/ReminderEdit.svelte",
+        "src/routes/VendorsList.svelte"
+      ]
+    },
+    {
+      "name": "TrendingDown",
+      "files": [
+        "src/routes/Dashboard.svelte"
+      ]
+    },
+    {
+      "name": "TrendingUp",
+      "files": [
+        "src/routes/Dashboard.svelte"
+      ]
+    },
+    {
+      "name": "Trophy",
+      "files": [
+        "src/routes/Dashboard.svelte"
+      ]
+    },
+    {
+      "name": "Truck",
+      "files": [
+        "src/lib/components/Layout.svelte",
+        "src/lib/ui/CommandPalette.svelte"
+      ]
+    },
+    {
+      "name": "Undo2",
+      "files": [
+        "src/routes/InvoiceDetail.svelte",
+        "src/routes/OfferDetail.svelte"
+      ]
+    },
+    {
+      "name": "Upload",
+      "files": [
+        "src/lib/components/TenantSwitcher.svelte",
+        "src/routes/BankImport.svelte",
+        "src/routes/Validate.svelte",
+        "src/routes/settings/Data.svelte"
+      ]
+    },
+    {
+      "name": "UserPlus",
+      "files": [
+        "src/routes/Dashboard.svelte"
+      ]
+    },
+    {
+      "name": "Users",
+      "files": [
+        "src/lib/components/Layout.svelte",
+        "src/lib/ui/CommandPalette.svelte",
+        "src/routes/Dashboard.svelte"
+      ]
+    },
+    {
+      "name": "Wallet",
+      "files": [
+        "src/routes/Dashboard.svelte"
+      ]
+    },
+    {
+      "name": "X",
+      "files": [
+        "src/lib/components/OnboardingWizard.svelte",
+        "src/lib/ui/BulkActionBar.svelte",
+        "src/lib/ui/Dialog.svelte",
+        "src/lib/ui/LinePeriodPopover.svelte",
+        "src/lib/ui/Titlebar.svelte",
+        "src/lib/ui/Toaster.svelte",
+        "src/routes/ExpenseEdit.svelte",
+        "src/routes/InvoiceEdit.svelte",
+        "src/routes/OfferEdit.svelte",
+        "src/routes/RecurringEdit.svelte",
+        "src/routes/settings/Company.svelte"
+      ]
+    },
+    {
+      "name": "XCircle",
+      "files": [
+        "src/lib/ui/Toaster.svelte",
+        "src/routes/OfferDetail.svelte"
+      ]
+    }
+  ]
+}

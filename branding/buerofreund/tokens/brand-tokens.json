@@ -1,0 +1,57 @@
+{
+  "name": "Zettel Bürofreund",
+  "version": "1.0.0",
+  "colors": {
+    "coral": "#F06B53",
+    "blush": "#FFE6E0",
+    "ink": "#30272C",
+    "cream": "#FFF9F5",
+    "dark": "#241F23",
+    "coralDeep": "#B84332",
+    "muted": "#7B646C",
+    "success": "#337357",
+    "white": "#FFFFFF",
+    "border": "#E7D8D3"
+  },
+  "typography": {
+    "display": {
+      "family": "Nunito",
+      "weight": 900
+    },
+    "wordmark": {
+      "source": "source/reference-traces.json",
+      "type": "custom outlined wordmark from selected concept"
+    },
+    "body": {
+      "family": "Nunito Sans",
+      "weight": 400
+    },
+    "label": {
+      "family": "Nunito Sans",
+      "weight": 800
+    }
+  },
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48,
+    64,
+    96
+  ],
+  "radii": {
+    "control": 12,
+    "card": 20,
+    "pill": 999
+  },
+  "logo": {
+    "wordmark": "zettel",
+    "mascot": "Bürofreund",
+    "clearspace": "0.2 × Symbolbreite",
+    "minimumLockupWidth": 160,
+    "minimumMascotWidth": 32
+  }
+}

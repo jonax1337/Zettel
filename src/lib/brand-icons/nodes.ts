@@ -1,0 +1,165 @@
+import type { IconNode } from "./types";
+
+export const AlertCircleNode: IconNode = [["circle", {"cx": 12, "cy": 12, "r": 8.5}], ["path", {"d": "M12 7.8V12.5"}], ["circle", {"cx": 12, "cy": 16.2, "r": 1, "fill": "currentColor", "stroke": "none"}]];
+
+export const AlertTriangleNode: IconNode = [["path", {"d": "M10.1 4.8Q12 1.8 13.9 4.8L21.2 17.6Q22.8 20.5 19.4 20.5H4.6Q1.2 20.5 2.8 17.6Z"}], ["path", {"d": "M12 8.5V12.8"}], ["circle", {"cx": 12, "cy": 16.5, "r": 1, "fill": "currentColor", "stroke": "none"}]];
+
+export const ArchiveNode: IconNode = [["rect", {"x": 3.2, "y": 3.7, "width": 17.6, "height": 4.5, "rx": 1.5}], ["path", {"d": "M5 8.2V18Q5 20.5 7.5 20.5H16.5Q19 20.5 19 18V8.2M9.5 12H14.5"}]];
+
+export const ArchiveRestoreNode: IconNode = [["rect", {"x": 3.2, "y": 3.7, "width": 17.6, "height": 4.5, "rx": 1.5}], ["path", {"d": "M5 8.2V18Q5 20.5 7.5 20.5H16.5Q19 20.5 19 18V8.2M12 18V11M8.7 14.3L12 11L15.3 14.3"}]];
+
+export const ArrowDownNode: IconNode = [["path", {"d": "M12 3.8V20M5.8 13.8L12 20L18.2 13.8"}]];
+
+export const ArrowLeftNode: IconNode = [["path", {"d": "M20.2 12H4M10.2 5.8L4 12L10.2 18.2"}]];
+
+export const ArrowRightNode: IconNode = [["path", {"d": "M3.8 12H20M13.8 5.8L20 12L13.8 18.2"}]];
+
+export const ArrowUpNode: IconNode = [["path", {"d": "M12 20.2V4M5.8 10.2L12 4L18.2 10.2"}]];
+
+export const ArrowUpDownNode: IconNode = [["path", {"d": "M8 20V4M4.5 7.5L8 4L11.5 7.5M16 4V20M12.5 16.5L16 20L19.5 16.5"}]];
+
+export const BanNode: IconNode = [["circle", {"cx": 12, "cy": 12, "r": 8.5}], ["path", {"d": "M6 6L18 18"}]];
+
+export const BarChart3Node: IconNode = [["path", {"d": "M4 4V18Q4 20 6 20H21M8.5 15.5V11M13 15.5V6M17.5 15.5V9"}]];
+
+export const BellNode: IconNode = [["path", {"d": "M6.2 16.5H17.8L16.7 13.9V9.1Q16.7 4.3 12 4.3Q7.3 4.3 7.3 9.1V13.9ZM10 20H14M12 2.5V4.3"}]];
+
+export const Building2Node: IconNode = [["rect", {"x": 4, "y": 3, "width": 10.5, "height": 18, "rx": 2}], ["path", {"d": "M14.5 8H18Q20 8 20 10V21M8 7H10.5M8 11H10.5M8 15H10.5M9 21V18M17.5 12H18M17.5 16H18"}]];
+
+export const CalendarNode: IconNode = [["rect", {"x": 3.5, "y": 5.5, "width": 17, "height": 15, "rx": 2.8}], ["path", {"d": "M7.5 3V8M16.5 3V8M3.5 10.5H20.5"}], ["circle", {"cx": 8, "cy": 14.5, "r": 1, "fill": "currentColor", "stroke": "none"}], ["circle", {"cx": 12, "cy": 14.5, "r": 1, "fill": "currentColor", "stroke": "none"}], ["circle", {"cx": 16, "cy": 14.5, "r": 1, "fill": "currentColor", "stroke": "none"}]];
+
+export const CalendarRangeNode: IconNode = [["rect", {"x": 3.5, "y": 5.5, "width": 17, "height": 15, "rx": 2.8}], ["path", {"d": "M7.5 3V8M16.5 3V8M3.5 10.5H20.5M7.5 15.5H16.5"}], ["circle", {"cx": 7.5, "cy": 15.5, "r": 1, "fill": "currentColor", "stroke": "none"}], ["circle", {"cx": 16.5, "cy": 15.5, "r": 1, "fill": "currentColor", "stroke": "none"}]];
+
+export const CheckNode: IconNode = [["path", {"d": "M4.7 12.4L9.5 17.3L19.7 6.8"}]];
+
+export const CheckCircle2Node: IconNode = [["circle", {"cx": 12, "cy": 12, "r": 8.5}], ["path", {"d": "M8 12.1L10.8 15L16.2 9.2"}]];
+
+export const ChevronDownNode: IconNode = [["path", {"d": "M5.7 9L12 15.3L18.3 9"}]];
+
+export const ChevronLeftNode: IconNode = [["path", {"d": "M15 5.7L8.7 12L15 18.3"}]];
+
+export const ChevronRightNode: IconNode = [["path", {"d": "M9 5.7L15.3 12L9 18.3"}]];
+
+export const ChevronUpNode: IconNode = [["path", {"d": "M5.7 15L12 8.7L18.3 15"}]];
+
+export const ChevronsUpDownNode: IconNode = [["path", {"d": "M8 8L12 4L16 8M8 16L12 20L16 16"}]];
+
+export const ClockNode: IconNode = [["circle", {"cx": 12, "cy": 12, "r": 8.5}], ["path", {"d": "M12 6.5V12L15.8 14.2"}]];
+
+export const CopyNode: IconNode = [["rect", {"x": 8, "y": 8, "width": 13, "height": 13, "rx": 2.5}], ["path", {"d": "M16 8V5.5Q16 3 13.5 3H5.5Q3 3 3 5.5V13.5Q3 16 5.5 16H8"}]];
+
+export const DatabaseNode: IconNode = [["ellipse", {"cx": 12, "cy": 5.3, "rx": 8.3, "ry": 3.1}], ["path", {"d": "M3.7 5.3V18Q3.7 21.1 12 21.1Q20.3 21.1 20.3 18V5.3M3.7 11.6Q3.7 14.7 12 14.7Q20.3 14.7 20.3 11.6"}]];
+
+export const DownloadNode: IconNode = [["path", {"d": "M12 3.5V15.5M7.8 11.3L12 15.5L16.2 11.3M4 16V19Q4 21 6 21H18Q20 21 20 19V16"}]];
+
+export const FileDownNode: IconNode = [["path", {"d": "M7 3.5H14.5L19.5 8.5V18.8Q19.5 21 17.2 21H6.8Q4.5 21 4.5 18.8V6Q4.5 3.5 7 3.5Z"}], ["path", {"d": "M14 3.5V7.8Q14 9 15.3 9H19"}], ["path", {"d": "M12 7V17M8.5 13.5L12 17L15.5 13.5"}]];
+
+export const FileInputNode: IconNode = [["path", {"d": "M8.5 4H15L20 9V18.5Q20 21 17.5 21H9Q7 21 7 19M15 4V8Q15 9 16 9H20M2.5 13H12M8.7 9.7L12 13L8.7 16.3"}]];
+
+export const FilePlus2Node: IconNode = [["path", {"d": "M7 3.5H14.5L19.5 8.5V18.8Q19.5 21 17.2 21H6.8Q4.5 21 4.5 18.8V6Q4.5 3.5 7 3.5Z"}], ["path", {"d": "M14 3.5V7.8Q14 9 15.3 9H19"}], ["path", {"d": "M12 12V18M9 15H15"}]];
+
+export const FileQuestionNode: IconNode = [["path", {"d": "M7 3.5H14.5L19.5 8.5V18.8Q19.5 21 17.2 21H6.8Q4.5 21 4.5 18.8V6Q4.5 3.5 7 3.5Z"}], ["path", {"d": "M14 3.5V7.8Q14 9 15.3 9H19"}], ["path", {"d": "M10 12Q10 9.7 12.2 9.7Q15.6 10 13.5 12.5L12 14"}], ["circle", {"cx": 12, "cy": 17, "r": 1, "fill": "currentColor", "stroke": "none"}]];
+
+export const FileSearchNode: IconNode = [["path", {"d": "M7 3.5H14.5L19.5 8.5V18.8Q19.5 21 17.2 21H6.8Q4.5 21 4.5 18.8V6Q4.5 3.5 7 3.5Z"}], ["path", {"d": "M14 3.5V7.8Q14 9 15.3 9H19"}], ["circle", {"cx": 11.3, "cy": 13.6, "r": 2.8}], ["path", {"d": "M13.5 15.8L16.6 18.9"}]];
+
+export const FileSignatureNode: IconNode = [["path", {"d": "M7 3.5H14.5L19.5 8.5V18.8Q19.5 21 17.2 21H6.8Q4.5 21 4.5 18.8V6Q4.5 3.5 7 3.5Z"}], ["path", {"d": "M14 3.5V7.8Q14 9 15.3 9H19"}], ["path", {"d": "M8 16Q10 9 11.5 12Q13 15 8 17Q13 14 16 16.5"}]];
+
+export const FileSpreadsheetNode: IconNode = [["path", {"d": "M7 3.5H14.5L19.5 8.5V18.8Q19.5 21 17.2 21H6.8Q4.5 21 4.5 18.8V6Q4.5 3.5 7 3.5Z"}], ["path", {"d": "M14 3.5V7.8Q14 9 15.3 9H19"}], ["rect", {"x": 8, "y": 11.5, "width": 8, "height": 6.5, "rx": 1}], ["path", {"d": "M12 11.5V18M8 14.8H16"}]];
+
+export const FileTextNode: IconNode = [["path", {"d": "M7 3.5H14.5L19.5 8.5V18.8Q19.5 21 17.2 21H6.8Q4.5 21 4.5 18.8V6Q4.5 3.5 7 3.5Z"}], ["path", {"d": "M14 3.5V7.8Q14 9 15.3 9H19"}], ["path", {"d": "M8.5 12H15.5M8.5 15H15.5M8.5 18H12.5"}]];
+
+export const FileUpNode: IconNode = [["path", {"d": "M7 3.5H14.5L19.5 8.5V18.8Q19.5 21 17.2 21H6.8Q4.5 21 4.5 18.8V6Q4.5 3.5 7 3.5Z"}], ["path", {"d": "M14 3.5V7.8Q14 9 15.3 9H19"}], ["path", {"d": "M12 17V7M8.5 10.5L12 7L15.5 10.5"}]];
+
+export const FileWarningNode: IconNode = [["path", {"d": "M7 3.5H14.5L19.5 8.5V18.8Q19.5 21 17.2 21H6.8Q4.5 21 4.5 18.8V6Q4.5 3.5 7 3.5Z"}], ["path", {"d": "M14 3.5V7.8Q14 9 15.3 9H19"}], ["path", {"d": "M12 11V14.6"}], ["circle", {"cx": 12, "cy": 17.4, "r": 1, "fill": "currentColor", "stroke": "none"}]];
+
+export const FlaskConicalNode: IconNode = [["path", {"d": "M8.5 3H15.5M10 3V8.5L4.4 17.5Q2.6 21 6.8 21H17.2Q21.4 21 19.6 17.5L14 8.5V3M7.1 14.5H16.9"}]];
+
+export const FolderOpenNode: IconNode = [["path", {"d": "M3.5 10V6.7Q3.5 4.5 5.8 4.5H9.5L12 7H17.6Q20 7 20 9.4V10M4 10.5H19.7Q22 10.5 21.2 12.8L19.7 18.4Q19.2 20.3 17 20.3H5.4Q3.8 20.3 3.6 18.6L2.6 12.4Q2.3 10.5 4 10.5Z"}]];
+
+export const GripVerticalNode: IconNode = [["circle", {"cx": 9, "cy": 5, "r": 1.15, "fill": "currentColor", "stroke": "none"}], ["circle", {"cx": 9, "cy": 12, "r": 1.15, "fill": "currentColor", "stroke": "none"}], ["circle", {"cx": 9, "cy": 19, "r": 1.15, "fill": "currentColor", "stroke": "none"}], ["circle", {"cx": 15, "cy": 5, "r": 1.15, "fill": "currentColor", "stroke": "none"}], ["circle", {"cx": 15, "cy": 12, "r": 1.15, "fill": "currentColor", "stroke": "none"}], ["circle", {"cx": 15, "cy": 19, "r": 1.15, "fill": "currentColor", "stroke": "none"}]];
+
+export const HistoryNode: IconNode = [["path", {"d": "M4 5V10H9M4.2 9.4A8.2 8.2 0 1 1 4.7 17M12 7.5V12L15.5 14"}]];
+
+export const HourglassNode: IconNode = [["path", {"d": "M6 3H18M6 21H18M7 3V5Q7 8.3 12 12Q17 15.7 17 19V21M17 3V5Q17 8.3 12 12Q7 15.7 7 19V21"}]];
+
+export const ImageNode: IconNode = [["rect", {"x": 3.5, "y": 3.5, "width": 17, "height": 17, "rx": 3}], ["circle", {"cx": 8.5, "cy": 8.5, "r": 1.5}], ["path", {"d": "M4 17L9.2 12L12.8 15.3L16.3 11.8L20.5 16"}]];
+
+export const InfoNode: IconNode = [["circle", {"cx": 12, "cy": 12, "r": 8.5}], ["path", {"d": "M12 11V17"}], ["circle", {"cx": 12, "cy": 7.8, "r": 1, "fill": "currentColor", "stroke": "none"}]];
+
+export const LandmarkNode: IconNode = [["path", {"d": "M3 9L12 3L21 9ZM4 21H20M6 18V11M12 18V11M18 18V11"}]];
+
+export const LayoutDashboardNode: IconNode = [["rect", {"x": 3.5, "y": 3.5, "width": 7, "height": 9.5, "rx": 2}], ["rect", {"x": 13.5, "y": 3.5, "width": 7, "height": 5.5, "rx": 2}], ["rect", {"x": 3.5, "y": 16, "width": 7, "height": 4.5, "rx": 2}], ["rect", {"x": 13.5, "y": 12, "width": 7, "height": 8.5, "rx": 2}]];
+
+export const Loader2Node: IconNode = [["path", {"d": "M20.3 12A8.3 8.3 0 1 1 12 3.7"}]];
+
+export const MinusNode: IconNode = [["path", {"d": "M5 12H19"}]];
+
+export const MonitorNode: IconNode = [["rect", {"x": 3, "y": 3.5, "width": 18, "height": 13, "rx": 2.8}], ["path", {"d": "M12 16.5V21M8 21H16"}]];
+
+export const MonitorCogNode: IconNode = [["rect", {"x": 2.5, "y": 3.5, "width": 18, "height": 12, "rx": 2.5}], ["path", {"d": "M10 15.5V20.5M6.5 20.5H13.5"}], ["path", {"d": "M18.000 14.400L18.878 13.586L19.722 13.843L20.000 15.007L20.546 15.454L21.742 15.500L22.157 16.278L21.531 17.298L21.600 18.000L22.414 18.878L22.157 19.722L20.993 20.000L20.546 20.546L20.500 21.742L19.722 22.157L18.702 21.531L18.000 21.600L17.122 22.414L16.278 22.157L16.000 20.993L15.454 20.546L14.258 20.500L13.843 19.722L14.469 18.702L14.400 18.000L13.586 17.122L13.843 16.278L15.007 16.000L15.454 15.454L15.500 14.258L16.278 13.843L17.298 14.469Z"}], ["circle", {"cx": 18, "cy": 18, "r": 1.3499999999999999}]];
+
+export const MoonNode: IconNode = [["path", {"d": "M20 14.4A8.5 8.5 0 0 1 9.6 4A8.6 8.6 0 1 0 20 14.4Z"}]];
+
+export const MoreHorizontalNode: IconNode = [["circle", {"cx": 5, "cy": 12, "r": 1.4, "fill": "currentColor", "stroke": "none"}], ["circle", {"cx": 12, "cy": 12, "r": 1.4, "fill": "currentColor", "stroke": "none"}], ["circle", {"cx": 19, "cy": 12, "r": 1.4, "fill": "currentColor", "stroke": "none"}]];
+
+export const PackageNode: IconNode = [["path", {"d": "M4 7L12 3L20 7V17L12 21L4 17ZM4 7L12 11L20 7M12 11V21M8 5L16 9"}]];
+
+export const PaletteNode: IconNode = [["path", {"d": "M12 3C6.7 3 3 6.9 3 12C3 17.1 7 21 12 21H13.3Q15.2 21 14.3 18.6Q13.4 16.2 16.5 16.2H17.2Q21 16.2 21 12C21 6.7 17.3 3 12 3Z"}], ["circle", {"cx": 7.5, "cy": 11, "r": 1.2, "fill": "currentColor", "stroke": "none"}], ["circle", {"cx": 10.5, "cy": 6.9, "r": 1.2, "fill": "currentColor", "stroke": "none"}], ["circle", {"cx": 15.8, "cy": 7.6, "r": 1.2, "fill": "currentColor", "stroke": "none"}]];
+
+export const PencilNode: IconNode = [["path", {"d": "M4 16.5L15.8 4.7Q17.2 3.2 18.7 4.7L19.3 5.3Q20.8 6.8 19.3 8.2L7.5 20L3.5 20.5ZM13.8 6.7L17.3 10.2"}]];
+
+export const PlusNode: IconNode = [["path", {"d": "M5 12H19M12 5V19"}]];
+
+export const PowerNode: IconNode = [["path", {"d": "M12 3V11M6.6 6.4A8 8 0 1 0 17.4 6.4"}]];
+
+export const PowerOffNode: IconNode = [["path", {"d": "M12 3V9M5.5 7A8 8 0 0 0 17 19M18.5 7A8 8 0 0 1 20 15M3 3L21 21"}]];
+
+export const RefreshCwNode: IconNode = [["path", {"d": "M20.5 4.5V10H15M20.3 9.6A8.4 8.4 0 1 0 19.2 17"}]];
+
+export const RepeatNode: IconNode = [["path", {"d": "M4 8.5H17.5Q20 8.5 20 11V13M16.5 5L20 8.5L16.5 12M20 15.5H6.5Q4 15.5 4 13V11M7.5 12L4 15.5L7.5 19"}]];
+
+export const ScaleNode: IconNode = [["path", {"d": "M12 3V21M8 21H16M5 7L19 5M6 7L2.5 15H9.5ZM18 5L14.5 13H21.5Z"}]];
+
+export const SearchNode: IconNode = [["circle", {"cx": 10.5, "cy": 10.5, "r": 6.8}], ["path", {"d": "M15.5 15.5L21 21"}]];
+
+export const SendNode: IconNode = [["path", {"d": "M3.8 10.7L20 3.7Q20.8 3.3 20.4 4.3L13.3 20.3Q12.7 21.7 12 20.3L9.7 14.3L3.7 12Q2.3 11.4 3.8 10.7ZM9.7 14.3L20 4"}]];
+
+export const SettingsNode: IconNode = [["path", {"d": "M12.000 5.440L13.600 3.958L15.138 4.424L15.645 6.546L16.639 7.361L18.818 7.444L19.576 8.862L18.434 10.720L18.560 12.000L20.042 13.600L19.576 15.138L17.454 15.645L16.639 16.639L16.556 18.818L15.138 19.576L13.280 18.434L12.000 18.560L10.400 20.042L8.862 19.576L8.355 17.454L7.361 16.639L5.182 16.556L4.424 15.138L5.566 13.280L5.440 12.000L3.958 10.400L4.424 8.862L6.546 8.355L7.361 7.361L7.444 5.182L8.862 4.424L10.720 5.566Z"}], ["circle", {"cx": 12, "cy": 12, "r": 2.4599999999999995}]];
+
+export const ShieldNode: IconNode = [["path", {"d": "M12 2.8Q16 5.3 20 5.6V11.5Q20 17.8 12 21.2Q4 17.8 4 11.5V5.6Q8 5.3 12 2.8Z"}]];
+
+export const ShieldAlertNode: IconNode = [["path", {"d": "M12 2.8Q16 5.3 20 5.6V11.5Q20 17.8 12 21.2Q4 17.8 4 11.5V5.6Q8 5.3 12 2.8Z"}], ["path", {"d": "M12 8V12.5"}], ["circle", {"cx": 12, "cy": 16, "r": 1, "fill": "currentColor", "stroke": "none"}]];
+
+export const ShieldCheckNode: IconNode = [["path", {"d": "M12 2.8Q16 5.3 20 5.6V11.5Q20 17.8 12 21.2Q4 17.8 4 11.5V5.6Q8 5.3 12 2.8Z"}], ["path", {"d": "M8 11.8L10.8 14.6L16.1 9.3"}]];
+
+export const ShieldXNode: IconNode = [["path", {"d": "M12 2.8Q16 5.3 20 5.6V11.5Q20 17.8 12 21.2Q4 17.8 4 11.5V5.6Q8 5.3 12 2.8Z"}], ["path", {"d": "M9 9L15 15M15 9L9 15"}]];
+
+export const SparklesNode: IconNode = [["path", {"d": "M12 3L14.5 9.5L21 12L14.5 14.5L12 21L9.5 14.5L3 12L9.5 9.5ZM20 2V6M18 4H22"}]];
+
+export const SquareNode: IconNode = [["rect", {"x": 4, "y": 4, "width": 16, "height": 16, "rx": 2.8}]];
+
+export const SunNode: IconNode = [["circle", {"cx": 12, "cy": 12, "r": 4.2}], ["path", {"d": "M12 2.2V4M12 20V21.8M2.2 12H4M20 12H21.8M5 5L6.3 6.3M17.7 17.7L19 19M5 19L6.3 17.7M17.7 6.3L19 5"}]];
+
+export const Trash2Node: IconNode = [["path", {"d": "M3.5 6.5H20.5M8 6.5V4Q8 2.8 9.5 2.8H14.5Q16 2.8 16 4V6.5M5.5 6.5L6.3 18.7Q6.4 21 8.7 21H15.3Q17.6 21 17.7 18.7L18.5 6.5M9.5 10.5V17M14.5 10.5V17"}]];
+
+export const TrendingDownNode: IconNode = [["path", {"d": "M3.5 6.5L9.5 12.5L13.5 8.5L20.5 15.5M15 15.5H20.5V10"}]];
+
+export const TrendingUpNode: IconNode = [["path", {"d": "M3.5 17.5L9.5 11.5L13.5 15.5L20.5 8.5M15 8.5H20.5V14"}]];
+
+export const TrophyNode: IconNode = [["path", {"d": "M7 3.5H17V10Q17 15 12 15Q7 15 7 10ZM7 6H3.5V8Q3.5 12 7.2 12M17 6H20.5V8Q20.5 12 16.8 12M12 15V20.5M8 20.5H16"}]];
+
+export const TruckNode: IconNode = [["rect", {"x": 2.5, "y": 5.5, "width": 11, "height": 12, "rx": 2}], ["path", {"d": "M13.5 9H17.8L21.5 13.5V17.5H19M7 17.5H16M13.5 13.5H21.5"}], ["circle", {"cx": 6, "cy": 18, "r": 2.4}], ["circle", {"cx": 18, "cy": 18, "r": 2.4}]];
+
+export const Undo2Node: IconNode = [["path", {"d": "M8 5L3.5 9.5L8 14M3.5 9.5H14Q20.5 9.5 20.5 16Q20.5 20.5 16 20.5"}]];
+
+export const UploadNode: IconNode = [["path", {"d": "M12 15.5V3.5M7.8 7.7L12 3.5L16.2 7.7M4 16V19Q4 21 6 21H18Q20 21 20 19V16"}]];
+
+export const UserPlusNode: IconNode = [["circle", {"cx": 9, "cy": 7.5, "r": 3.5}], ["path", {"d": "M2.5 21V19Q2.5 13.5 9 13.5Q13 13.5 14.5 16M18.5 8V15M15 11.5H22"}]];
+
+export const UsersNode: IconNode = [["circle", {"cx": 9, "cy": 7.5, "r": 3.5}], ["path", {"d": "M2.5 21V19Q2.5 13.5 9 13.5Q15.5 13.5 15.5 19V21M17 4.5Q21.5 5.5 19 10M18.5 14Q22 15.3 22 19V21"}]];
+
+export const WalletNode: IconNode = [["path", {"d": "M20 8V6Q20 3.8 17.8 4.3L5.2 7Q3 7.5 3 10V18Q3 20.5 5.5 20.5H18.5Q21 20.5 21 18V10Q21 8 19 8H5.2"}], ["rect", {"x": 15.3, "y": 12, "width": 6, "height": 5, "rx": 1.5}], ["circle", {"cx": 18, "cy": 14.5, "r": 0.6, "fill": "currentColor", "stroke": "none"}]];
+
+export const XNode: IconNode = [["path", {"d": "M5.7 5.7L18.3 18.3M18.3 5.7L5.7 18.3"}]];
+
+export const XCircleNode: IconNode = [["circle", {"cx": 12, "cy": 12, "r": 8.5}], ["path", {"d": "M9 9L15 15M15 9L9 15"}]];

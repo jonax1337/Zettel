@@ -1,5 +1,10 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./branding/buerofreund/banners/readme-banner-dark.png">
+  <img src="./branding/buerofreund/banners/readme-banner-light.png" alt="Zettel – Papierkram, halb so wild. Mit deinem kleinen Bürofreund." width="1280">
+</picture>
+
 # Zettel
 
 **Offline-first Rechnungen für deutsche Freelancer und Kleinunternehmer.**
@@ -18,7 +23,7 @@ ZUGFeRD- / Factur-X-konforme PDF/A-3 mit eingebettetem EN-16931-XML — lokal, o
 [![Java](https://img.shields.io/badge/Java-KoSIT--Validator-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](https://github.com/itplr-kosit/validator)
 [![SQLite](https://img.shields.io/badge/SQLite-local-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org)
 
-[Download](https://github.com/jonax1337/zettel/releases/latest) · [Diskutieren](https://github.com/jonax1337/zettel/discussions) · [Changelog](./CHANGELOG.md) · [Mitmachen](./CONTRIBUTING.md) · [Security](./SECURITY.md)
+[Download](https://github.com/jonax1337/zettel/releases/latest) · [Diskutieren](https://github.com/jonax1337/zettel/discussions) · [Changelog](./CHANGELOG.md) · [Mitmachen](./CONTRIBUTING.md) · [Security](./SECURITY.md) · [Design Kit](./branding/buerofreund/README.md)
 
 </div>
 

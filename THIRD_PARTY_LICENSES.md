@@ -86,6 +86,7 @@ Die mit Tauri gebundelte JRE wird unverändert verteilt; die Classpath-Exception
 ## Fonts
 
 - **Geist & Geist Mono** — SIL Open Font License 1.1, © Vercel. Lokal als `@fontsource-variable`-Paket gebundelt, keine externe Anfrage zur Laufzeit.
+- **Nunito & Nunito Sans** — SIL Open Font License 1.1. Originale variable Schriftdateien für das Bürofreund-Design-Kit unter `branding/buerofreund/fonts/`; die vollständigen Lizenzen liegen dort als [Nunito-OFL.txt](branding/buerofreund/fonts/Nunito-OFL.txt) und [NunitoSans-OFL.txt](branding/buerofreund/fonts/NunitoSans-OFL.txt). Diese Schriften gehören zu den Branding-Assets.
 
 ## Externe Online-Dienste (optional, on-demand)
 

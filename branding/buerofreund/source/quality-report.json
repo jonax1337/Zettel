@@ -1,0 +1,38 @@
+{
+  "reference": "reference/selected-concept.png",
+  "comparison": "reference/comparison.png",
+  "method": "Binary silhouette overlap after aligning vector paths to the original concept pixels. Shading and color variation are excluded.",
+  "body": {
+    "referenceBounds": [
+      244,
+      244
+    ],
+    "correctedBounds": [
+      244,
+      244
+    ],
+    "firstAttemptBounds": [
+      497,
+      452
+    ],
+    "silhouetteOverlapPercent": 98.909
+  },
+  "wordmark": {
+    "silhouetteOverlapPercent": 98.039,
+    "source": "traced original custom letterforms; no substitute font"
+  },
+  "standardFace": {
+    "silhouetteOverlapPercent": 99.016
+  },
+  "contrast": {
+    "inkOnCoral": 4.77,
+    "inkOnBlush": 12.15,
+    "creamOnDeepCoral": 5.18,
+    "mutedOnCream": 5.18
+  },
+  "validation": {
+    "svgFiles": 156,
+    "pngFiles": 366,
+    "invalidOrNonVectorAssetSvgs": []
+  }
+}

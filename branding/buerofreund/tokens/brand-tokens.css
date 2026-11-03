@@ -1,0 +1,18 @@
+@font-face{font-family:"Nunito";src:url("../fonts/Nunito-Variable.ttf") format("truetype");font-style:normal;font-weight:200 1000;font-display:swap}
+@font-face{font-family:"Nunito Sans";src:url("../fonts/NunitoSans-Variable.ttf") format("truetype");font-style:normal;font-weight:200 1000;font-display:swap}
+:root{
+  --zettel-coral: #F06B53;
+  --zettel-blush: #FFE6E0;
+  --zettel-ink: #30272C;
+  --zettel-cream: #FFF9F5;
+  --zettel-dark: #241F23;
+  --zettel-coralDeep: #B84332;
+  --zettel-muted: #7B646C;
+  --zettel-success: #337357;
+  --zettel-white: #FFFFFF;
+  --zettel-border: #E7D8D3;
+  --zettel-font-display: "Nunito", sans-serif;
+  --zettel-font-body: "Nunito Sans", sans-serif;
+  --zettel-radius-control: 12px;
+  --zettel-radius-card: 20px;
+}
