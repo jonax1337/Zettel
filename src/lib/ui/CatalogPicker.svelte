@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Dialog as DialogPrimitive } from "bits-ui";
-  import { Search, Package } from "@lucide/svelte";
+  import { Search, Package } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
   import { searchCatalog } from "$lib/db/catalog";
   import type { CatalogItem } from "$lib/db/schema";

@@ -9,7 +9,7 @@
     AlertTriangle,
     ArrowRight,
     RefreshCw,
-  } from "@lucide/svelte";
+  } from "$lib/brand-icons";
   import { version as appVersion } from "../../package.json";
   import { checkForUpdate } from "$lib/updater";
 
@@ -43,8 +43,8 @@
       href: "/settings/appearance",
       icon: Palette,
       title: "Darstellung",
-      description: "Theme und Akzentfarbe der App-Oberfläche.",
-      items: ["Theme", "Akzentfarbe"],
+      description: "Theme der App-Oberfläche.",
+      items: ["Theme"],
     },
     {
       href: "/settings/data",

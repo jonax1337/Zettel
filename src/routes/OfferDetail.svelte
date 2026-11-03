@@ -45,7 +45,7 @@
     MoreHorizontal,
     AlertTriangle,
     FileSignature,
-  } from "@lucide/svelte";
+  } from "$lib/brand-icons";
 
   type Props = { params?: { id?: string } };
   let { params }: Props = $props();

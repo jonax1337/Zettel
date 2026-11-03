@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ShieldCheck, ShieldAlert, Shield, ShieldX } from "@lucide/svelte";
+  import { ShieldCheck, ShieldAlert, Shield, ShieldX } from "$lib/brand-icons";
   import { Badge } from "$lib/ui";
 
   type Props = {
@@ -24,7 +24,7 @@
 </script>
 
 {#if status === "valid"}
-  <Badge variant="default" class="gap-1.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/30">
+  <Badge variant="default" class="gap-1.5 bg-success/15 text-success hover:bg-success/20 border-success/30">
     <ShieldCheck class="size-3.5" />
     {#if compact}KoSIT OK{:else}ZUGFeRD-konform (KoSIT){/if}
   </Badge>

@@ -10,8 +10,8 @@
   import { listVendors } from "$lib/db/queries";
   import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
-  import { Button, Card, Input, Select, Badge, Label, Checkbox, SortableTh, BulkActionBar, ConfirmDialog, toast } from "$lib/ui";
-  import { Plus, Search, CheckCircle2, Trash2 } from "@lucide/svelte";
+  import { Button, Card, Input, Select, Badge, Label, Checkbox, SortableTh, BulkActionBar, ConfirmDialog, toast, EmptyState } from "$lib/ui";
+  import { Plus, Search, CheckCircle2, Trash2 } from "$lib/brand-icons";
   import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
   import { deleteExpense, markExpensePaid } from "$lib/db/expenses";
 
@@ -191,11 +191,7 @@
 {:else if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else if expenses.length === 0}
-  <Card>
-    <div class="py-12 text-center text-sm text-muted-foreground">
-      Keine Eingangsrechnungen gefunden.
-    </div>
-  </Card>
+  <EmptyState variant={search ? "no-results" : "empty"} message="Keine Eingangsrechnungen gefunden." />
 {:else}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">

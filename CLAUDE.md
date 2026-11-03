@@ -3,7 +3,7 @@
 Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tauri 2 + Svelte 5 + Python sidecar.** ZUGFeRD/Factur-X PDF/A-3 output. Release-Historie in `CHANGELOG.md` — hier nicht duplizieren.
 
 ## Current state
-- **Released:** v0.20.0 on `main`. Auto-Update aktiv seit v0.4.3.
+- **Released:** v0.21.0 on `main`. Auto-Update aktiv seit v0.4.3.
 - **DB schema:** `user_version = 26` (letzte Migration `0025_v0.16_expense_categories.sql`).
 - **Dev-Linie:** neue Arbeit auf `release/vX.Y`-Branches.
 - **Test-Suite:** 134 Vitest-Cases (`pnpm test`) + 71 Pytest-Cases (`sidecar/tests/`). Pure-Math (Totals/Tax/Skonto/Currency/Date/DATEV) ist voll abgedeckt, Sidecar deckt ZUGFeRD-XML-Goldens + KoSIT-Validator-Roundtrip + i18n ab.
@@ -28,7 +28,6 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 - `sandbox.rs` — `is_sandbox`/`set_sandbox`, gesteuert über Flag-File `sandbox.flag` im AppData-Dir. Toggle → `plugin-process::relaunch`. `client.ts` wählt die DB-URL beim Open.
 - `exchange.rs` — `fetch_ecb_exchange_rate(currency)`, blocking ureq gegen `eurofxref-daily.xml`, ~8s Timeout.
 - `validator.rs` — E-Rechnungs-Validierung über den gebundelten KoSIT-Validator (**Java**). Extrahiert via Sidecar (`extract_xml_only`) erst die XML aus dem PDF, schreibt sie in eine Temp-Datei und startet Java als CLI-Subprozess (`Command::new(java) -jar validator.jar -s scenarios.xml -r <dir> -o <tmp> <input>`), parst dann den XML-Report (String-Scan: `valid`, Szenario, `failed-assert`-Findings). `resolve_java`: dev `tools/jre/bin/java` → Release `jre/bin/java` aus Resources → System-`java`. Commands: `validator_status`, `validate_einvoice_xml`, `validate_einvoice_pdf`. Nur Release-Build (bzw. dev mit lokalem `tools/jre` + `tools/kosit-validator`). Frontend-Bridge `src/lib/validator.ts`, UI `src/routes/Validate.svelte`. Setup-Skripte: `tools/download-validator.sh` (lädt `validator.jar` + Scenarios), `tools/build-jre.sh` (jlink-minimierte JRE, ~35 MB). Gebundelt via `tauri.bundle.conf.json` (`kosit-validator`, `jre`).
-- `accent.rs` — Accent-Color-Reader (Windows-Registry).
 
 ### CLI (`cli/zettel.py`)
 - Headless-DB-Steuerung (stdlib-only) für Automatisierung; Befehle: `status`, `customers`, `invoices`, `invoice:{create,show,issue,pdf,paid}`, `stats`.

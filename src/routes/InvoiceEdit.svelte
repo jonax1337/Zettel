@@ -40,7 +40,7 @@
     Select,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2, AlertTriangle, CalendarRange, FileText, X, Package, GripVertical, ChevronUp, ChevronDown } from "@lucide/svelte";
+  import { ArrowLeft, Plus, Trash2, AlertTriangle, CalendarRange, FileText, X, Package, GripVertical, ChevronUp, ChevronDown } from "$lib/brand-icons";
   import { flip } from "svelte/animate";
   import type { CatalogItem } from "$lib/db/schema";
 
@@ -504,12 +504,12 @@
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else}
   {#if isCreditNote}
-    <Card class="border-amber-500/40 bg-amber-500/10 dark:bg-amber-500/5 mb-4">
+    <Card class="border-warning/40 bg-warning/10 mb-4">
       <CardContent>
         <div class="flex items-start gap-3">
-          <AlertTriangle class="size-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+          <AlertTriangle class="size-5 text-warning shrink-0 mt-0.5" />
           <div class="flex-1 text-sm">
-            <div class="font-medium text-amber-700 dark:text-amber-400">Stornorechnung</div>
+            <div class="font-medium text-warning">Stornorechnung</div>
             <div class="mt-0.5 text-muted-foreground">
               Mengen anpassen für Teilstorno. Positionen entfernen für Teilrückerstattung.
             </div>
@@ -627,7 +627,7 @@
                 {/if}
               </p>
               {#if reverseChargeBlockedReason}
-                <p class="text-xs text-amber-600 dark:text-amber-500">
+                <p class="text-xs text-warning">
                   {reverseChargeBlockedReason}
                 </p>
               {/if}

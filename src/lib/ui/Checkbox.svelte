@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { WithoutChildren } from "bits-ui";
   import { Checkbox as CheckboxPrimitive } from "bits-ui";
-  import { Check, Minus } from "@lucide/svelte";
+  import { Check, Minus } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
 
   type Props = WithoutChildren<CheckboxPrimitive.RootProps> & {

@@ -13,7 +13,7 @@
     CardContent,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, ArrowRight, Sparkles, X } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, Sparkles, X } from "$lib/brand-icons";
 
   type Props = {
     onDone: () => void;

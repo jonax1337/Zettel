@@ -1,5 +1,5 @@
 <script lang="ts" generics="K extends string">
-  import { ArrowUp, ArrowDown, ArrowUpDown } from "@lucide/svelte";
+  import { ArrowUp, ArrowDown, ArrowUpDown } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
 
   type Direction = "asc" | "desc" | null;

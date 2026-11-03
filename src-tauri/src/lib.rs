@@ -1,6 +1,5 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-mod accent;
 mod backup;
 mod crypto;
 mod exchange;
@@ -213,7 +212,6 @@ pub fn run() {
             backup::bundle_backup,
             backup::stage_restore,
             backup::apply_pending_partial_restore,
-            accent::get_system_accent_color,
             validator::validator_status,
             validator::validate_einvoice_xml,
             validator::validate_einvoice_pdf,

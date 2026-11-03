@@ -2,53 +2,86 @@
 
 @custom-variant dark (&:is([data-theme="dark"] *));
 
+@font-face {
+  font-family: "Nunito";
+  src: url("./assets/fonts/Nunito-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 200 1000;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Nunito Sans";
+  src: url("./assets/fonts/NunitoSans-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 200 1000;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Nunito Sans";
+  src: url("./assets/fonts/NunitoSans-Italic-Variable.ttf") format("truetype");
+  font-style: italic;
+  font-weight: 200 1000;
+  font-display: swap;
+}
+
+/* Bürofreund palette — branding/buerofreund/tokens/brand-tokens.css */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.6 0.18 145);
-  --warning: oklch(0.75 0.16 75);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --radius: 0.625rem;
+  --brand-coral: #f06b53;
+  --brand-coral-deep: #b84332;
+  --brand-blush: #ffe6e0;
+  --brand-ink: #30272c;
+  --brand-cream: #fff9f5;
+  --brand-dark: #241f23;
+  --brand-muted: #7b646c;
+  --brand-green: #337357;
+
+  --background: var(--brand-cream);
+  --foreground: var(--brand-ink);
+  --card: #ffffff;
+  --card-foreground: var(--brand-ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--brand-ink);
+  /* Cream on deep coral = 5.18:1 (kit quality report); white on light coral fails AA. */
+  --primary: var(--brand-coral-deep);
+  --primary-foreground: var(--brand-cream);
+  --secondary: var(--brand-blush);
+  --secondary-foreground: var(--brand-ink);
+  --muted: #f7ece8;
+  --muted-foreground: var(--brand-muted);
+  --accent: var(--brand-blush);
+  --accent-foreground: var(--brand-ink);
+  --destructive: #c0392b;
+  --destructive-foreground: var(--brand-cream);
+  --success: var(--brand-green);
+  --warning: #b7791f;
+  --border: #e7d8d3;
+  --input: #e7d8d3;
+  --ring: var(--brand-coral);
+  --radius: 12px;
 }
 
 [data-theme="dark"] {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.7 0.18 145);
-  --warning: oklch(0.78 0.16 75);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --background: var(--brand-dark);
+  --foreground: var(--brand-cream);
+  --card: #2d272b;
+  --card-foreground: var(--brand-cream);
+  --popover: #2d272b;
+  --popover-foreground: var(--brand-cream);
+  --primary: var(--brand-coral);
+  --primary-foreground: var(--brand-dark);
+  --secondary: #3a3136;
+  --secondary-foreground: var(--brand-cream);
+  --muted: #352d32;
+  --muted-foreground: #c2adb4;
+  --accent: #3e3338;
+  --accent-foreground: var(--brand-cream);
+  --destructive: #ff7b6e;
+  --destructive-foreground: var(--brand-dark);
+  --success: #5fb08a;
+  --warning: #e0a84a;
+  --border: rgb(255 230 224 / 12%);
+  --input: rgb(255 230 224 / 16%);
+  --ring: var(--brand-coral);
 }
 
 @theme inline {
@@ -73,16 +106,21 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-coral: var(--brand-coral);
+  --color-blush: var(--brand-blush);
 
+  /* Kit: 12px on controls (rounded-md), 20px on cards (rounded-xl). */
   --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 8px);
 
   --font-sans:
-    "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono:
-    "Geist Mono Variable", ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
+    "Nunito Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Nunito", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+  /* The kit has no monospace face; amounts and numbers use tabular Nunito Sans. */
+  --font-mono: "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono--font-feature-settings: "tnum", "lnum";
 }
 
 @layer base {
@@ -105,8 +143,8 @@
     text-rendering: optimizeLegibility;
   }
   ::selection {
-    background-color: var(--color-primary);
-    color: var(--color-primary-foreground);
+    background-color: var(--color-blush);
+    color: var(--brand-ink);
   }
   ::-webkit-scrollbar {
     width: 10px;
@@ -139,12 +177,14 @@
   h2,
   h3,
   h4 {
-    font-weight: 600;
-    letter-spacing: -0.02em;
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.01em;
   }
   h1 {
     font-size: 1.75rem;
     line-height: 2.25rem;
+    font-weight: 900;
   }
   h2 {
     font-size: 1.25rem;

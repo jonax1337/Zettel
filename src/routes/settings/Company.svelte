@@ -18,7 +18,7 @@
     Slider,
     toast,
   } from "$lib/ui";
-  import { Image, X, ChevronLeft, ChevronRight } from "@lucide/svelte";
+  import { Image, X, ChevronLeft, ChevronRight } from "$lib/brand-icons";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
   import {
     listPrepayments,

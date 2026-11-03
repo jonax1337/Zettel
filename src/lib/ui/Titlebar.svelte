@@ -1,7 +1,8 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { Minus, Square, Copy, X } from "@lucide/svelte";
+  import { Minus, Square, Copy, X } from "$lib/brand-icons";
   import { onMount } from "svelte";
+  import appMark from "../../assets/brand/app-mark.svg";
 
   import type { Snippet } from "svelte";
 
@@ -36,11 +37,7 @@
       data-tauri-drag-region
       class="flex items-center gap-2 pl-3 pr-4"
     >
-      <div
-        class="grid place-items-center size-5 rounded-[4px] bg-primary text-primary-foreground font-bold text-[10px]"
-      >
-        Z
-      </div>
+      <img src={appMark} alt="" class="size-5" draggable="false" />
     </div>
   {:else}
     <div data-tauri-drag-region class="w-3"></div>

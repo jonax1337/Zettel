@@ -1,6 +1,6 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
-  import { ArrowLeft, FileQuestion } from "@lucide/svelte";
+  import { ArrowLeft, FileQuestion } from "$lib/brand-icons";
 </script>
 
 <div class="flex flex-col items-center justify-center text-center py-24 px-6">

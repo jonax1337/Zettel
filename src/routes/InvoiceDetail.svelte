@@ -60,7 +60,7 @@
     Plus,
     History,
     Clock,
-  } from "@lucide/svelte";
+  } from "$lib/brand-icons";
   import { execute } from "$lib/db/client";
   import { validatePdf } from "$lib/validator";
   import { listRemindersForInvoice } from "$lib/db/reminders";
@@ -563,12 +563,12 @@
   <p class="text-sm text-destructive">{error}</p>
 {:else if invoice && customer}
   {#if invoice.isCreditNote}
-    <Card class="border-amber-500/40 bg-amber-500/10 dark:bg-amber-500/5 mb-4">
+    <Card class="border-warning/40 bg-warning/10 mb-4">
       <CardContent>
         <div class="flex items-start gap-3">
-          <AlertTriangle class="size-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+          <AlertTriangle class="size-5 text-warning shrink-0 mt-0.5" />
           <div class="flex-1 text-sm">
-            <div class="font-medium text-amber-700 dark:text-amber-400">Stornorechnung</div>
+            <div class="font-medium text-warning">Stornorechnung</div>
             <div class="mt-0.5 text-muted-foreground">
               Storniert die Rechnung
               {#if originalInvoice}
@@ -589,12 +589,12 @@
   {/if}
 
   {#if cancelledByCreditNote}
-    <Card class="border-amber-500/40 bg-amber-500/10 dark:bg-amber-500/5 mb-4">
+    <Card class="border-warning/40 bg-warning/10 mb-4">
       <CardContent>
         <div class="flex items-start gap-3">
-          <AlertTriangle class="size-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+          <AlertTriangle class="size-5 text-warning shrink-0 mt-0.5" />
           <div class="flex-1 text-sm">
-            <div class="font-medium text-amber-700 dark:text-amber-400">Storniert</div>
+            <div class="font-medium text-warning">Storniert</div>
             <div class="mt-0.5 text-muted-foreground">
               Wurde storniert durch
               <a
@@ -978,11 +978,11 @@
             </div>
             <div>
               <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Bezahlt</div>
-              <div class="font-medium tabular-nums text-green-600 dark:text-green-500">{formatMoney(paidSum, invoice.currency)}</div>
+              <div class="font-medium tabular-nums text-success">{formatMoney(paidSum, invoice.currency)}</div>
             </div>
             <div>
               <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Offen</div>
-              <div class="font-medium tabular-nums {remainingCent > 0 ? 'text-amber-600 dark:text-amber-500' : ''}">{formatMoney(remainingCent, invoice.currency)}</div>
+              <div class="font-medium tabular-nums {remainingCent > 0 ? 'text-warning' : ''}">{formatMoney(remainingCent, invoice.currency)}</div>
             </div>
           </div>
 
@@ -1144,7 +1144,7 @@
         />
         <p class="text-xs text-muted-foreground">Standard ist heute. Für Nacherfassung das tatsächliche Versanddatum eintragen.</p>
         {#if dialogWarning}
-          <p class="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+          <p class="text-xs text-warning flex items-center gap-1">
             <AlertTriangle class="size-3.5" /> {dialogWarning}
           </p>
         {/if}
@@ -1192,7 +1192,7 @@
         />
         <p class="text-xs text-muted-foreground">Standard ist heute. Bei Nacherfassung das echte Zahldatum eintragen — Dashboard und Monats-Charts hängen davon ab.</p>
         {#if dialogWarning}
-          <p class="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+          <p class="text-xs text-warning flex items-center gap-1">
             <AlertTriangle class="size-3.5" /> {dialogWarning}
           </p>
         {/if}

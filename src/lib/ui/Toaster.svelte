@@ -1,6 +1,6 @@
 <script lang="ts">
   import { toasts, dismiss } from "./toast.svelte";
-  import { CheckCircle2, XCircle, AlertCircle, Info, X } from "@lucide/svelte";
+  import { CheckCircle2, XCircle, AlertCircle, Info, X } from "$lib/brand-icons";
   import { fly } from "svelte/transition";
   import { flip } from "svelte/animate";
   import { cubicOut, cubicIn } from "svelte/easing";

@@ -19,7 +19,7 @@
     Bell,
     AlertTriangle,
     ArrowRight,
-  } from "@lucide/svelte";
+  } from "$lib/brand-icons";
   import PeriodSwitcher from "$lib/components/PeriodSwitcher.svelte";
   import BarChart from "$lib/components/BarChart.svelte";
   import {
@@ -132,14 +132,14 @@
   <button
     type="button"
     onclick={() => push("/settings")}
-    class="group mb-6 w-full rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200 p-4 flex items-center gap-3 text-left cursor-pointer"
+    class="group mb-6 w-full rounded-lg border border-warning/40 bg-warning/10 hover:bg-warning/15 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200 p-4 flex items-center gap-3 text-left cursor-pointer"
   >
-    <FlaskConical class="size-5 text-amber-600 dark:text-amber-400 shrink-0" />
+    <FlaskConical class="size-5 text-warning shrink-0" />
     <div class="flex-1">
-      <h2 class="text-sm font-semibold text-amber-900 dark:text-amber-200">Sandbox aktiv</h2>
-      <p class="text-xs text-amber-800/80 dark:text-amber-200/80">Hier kannst du gefahrlos testen. Echte Daten sind nicht betroffen.</p>
+      <h2 class="text-sm font-semibold text-warning">Sandbox aktiv</h2>
+      <p class="text-xs text-warning/80">Hier kannst du gefahrlos testen. Echte Daten sind nicht betroffen.</p>
     </div>
-    <span class="inline-flex items-center gap-1 text-xs text-amber-900/70 dark:text-amber-200/70">
+    <span class="inline-flex items-center gap-1 text-xs text-warning/70">
       Einstellungen
       <ArrowRight class="size-3.5 transition-transform group-hover:translate-x-0.5" />
     </span>
@@ -259,7 +259,7 @@
       <div class="text-2xl font-semibold mt-2 tabular-nums">{loading ? "…" : centsToEur(offerStats.total)}</div>
       <div class="text-xs text-muted-foreground mt-1">
         {offerStats.count} Angebot{offerStats.count === 1 ? "" : "e"}{#if offerStats.expiringSoonCount > 0}
-          <span class="text-amber-600 dark:text-amber-500"> · {offerStats.expiringSoonCount} läuft bald ab</span>
+          <span class="text-warning"> · {offerStats.expiringSoonCount} läuft bald ab</span>
         {/if}
       </div>
     </CardContent>
@@ -363,7 +363,7 @@
         <div class="flex items-baseline gap-6 text-sm">
           {#if cashFlow.overdue > 0}
             <div>
-              <div class="text-amber-600 dark:text-amber-500 font-medium tabular-nums">{centsToEur(cashFlow.overdue)}</div>
+              <div class="text-warning font-medium tabular-nums">{centsToEur(cashFlow.overdue)}</div>
               <div class="text-[10px] text-muted-foreground uppercase tracking-wider">
                 überfällig ({cashFlow.overdueCount})
               </div>
@@ -509,7 +509,7 @@
           {/if}
           {#if followUpGroups.today.length > 0}
             <div>
-              <div class="text-[11px] uppercase tracking-wider text-amber-600 dark:text-amber-500 mb-1">Heute</div>
+              <div class="text-[11px] uppercase tracking-wider text-warning mb-1">Heute</div>
               <ul class="flex flex-col gap-1">
                 {#each followUpGroups.today as f (f.kind + f.id)}
                   <li>
@@ -573,7 +573,7 @@
             <tr class="border-t first:border-t-0">
               <td class="px-4 py-3 font-medium">{tmpl.name}</td>
               <td class="px-4 py-3 text-muted-foreground">{tmpl.customerName}</td>
-              <td class="px-4 py-3 text-amber-600 dark:text-amber-500 tabular-nums">
+              <td class="px-4 py-3 text-warning tabular-nums">
                 fällig {formatDate(tmpl.nextDueDate)}
               </td>
               <td class="px-4 py-3 text-right">
