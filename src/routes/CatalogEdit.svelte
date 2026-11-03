@@ -19,7 +19,7 @@
     Checkbox,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft } from "@lucide/svelte";
+  import { ArrowLeft } from "$lib/brand-icons";
   import { eurStringToCents } from "$lib/utils/money";
 
   type Props = {

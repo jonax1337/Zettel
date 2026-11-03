@@ -17,7 +17,7 @@
     Checkbox,
     toast,
   } from "$lib/ui";
-  import { Upload, CheckCircle2, AlertCircle, FileUp } from "@lucide/svelte";
+  import { Upload, CheckCircle2, AlertCircle, FileUp } from "$lib/brand-icons";
 
   let busy = $state(false);
   let parsing = $state(false);

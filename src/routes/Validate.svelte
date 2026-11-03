@@ -24,7 +24,7 @@
     FileSearch,
     Upload,
     AlertCircle,
-  } from "@lucide/svelte";
+  } from "$lib/brand-icons";
 
   let status = $state<ValidatorStatus | null>(null);
   let report = $state<ValidationReport | null>(null);
@@ -81,10 +81,10 @@
   </div>
 
   {#if status && !canValidate}
-    <Card class="border-amber-500/40 bg-amber-500/5">
+    <Card class="border-warning/40 bg-warning/5">
       <CardHeader>
         <CardTitle class="flex items-center gap-2 text-base">
-          <AlertCircle class="size-4 text-amber-500" />
+          <AlertCircle class="size-4 text-warning" />
           Validator nicht einsatzbereit
         </CardTitle>
         <CardDescription>
@@ -141,7 +141,7 @@
         <div>
           <CardTitle class="flex items-center gap-2 text-base">
             {#if report.valid}
-              <ShieldCheck class="size-5 text-emerald-500" />
+              <ShieldCheck class="size-5 text-success" />
               Validierung bestanden
             {:else}
               <ShieldAlert class="size-5 text-destructive" />

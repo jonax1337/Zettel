@@ -14,19 +14,22 @@
     Package,
     Landmark,
     Settings as SettingsIcon,
-  } from "@lucide/svelte";
+  } from "$lib/brand-icons";
   import { Toaster, Titlebar, CommandPalette } from "$lib/ui";
-  import { Search } from "@lucide/svelte";
+  import { Search } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import { isSandboxActive } from "$lib/db/client";
   import { loadSettings } from "$lib/db/queries";
   import { maybeRunAutoBackup } from "$lib/utils/auto-backup";
-  import { FlaskConical } from "@lucide/svelte";
+  import { FlaskConical } from "$lib/brand-icons";
   import { push } from "svelte-spa-router";
   import OnboardingWizard from "./OnboardingWizard.svelte";
   import TenantSwitcher from "./TenantSwitcher.svelte";
+  import { theme } from "$lib/theme.svelte";
+  import logoLight from "../../assets/brand/horizontal-primary.svg";
+  import logoDark from "../../assets/brand/horizontal-on-dark.svg";
 
   let sandbox = $state(false);
   let paletteOpen = $state(false);
@@ -147,23 +150,11 @@
 
 <div class="flex flex-col h-full bg-background text-foreground">
   <Titlebar title={windowTitle}>
-    {#snippet actions()}
-      <button
-        type="button"
-        onclick={() => (paletteOpen = true)}
-        aria-label="Globale Suche (Strg+K)"
-        title="Globale Suche (Strg+K)"
-        class="inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-      >
-        <Search class="size-3.5" />
-        <kbd class="hidden md:inline text-[10px] font-medium opacity-70">Strg K</kbd>
-      </button>
-    {/snippet}
     {#if sandbox}
       <button
         type="button"
         onclick={() => push("/settings")}
-        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-amber-500/20 text-amber-900 dark:text-amber-200 border border-amber-500/40 hover:bg-amber-500/30 transition-colors cursor-pointer"
+        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-warning/20 text-warning border border-warning/40 hover:bg-warning/30 transition-colors cursor-pointer"
         title="Sandbox aktiv – zu den Einstellungen"
         style="-webkit-app-region: no-drag"
       >
@@ -175,11 +166,31 @@
 
   <div class="flex flex-1 min-h-0">
     <aside class="w-60 shrink-0 border-r bg-card/50 flex flex-col">
+        <a href="/" use:link class="block px-5 pt-5 pb-1" aria-label="Zettel – Dashboard">
+          <img
+            src={theme.resolved === "dark" ? logoDark : logoLight}
+            alt="Zettel"
+            class="w-40 h-auto"
+            draggable="false"
+          />
+        </a>
+        <div class="px-2 pt-4">
+          <button
+            type="button"
+            onclick={() => (paletteOpen = true)}
+            aria-label="Globale Suche (Strg+K)"
+            class="flex w-full items-center gap-2.5 h-9 px-3 rounded-md border bg-background text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          >
+            <Search class="size-4 shrink-0" />
+            <span class="flex-1 text-left">Suchen…</span>
+            <kbd class="text-[10px] font-bold opacity-70">Strg K</kbd>
+          </button>
+        </div>
         <nav class="flex-1 p-2 flex flex-col gap-4 pt-4 overflow-y-auto">
           {#each navGroups as group, gi (gi)}
             <div class="flex flex-col gap-0.5">
               {#if group.label}
-                <div class="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                <div class="px-3 pb-1 text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground/80">
                   {group.label}
                 </div>
               {/if}
@@ -189,7 +200,7 @@
                   href={item.href}
                   use:link
                   class={cn(
-                    "group relative flex items-center gap-2.5 rounded-md px-3 h-9 text-sm font-medium transition-all duration-200",
+                    "group relative flex items-center gap-2.5 rounded-md px-3 h-9 text-sm font-semibold transition-all duration-200",
                     "before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-[3px] before:rounded-r-full before:bg-primary before:transition-all before:duration-300",
                     active
                       ? "bg-accent text-accent-foreground before:h-5 before:opacity-100"

@@ -10,7 +10,7 @@
     Users,
     Truck,
     History,
-  } from "@lucide/svelte";
+  } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
   import {
     search as runSearch,

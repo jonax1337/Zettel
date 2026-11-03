@@ -20,7 +20,7 @@
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
   import { generateReminderPdf } from "$lib/sidecar/reminder";
   import { Button, Card, DatePicker, Input, Label, Textarea, toast } from "$lib/ui";
-  import { ArrowLeft, FileText, Send, Trash2 } from "@lucide/svelte";
+  import { ArrowLeft, FileText, Send, Trash2 } from "$lib/brand-icons";
   import { open as openShell } from "@tauri-apps/plugin-shell";
 
   type Mode = "new" | "edit";

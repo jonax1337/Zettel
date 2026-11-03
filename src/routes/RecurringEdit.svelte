@@ -26,7 +26,7 @@
     Checkbox,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2, FileText, X, Package } from "@lucide/svelte";
+  import { ArrowLeft, Plus, Trash2, FileText, X, Package } from "$lib/brand-icons";
   import type { CatalogItem } from "$lib/db/schema";
 
   type Props = {

@@ -14,7 +14,7 @@
     Dialog,
     toast,
   } from "$lib/ui";
-  import { AlertTriangle } from "@lucide/svelte";
+  import { AlertTriangle } from "$lib/brand-icons";
   import {
     autoBackupBeforeWipe,
     resetNumberingCounters,

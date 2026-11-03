@@ -9,8 +9,8 @@
     type RecurringListRow,
   } from "$lib/db/recurring";
   import { formatDate as fmtDate } from "$lib/utils/date";
-  import { Button, Badge, Card, ConfirmDialog, SortableTh, toast } from "$lib/ui";
-  import { Plus, FileText, Pencil, Trash2, PowerOff, Power } from "@lucide/svelte";
+  import { Button, Badge, Card, ConfirmDialog, SortableTh, toast, EmptyState } from "$lib/ui";
+  import { Plus, FileText, Pencil, Trash2, PowerOff, Power } from "$lib/brand-icons";
   import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
 
   let rows = $state<RecurringListRow[]>([]);
@@ -111,11 +111,7 @@
 {#if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else if rows.length === 0}
-  <Card class="p-12 text-center">
-    <p class="text-sm text-muted-foreground">
-      Noch keine Vorlagen. Erstelle die erste über „Neue Vorlage".
-    </p>
-  </Card>
+  <EmptyState message="Noch keine Vorlagen. Erstelle die erste über „Neue Vorlage“." />
 {:else}
   <Card class="overflow-hidden">
     <table class="w-full text-sm">
@@ -140,7 +136,7 @@
             <td class="px-3 py-2 text-muted-foreground">{row.customerName}</td>
             <td class="px-3 py-2">{intervalLabels[row.interval]}</td>
             <td class="px-3 py-2">
-              <span class={isDue(row.nextDueDate) && row.active ? "text-amber-600 dark:text-amber-500 font-medium" : ""}>
+              <span class={isDue(row.nextDueDate) && row.active ? "text-warning font-medium" : ""}>
                 {fmtDate(row.nextDueDate)}
               </span>
               {#if row.lastGeneratedAt}

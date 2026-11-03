@@ -1,6 +1,6 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
-  import { ArrowLeft } from "@lucide/svelte";
+  import { ArrowLeft } from "$lib/brand-icons";
   import type { Snippet } from "svelte";
 
   interface Props {

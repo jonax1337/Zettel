@@ -1,7 +1,7 @@
 <script lang="ts">
   import { save } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
-  import { Download, FileSpreadsheet } from "@lucide/svelte";
+  import { Download, FileSpreadsheet } from "$lib/brand-icons";
   import {
     Button,
     Card,

@@ -6,6 +6,19 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.21.0]
+
+### Changed
+- **Neues Design: Bürofreund.** Die App nutzt jetzt das Design Kit aus `branding/buerofreund/`: warme Palette (Creme, Rosine, Koralle, Rosé) in Hell und Dunkel, Nunito für Überschriften und Nunito Sans für Text und Zahlen (Tabellenziffern statt Monospace), 12 px Ecken an Bedienelementen und 20 px an Karten.
+- **Eigene Icons.** Alle App-Icons kommen aus `$lib/brand-icons` statt aus Lucide.
+- **Logo und Maskottchen** in Titelleiste und Sidebar; neue App- und Installer-Icons in allen Größen.
+- **Leere Listen** zeigen Illustrationen aus dem Kit, bei aktiver Suche die „Keine Treffer"-Grafik.
+- **Globale Suche** (Strg+K) sitzt jetzt oben in der Sidebar statt in der Titelleiste.
+- Warn- und Erfolgsfarben laufen durchgehend über die Theme-Tokens; Umsatz-Charts in Koralle.
+
+### Removed
+- **Akzentfarbe** in Einstellungen → Darstellung, inklusive Übernahme der Windows-Akzentfarbe. Das Design gibt die Farben jetzt fest vor.
+
 ## [0.20.0]
 
 ### Changed

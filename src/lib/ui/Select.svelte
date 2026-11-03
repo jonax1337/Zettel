@@ -1,6 +1,6 @@
 <script lang="ts" generics="T extends string">
   import { Select as SelectPrimitive } from "bits-ui";
-  import { Check, ChevronDown } from "@lucide/svelte";
+  import { Check, ChevronDown } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
 
   type Item = { value: T; label: string; disabled?: boolean };

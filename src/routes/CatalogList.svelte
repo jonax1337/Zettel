@@ -17,6 +17,7 @@
     DropdownSeparator,
     Badge,
     toast,
+    EmptyState,
   } from "$lib/ui";
   import {
     Plus,
@@ -26,7 +27,7 @@
     Search,
     Archive,
     ArchiveRestore,
-  } from "@lucide/svelte";
+  } from "$lib/brand-icons";
   import { centsToEur } from "$lib/utils/money";
 
   let items = $state<CatalogItem[]>([]);
@@ -128,11 +129,7 @@
 {:else if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else if filtered.length === 0}
-  <Card>
-    <div class="py-12 text-center text-sm text-muted-foreground">
-      {search ? "Keine Treffer." : "Noch keine Katalog-Einträge."}
-    </div>
-  </Card>
+  <EmptyState variant={search ? "no-results" : "empty"} message={search ? "Keine Treffer." : "Noch keine Katalog-Einträge."} />
 {:else}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">

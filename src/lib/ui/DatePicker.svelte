@@ -1,7 +1,7 @@
 <script lang="ts">
   import { DatePicker } from "bits-ui";
   import { CalendarDate, type DateValue } from "@internationalized/date";
-  import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "@lucide/svelte";
+  import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
 
   type Props = {

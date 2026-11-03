@@ -17,7 +17,7 @@
     Select,
     toast,
   } from "$lib/ui";
-  import { Download, Upload, FlaskConical, History } from "@lucide/svelte";
+  import { Download, Upload, FlaskConical, History } from "$lib/brand-icons";
   import { loadSettings, saveSettings } from "$lib/db/queries";
 
   const CURRENT_DB_SCHEMA_VERSION = 26;

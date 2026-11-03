@@ -66,12 +66,12 @@
 
 <style>
   .bar {
-    background: var(--color-muted-foreground);
-    opacity: 0.35;
+    background: var(--color-coral);
+    opacity: 0.7;
   }
   .bar:hover,
   .bar.active {
-    background: var(--color-primary);
+    background: var(--color-coral);
     opacity: 1;
   }
   button:focus-visible .bar {

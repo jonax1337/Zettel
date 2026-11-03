@@ -1117,7 +1117,7 @@ dependencies = [
  "rustc_version",
  "toml 1.1.6+spec-1.1.0",
  "vswhom",
- "winreg 0.55.0",
+ "winreg",
 ]
 
 [[package]]
@@ -6376,16 +6376,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "winreg"
-version = "0.56.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d6f32a0ff4a9f6f01231eb2059cc85479330739333e0e58cadf03b6af2cca10"
-dependencies = [
- "cfg-if",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6647,7 +6637,7 @@ dependencies = [
 
 [[package]]
 name = "zettel"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -6667,7 +6657,6 @@ dependencies = [
  "tauri-plugin-window-state",
  "ureq",
  "walkdir",
- "winreg 0.56.0",
  "zeroize",
  "zip 8.6.0",
 ]

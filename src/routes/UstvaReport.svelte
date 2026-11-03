@@ -20,7 +20,7 @@
   } from "$lib/reports/ustva";
   import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
-  import { Download, AlertTriangle } from "@lucide/svelte";
+  import { Download, AlertTriangle } from "$lib/brand-icons";
 
   const currentYear = new Date().getFullYear();
   const currentQuarter = (Math.floor(new Date().getMonth() / 3) + 1) as Quarter;
@@ -95,8 +95,8 @@
   </p>
 </header>
 
-<div class="mb-6 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 flex items-start gap-3">
-  <AlertTriangle class="size-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+<div class="mb-6 rounded-md border border-warning/40 bg-warning/5 p-3 flex items-start gap-3">
+  <AlertTriangle class="size-5 text-warning shrink-0 mt-0.5" />
   <div class="text-sm space-y-1">
     <p class="font-medium">Keine Steuerberatung.</p>
     <p class="text-muted-foreground">

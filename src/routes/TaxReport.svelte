@@ -1,7 +1,7 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
   import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "$lib/ui";
-  import { ArrowLeft } from "@lucide/svelte";
+  import { ArrowLeft } from "$lib/brand-icons";
   import { centsToEur } from "$lib/utils/money";
   import { computeTaxRücklage, type TaxRücklageResult, type TaxScenario } from "$lib/dashboard/tax";
   import { loadDefaultPeriod } from "$lib/dashboard/period";

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Popover } from "bits-ui";
-  import { CalendarRange, X } from "@lucide/svelte";
+  import { CalendarRange, X } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
   import DatePicker from "./DatePicker.svelte";
   import { fromIsoDate, formatDate } from "$lib/utils/date";

@@ -57,7 +57,7 @@
     ShieldAlert,
     Shield,
     Package,
-  } from "@lucide/svelte";
+  } from "$lib/brand-icons";
   import type { CatalogItem } from "$lib/db/schema";
 
   type Props = {

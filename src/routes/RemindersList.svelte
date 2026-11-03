@@ -10,8 +10,8 @@
   import type { ReminderLevel } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
-  import { Button, Card, Badge, SortableTh } from "$lib/ui";
-  import { Plus, AlertTriangle } from "@lucide/svelte";
+  import { Button, Card, Badge, SortableTh, EmptyState } from "$lib/ui";
+  import { Plus, AlertTriangle } from "$lib/brand-icons";
   import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
 
   let reminders = $state<ReminderListRow[]>([]);
@@ -135,11 +135,7 @@
       Alle Mahnungen
     </h2>
     {#if reminders.length === 0}
-      <Card>
-        <div class="py-12 text-center text-sm text-muted-foreground">
-          Noch keine Mahnungen erstellt.
-        </div>
-      </Card>
+      <EmptyState message="Noch keine Mahnungen erstellt." />
     {:else}
       <Card class="overflow-hidden py-0">
         <table class="w-full text-sm">

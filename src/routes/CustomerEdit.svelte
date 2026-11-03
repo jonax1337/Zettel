@@ -7,7 +7,7 @@
     type CustomerInput,
   } from "$lib/db/queries";
   import { Button, Input, Textarea, Label, Card, CardContent, DatePicker, toast } from "$lib/ui";
-  import { ArrowLeft } from "@lucide/svelte";
+  import { ArrowLeft } from "$lib/brand-icons";
   import { fromIsoDate, toIsoDate } from "$lib/utils/date";
 
   type Props = {

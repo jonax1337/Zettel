@@ -12,8 +12,9 @@
     DropdownSeparator,
     SortableTh,
     toast,
+    EmptyState,
   } from "$lib/ui";
-  import { Plus, MoreHorizontal, Pencil, Trash2, Search } from "@lucide/svelte";
+  import { Plus, MoreHorizontal, Pencil, Trash2, Search } from "$lib/brand-icons";
   import { push } from "svelte-spa-router";
   import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
 
@@ -120,11 +121,7 @@
 {:else if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else if filtered.length === 0}
-  <Card>
-    <div class="py-12 text-center text-sm text-muted-foreground">
-      {search || onlyFollowUp ? "Keine Treffer." : "Noch keine Kunden angelegt."}
-    </div>
-  </Card>
+  <EmptyState variant={search || onlyFollowUp ? "no-results" : "empty"} message={search || onlyFollowUp ? "Keine Treffer." : "Noch keine Kunden angelegt."} />
 {:else}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">

@@ -24,7 +24,7 @@
     FolderOpen,
     FilePlus2,
     Upload,
-  } from "@lucide/svelte";
+  } from "$lib/brand-icons";
 
   type TenantEntry = {
     id: string;

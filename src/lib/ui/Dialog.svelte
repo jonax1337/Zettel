@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { Dialog as DialogPrimitive } from "bits-ui";
-  import { X } from "@lucide/svelte";
+  import { X } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
 
   type Props = {

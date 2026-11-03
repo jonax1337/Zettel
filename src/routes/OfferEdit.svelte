@@ -39,7 +39,7 @@
     Checkbox,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2, CalendarRange, FileText, X, Package, GripVertical, ChevronUp, ChevronDown } from "@lucide/svelte";
+  import { ArrowLeft, Plus, Trash2, CalendarRange, FileText, X, Package, GripVertical, ChevronUp, ChevronDown } from "$lib/brand-icons";
   import { flip } from "svelte/animate";
   import type { CatalogItem } from "$lib/db/schema";
 
@@ -586,7 +586,7 @@
                     für das EU-B2B-Kriterium liegt beim Nutzer.
                   </p>
                   {#if !canReverseCharge && reverseChargeBlockedReason}
-                    <p class="text-xs text-amber-600 dark:text-amber-500 mt-1">
+                    <p class="text-xs text-warning mt-1">
                       {reverseChargeBlockedReason}
                     </p>
                   {/if}

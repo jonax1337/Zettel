@@ -7,7 +7,7 @@
     type VendorInput,
   } from "$lib/db/queries";
   import { Button, Input, Textarea, Label, Card, CardContent, toast } from "$lib/ui";
-  import { ArrowLeft } from "@lucide/svelte";
+  import { ArrowLeft } from "$lib/brand-icons";
 
   type Props = {
     mode: "new" | "edit";
