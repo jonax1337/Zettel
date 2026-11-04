@@ -1,5 +1,9 @@
 import { execute, insert, select } from "./client";
-import { PAYMENT_ROUNDING_TOLERANCE_CENT } from "./invoice-lifecycle";
+import {
+  PAYMENT_ROUNDING_TOLERANCE_CENT,
+  SETTLED_BY_CREDIT_NOTE_ERROR,
+  settledByCreditNoteSql,
+} from "./invoice-lifecycle";
 import type { InvoicePayment, InvoicePaymentSource, InvoiceStatus } from "./schema";
 import { nowUnix } from "$lib/utils/date";
 
@@ -97,7 +101,12 @@ export class DuplicateBankBookingError extends Error {
   }
 }
 
-export type PayableInvoice = { status: InvoiceStatus; total: number; paidCent: number };
+export type PayableInvoice = {
+  status: InvoiceStatus;
+  total: number;
+  paidCent: number;
+  settledByCreditNote: boolean;
+};
 
 /** Why a payment cannot be recorded against this invoice, or null when it can. */
 export function paymentRejection(
@@ -108,6 +117,7 @@ export function paymentRejection(
   if (invoice.status !== "sent" && invoice.status !== "partial") {
     return "Zahlungen können nur für versendete oder teilbezahlte Rechnungen erfasst werden.";
   }
+  if (invoice.settledByCreditNote) return SETTLED_BY_CREDIT_NOTE_ERROR;
   if (!Number.isInteger(amountCent) || amountCent <= 0) {
     return "Zahlbetrag muss größer als 0 sein.";
   }
@@ -119,13 +129,25 @@ export function paymentRejection(
 }
 
 async function loadPayableInvoice(invoiceId: number): Promise<PayableInvoice | null> {
-  const [row] = await select<{ status: InvoiceStatus; total: number; paid_cent: number }>(
+  const [row] = await select<{
+    status: InvoiceStatus;
+    total: number;
+    paid_cent: number;
+    settled_by_credit_note: number;
+  }>(
     `SELECT i.status, i.total,
-            (SELECT COALESCE(SUM(p.amount_cent), 0) FROM invoice_payments p WHERE p.invoice_id = i.id) AS paid_cent
+            (SELECT COALESCE(SUM(p.amount_cent), 0) FROM invoice_payments p WHERE p.invoice_id = i.id) AS paid_cent,
+            ${settledByCreditNoteSql("i")} AS settled_by_credit_note
      FROM invoices i WHERE i.id = ?`,
     [invoiceId],
   );
-  return row ? { status: row.status, total: row.total, paidCent: row.paid_cent } : null;
+  if (!row) return null;
+  return {
+    status: row.status,
+    total: row.total,
+    paidCent: row.paid_cent,
+    settledByCreditNote: row.settled_by_credit_note === 1,
+  };
 }
 
 async function isBankBookingRecorded(bankTransactionId: string): Promise<boolean> {

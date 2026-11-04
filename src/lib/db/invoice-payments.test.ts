@@ -29,7 +29,7 @@ describe("statusForPaidAmount", () => {
 });
 
 describe("paymentRejection", () => {
-  const open: PayableInvoice = { status: "partial", total: 10_000, paidCent: 4_000 };
+  const open: PayableInvoice = { status: "partial", total: 10_000, paidCent: 4_000, settledByCreditNote: false };
 
   it.each(["sent", "partial"] as const)("accepts a payment on a %s invoice", (status) => {
     expect(paymentRejection({ ...open, status }, 1_000)).toBeNull();
@@ -54,7 +54,11 @@ describe("paymentRejection", () => {
   });
 
   it("measures the open amount of a credit note by its absolute total", () => {
-    expect(paymentRejection({ status: "sent", total: -10_000, paidCent: 0 }, 10_000)).toBeNull();
+    expect(paymentRejection({ ...open, status: "sent", total: -10_000, paidCent: 0 }, 10_000)).toBeNull();
+  });
+
+  it.each(["sent", "partial"] as const)("rejects a payment on a %s invoice an issued credit note offsets", (status) => {
+    expect(paymentRejection({ ...open, status, settledByCreditNote: true }, 1_000)).toContain("Stornorechnung");
   });
 });
 
@@ -89,6 +93,13 @@ describe("addPayment", () => {
     invoiceInDb({ ...payable, status: "paid" });
 
     await expect(addPayment(payment)).rejects.toThrow("versendete oder teilbezahlte");
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("refuses a payment on an invoice an issued credit note offsets", async () => {
+    invoiceInDb({ ...payable, settled_by_credit_note: 1 });
+
+    await expect(addPayment(payment)).rejects.toThrow("Stornorechnung");
     expect(db.insert).not.toHaveBeenCalled();
   });
 

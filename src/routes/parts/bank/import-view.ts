@@ -31,6 +31,7 @@ export function payableInvoices(invoices: InvoiceListRow[], currency: string): I
     (invoice) =>
       (invoice.status === "sent" || invoice.status === "partial") &&
       !invoice.isCreditNote &&
+      !invoice.settledByCreditNote &&
       invoice.currency.toUpperCase() === currency.toUpperCase() &&
       openBalance(invoice) > 0,
   );

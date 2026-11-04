@@ -66,6 +66,9 @@ export function invoiceIdsSettledByCreditNote(invoices: CreditNoteFacts[]): Set<
   return ids;
 }
 
+export const SETTLED_BY_CREDIT_NOTE_ERROR =
+  "Die Rechnung ist durch eine Stornorechnung ausgeglichen. Zahlungen können nicht mehr erfasst werden.";
+
 /** SQL condition mirroring {@link invoiceIdsSettledByCreditNote} for the invoice aliased `alias`. */
 export function settledByCreditNoteSql(alias: string): string {
   return `EXISTS (

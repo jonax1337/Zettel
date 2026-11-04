@@ -29,6 +29,7 @@ function invoice(overrides: Partial<InvoiceListRow>): InvoiceListRow {
     currency: "EUR",
     total: 11_900,
     amountPaidCent: 0,
+    settledByCreditNote: false,
     ...overrides,
   } as InvoiceListRow;
 }
@@ -70,6 +71,11 @@ describe("payableInvoices", () => {
       invoice({ id: 7, status: "sent", amountPaidCent: 11_900 }),
     ];
     expect(payableInvoices(all, "eur")).toEqual([open, partial]);
+  });
+
+  it("leaves out invoices an issued credit note already offsets", () => {
+    const open = invoice({ id: 1 });
+    expect(payableInvoices([open, invoice({ id: 2, settledByCreditNote: true })], "EUR")).toEqual([open]);
   });
 });
 
