@@ -8,12 +8,14 @@
   import RowActionsMenu from "./parts/entity/RowActionsMenu.svelte";
   import SearchInput from "./parts/entity/SearchInput.svelte";
   import { pluralize } from "./parts/entity/format";
+  import { createListFilters } from "./parts/entity/list-filters.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
 
-  let search = $state("");
+  const filters = createListFilters<{ search: string }>("vendors", { search: "" });
+  const f = filters.values;
 
-  const vendors = createQueryState<Vendor[]>([], () => listVendors(search));
+  const vendors = createQueryState<Vendor[]>([], () => listVendors(f.search));
   $effect(() => {
     vendors.reload();
   });
@@ -69,7 +71,7 @@
 </header>
 
 <SearchInput
-  bind:value={search}
+  bind:value={f.search}
   placeholder="Suche (Name, Nummer, Ort, E-Mail)…"
   class="mb-4 max-w-md"
 />
@@ -79,10 +81,20 @@
 {:else if vendors.loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else if vendors.data.length === 0}
-  <EmptyState
-    variant={search ? "no-results" : "empty"}
-    message={search ? "Keine Treffer." : "Noch keine Lieferanten angelegt."}
-  />
+  {#if filters.isFiltered}
+    <EmptyState
+      variant="no-results"
+      message="Keine Treffer."
+      actionLabel="Filter zurücksetzen"
+      onAction={filters.reset}
+    />
+  {:else}
+    <EmptyState
+      message="Noch keine Lieferanten angelegt."
+      actionLabel="Neuer Lieferant"
+      onAction={() => push("/vendors/new")}
+    />
+  {/if}
 {:else}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">

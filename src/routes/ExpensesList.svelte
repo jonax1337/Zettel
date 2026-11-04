@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { link, push } from "svelte-spa-router";
   import {
     deleteExpense,
     getExpenseYears,
@@ -29,6 +29,7 @@
   import { Plus, CheckCircle2, Trash2 } from "$lib/brand-icons";
   import SearchInput from "./parts/entity/SearchInput.svelte";
   import { pluralize } from "./parts/entity/format";
+  import { createListFilters } from "./parts/entity/list-filters.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import {
@@ -42,10 +43,13 @@
   let vendors = $state<Vendor[]>([]);
   let years = $state<number[]>([]);
 
-  let status = $state<string>(ALL);
-  let year = $state<string>(ALL);
-  let vendorId = $state<string>(ALL);
-  let search = $state("");
+  const filters = createListFilters<{ status: string; year: string; vendorId: string; search: string }>("expenses", {
+    status: ALL,
+    year: ALL,
+    vendorId: ALL,
+    search: "",
+  });
+  const f = filters.values;
 
   function numericFilter(value: string): number | typeof ALL {
     return value === ALL ? ALL : Number.parseInt(value, 10);
@@ -53,10 +57,10 @@
 
   function currentFilter(): ExpenseFilter {
     return {
-      status: status === ALL ? ALL : (status as ExpenseStatus),
-      year: numericFilter(year),
-      vendorId: numericFilter(vendorId),
-      search,
+      status: f.status === ALL ? ALL : (f.status as ExpenseStatus),
+      year: numericFilter(f.year),
+      vendorId: numericFilter(f.vendorId),
+      search: f.search,
     };
   }
 
@@ -166,19 +170,19 @@
 <div class="grid grid-cols-2 @3xl:grid-cols-4 gap-3 mb-5">
   <div class="flex flex-col gap-1.5">
     <Label class="text-xs text-muted-foreground">Status</Label>
-    <Select bind:value={status} items={statusItems} />
+    <Select bind:value={f.status} items={statusItems} />
   </div>
   <div class="flex flex-col gap-1.5">
     <Label class="text-xs text-muted-foreground">Jahr</Label>
-    <Select bind:value={year} items={yearItems} />
+    <Select bind:value={f.year} items={yearItems} />
   </div>
   <div class="flex flex-col gap-1.5">
     <Label class="text-xs text-muted-foreground">Lieferant</Label>
-    <Select bind:value={vendorId} items={vendorItems} />
+    <Select bind:value={f.vendorId} items={vendorItems} />
   </div>
   <div class="flex flex-col gap-1.5">
     <Label class="text-xs text-muted-foreground">Suche</Label>
-    <SearchInput bind:value={search} placeholder="Nummer oder Lieferant…" />
+    <SearchInput bind:value={f.search} placeholder="Nummer oder Lieferant…" />
   </div>
 </div>
 
@@ -187,7 +191,20 @@
 {:else if expenses.loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else if expenses.data.length === 0}
-  <EmptyState variant={search ? "no-results" : "empty"} message="Keine Eingangsrechnungen gefunden." />
+  {#if filters.isFiltered}
+    <EmptyState
+      variant="no-results"
+      message="Keine Eingangsrechnungen für diese Filter."
+      actionLabel="Filter zurücksetzen"
+      onAction={filters.reset}
+    />
+  {:else}
+    <EmptyState
+      message="Noch keine Eingangsrechnungen erfasst."
+      actionLabel="Neue Eingangsrechnung"
+      onAction={() => push("/expenses/new")}
+    />
+  {/if}
 {:else}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
@@ -222,7 +239,16 @@
                 aria-label={`Eingangsrechnung ${e.internalNumber} auswählen`}
               />
             </td>
-            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">{e.internalNumber}</td>
+            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">
+              <a
+                href={`/expenses/${e.id}`}
+                use:link
+                onclick={(ev) => ev.stopPropagation()}
+                class="hover:underline focus-visible:underline"
+              >
+                {e.internalNumber}
+              </a>
+            </td>
             <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{e.number ?? "—"}</td>
             <td class="px-3 @3xl:px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(e.issueDate)}</td>
             <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={e.vendorName}>{e.vendorName}</span></td>

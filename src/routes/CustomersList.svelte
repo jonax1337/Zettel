@@ -8,13 +8,17 @@
   import RowActionsMenu from "./parts/entity/RowActionsMenu.svelte";
   import SearchInput from "./parts/entity/SearchInput.svelte";
   import { pluralize } from "./parts/entity/format";
+  import { createListFilters } from "./parts/entity/list-filters.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
 
-  let search = $state("");
-  let onlyFollowUp = $state(false);
+  const filters = createListFilters<{ search: string; onlyFollowUp: boolean }>("customers", {
+    search: "",
+    onlyFollowUp: false,
+  });
+  const f = filters.values;
 
-  const customers = createQueryState<Customer[]>([], () => listCustomers(search));
+  const customers = createQueryState<Customer[]>([], () => listCustomers(f.search));
   $effect(() => {
     customers.reload();
   });
@@ -23,7 +27,7 @@
   const sort = createListSort<SortKey>("customers", { key: "name", dir: "asc" });
 
   const visibleCustomers = $derived.by(() => {
-    const matching = onlyFollowUp
+    const matching = f.onlyFollowUp
       ? customers.data.filter((c) => c.followUpDate != null)
       : customers.data;
     return applySort(matching, sort.state, {
@@ -33,7 +37,6 @@
       email: (c) => c.email,
     });
   });
-  const isFiltered = $derived(search !== "" || onlyFollowUp);
 
   let confirmOpen = $state(false);
   let toDelete = $state<Customer | null>(null);
@@ -75,12 +78,12 @@
 
 <div class="mb-4 flex flex-wrap items-end gap-3">
   <SearchInput
-    bind:value={search}
+    bind:value={f.search}
     placeholder="Suche (Name, Nummer, Ort, E-Mail)…"
     class="max-w-md flex-1 min-w-[200px]"
   />
   <label class="flex items-center gap-2 text-sm pb-2 cursor-pointer">
-    <Checkbox bind:checked={onlyFollowUp} />
+    <Checkbox bind:checked={f.onlyFollowUp} />
     <span>Nur mit Wiedervorlage</span>
   </label>
 </div>
@@ -90,10 +93,20 @@
 {:else if customers.loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else if visibleCustomers.length === 0}
-  <EmptyState
-    variant={isFiltered ? "no-results" : "empty"}
-    message={isFiltered ? "Keine Treffer." : "Noch keine Kunden angelegt."}
-  />
+  {#if filters.isFiltered}
+    <EmptyState
+      variant="no-results"
+      message="Keine Treffer."
+      actionLabel="Filter zurücksetzen"
+      onAction={filters.reset}
+    />
+  {:else}
+    <EmptyState
+      message="Noch keine Kunden angelegt."
+      actionLabel="Neuer Kunde"
+      onAction={() => push("/customers/new")}
+    />
+  {/if}
 {:else}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">

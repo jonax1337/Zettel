@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { link, push } from "svelte-spa-router";
   import {
     deleteOffer,
     expireDueOffers,
@@ -20,6 +20,7 @@
   import DocumentListFilters from "./invoice/DocumentListFilters.svelte";
   import { createRowSelection } from "./invoice/list-selection.svelte";
   import { pluralize } from "./parts/entity/format";
+  import { createListFilters } from "./parts/entity/list-filters.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import {
@@ -34,16 +35,25 @@
   let customers = $state<Customer[]>([]);
   let years = $state<number[]>([]);
 
-  let status = $state<OfferStatus | typeof ALL>(ALL);
-  let year = $state(ALL);
-  let customerId = $state(ALL);
-  let search = $state("");
+  type OfferListFilters = {
+    status: OfferStatus | typeof ALL;
+    year: string;
+    customerId: string;
+    search: string;
+  };
+  const filters = createListFilters<OfferListFilters>("offers", {
+    status: ALL,
+    year: ALL,
+    customerId: ALL,
+    search: "",
+  });
+  const f = filters.values;
 
   const filter = $derived<OfferFilter>({
-    status,
-    year: numberOrAll(year),
-    customerId: numberOrAll(customerId),
-    search,
+    status: f.status,
+    year: numberOrAll(f.year),
+    customerId: numberOrAll(f.customerId),
+    search: f.search,
   });
 
   const offers = createQueryState<OfferListRow[]>([], () => listOffers(filter));
@@ -121,11 +131,11 @@
 
 <div class="mb-5">
   <DocumentListFilters
-    bind:status
+    bind:status={f.status}
     {statusItems}
-    bind:year
-    bind:customerId
-    bind:search
+    bind:year={f.year}
+    bind:customerId={f.customerId}
+    bind:search={f.search}
     {years}
     {customers}
   />
@@ -136,7 +146,20 @@
 {:else if offers.loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else if offers.data.length === 0}
-  <EmptyState variant={search ? "no-results" : "empty"} message="Keine Angebote gefunden." />
+  {#if filters.isFiltered}
+    <EmptyState
+      variant="no-results"
+      message="Keine Angebote für diese Filter."
+      actionLabel="Filter zurücksetzen"
+      onAction={filters.reset}
+    />
+  {:else}
+    <EmptyState
+      message="Noch keine Angebote angelegt."
+      actionLabel="Neues Angebot"
+      onAction={() => push("/offers/new")}
+    />
+  {/if}
 {:else}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
@@ -170,7 +193,16 @@
                 aria-label={`Angebot ${off.number} auswählen`}
               />
             </td>
-            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">{off.number}</td>
+            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">
+              <a
+                href={`/offers/${off.id}`}
+                use:link
+                onclick={(e) => e.stopPropagation()}
+                class="hover:underline focus-visible:underline"
+              >
+                {off.number}
+              </a>
+            </td>
             <td class="px-3 @3xl:px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(off.issueDate)}</td>
             <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={off.customerName}>{off.customerName}</span></td>
             <td class="px-3 @3xl:px-4 py-3 text-right font-mono whitespace-nowrap">{formatMoney(off.total, off.currency)}</td>

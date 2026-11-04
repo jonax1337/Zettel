@@ -34,6 +34,11 @@ export function loadFilters<T extends FilterValues>(
   }
 }
 
+/** True when any filter differs from its default, i.e. an empty list may be caused by the filters. */
+export function hasActiveFilters(values: FilterValues, defaults: FilterValues): boolean {
+  return Object.keys(defaults).some((key) => values[key] !== defaults[key]);
+}
+
 export function saveFilters(
   scope: string,
   values: FilterValues,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadFilters, saveFilters } from "./list-filters";
+import { hasActiveFilters, loadFilters, saveFilters } from "./list-filters";
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const data = new Map(Object.entries(initial));
@@ -37,6 +37,13 @@ describe("list filters", () => {
       "zettel.filters.invoices": JSON.stringify({ status: 5, retired: "x", onlyOpen: true }),
     });
     expect(loadFilters("invoices", defaults, storage)).toEqual({ ...defaults, onlyOpen: true });
+  });
+
+  it("knows when a filter differs from its default", () => {
+    expect(hasActiveFilters(defaults, defaults)).toBe(false);
+    expect(hasActiveFilters({ ...defaults, status: "paid" }, defaults)).toBe(true);
+    expect(hasActiveFilters({ ...defaults, year: "2025" }, defaults)).toBe(true);
+    expect(hasActiveFilters({ ...defaults, onlyOpen: true }, defaults)).toBe(true);
   });
 
   it("falls back to the defaults on corrupt data or missing storage", () => {

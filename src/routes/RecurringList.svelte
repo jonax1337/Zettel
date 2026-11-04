@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { link } from "svelte-spa-router";
+  import { link, push } from "svelte-spa-router";
   import {
     listRecurring,
     deleteRecurring,
@@ -86,7 +86,11 @@
 {:else if templates.loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else if templates.data.length === 0}
-  <EmptyState message="Noch keine Vorlagen. Erstelle die erste über „Neue Vorlage“." />
+  <EmptyState
+    message="Noch keine wiederkehrenden Rechnungen."
+    actionLabel="Neue Vorlage"
+    onAction={() => push("/recurring/new")}
+  />
 {:else}
   <Card class="overflow-hidden">
     <table class="w-full text-sm">

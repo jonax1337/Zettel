@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { link, push } from "svelte-spa-router";
   import {
     deleteInvoice,
     displayInvoiceNumber,
@@ -20,6 +20,7 @@
   import DocumentListFilters from "./invoice/DocumentListFilters.svelte";
   import { createRowSelection } from "./invoice/list-selection.svelte";
   import { pluralize } from "./parts/entity/format";
+  import { createListFilters } from "./parts/entity/list-filters.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import {
@@ -34,24 +35,35 @@
   let customers = $state<Customer[]>([]);
   let years = $state<number[]>([]);
 
-  let status = $state<InvoiceStatus | typeof ALL>(ALL);
-  let year = $state(ALL);
-  let customerId = $state(ALL);
-  let search = $state("");
-  let onlyCreditNotes = $state(false);
-  let onlyFollowUp = $state(false);
+  type InvoiceListFilters = {
+    status: InvoiceStatus | typeof ALL;
+    year: string;
+    customerId: string;
+    search: string;
+    onlyCreditNotes: boolean;
+    onlyFollowUp: boolean;
+  };
+  const filters = createListFilters<InvoiceListFilters>("invoices", {
+    status: ALL,
+    year: ALL,
+    customerId: ALL,
+    search: "",
+    onlyCreditNotes: false,
+    onlyFollowUp: false,
+  });
+  const f = filters.values;
 
   const filter = $derived<InvoiceFilter>({
-    status,
-    year: numberOrAll(year),
-    customerId: numberOrAll(customerId),
-    search,
+    status: f.status,
+    year: numberOrAll(f.year),
+    customerId: numberOrAll(f.customerId),
+    search: f.search,
   });
 
   const invoices = createQueryState<InvoiceListRow[]>([], () => listInvoices(filter));
   const visibleInvoices = $derived(
     invoices.data.filter(
-      (i) => (!onlyCreditNotes || i.isCreditNote) && (!onlyFollowUp || i.followUpDate != null),
+      (i) => (!f.onlyCreditNotes || i.isCreditNote) && (!f.onlyFollowUp || i.followUpDate != null),
     ),
   );
 
@@ -117,11 +129,11 @@
 
 <div class="mb-3">
   <DocumentListFilters
-    bind:status
+    bind:status={f.status}
     {statusItems}
-    bind:year
-    bind:customerId
-    bind:search
+    bind:year={f.year}
+    bind:customerId={f.customerId}
+    bind:search={f.search}
     {years}
     {customers}
   />
@@ -129,11 +141,11 @@
 
 <div class="mb-5 flex flex-wrap items-center gap-4">
   <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-    <Checkbox bind:checked={onlyCreditNotes} />
+    <Checkbox bind:checked={f.onlyCreditNotes} />
     Nur Stornorechnungen
   </label>
   <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-    <Checkbox bind:checked={onlyFollowUp} />
+    <Checkbox bind:checked={f.onlyFollowUp} />
     Nur mit Wiedervorlage
   </label>
 </div>
@@ -143,7 +155,20 @@
 {:else if invoices.loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else if visibleInvoices.length === 0}
-  <EmptyState variant={search ? "no-results" : "empty"} message="Keine Rechnungen gefunden." />
+  {#if filters.isFiltered}
+    <EmptyState
+      variant="no-results"
+      message="Keine Rechnungen für diese Filter."
+      actionLabel="Filter zurücksetzen"
+      onAction={filters.reset}
+    />
+  {:else}
+    <EmptyState
+      message="Noch keine Rechnungen angelegt."
+      actionLabel="Neue Rechnung"
+      onAction={() => push("/invoices/new")}
+    />
+  {/if}
 {:else}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
@@ -179,7 +204,14 @@
             </td>
             <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">
               <span class="inline-flex items-center gap-1.5">
-                {displayInvoiceNumber(inv)}
+                <a
+                  href={`/invoices/${inv.id}`}
+                  use:link
+                  onclick={(e) => e.stopPropagation()}
+                  class="hover:underline focus-visible:underline"
+                >
+                  {displayInvoiceNumber(inv)}
+                </a>
                 {#if inv.isCreditNote}
                   <Badge variant="destructive" class="text-[10px] px-1.5 py-0">Storno</Badge>
                 {/if}
@@ -196,11 +228,7 @@
               </span>
             </td>
             <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
-              {#if inv.status !== "draft"}
-                <Badge variant={INVOICE_STATUS_VARIANT[inv.status]}>{INVOICE_STATUS_LABEL[inv.status]}</Badge>
-              {:else}
-                <span class="text-muted-foreground">—</span>
-              {/if}
+              <Badge variant={INVOICE_STATUS_VARIANT[inv.status]}>{INVOICE_STATUS_LABEL[inv.status]}</Badge>
             </td>
             <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
               {inv.isCreditNote ? "—" : formatDate(inv.dueDate)}

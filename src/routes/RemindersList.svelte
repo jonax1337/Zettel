@@ -121,7 +121,11 @@
       Alle Mahnungen
     </h2>
     {#if overview.data.reminders.length === 0}
-      <EmptyState message="Noch keine Mahnungen erstellt." />
+      <EmptyState
+        message="Noch keine Mahnungen erstellt."
+        actionLabel="Zu den Rechnungen"
+        onAction={() => push("/invoices")}
+      />
     {:else}
       <Card class="overflow-hidden py-0">
         <table class="w-full text-sm">
