@@ -10,6 +10,7 @@
     type InvoiceFilter,
     type InvoiceListRow,
   } from "$lib/db/invoices";
+  import { canDeleteInvoice } from "$lib/db/invoice-lifecycle";
   import type { Customer, InvoiceStatus } from "$lib/db/schema";
   import { listCustomers } from "$lib/db/queries";
   import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
@@ -122,11 +123,10 @@
   );
   const canBulkMarkPaid = $derived(
     selection.selected.length > 0 &&
-      selection.selected.every((i) => i.status === "sent" || i.status === "partial"),
+      selection.selected.every((i) => canRecordPayments(i, i.settledByCreditNote)),
   );
   const canBulkDelete = $derived(
-    selection.selected.length > 0 &&
-      selection.selected.every((i) => i.status === "draft" || i.status === "cancelled"),
+    selection.selected.length > 0 && selection.selected.every(canDeleteInvoice),
   );
 
   const selectedLabel = $derived(pluralize(selection.selected.length, "Rechnung", "Rechnungen"));

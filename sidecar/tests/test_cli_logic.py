@@ -211,6 +211,30 @@ class TestMarkPaid:
         invoice = row_of(con, invoice_id)
         assert (invoice["status"], invoice["amount_paid_cent"]) == (status, 0)
 
+    @staticmethod
+    def add_credit_note(con, invoice_id, status):
+        con.execute(
+            "INSERT INTO invoices (number, customer_id, customer_snapshot, status, total, is_credit_note, "
+            "corrects_invoice_id) VALUES ('RE-2026-0099', 1, '{}', ?, -11900, 1, ?)",
+            (status, invoice_id),
+        )
+
+    @pytest.mark.parametrize("status", ["sent", "paid"])
+    def test_invoice_offset_by_an_issued_credit_note_is_refused(self, cli, con, status):
+        invoice_id = insert_invoice(con, status="sent")
+        self.add_credit_note(con, invoice_id, status)
+        with pytest.raises(SystemExit, match="Stornorechnung"):
+            cli.mark_invoice_paid(con, invoice_id, PAID_AT)
+        assert payments_of(con, invoice_id) == []
+        assert row_of(con, invoice_id)["status"] == "sent"
+
+    @pytest.mark.parametrize("status", ["draft", "cancelled"])
+    def test_draft_or_discarded_credit_note_does_not_block_payment(self, cli, con, status):
+        invoice_id = insert_invoice(con, status="sent")
+        self.add_credit_note(con, invoice_id, status)
+        assert cli.mark_invoice_paid(con, invoice_id, PAID_AT) is not None
+        assert row_of(con, invoice_id)["status"] == "paid"
+
     def test_draft_is_issued_with_a_real_number_before_payment(self, cli, con):
         invoice_id = insert_invoice(con, status="draft", number=cli.draft_placeholder())
         cli.mark_invoice_paid(con, invoice_id, PAID_AT)

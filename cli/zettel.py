@@ -909,6 +909,20 @@ def cmd_invoice_issue(args) -> None:
         print(f"Bereitgestellt: {issue_invoice(con, args.id, parse_date(args.sent_at))}")
 
 
+# Spiegel von settledByCreditNoteSql() in src/lib/db/invoice-lifecycle.ts: nur eine
+# ausgestellte Stornorechnung gleicht die Rechnung aus, ein Storno-Entwurf nicht.
+SETTLED_BY_CREDIT_NOTE_SQL = """EXISTS (
+  SELECT 1 FROM invoices credit_note
+   WHERE credit_note.corrects_invoice_id = invoices.id
+     AND credit_note.is_credit_note = 1
+     AND credit_note.status NOT IN ('draft','cancelled'))"""
+
+
+def is_settled_by_credit_note(con, invoice_id: int) -> bool:
+    row = con.execute(f"SELECT {SETTLED_BY_CREDIT_NOTE_SQL} FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+    return bool(row and row[0])
+
+
 def mark_invoice_paid(con, invoice_id: int, paid_at: int) -> sqlite3.Row | None:
     """Spiegel von markPaid(): zahlt den Restbetrag nur bei sent/partial, sonst None."""
     if fetch_invoice(con, invoice_id)["status"] == "draft":
@@ -916,6 +930,11 @@ def mark_invoice_paid(con, invoice_id: int, paid_at: int) -> sqlite3.Row | None:
     inv = fetch_invoice(con, invoice_id)
     if inv["status"] not in PAYABLE_STATUSES:
         return None
+    if is_settled_by_credit_note(con, invoice_id):
+        sys.exit(
+            f"Rechnung {inv['number']} ist durch eine Stornorechnung ausgeglichen. "
+            "Zahlungen können nicht mehr erfasst werden."
+        )
     total = abs(inv["total"])
     paid_before = con.execute(
         "SELECT COALESCE(SUM(amount_cent), 0) FROM invoice_payments WHERE invoice_id = ?", (invoice_id,)

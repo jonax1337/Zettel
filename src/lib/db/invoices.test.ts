@@ -555,6 +555,16 @@ describe("markPaid", () => {
 
     expect(db.execute).not.toHaveBeenCalled();
   });
+
+  it("refuses an invoice an issued credit note offsets, before booking anything", async () => {
+    db.select.mockImplementation(async (sql: string) =>
+      sql.includes("AS settled") ? [{ settled: 1 }] : [invoiceRow({ status: "sent", total: 10_000 })],
+    );
+
+    await expect(markPaid(7)).rejects.toThrow("Stornorechnung");
+
+    expect(db.execute).not.toHaveBeenCalled();
+  });
 });
 
 describe("deleteInvoice", () => {

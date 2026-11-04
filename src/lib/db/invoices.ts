@@ -18,6 +18,7 @@ import {
   canCreateCreditNote,
   canDeleteInvoice,
   canReopenInvoice,
+  SETTLED_BY_CREDIT_NOTE_ERROR,
   settledByCreditNoteSql,
 } from "./invoice-lifecycle";
 import { drawNextNumber } from "./numbering";
@@ -505,6 +506,14 @@ async function sumPayments(invoiceId: number): Promise<number> {
   return row?.paid_cent ?? 0;
 }
 
+async function isSettledByCreditNote(invoiceId: number): Promise<boolean> {
+  const [row] = await select<{ settled: number }>(
+    `SELECT ${settledByCreditNoteSql("i")} AS settled FROM invoices i WHERE i.id = ?`,
+    [invoiceId],
+  );
+  return row?.settled === 1;
+}
+
 /**
  * Pays off the remaining balance. The remainder is logged as a payment so the
  * payment list stays consistent with a direct "fully paid" action; an
@@ -519,6 +528,7 @@ export async function markPaid(id: number, paidAt?: number): Promise<void> {
   const invoice = await findInvoice(id);
   if (!invoice) return;
   if (invoice.status !== "sent" && invoice.status !== "partial") return;
+  if (await isSettledByCreditNote(id)) throw new Error(SETTLED_BY_CREDIT_NOTE_ERROR);
 
   const paymentTimestamp = paidAt ?? nowUnix();
   const total = Math.abs(invoice.total);
