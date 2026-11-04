@@ -212,11 +212,11 @@ class TestMarkPaid:
         assert (invoice["status"], invoice["amount_paid_cent"]) == (status, 0)
 
     @staticmethod
-    def add_credit_note(con, invoice_id, status):
+    def add_credit_note(con, invoice_id, status, total=-11900):
         con.execute(
             "INSERT INTO invoices (number, customer_id, customer_snapshot, status, total, is_credit_note, "
-            "corrects_invoice_id) VALUES ('RE-2026-0099', 1, '{}', ?, -11900, 1, ?)",
-            (status, invoice_id),
+            "corrects_invoice_id) VALUES ('RE-2026-0099', 1, '{}', ?, ?, 1, ?)",
+            (status, total, invoice_id),
         )
 
     @pytest.mark.parametrize("status", ["sent", "paid"])
@@ -234,6 +234,21 @@ class TestMarkPaid:
         self.add_credit_note(con, invoice_id, status)
         assert cli.mark_invoice_paid(con, invoice_id, PAID_AT) is not None
         assert row_of(con, invoice_id)["status"] == "paid"
+        assert payments_of(con, invoice_id) == [(PAID_AT, 11900, "auto")]
+
+    def test_partial_credit_note_leaves_the_rest_payable_and_books_exactly_it(self, cli, con):
+        invoice_id = insert_invoice(con, status="partial", amount_paid=5000)
+        self.add_credit_note(con, invoice_id, "sent", total=-3000)
+        assert cli.mark_invoice_paid(con, invoice_id, PAID_AT) is not None
+        assert payments_of(con, invoice_id)[-1] == (PAID_AT, 3900, "auto")
+        invoice = row_of(con, invoice_id)
+        assert (invoice["status"], invoice["amount_paid_cent"]) == ("paid", 8900)
+
+    def test_payments_and_partial_credit_note_covering_the_total_are_settled(self, cli, con):
+        invoice_id = insert_invoice(con, status="partial", amount_paid=8900)
+        self.add_credit_note(con, invoice_id, "sent", total=-3000)
+        with pytest.raises(SystemExit, match="Stornorechnung"):
+            cli.mark_invoice_paid(con, invoice_id, PAID_AT)
 
     def test_draft_is_issued_with_a_real_number_before_payment(self, cli, con):
         invoice_id = insert_invoice(con, status="draft", number=cli.draft_placeholder())
@@ -421,6 +436,41 @@ class TestStats:
         _, _, open_total = cli.compute_stats(con, self.YEAR)
 
         assert open_total == 9_200 - 2_300
+
+    def credit(self, con, invoice_id, total, status="sent"):
+        self.add(con, status=status, total=total)
+        con.execute(
+            "UPDATE invoices SET is_credit_note = 1, corrects_invoice_id = ? WHERE id = last_insert_rowid()",
+            (invoice_id,),
+        )
+
+    def last_id(self, con):
+        return con.execute("SELECT MAX(id) FROM invoices").fetchone()[0]
+
+    def test_full_credit_note_removes_invoice_and_credit_note_from_open_receivables(self, cli, con):
+        self.add(con, total=10_000)
+        self.credit(con, self.last_id(con), -10_000)
+
+        _, open_count, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert (open_count, open_total) == (0, 0)
+
+    def test_partial_credit_note_keeps_the_remainder_open(self, cli, con):
+        self.add(con, status="partial", total=10_000, amount_paid_cent=4_000)
+        self.credit(con, self.last_id(con), -3_000)
+
+        _, open_count, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert (open_count, open_total) == (1, 3_000)
+
+    @pytest.mark.parametrize("status", ["draft", "cancelled"])
+    def test_draft_or_cancelled_credit_note_is_ignored(self, cli, con, status):
+        self.add(con, total=10_000)
+        self.credit(con, self.last_id(con), -10_000, status=status)
+
+        _, open_count, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert (open_count, open_total) == (1, 10_000)
 
     def test_drafts_cancelled_and_other_years_do_not_count_as_revenue(self, cli, con):
         self.add(con, status="draft", total=1_000)

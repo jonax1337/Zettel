@@ -8,8 +8,9 @@ type ActionInvoice = Pick<Invoice, "status" | "isCreditNote" | "number" | "amoun
 
 /**
  * Payments are recorded on regular, open invoices. `settledByCreditNote` is true
- * only for an issued credit note (see `isIssuedCreditNote`): a draft one does not
- * offset the invoice yet, matching the dashboard, dunning and bank matching.
+ * only once issued credit notes leave nothing open (see `isSettledByCreditNote`):
+ * a draft one or a partial refund does not, matching the dashboard, dunning and
+ * bank matching.
  */
 export function canRecordPayments(invoice: ActionInvoice, settledByCreditNote: boolean): boolean {
   if (invoice.isCreditNote || settledByCreditNote) return false;
@@ -31,6 +32,15 @@ export function showsPayments(
 /** `hasCreditNote` counts any credit note that is not cancelled, a draft one too. */
 export function canCreateCreditNote(invoice: ActionInvoice, hasCreditNote: boolean): boolean {
   return !hasCreditNote && lifecycleAllowsCreditNote(invoice);
+}
+
+/** How much of the invoice its issued credit notes reverse; "none" while the credit note is still a draft. */
+export function creditNoteCoverage(
+  invoice: Pick<Invoice, "total">,
+  creditedCent: number,
+): "full" | "partial" | "none" {
+  if (creditedCent <= 0) return "none";
+  return creditedCent >= Math.abs(invoice.total) ? "full" : "partial";
 }
 
 export function isOverdue(invoice: ActionInvoice, settledByCreditNote: boolean, now: number): boolean {

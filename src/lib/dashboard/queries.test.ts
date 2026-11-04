@@ -122,11 +122,56 @@ describe("open receivables and credit notes", () => {
     expect(await cashFlowForecast30d()).toMatchObject({ overdue: 0, overdueCount: 0 });
   });
 
-  it("keeps an invoice open while its credit note is only a draft", async () => {
+  it.each(["draft", "cancelled"])("keeps an invoice open while its credit note is %s", async (status) => {
     const originalId = seedInvoice({ total: 10_000 });
-    seedInvoice({ status: "draft", total: -10_000, isCreditNote: true, correctsInvoiceId: originalId });
+    seedInvoice({ status, total: -10_000, isCreditNote: true, correctsInvoiceId: originalId });
 
     expect(await oldestOverdue()).toMatchObject({ openCount: 1, openTotal: 10_000 });
+  });
+
+  describe("a partially credited invoice", () => {
+    function seedPartlyCredited(opts: { amountPaidCent?: number } = {}): void {
+      const originalId = seedInvoice({ total: 10_000, status: opts.amountPaidCent ? "partial" : "sent", ...opts });
+      seedInvoice({ total: -3_000, isCreditNote: true, correctsInvoiceId: originalId });
+    }
+
+    it("stays in the overdue summary with what the credit note leaves open", async () => {
+      seedPartlyCredited();
+
+      expect(await oldestOverdue()).toMatchObject({ openCount: 1, openTotal: 7_000 });
+    });
+
+    it("counts its remainder as open in the KPIs", async () => {
+      seedPartlyCredited();
+
+      expect(await loadKpis(wholeHistory)).toMatchObject({ openCount: 1, openTotal: 7_000 });
+    });
+
+    it("forecasts its remainder as overdue cash", async () => {
+      seedPartlyCredited();
+
+      expect(await cashFlowForecast30d()).toMatchObject({ overdue: 7_000, overdueCount: 1 });
+    });
+
+    it("deducts payments as well", async () => {
+      seedPartlyCredited({ amountPaidCent: 4_000 });
+
+      expect(await oldestOverdue()).toMatchObject({ openCount: 1, openTotal: 3_000 });
+    });
+
+    it("drops out once payments and the credit note cover the total", async () => {
+      seedPartlyCredited({ amountPaidCent: 7_000 });
+
+      expect(await oldestOverdue()).toMatchObject({ openCount: 0, openTotal: 0 });
+    });
+
+    it("converts the credited share of a foreign-currency invoice into EUR", async () => {
+      // 1000,00 USD frozen at 920,00 EUR; 250,00 USD paid and 250,00 USD credited -> 460,00 EUR open.
+      const originalId = seedInvoice({ total: 100_000, eurTotalCent: 92_000, amountPaidCent: 25_000, status: "partial" });
+      seedInvoice({ total: -25_000, eurTotalCent: -23_000, isCreditNote: true, correctsInvoiceId: originalId });
+
+      expect((await oldestOverdue()).openTotal).toBe(46_000);
+    });
   });
 });
 

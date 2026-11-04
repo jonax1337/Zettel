@@ -909,37 +909,40 @@ def cmd_invoice_issue(args) -> None:
         print(f"Bereitgestellt: {issue_invoice(con, args.id, parse_date(args.sent_at))}")
 
 
-# Spiegel von settledByCreditNoteSql() in src/lib/db/invoice-lifecycle.ts: nur eine
-# ausgestellte Stornorechnung gleicht die Rechnung aus, ein Storno-Entwurf nicht.
-SETTLED_BY_CREDIT_NOTE_SQL = """EXISTS (
-  SELECT 1 FROM invoices credit_note
+# Spiegel von creditedCentSql() in src/lib/db/invoice-lifecycle.ts: nur ausgestellte
+# Stornorechnungen zählen, ein Storno-Entwurf nicht. Storno-Beträge sind negativ.
+CREDITED_CENT_SQL = """(SELECT ABS(COALESCE(SUM(credit_note.total), 0)) FROM invoices credit_note
    WHERE credit_note.corrects_invoice_id = invoices.id
      AND credit_note.is_credit_note = 1
      AND credit_note.status NOT IN ('draft','cancelled'))"""
 
+# Spiegel von settledByCreditNoteSql(): ausgeglichen erst, wenn Zahlungen und
+# Stornorechnungen nichts mehr offen lassen. Ein Teilstorno lässt den Rest offen.
+SETTLED_BY_CREDIT_NOTE_SQL = f"""({CREDITED_CENT_SQL} > 0
+  AND ABS(total) - COALESCE(amount_paid_cent, 0) - {CREDITED_CENT_SQL} <= 0)"""
 
-def is_settled_by_credit_note(con, invoice_id: int) -> bool:
-    row = con.execute(f"SELECT {SETTLED_BY_CREDIT_NOTE_SQL} FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
-    return bool(row and row[0])
+
+def credited_cent(con, invoice_id: int) -> int:
+    return con.execute(f"SELECT {CREDITED_CENT_SQL} FROM invoices WHERE id = ?", (invoice_id,)).fetchone()[0]
 
 
 def mark_invoice_paid(con, invoice_id: int, paid_at: int) -> sqlite3.Row | None:
-    """Spiegel von markPaid(): zahlt den Restbetrag nur bei sent/partial, sonst None."""
+    """Spiegel von markPaid(): zahlt den nach Zahlungen und Storno offenen Rest nur bei sent/partial, sonst None."""
     if fetch_invoice(con, invoice_id)["status"] == "draft":
         issue_invoice(con, invoice_id, paid_at)
     inv = fetch_invoice(con, invoice_id)
     if inv["status"] not in PAYABLE_STATUSES:
         return None
-    if is_settled_by_credit_note(con, invoice_id):
+    paid_before = con.execute(
+        "SELECT COALESCE(SUM(amount_cent), 0) FROM invoice_payments WHERE invoice_id = ?", (invoice_id,)
+    ).fetchone()[0]
+    credited = credited_cent(con, invoice_id)
+    remaining = abs(inv["total"]) - paid_before - credited
+    if credited > 0 and remaining <= 0:
         sys.exit(
             f"Rechnung {inv['number']} ist durch eine Stornorechnung ausgeglichen. "
             "Zahlungen können nicht mehr erfasst werden."
         )
-    total = abs(inv["total"])
-    paid_before = con.execute(
-        "SELECT COALESCE(SUM(amount_cent), 0) FROM invoice_payments WHERE invoice_id = ?", (invoice_id,)
-    ).fetchone()[0]
-    remaining = total - paid_before
     if remaining > 0:
         con.execute(
             "INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent, source) VALUES (?, ?, ?, 'auto')",
@@ -948,7 +951,7 @@ def mark_invoice_paid(con, invoice_id: int, paid_at: int) -> sqlite3.Row | None:
     con.execute(
         f"UPDATE invoices SET status = 'paid', paid_at = ?, amount_paid_cent = ?, updated_at = {SQL_NOW} "
         "WHERE id = ? AND status IN ('sent','partial')",
-        (paid_at, max(total, paid_before), invoice_id),
+        (paid_at, paid_before + max(remaining, 0), invoice_id),
     )
     con.commit()
     return inv
@@ -963,14 +966,20 @@ def cmd_invoice_paid(args) -> None:
     print(f"Als bezahlt markiert: {inv['number']} ({fmt_money(abs(inv['total']), inv['currency'])})")
 
 
-# Spiegel von REVENUE_AMOUNT_SQL / OPEN_BALANCE_SQL in src/lib/dashboard/queries.ts:
-# Fremdwährung zählt über den eingefrorenen EUR-Gegenwert, der gezahlte Anteil wird
-# proportional umgerechnet (ganzzahlig, half-up).
+# Spiegel von REVENUE_AMOUNT_SQL / OPEN_BALANCE_SQL / OPEN_RECEIVABLE_SQL in
+# src/lib/dashboard/queries.ts: Fremdwährung zählt über den eingefrorenen
+# EUR-Gegenwert, der bezahlte und stornierte Anteil wird proportional umgerechnet
+# (ganzzahlig, half-up). Stornorechnungen und voll ausgeglichene Rechnungen sind
+# keine offenen Forderungen.
 REVENUE_AMOUNT_SQL = "COALESCE(eur_total_cent, total)"
-OPEN_BALANCE_SQL = """(CASE
-  WHEN eur_total_cent IS NULL OR total = 0 THEN total - COALESCE(amount_paid_cent, 0)
-  ELSE eur_total_cent - (2 * eur_total_cent * COALESCE(amount_paid_cent, 0) + total) / (2 * total)
+COVERED_SQL = f"(COALESCE(amount_paid_cent, 0) + {CREDITED_CENT_SQL})"
+OPEN_BALANCE_SQL = f"""(CASE
+  WHEN eur_total_cent IS NULL OR total = 0 THEN total - {COVERED_SQL}
+  ELSE eur_total_cent - (2 * eur_total_cent * {COVERED_SQL} + total) / (2 * total)
 END)"""
+OPEN_RECEIVABLE_SQL = f"""status IN ('sent','partial')
+  AND (is_credit_note IS NULL OR is_credit_note = 0)
+  AND NOT {SETTLED_BY_CREDIT_NOTE_SQL}"""
 
 
 def compute_stats(con, year: int) -> tuple[int, int, int]:
@@ -982,7 +991,7 @@ def compute_stats(con, year: int) -> tuple[int, int, int]:
         (str(year),),
     ).fetchone()[0]
     open_count, open_total = con.execute(
-        f"SELECT COUNT(*), COALESCE(SUM({OPEN_BALANCE_SQL}),0) FROM invoices WHERE status IN ('sent','partial')"
+        f"SELECT COUNT(*), COALESCE(SUM({OPEN_BALANCE_SQL}),0) FROM invoices WHERE {OPEN_RECEIVABLE_SQL}"
     ).fetchone()
     return revenue, open_count, open_total
 

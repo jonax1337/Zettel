@@ -1,5 +1,5 @@
 import { select } from "$lib/db/client";
-import { notSettledByCreditNoteSql } from "$lib/db/invoice-lifecycle";
+import { creditedCentSql, notSettledByCreditNoteSql } from "$lib/db/invoice-lifecycle";
 import type { InvoiceStatus } from "$lib/db/schema";
 import { nowUnix, SECONDS_PER_DAY } from "$lib/utils/date";
 import { displayInvoiceNumber } from "$lib/utils/invoice-number";
@@ -8,8 +8,9 @@ import type { Period } from "./period";
 import { monthsIn } from "./period";
 
 const REVENUE_STATUSES = `('sent','partial','paid')`;
-// Credit notes never get payments and stay 'sent', and the invoice they offset
-// is no longer due, so neither counts as an open receivable.
+// Credit notes never get payments and stay 'sent', and an invoice they fully
+// offset is no longer due, so neither counts as an open receivable. A partially
+// credited invoice stays open with its remainder (see OPEN_BALANCE_SQL).
 const OPEN_RECEIVABLE_SQL = `status IN ('sent','partial')
        AND (is_credit_note IS NULL OR is_credit_note = 0)
        AND ${notSettledByCreditNoteSql("invoices")}`;
@@ -27,13 +28,15 @@ export const REVENUE_VAT_SQL = `(CASE
     CAST(eur_total_cent * vat_amount AS REAL) / total
   ELSE vat_amount
 END)`;
-// Offener Saldo in EUR-Cent. total und amount_paid_cent stehen in der
+// Bezahlter und per ausgestellter Stornorechnung gutgeschriebener Anteil, in der Rechnungswährung.
+const COVERED_SQL = `(COALESCE(amount_paid_cent, 0) + ${creditedCentSql("invoices")})`;
+// Offener Saldo in EUR-Cent. total und der gedeckte Anteil stehen in der
 // Rechnungswährung, eur_total_cent ist der eingefrorene EUR-Gegenwert von total:
-// der gezahlte Anteil wird daher proportional umgerechnet (Integer-Rundung
+// der gedeckte Anteil wird daher proportional umgerechnet (Integer-Rundung
 // half-up, kein Float), statt Fremdwährungs-Cent von EUR-Cent abzuziehen.
 const OPEN_BALANCE_SQL = `(CASE
-  WHEN eur_total_cent IS NULL OR total = 0 THEN total - COALESCE(amount_paid_cent, 0)
-  ELSE eur_total_cent - (2 * eur_total_cent * COALESCE(amount_paid_cent, 0) + total) / (2 * total)
+  WHEN eur_total_cent IS NULL OR total = 0 THEN total - ${COVERED_SQL}
+  ELSE eur_total_cent - (2 * eur_total_cent * ${COVERED_SQL} + total) / (2 * total)
 END)`;
 
 type CountAndTotal = { count: number; total: number };

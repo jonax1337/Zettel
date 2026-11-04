@@ -29,6 +29,7 @@ function invoice(overrides: Partial<InvoiceListRow>): InvoiceListRow {
     currency: "EUR",
     total: 11_900,
     amountPaidCent: 0,
+    creditedCent: 0,
     settledByCreditNote: false,
     ...overrides,
   } as InvoiceListRow;
@@ -77,6 +78,11 @@ describe("payableInvoices", () => {
     const open = invoice({ id: 1 });
     expect(payableInvoices([open, invoice({ id: 2, settledByCreditNote: true })], "EUR")).toEqual([open]);
   });
+
+  it("keeps a partially credited invoice with its remainder", () => {
+    const partlyCredited = invoice({ id: 2, creditedCent: 3_000 });
+    expect(payableInvoices([partlyCredited], "EUR")).toEqual([partlyCredited]);
+  });
 });
 
 describe("invoicePickerLabel", () => {
@@ -86,6 +92,11 @@ describe("invoicePickerLabel", () => {
     expect(label).toContain("ACME GmbH");
     expect(label).toContain("79,00");
     expect(label).toContain("offen");
+  });
+
+  it("shows what a partial credit note leaves open, not the full total", () => {
+    const label = invoicePickerLabel(invoice({ status: "partial", amountPaidCent: 5_000, creditedCent: 3_000 }));
+    expect(label).toContain("39,00");
   });
 });
 

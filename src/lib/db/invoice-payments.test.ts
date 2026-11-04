@@ -29,7 +29,7 @@ describe("statusForPaidAmount", () => {
 });
 
 describe("paymentRejection", () => {
-  const open: PayableInvoice = { status: "partial", total: 10_000, paidCent: 4_000, settledByCreditNote: false };
+  const open: PayableInvoice = { status: "partial", total: 10_000, amountPaidCent: 4_000, creditedCent: 0 };
 
   it.each(["sent", "partial"] as const)("accepts a payment on a %s invoice", (status) => {
     expect(paymentRejection({ ...open, status }, 1_000)).toBeNull();
@@ -54,16 +54,36 @@ describe("paymentRejection", () => {
   });
 
   it("measures the open amount of a credit note by its absolute total", () => {
-    expect(paymentRejection({ ...open, status: "sent", total: -10_000, paidCent: 0 }, 10_000)).toBeNull();
+    expect(paymentRejection({ ...open, status: "sent", total: -10_000, amountPaidCent: 0 }, 10_000)).toBeNull();
   });
 
   it.each(["sent", "partial"] as const)("rejects a payment on a %s invoice an issued credit note offsets", (status) => {
-    expect(paymentRejection({ ...open, status, settledByCreditNote: true }, 1_000)).toContain("Stornorechnung");
+    expect(paymentRejection({ ...open, status, amountPaidCent: 0, creditedCent: 10_000 }, 1_000)).toContain(
+      "Stornorechnung",
+    );
+  });
+
+  describe("on a partially credited invoice (119,00 total, 50,00 paid, 30,00 credited -> 39,00 open)", () => {
+    const partlyCredited: PayableInvoice = { status: "partial", total: 11_900, amountPaidCent: 5_000, creditedCent: 3_000 };
+
+    it("accepts the open remainder", () => {
+      expect(paymentRejection(partlyCredited, 3_900)).toBeNull();
+    });
+
+    it("rejects more than the remainder as an overpayment, not as settled", () => {
+      expect(paymentRejection(partlyCredited, 4_000)).toContain("übersteigt");
+    });
+  });
+
+  it("rejects payments once payments and a partial credit note cover the total", () => {
+    expect(paymentRejection({ status: "partial", total: 11_900, amountPaidCent: 8_900, creditedCent: 3_000 }, 100)).toContain(
+      "Stornorechnung",
+    );
   });
 });
 
 describe("addPayment", () => {
-  const payable = { status: "sent", total: 10_000, paid_cent: 0 };
+  const payable = { status: "sent", total: 10_000, paid_cent: 0, credited_cent: 0 };
   const payment = { invoiceId: 7, paidAt: 1_750_000_000, amountCent: 4_000 };
 
   function invoiceInDb(invoice: object | null, opts: { bookingRecorded?: boolean } = {}) {
@@ -97,10 +117,19 @@ describe("addPayment", () => {
   });
 
   it("refuses a payment on an invoice an issued credit note offsets", async () => {
-    invoiceInDb({ ...payable, settled_by_credit_note: 1 });
+    invoiceInDb({ ...payable, credited_cent: 10_000 });
 
     await expect(addPayment(payment)).rejects.toThrow("Stornorechnung");
     expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("marks the invoice paid once the payment covers what a partial credit note leaves open", async () => {
+    invoiceInDb({ ...payable, credited_cent: 6_000 });
+
+    await addPayment(payment);
+
+    const statusUpdate = db.execute.mock.calls.find(([sql]) => String(sql).startsWith("UPDATE invoices"))!;
+    expect(statusUpdate[1]).toEqual(["paid", 4_000, 1_750_000_000, 7]);
   });
 
   it("removes the payment again when the invoice status cannot be updated", async () => {

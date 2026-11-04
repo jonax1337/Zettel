@@ -1,15 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { execute, insert, select, getInvoice, drawNextNumber, loadSettings } = vi.hoisted(() => ({
+const { execute, insert, select, getInvoice, loadCreditedCent, drawNextNumber, loadSettings } = vi.hoisted(() => ({
   execute: vi.fn(),
   insert: vi.fn(),
   select: vi.fn(),
   getInvoice: vi.fn(),
+  loadCreditedCent: vi.fn(),
   drawNextNumber: vi.fn(),
   loadSettings: vi.fn(),
 }));
 vi.mock("./client", () => ({ execute, insert, select }));
-vi.mock("./invoices", () => ({ getInvoice }));
+vi.mock("./invoices", () => ({ getInvoice, loadCreditedCent }));
 vi.mock("./numbering", () => ({ drawNextNumber }));
 vi.mock("./queries", () => ({ loadSettings }));
 
@@ -19,6 +20,7 @@ import {
   levelLabel,
   listOverdueInvoices,
   listReminders,
+  remindableAmountCents,
   updateReminder,
   type ReminderDraft,
 } from "./reminders";
@@ -79,6 +81,7 @@ beforeEach(() => {
   insert.mockReset();
   select.mockReset();
   getInvoice.mockReset();
+  loadCreditedCent.mockReset();
   drawNextNumber.mockReset();
 });
 
@@ -122,7 +125,7 @@ describe("createReminder", () => {
   beforeEach(() => {
     drawNextNumber.mockResolvedValue("MA-2026-0001");
     insert.mockResolvedValue(42);
-    select.mockResolvedValue([{ id: 3 }]);
+    loadCreditedCent.mockResolvedValue(0);
   });
 
   it.each(["sent", "partial"])("creates a reminder for a %s invoice", async (status) => {
@@ -161,10 +164,21 @@ describe("createReminder", () => {
 
   it("rejects an invoice offset by an issued credit note without drawing a number", async () => {
     getInvoice.mockResolvedValue(remindableInvoice());
-    select.mockResolvedValue([]);
+    loadCreditedCent.mockResolvedValue(10000);
 
     await expect(createReminder(draft)).rejects.toThrow("storniert");
     expect(drawNextNumber).not.toHaveBeenCalled();
+  });
+
+  it("demands only what payments and a partial credit note leave open", async () => {
+    getInvoice.mockResolvedValue(remindableInvoice({ status: "partial", amountPaidCent: 4000 }));
+    loadCreditedCent.mockResolvedValue(2500);
+
+    await createReminder(draft);
+
+    const [, binds] = insert.mock.calls[0];
+    expect(binds).toContain(3500);
+    expect(binds).toContain(4100);
   });
 });
 
@@ -248,7 +262,7 @@ describe("listOverdueInvoices", () => {
     const dayAgo = Math.floor(Date.now() / 1000) - 3 * 86400 - 60;
     select
       .mockResolvedValueOnce([
-        { id: 3, number: "RE-1", due_date: dayAgo, total: 10000, customer_name: null },
+        { id: 3, number: "RE-1", due_date: dayAgo, total: 10000, credited_cent: 0, customer_name: null },
       ])
       .mockResolvedValueOnce([
         { invoice_id: 3, level: 1 },
@@ -260,6 +274,19 @@ describe("listOverdueInvoices", () => {
     expect(overdue.existingReminderLevels).toEqual([1]);
     expect(overdue.daysOverdue).toBe(3);
     expect(overdue.customerName).toBe("—");
+  });
+
+  it("carries what issued credit notes take off, so the list shows the reduced open amount", async () => {
+    const dayAgo = Math.floor(Date.now() / 1000) - 86400;
+    select
+      .mockResolvedValueOnce([
+        { id: 3, number: "RE-1", due_date: dayAgo, total: 10000, amount_paid_cent: 1000, credited_cent: 2500, customer_name: "Acme" },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const [overdue] = await listOverdueInvoices();
+
+    expect(remindableAmountCents(overdue.invoice)).toBe(6500);
   });
 });
 

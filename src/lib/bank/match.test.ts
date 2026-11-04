@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { InvoiceListRow } from "$lib/db/invoices";
-import { bankBookingKey, matchBookings, openBalance, type Booking } from "./match";
+import { bankBookingKey, matchBookings, type Booking } from "./match";
 
 function invoice(overrides: Partial<InvoiceListRow>): InvoiceListRow {
   return {
@@ -12,6 +12,8 @@ function invoice(overrides: Partial<InvoiceListRow>): InvoiceListRow {
     correctsInvoiceId: null,
     total: 11_900,
     amountPaidCent: 0,
+    creditedCent: 0,
+    settledByCreditNote: false,
     customerName: "Muster GmbH",
     ...overrides,
   } as InvoiceListRow;
@@ -93,15 +95,22 @@ describe("matchBookings", () => {
     expect(match.candidates.map((c) => c.invoice.id)).toEqual([1]);
   });
 
-  it("skips an invoice offset by an issued credit note", () => {
-    const creditNote = (status: InvoiceListRow["status"]) =>
-      invoice({ id: 2, isCreditNote: true, correctsInvoiceId: 1, status, total: -11_900 });
+  it("skips an invoice an issued credit note settles", () => {
+    const [match] = matchBookings(
+      [booking({})],
+      [invoice({ creditedCent: 11_900, settledByCreditNote: true })],
+    );
+    expect(match.candidates).toEqual([]);
+  });
 
-    const [settled] = matchBookings([booking({})], [invoice({}), creditNote("sent")]);
-    const [draftOnly] = matchBookings([booking({})], [invoice({}), creditNote("draft")]);
+  it("matches a partially credited invoice on what the credit note leaves open", () => {
+    const partlyCredited = invoice({ creditedCent: 3_000 });
 
-    expect(settled.candidates).toEqual([]);
-    expect(draftOnly.candidates.map((c) => c.invoice.id)).toEqual([1]);
+    const [remainder] = matchBookings([booking({ amountCent: 8_900 })], [partlyCredited]);
+    const [fullTotal] = matchBookings([booking({ amountCent: 11_900 })], [partlyCredited]);
+
+    expect(remainder.candidates.map((c) => c.confidence)).toEqual(["medium"]);
+    expect(fullTotal.candidates).toEqual([]);
   });
 
   it("only matches invoices in the booking's currency", () => {
@@ -138,12 +147,5 @@ describe("bankBookingKey", () => {
     expect(key({ purpose: "RE-1  Danke" })).toBe(key({ purpose: "re-1 danke" }));
     expect(key({ purpose: "RE-1" })).not.toBe(key({ purpose: "RE-2" }));
     expect(bankBookingKey(booking({ transactionId: "", purpose: "RE-1" }))).toBe(key({ purpose: "RE-1" }));
-  });
-});
-
-describe("openBalance", () => {
-  it("subtracts what was already paid from the absolute invoice total", () => {
-    expect(openBalance({ total: 11_900, amountPaidCent: 4_000 })).toBe(7_900);
-    expect(openBalance({ total: -11_900, amountPaidCent: 0 })).toBe(11_900);
   });
 });

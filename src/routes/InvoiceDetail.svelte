@@ -12,10 +12,11 @@
     markSent,
     reopenDraft,
   } from "$lib/db/invoices";
-  import { isIssuedCreditNote } from "$lib/db/invoice-lifecycle";
+  import { creditedCentOf, isSettledByCreditNote, openBalanceCent } from "$lib/db/invoice-lifecycle";
   import { listPayments } from "$lib/db/invoice-payments";
   import { listRemindersForInvoice } from "$lib/db/reminders";
   import type { Invoice, InvoiceItem, InvoicePayment, Reminder } from "$lib/db/schema";
+  import { formatMoney } from "$lib/utils/currency";
   import { formatDate, formatDateTime, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { generateInvoicePdf, listPdfVersions, type PdfVersion } from "$lib/sidecar/invoice";
   import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
@@ -36,6 +37,7 @@
     canCreateCreditNote as creditNoteAllowed,
     canRecordPayments,
     canReopenAsDraft,
+    creditNoteCoverage,
     isOverdue as isInvoiceOverdue,
     showsPayments,
   } from "./invoice/invoice-actions";
@@ -63,7 +65,10 @@
   let items = $state<InvoiceItem[]>([]);
   let originalInvoice = $state<Invoice | null>(null);
   let creditNote = $state<Invoice | null>(null);
-  const settledByCreditNote = $derived(!!creditNote && isIssuedCreditNote(creditNote));
+  const creditedCent = $derived(creditedCentOf(creditNote));
+  const settledByCreditNote = $derived(!!invoice && isSettledByCreditNote({ ...invoice, creditedCent }));
+  const coverage = $derived(invoice ? creditNoteCoverage(invoice, creditedCent) : "none");
+  const openCent = $derived(invoice ? Math.max(0, openBalanceCent({ ...invoice, creditedCent })) : 0);
   let payments = $state<InvoicePayment[]>([]);
   let reminders = $state<Reminder[]>([]);
   let loading = $state(true);
@@ -120,7 +125,7 @@
   const creatableReminderLevel = $derived(
     isOverdue && !existingReminderLevels.includes(3) ? nextReminderLevel(existingReminderLevels) : null,
   );
-  const settlesRemainder = $derived(invoice?.status === "partial");
+  const settlesRemainder = $derived(invoice?.status === "partial" || creditedCent > 0);
 
   $effect(() => {
     void params?.id;
@@ -418,10 +423,17 @@
         class="font-mono font-medium text-foreground hover:underline"
       >{displayInvoiceNumber(note)}</a>
     {/snippet}
-    {#if settledByCreditNote}
+    {#if coverage === "full"}
       <NoticeCard tone="warning" title="Storniert">
         <div class="mt-0.5 text-muted-foreground">
           Wurde storniert durch {@render creditNoteLink(creditNote)}.
+        </div>
+      </NoticeCard>
+    {:else if coverage === "partial"}
+      <NoticeCard tone="warning" title="Teilweise storniert">
+        <div class="mt-0.5 text-muted-foreground">
+          Teilweise storniert durch {@render creditNoteLink(creditNote)}
+          (−{formatMoney(creditedCent, invoice.currency)}). Offen: {formatMoney(openCent, invoice.currency)}
         </div>
       </NoticeCard>
     {:else}
@@ -541,7 +553,7 @@
   {/if}
 
   {#if paymentCardVisible}
-    <PaymentsCard {invoice} {payments} canAddPayment={canMarkPaid} onChanged={load} />
+    <PaymentsCard {invoice} {creditedCent} {payments} canAddPayment={canMarkPaid} onChanged={load} />
   {/if}
 
   <SkontoCard {invoice} />
