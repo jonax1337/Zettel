@@ -71,6 +71,8 @@ _DE = {
     "offer_disclaimer": "Dieses Angebot ist freibleibend und unverbindlich. Gültig bis {date}. Bei Annahme erstellen wir eine entsprechende Rechnung.",
     "offer_rc_hint_services": "Bei Auftragsannahme wird die Rechnung mit dem Hinweis \"Steuerschuldnerschaft des Leistungsempfängers\" ausgestellt (Reverse Charge).",
     "offer_rc_hint_goods": "Bei Auftragsannahme wird die Rechnung als steuerfreie innergemeinschaftliche Lieferung ausgestellt.",
+    "offer_export_hint_goods": "Bei Auftragsannahme wird die Rechnung als steuerfreie Ausfuhrlieferung ausgestellt.",
+    "offer_export_hint_services": "Bei Auftragsannahme wird die Rechnung ohne deutsche Umsatzsteuer ausgestellt (Leistungsort außerhalb der EU, § 3a Abs. 2 UStG).",
 
     # Footer
     "footer_contact": "Kontakt",
@@ -141,6 +143,8 @@ _EN = {
     "offer_disclaimer": "This quotation is non-binding. Valid until {date}. Upon acceptance we will issue a corresponding invoice.",
     "offer_rc_hint_services": "Upon acceptance, the invoice will be issued with the note \"VAT to be paid by the recipient (reverse charge)\".",
     "offer_rc_hint_goods": "Upon acceptance, the invoice will be issued as a VAT-exempt intra-community supply.",
+    "offer_export_hint_goods": "Upon acceptance, the invoice will be issued as a VAT-exempt export.",
+    "offer_export_hint_services": "Upon acceptance, the invoice will be issued without German VAT (place of supply outside the EU, § 3a (2) UStG).",
 
     "footer_contact": "Contact",
     "footer_tax": "Tax",
