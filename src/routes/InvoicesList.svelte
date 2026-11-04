@@ -78,7 +78,7 @@
     invoices.data.filter(
       (i) => (!f.onlyCreditNotes || i.isCreditNote) &&
         (!f.onlyFollowUp || i.followUpDate != null) &&
-        (!f.onlyOpen || canRecordPayments(i, i.hasCreditNote)),
+        (!f.onlyOpen || canRecordPayments(i, i.settledByCreditNote)),
     ),
   );
 
@@ -236,7 +236,7 @@
             <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
               <span class="inline-flex items-center gap-1.5">
                 <StatusBadge status={inv.status} table={INVOICE_STATUS} />
-                {#if isInvoiceOverdue(inv, inv.hasCreditNote, now)}
+                {#if isInvoiceOverdue(inv, inv.settledByCreditNote, now)}
                   <Badge variant="destructive">Überfällig</Badge>
                 {/if}
               </span>

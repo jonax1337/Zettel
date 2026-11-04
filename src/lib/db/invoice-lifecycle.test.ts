@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+// @ts-expect-error The project has no @types/node; node:sqlite is only used to run the real SQL in tests.
+import { DatabaseSync } from "node:sqlite";
 import {
   canCancelInvoice,
   canCreateCreditNote,
@@ -6,8 +8,15 @@ import {
   canReopenInvoice,
   invoiceIdsSettledByCreditNote,
   isIssuedCreditNote,
+  notSettledByCreditNoteSql,
+  settledByCreditNoteSql,
 } from "./invoice-lifecycle";
 import type { InvoiceStatus } from "./schema";
+
+type SqliteDatabase = {
+  exec(sql: string): void;
+  prepare(sql: string): { all(): unknown[]; run(...bindings: (string | number)[]): unknown };
+};
 
 const DRAFT_NUMBER = "DRAFT-1a2b3c";
 const REAL_NUMBER = "RE-2026-0001";
@@ -107,5 +116,31 @@ describe("credit note settlement", () => {
     const partialRefund = { ...creditNote("sent", 1), total: -2_500 };
 
     expect(invoiceIdsSettledByCreditNote([original, partialRefund]).has(1)).toBe(true);
+  });
+});
+
+describe("settledByCreditNoteSql", () => {
+  function settledIdsInSql(creditNotes: { status: InvoiceStatus; correctsInvoiceId: number }[]): number[] {
+    const db = new DatabaseSync(":memory:") as SqliteDatabase;
+    db.exec("CREATE TABLE invoices (id INTEGER PRIMARY KEY, status TEXT, is_credit_note INTEGER, corrects_invoice_id INTEGER)");
+    db.exec("INSERT INTO invoices (id, status, is_credit_note) VALUES (1, 'sent', 0), (2, 'sent', 0)");
+    const insert = db.prepare("INSERT INTO invoices (status, is_credit_note, corrects_invoice_id) VALUES (?, 1, ?)");
+    for (const note of creditNotes) insert.run(note.status, note.correctsInvoiceId);
+    const settled = db
+      .prepare(`SELECT i.id FROM invoices i WHERE i.is_credit_note = 0 AND ${settledByCreditNoteSql("i")} ORDER BY i.id`)
+      .all() as { id: number }[];
+    const open = db
+      .prepare(`SELECT i.id FROM invoices i WHERE i.is_credit_note = 0 AND ${notSettledByCreditNoteSql("i")}`)
+      .all() as { id: number }[];
+    expect(settled.length + open.length).toBe(2);
+    return settled.map((row) => row.id);
+  }
+
+  it.each(["sent", "partial", "paid"] as const)("counts an invoice with a %s credit note as settled", (status) => {
+    expect(settledIdsInSql([{ status, correctsInvoiceId: 1 }])).toEqual([1]);
+  });
+
+  it.each(["draft", "cancelled"] as const)("keeps an invoice with a %s credit note open", (status) => {
+    expect(settledIdsInSql([{ status, correctsInvoiceId: 1 }])).toEqual([]);
   });
 });

@@ -67,10 +67,14 @@ export function invoiceIdsSettledByCreditNote(invoices: CreditNoteFacts[]): Set<
 }
 
 /** SQL condition mirroring {@link invoiceIdsSettledByCreditNote} for the invoice aliased `alias`. */
-export function notSettledByCreditNoteSql(alias: string): string {
-  return `NOT EXISTS (
+export function settledByCreditNoteSql(alias: string): string {
+  return `EXISTS (
     SELECT 1 FROM invoices credit_note
      WHERE credit_note.corrects_invoice_id = ${alias}.id
        AND credit_note.is_credit_note = 1
        AND credit_note.status NOT IN ('draft','cancelled'))`;
+}
+
+export function notSettledByCreditNoteSql(alias: string): string {
+  return `NOT ${settledByCreditNoteSql(alias)}`;
 }

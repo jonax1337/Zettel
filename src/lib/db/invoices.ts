@@ -18,6 +18,7 @@ import {
   canCreateCreditNote,
   canDeleteInvoice,
   canReopenInvoice,
+  settledByCreditNoteSql,
 } from "./invoice-lifecycle";
 import { drawNextNumber } from "./numbering";
 import { loadSettings } from "./queries";
@@ -91,7 +92,8 @@ export type InvoiceFilter = {
   search?: string;
 };
 
-export type InvoiceListRow = Invoice & { customerName: string; hasCreditNote: boolean };
+/** `settledByCreditNote`: an issued credit note offsets the invoice, so it is no longer due. */
+export type InvoiceListRow = Invoice & { customerName: string; settledByCreditNote: boolean };
 
 export function buildInvoiceFilter(filter: InvoiceFilter) {
   const { customerId, ...rest } = filter;
@@ -106,10 +108,10 @@ export async function listInvoices(
 ): Promise<InvoiceListRow[]> {
   const { where, binds } = buildInvoiceFilter(filter);
   const rows = await select<
-    InvoiceRow & { customer_name: string | null; has_credit_note: number }
+    InvoiceRow & { customer_name: string | null; settled_by_credit_note: number }
   >(
     `SELECT i.*, c.name AS customer_name,
-            EXISTS (SELECT 1 FROM invoices cn WHERE cn.corrects_invoice_id = i.id AND cn.status != 'cancelled') AS has_credit_note
+            ${settledByCreditNoteSql("i")} AS settled_by_credit_note
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
      ${where}
@@ -119,7 +121,7 @@ export async function listInvoices(
   return rows.map((r) => ({
     ...mapInvoice(r),
     customerName: r.customer_name ?? MISSING_NAME,
-    hasCreditNote: r.has_credit_note === 1,
+    settledByCreditNote: r.settled_by_credit_note === 1,
   }));
 }
 

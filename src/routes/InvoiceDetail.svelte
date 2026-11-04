@@ -12,6 +12,7 @@
     markSent,
     reopenDraft,
   } from "$lib/db/invoices";
+  import { isIssuedCreditNote } from "$lib/db/invoice-lifecycle";
   import { listPayments } from "$lib/db/invoice-payments";
   import { listRemindersForInvoice } from "$lib/db/reminders";
   import type { Invoice, InvoiceItem, InvoicePayment, Reminder } from "$lib/db/schema";
@@ -61,7 +62,8 @@
   let invoice = $state<Invoice | null>(null);
   let items = $state<InvoiceItem[]>([]);
   let originalInvoice = $state<Invoice | null>(null);
-  let cancelledByCreditNote = $state<Invoice | null>(null);
+  let creditNote = $state<Invoice | null>(null);
+  const settledByCreditNote = $derived(!!creditNote && isIssuedCreditNote(creditNote));
   let payments = $state<InvoicePayment[]>([]);
   let reminders = $state<Reminder[]>([]);
   let loading = $state(true);
@@ -102,17 +104,17 @@
   });
 
   const paymentCardVisible = $derived(
-    !!invoice && showsPayments(invoice, payments.length, !!cancelledByCreditNote),
+    !!invoice && showsPayments(invoice, payments.length, settledByCreditNote),
   );
-  const canMarkPaid = $derived(!!invoice && canRecordPayments(invoice, !!cancelledByCreditNote));
+  const canMarkPaid = $derived(!!invoice && canRecordPayments(invoice, settledByCreditNote));
   const canCreateCreditNote = $derived(
-    !!invoice && creditNoteAllowed(invoice, !!cancelledByCreditNote),
+    !!invoice && creditNoteAllowed(invoice, !!creditNote),
   );
   const canReopenDraft = $derived(
-    !!invoice && canReopenAsDraft(invoice, payments.length, !!cancelledByCreditNote),
+    !!invoice && canReopenAsDraft(invoice, payments.length, !!creditNote),
   );
   const isOverdue = $derived(
-    !!invoice && isInvoiceOverdue(invoice, !!cancelledByCreditNote, nowUnix()),
+    !!invoice && isInvoiceOverdue(invoice, settledByCreditNote, nowUnix()),
   );
   const existingReminderLevels = $derived(reminders.map((r) => r.level).filter(isReminderLevel));
   const creatableReminderLevel = $derived(
@@ -160,7 +162,7 @@
       lastPdfPath = res.invoice.pdfPath;
       pdfVersions = versions;
       originalInvoice = related.original;
-      cancelledByCreditNote = related.creditNote;
+      creditNote = related.creditNote;
       payments = loadedPayments;
       reminders = loadedReminders;
       void maybeAutoRevalidate();
@@ -408,17 +410,28 @@
     </NoticeCard>
   {/if}
 
-  {#if cancelledByCreditNote}
-    <NoticeCard tone="warning" title="Storniert">
-      <div class="mt-0.5 text-muted-foreground">
-        Wurde storniert durch
-        <a
-          href={`/invoices/${cancelledByCreditNote.id}`}
-          use:link
-          class="font-mono font-medium text-foreground hover:underline"
-        >{cancelledByCreditNote.number}</a>.
-      </div>
-    </NoticeCard>
+  {#if creditNote}
+    {#snippet creditNoteLink(note: Invoice)}
+      <a
+        href={`/invoices/${note.id}`}
+        use:link
+        class="font-mono font-medium text-foreground hover:underline"
+      >{displayInvoiceNumber(note)}</a>
+    {/snippet}
+    {#if settledByCreditNote}
+      <NoticeCard tone="warning" title="Storniert">
+        <div class="mt-0.5 text-muted-foreground">
+          Wurde storniert durch {@render creditNoteLink(creditNote)}.
+        </div>
+      </NoticeCard>
+    {:else}
+      <NoticeCard tone="warning" title="Storno in Vorbereitung">
+        <div class="mt-0.5 text-muted-foreground">
+          Die Stornorechnung {@render creditNoteLink(creditNote)} ist noch ein Entwurf. Bis sie
+          ausgestellt ist, bleibt diese Rechnung offen.
+        </div>
+      </NoticeCard>
+    {/if}
   {/if}
 
   <div class="flex flex-col @3xl:flex-row @3xl:items-start @3xl:justify-between gap-4 mb-6">

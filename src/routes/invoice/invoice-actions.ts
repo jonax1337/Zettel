@@ -6,9 +6,13 @@ import type { Invoice } from "$lib/db/schema";
 
 type ActionInvoice = Pick<Invoice, "status" | "isCreditNote" | "number" | "amountPaidCent" | "dueDate">;
 
-/** Payments are recorded on regular, open invoices that a credit note has not reversed. */
-export function canRecordPayments(invoice: ActionInvoice, cancelledByCreditNote: boolean): boolean {
-  if (invoice.isCreditNote || cancelledByCreditNote) return false;
+/**
+ * Payments are recorded on regular, open invoices. `settledByCreditNote` is true
+ * only for an issued credit note (see `isIssuedCreditNote`): a draft one does not
+ * offset the invoice yet, matching the dashboard, dunning and bank matching.
+ */
+export function canRecordPayments(invoice: ActionInvoice, settledByCreditNote: boolean): boolean {
+  if (invoice.isCreditNote || settledByCreditNote) return false;
   return invoice.status === "sent" || invoice.status === "partial";
 }
 
@@ -16,20 +20,21 @@ export function canRecordPayments(invoice: ActionInvoice, cancelledByCreditNote:
 export function showsPayments(
   invoice: ActionInvoice,
   paymentCount: number,
-  cancelledByCreditNote: boolean,
+  settledByCreditNote: boolean,
 ): boolean {
   if (invoice.isCreditNote) return false;
-  if (canRecordPayments(invoice, cancelledByCreditNote)) return true;
+  if (canRecordPayments(invoice, settledByCreditNote)) return true;
   const issued = invoice.status === "sent" || invoice.status === "partial" || invoice.status === "paid";
   return issued && paymentCount > 0;
 }
 
-export function canCreateCreditNote(invoice: ActionInvoice, cancelledByCreditNote: boolean): boolean {
-  return !cancelledByCreditNote && lifecycleAllowsCreditNote(invoice);
+/** `hasCreditNote` counts any credit note that is not cancelled, a draft one too. */
+export function canCreateCreditNote(invoice: ActionInvoice, hasCreditNote: boolean): boolean {
+  return !hasCreditNote && lifecycleAllowsCreditNote(invoice);
 }
 
-export function isOverdue(invoice: ActionInvoice, cancelledByCreditNote: boolean, now: number): boolean {
-  return canRecordPayments(invoice, cancelledByCreditNote) && invoice.dueDate < now;
+export function isOverdue(invoice: ActionInvoice, settledByCreditNote: boolean, now: number): boolean {
+  return canRecordPayments(invoice, settledByCreditNote) && invoice.dueDate < now;
 }
 
 /**
@@ -41,11 +46,12 @@ export function canDiscardInvoice(invoice: Pick<ActionInvoice, "status" | "numbe
   return canCancelInvoice(invoice);
 }
 
+/** `hasCreditNote` counts a draft credit note too: it mirrors the current items and would no longer match. */
 export function canReopenAsDraft(
   invoice: ActionInvoice,
   paymentCount: number,
-  cancelledByCreditNote: boolean,
+  hasCreditNote: boolean,
 ): boolean {
-  if (invoice.status !== "sent" || cancelledByCreditNote) return false;
+  if (invoice.status !== "sent" || hasCreditNote) return false;
   return paymentCount === 0 && (invoice.amountPaidCent ?? 0) === 0;
 }
