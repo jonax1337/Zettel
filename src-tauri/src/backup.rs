@@ -34,9 +34,9 @@ use crate::paths::{
 use crate::tenants;
 
 /// Newest DB schema this app can restore. Must stay in sync with
-/// `CURRENT_DB_SCHEMA_VERSION` in `src/routes/settings/{Advanced,Data}.svelte`
-/// and the highest migration version in `lib.rs` (a test in `lib.rs` checks
-/// the latter).
+/// `CURRENT_DB_SCHEMA_VERSION` in `src/lib/utils/schema-version.ts` and the
+/// highest migration version in `lib.rs` (a test in `lib.rs` checks the
+/// latter).
 pub(crate) const CURRENT_SCHEMA: u32 = 27;
 
 const MANIFEST_NAME: &str = "manifest.json";
@@ -49,6 +49,11 @@ const PENDING_MARKER: &str = "RESTORE_PENDING";
 const RESTORE_MODE_FILE: &str = "restore_mode.json";
 const SNAPSHOT_FILE: &str = "zettel.backup.tmp.db";
 const DECRYPTED_TMP_FILE: &str = "restore_decrypted.tmp.zip";
+/// Appended to the target name while a backup is being written.
+const PARTIAL_BACKUP_SUFFIX: &str = ".partial";
+/// SQLite's write-ahead log and its shared-memory index, named after the DB
+/// file they belong to.
+const SQLITE_COMPANION_SUFFIXES: [&str; 2] = ["-wal", "-shm"];
 /// Error code the frontend matches on to prompt for a password.
 const PASSWORD_REQUIRED: &str = "password_required";
 
@@ -230,19 +235,39 @@ pub async fn bundle_backup(
     let manifest = BackupManifest::new(db_schema_version, invoice_count);
     let documents_root = documents_zettel_dir(&app)?;
 
-    let written = write_backup_zip(&target, &snapshot, &manifest, &documents_root).and_then(|()| {
-        match password {
-            Some(pw) => encrypt_file_in_place(&target, pw),
-            None => Ok(()),
-        }
-    });
-    if let Err(e) = written {
-        let _ = fs::remove_file(&target);
-        return Err(e);
-    }
-
+    write_backup_file(&target, &snapshot, &manifest, &documents_root, password)?;
     let _ = fs::remove_file(&snapshot);
     Ok(path_string(&target))
+}
+
+/// Writes the backup next to `target` and moves it into place only once it
+/// is complete, so a failed run leaves an existing backup at `target` intact
+/// (auto-backups reuse one file per weekday).
+fn write_backup_file(
+    target: &Path,
+    snapshot: &Path,
+    manifest: &BackupManifest,
+    documents_root: &Path,
+    password: Option<String>,
+) -> Result<(), String> {
+    let partial = with_suffix(target, PARTIAL_BACKUP_SUFFIX);
+    let written = write_backup_zip(&partial, snapshot, manifest, documents_root)
+        .and_then(|()| match password {
+            Some(pw) => encrypt_file_in_place(&partial, pw),
+            None => Ok(()),
+        })
+        .and_then(|()| fs::rename(&partial, target).map_err(|e| e.to_string()));
+    if written.is_err() {
+        let _ = fs::remove_file(&partial);
+    }
+    written
+}
+
+/// `path` with `suffix` appended to its file name (`a.db` → `a.db-wal`).
+fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(suffix);
+    PathBuf::from(name)
 }
 
 fn write_backup_zip(
@@ -534,30 +559,65 @@ fn apply_pending_full_restore(data_dir: &Path, config_dir: &Path, documents_dir:
     clear_pending(data_dir);
 }
 
-/// Moves the staged DB over the live one, keeping the previous DB as `.db.bak`.
-/// If the staged DB cannot be placed, the previous DB is moved back so the
-/// app does not start on an empty database.
+/// Moves the staged DB over the live one. The previous DB moves to `.db.bak`
+/// together with its WAL and shared-memory files: left behind, SQLite would
+/// replay the old WAL onto the restored DB, and without it the `.bak` would
+/// miss the last committed changes. If the staged DB cannot be placed, the
+/// previous files are moved back so the app does not start on an empty
+/// database.
 fn place_restored_db(pending_db: &Path, live_db: &Path) -> Result<(), String> {
     if let Some(parent) = live_db.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let backup = live_db.with_extension("db.bak");
-    let mut kept_backup = false;
-    if live_db.exists() {
-        match fs::rename(live_db, &backup) {
-            Ok(()) => kept_backup = true,
-            Err(e) => eprintln!("[backup] could not keep previous DB as {}: {e}", backup.display()),
-        }
+    let live_files = sqlite_files(live_db);
+    let backup_files = sqlite_files(&live_db.with_extension("db.bak"));
+    for stale in &backup_files {
+        remove_if_present(stale).map_err(|e| format!("{}: {e}", stale.display()))?;
     }
+    move_present_files(&live_files, &backup_files)?;
+
     let placed = fs::rename(pending_db, live_db)
         .or_else(|_| fs::copy(pending_db, live_db).map(|_| ()))
         .map_err(|e| e.to_string());
-    if placed.is_err() && kept_backup {
-        if let Err(e) = fs::rename(&backup, live_db) {
-            eprintln!("[backup] could not move previous DB back from {}: {e}", backup.display());
+    if placed.is_err() {
+        if let Err(e) = move_present_files(&backup_files, &live_files) {
+            eprintln!("[backup] could not move previous DB back: {e}");
         }
     }
     placed
+}
+
+/// The DB file followed by its companion files.
+fn sqlite_files(db: &Path) -> Vec<PathBuf> {
+    std::iter::once(db.to_path_buf())
+        .chain(SQLITE_COMPANION_SUFFIXES.map(|suffix| with_suffix(db, suffix)))
+        .collect()
+}
+
+/// Renames each existing `from[i]` to `to[i]`. All-or-nothing: on failure the
+/// files moved so far go back.
+fn move_present_files(from: &[PathBuf], to: &[PathBuf]) -> Result<(), String> {
+    let mut moved = Vec::new();
+    for (source, destination) in from.iter().zip(to) {
+        if !source.exists() {
+            continue;
+        }
+        if let Err(e) = fs::rename(source, destination) {
+            for (source, destination) in moved {
+                let _ = fs::rename(destination, source);
+            }
+            return Err(format!("{} → {}: {e}", source.display(), destination.display()));
+        }
+        moved.push((source, destination));
+    }
+    Ok(())
+}
+
+fn remove_if_present(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
 }
 
 /// Post-init partial restore. Runs after the SQL plugin opened the DB — opens a
@@ -1098,6 +1158,104 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(fs::read(&live).unwrap(), b"live");
         assert!(!live.with_extension("db.bak").exists());
+    }
+
+    #[test]
+    fn placing_a_restored_db_moves_the_old_wal_into_the_backup_set() {
+        let dir = TempDir::new("place-db-wal");
+        let live = dir.path().join("zettel.db");
+        let pending = dir.path().join("pending.db");
+        fs::write(&live, b"live").unwrap();
+        fs::write(with_suffix(&live, "-wal"), b"live-wal").unwrap();
+        fs::write(with_suffix(&live, "-shm"), b"live-shm").unwrap();
+        fs::write(&pending, b"restored").unwrap();
+
+        place_restored_db(&pending, &live).unwrap();
+
+        let backup = live.with_extension("db.bak");
+        assert_eq!(fs::read(&live).unwrap(), b"restored");
+        assert!(!with_suffix(&live, "-wal").exists());
+        assert!(!with_suffix(&live, "-shm").exists());
+        assert_eq!(fs::read(&backup).unwrap(), b"live");
+        assert_eq!(fs::read(with_suffix(&backup, "-wal")).unwrap(), b"live-wal");
+    }
+
+    #[test]
+    fn placing_a_restored_db_drops_the_wal_of_an_older_backup() {
+        let dir = TempDir::new("place-db-stale-bak");
+        let live = dir.path().join("zettel.db");
+        let pending = dir.path().join("pending.db");
+        let backup = live.with_extension("db.bak");
+        fs::write(&live, b"live").unwrap();
+        fs::write(&backup, b"older").unwrap();
+        fs::write(with_suffix(&backup, "-wal"), b"older-wal").unwrap();
+        fs::write(&pending, b"restored").unwrap();
+
+        place_restored_db(&pending, &live).unwrap();
+
+        assert_eq!(fs::read(&backup).unwrap(), b"live");
+        assert!(!with_suffix(&backup, "-wal").exists());
+    }
+
+    #[test]
+    fn a_restored_sqlite_db_reads_its_own_data_not_the_previous_wal() {
+        let dir = TempDir::new("place-db-sqlite");
+        let original = dir.path().join("original.db");
+        let live = dir.path().join("zettel.db");
+        let pending = dir.path().join("pending.db");
+        let original_conn = Connection::open(&original).unwrap();
+        original_conn
+            .execute_batch(
+                "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;
+                 CREATE TABLE t (v TEXT); INSERT INTO t VALUES ('live');",
+            )
+            .unwrap();
+        // Copied while the connection is open: what a killed app leaves behind.
+        fs::copy(&original, &live).unwrap();
+        fs::copy(with_suffix(&original, "-wal"), with_suffix(&live, "-wal")).unwrap();
+        drop(original_conn);
+        Connection::open(&pending)
+            .unwrap()
+            .execute_batch("CREATE TABLE t (v TEXT); INSERT INTO t VALUES ('restored');")
+            .unwrap();
+
+        place_restored_db(&pending, &live).unwrap();
+
+        let value: String = Connection::open(&live)
+            .unwrap()
+            .query_row("SELECT v FROM t", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(value, "restored");
+    }
+
+    #[test]
+    fn a_failed_backup_keeps_the_previous_file_at_the_target() {
+        let dir = TempDir::new("backup-atomic");
+        let target = dir.path().join("auto-mon.zip");
+        fs::write(&target, b"last week").unwrap();
+        let manifest = BackupManifest::new(CURRENT_SCHEMA, None);
+
+        let result =
+            write_backup_file(&target, &dir.path().join("missing.db"), &manifest, dir.path(), None);
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"last week");
+        assert!(!with_suffix(&target, PARTIAL_BACKUP_SUFFIX).exists());
+    }
+
+    #[test]
+    fn a_successful_backup_replaces_the_previous_file() {
+        let dir = TempDir::new("backup-replace");
+        let target = dir.path().join("auto-mon.zip");
+        fs::write(&target, b"last week").unwrap();
+        let snapshot = dir.path().join("snapshot.db");
+        fs::write(&snapshot, b"db-bytes").unwrap();
+        let manifest = BackupManifest::new(CURRENT_SCHEMA, None);
+
+        write_backup_file(&target, &snapshot, &manifest, dir.path(), None).unwrap();
+
+        extract_backup(&target, &dir.path().join("pending")).unwrap();
+        assert!(!with_suffix(&target, PARTIAL_BACKUP_SUFFIX).exists());
     }
 
     #[test]
