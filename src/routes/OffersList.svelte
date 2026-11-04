@@ -35,6 +35,7 @@
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
   import { ALL, numberOrAll, statusFilterItems } from "./invoice/list-support";
+  import { createOfferListFetcher } from "./offer/list-fetch";
   import { OFFER_STATUS } from "./offer/status";
 
   const statusItems = statusFilterItems(OFFER_STATUS);
@@ -54,21 +55,15 @@
     search,
   });
 
-  let expiryChecked = false;
-
-  const offers = createQueryState<OfferListRow[]>([], async () => {
-    // Read the filter before the first await so the surrounding effect tracks it.
-    const currentFilter = filter;
-    if (!expiryChecked) {
-      expiryChecked = true;
-      try {
-        await expireDueOffers();
-      } catch (e) {
-        toast.error("Abgelaufene Angebote konnten nicht aktualisiert werden", String(e));
-      }
-    }
-    return listOffers(currentFilter);
+  const fetchOffers = createOfferListFetcher({
+    expire: expireDueOffers,
+    list: listOffers,
+    onExpireError: (e) =>
+      toast.error("Abgelaufene Angebote konnten nicht aktualisiert werden", String(e)),
   });
+
+  // Passing `filter` synchronously lets the surrounding effect track it.
+  const offers = createQueryState<OfferListRow[]>([], () => fetchOffers(filter));
 
   $effect(() => {
     listCustomers().then((c) => (customers = c));

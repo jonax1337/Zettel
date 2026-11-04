@@ -20,7 +20,7 @@
     cellClass?: string;
     /** Adds a leading select-all checkbox column. */
     selection?: { allSelected: boolean; toggleAll: () => void };
-    /** Adds a trailing, unlabeled column for the row action menu. */
+    /** Adds a trailing column for the row action menu, labeled for screen readers only. */
     actionsColumn?: boolean;
   };
 
@@ -51,7 +51,7 @@
       </SortableTh>
     {/each}
     {#if actionsColumn}
-      <th class={cn(cellClass, "font-medium w-12")}></th>
+      <th class={cn(cellClass, "font-medium w-12")}><span class="sr-only">Aktionen</span></th>
     {/if}
   </tr>
 </thead>
