@@ -6,6 +6,7 @@ mod crypto;
 mod exchange;
 mod fs_export;
 mod paths;
+mod process;
 mod sandbox;
 mod sidecar;
 mod tenants;

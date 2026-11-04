@@ -8,10 +8,12 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
+
+use crate::process::background_command;
 
 /// What to spawn and from where. `program` is the executable; if `script` is
 /// Some, it's passed as the first argument (dev mode runs `python main.py`).
@@ -80,7 +82,7 @@ fn resolve_launch(app: &AppHandle) -> Result<SidecarLaunch, String> {
 fn run_sidecar(app: &AppHandle, request: &Value) -> Result<Value, String> {
     let launch = resolve_launch(app)?;
 
-    let mut cmd = Command::new(&launch.program);
+    let mut cmd = background_command(&launch.program);
     if let Some(script) = &launch.script {
         cmd.arg(script);
     }

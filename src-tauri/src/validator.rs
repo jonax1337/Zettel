@@ -15,11 +15,12 @@
 //! process.
 
 use crate::paths::app_data_dir;
+use crate::process::background_command;
 use crate::sidecar;
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use tauri::{AppHandle, Manager};
 
 const VALIDATOR_JAR: &str = "validator.jar";
@@ -116,7 +117,7 @@ fn resolve_java(app: &AppHandle) -> PathBuf {
 }
 
 fn detect_java_at(java: &Path) -> Option<String> {
-    let out = Command::new(java).arg("-version").output().ok()?;
+    let out = background_command(java).arg("-version").output().ok()?;
     // `java -version` writes to stderr.
     let combined = format!(
         "{}{}",
@@ -228,7 +229,7 @@ impl ValidatorRun {
         let stdin_file =
             fs::File::open(&empty_stdin).map_err(|e| format!("empty stdin open: {e}"))?;
 
-        let output = Command::new(&self.java)
+        let output = background_command(&self.java)
             .arg("-jar")
             .arg(&self.jar)
             .arg("-s")
