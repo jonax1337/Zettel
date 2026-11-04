@@ -260,7 +260,7 @@
         const newId = await createCreditNoteFromInvoice(id);
         const created = await getInvoice(newId);
         const label = created ? displayInvoiceNumber(created.invoice) : `#${newId}`;
-        toast.success(`Stornorechnung ${label} als Entwurf erstellt`);
+        toast.success(`Stornorechnung ${label} erstellt`);
         push(`/invoices/${newId}/edit`);
       } catch (e) {
         toast.error("Stornorechnung fehlgeschlagen", String(e));

@@ -36,20 +36,18 @@
 
 {#if hasPdf}
   {#snippet moreTrigger()}
-    <button
-      type="button"
-      class="inline-flex items-center justify-center w-7 h-9 rounded-l-none rounded-r-md border border-l-0 border-input bg-background hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:hover:bg-input/50 transition-colors cursor-pointer shadow-xs"
-      aria-label="Weitere Dokument-Aktionen"
-    >
-      <ChevronDown class="size-4" />
-    </button>
+    <ChevronDown class="size-4" />
   {/snippet}
   <div class="inline-flex">
     <Button variant="outline" onclick={onOpen} class="rounded-r-none">
       <FileText />
       Öffnen
     </Button>
-    <DropdownMenu trigger={moreTrigger}>
+    <DropdownMenu
+      trigger={moreTrigger}
+      triggerLabel="Weitere Dokument-Aktionen"
+      triggerClass="inline-flex items-center justify-center w-7 h-9 rounded-l-none rounded-r-md border border-l-0 border-input bg-background hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:hover:bg-input/50 transition-colors cursor-pointer shadow-xs"
+    >
       {#if onRevalidate}
         <DropdownItem onSelect={onRevalidate} disabled={busy}>
           <ShieldCheck /> {revalidating ? "Prüfe…" : "Validieren"}

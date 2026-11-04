@@ -135,7 +135,7 @@
 <Dialog
   bind:open={dialogOpen}
   title="Zahlung erfassen"
-  description="Wird als invoice_payments-Eintrag protokolliert. Voller Saldo → Rechnung wird automatisch als bezahlt markiert."
+  description="Die Zahlung wird an der Rechnung protokolliert. Ist der volle Betrag beglichen, wird die Rechnung automatisch als bezahlt markiert."
 >
   <div class="flex flex-col gap-3">
     <div class="flex flex-col gap-1.5">

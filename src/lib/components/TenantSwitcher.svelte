@@ -172,18 +172,17 @@
 </script>
 
 <div class="p-2">
-  <DropdownMenu align="start" side="top" class="w-56" triggerClass="w-full min-w-0">
+  <DropdownMenu
+    align="start"
+    side="top"
+    class="w-56"
+    triggerClass="flex w-full min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left hover:bg-accent transition-colors"
+  >
     {#snippet trigger()}
-      <button
-        type="button"
-        class="flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left hover:bg-accent transition-colors"
-        title={current?.path || "Lokale Datenbank"}
-      >
-        <span class="min-w-0 flex-1 truncate text-sm font-medium">
-          {current?.label ?? "Standard"}
-        </span>
-        <ChevronsUpDown class="size-4 shrink-0 text-muted-foreground" />
-      </button>
+      <span class="min-w-0 flex-1 truncate text-sm font-medium" title={current?.path || "Lokale Datenbank"}>
+        {current?.label ?? "Standard"}
+      </span>
+      <ChevronsUpDown class="size-4 shrink-0 text-muted-foreground" />
     {/snippet}
 
     <div class="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
