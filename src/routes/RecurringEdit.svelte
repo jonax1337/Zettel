@@ -4,10 +4,16 @@
   import {
     createRecurring,
     getRecurring,
+    templatePrefillRejection,
     updateRecurring,
     type RecurringFormInput,
   } from "$lib/db/recurring";
-  import { computeTotals, getInvoice, type SupplyKind } from "$lib/db/invoices";
+  import {
+    computeTotals,
+    getInvoice,
+    type ReverseChargeType,
+    type SupplyKind,
+  } from "$lib/db/invoices";
   import type { CatalogItem, Customer, RecurringInterval, Settings } from "$lib/db/schema";
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import {
@@ -28,6 +34,11 @@
   import { centsToPriceText } from "./parts/entity/format";
   import { RECURRING_INTERVAL_ITEMS } from "./parts/entity/recurring";
   import { vatRateForNewItem } from "./parts/entity/vat";
+  import {
+    REVERSE_CHARGE_HINTS,
+    REVERSE_CHARGE_ITEMS,
+    reverseChargeBlockedReason,
+  } from "./parts/entity/reverse-charge";
   import SupplyKindField from "./invoice/SupplyKindField.svelte";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
   import RecurringItemsTable from "./parts/recurring/RecurringItemsTable.svelte";
@@ -68,7 +79,7 @@
   let interval = $state<RecurringInterval>("monthly");
   let startDateIso = $state(toIsoDate(nowUnix()));
   let paymentTermsDays = $state(14);
-  let isReverseCharge = $state(false);
+  let reverseChargeType = $state<ReverseChargeType>("none");
   let supplyKind = $state<SupplyKind>(DEFAULT_SUPPLY_KIND);
   let active = $state(true);
   let notes = $state("");
@@ -81,8 +92,9 @@
     customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
   );
 
-  const canReverseCharge = $derived(
-    !!settings && !settings.isKleinunternehmer && !!settings.vatId && !!selectedCustomer?.vatId,
+  const isReverseCharge = $derived(reverseChargeType !== "none");
+  const blockedReason = $derived(
+    reverseChargeBlockedReason(reverseChargeType, settings, selectedCustomer),
   );
   const vatExempt = $derived(!!settings?.isKleinunternehmer || isReverseCharge);
   const customerItems = $derived(
@@ -94,9 +106,9 @@
       : { subtotal: 0, vatAmount: 0, total: 0 },
   );
 
-  // Not before the customers and settings are in: a template loaded earlier would otherwise lose its flag.
+  // Not before the customers and settings are in: a template loaded earlier would otherwise lose its type.
   $effect(() => {
-    if (referenceDataLoaded && !canReverseCharge && isReverseCharge) isReverseCharge = false;
+    if (referenceDataLoaded && blockedReason) reverseChargeType = "none";
   });
 
   $effect(() => {
@@ -125,8 +137,13 @@
     const source = await getInvoice(invoiceId);
     if (!source) return;
     const { invoice } = source;
+    const rejection = templatePrefillRejection(invoice);
+    if (rejection) {
+      error = rejection;
+      return;
+    }
     customerIdStr = String(invoice.customerId);
-    isReverseCharge = invoice.isReverseCharge;
+    reverseChargeType = invoice.reverseChargeType;
     supplyKind = invoice.supplyKind;
     paymentTerms = invoice.paymentTerms ?? "";
     paymentTermsDays = paymentTermDays(
@@ -159,7 +176,7 @@
     interval = recurring.interval;
     startDateIso = toIsoDate(recurring.startDate);
     paymentTermsDays = recurring.paymentTermsDays;
-    isReverseCharge = recurring.isReverseCharge;
+    reverseChargeType = recurring.reverseChargeType;
     supplyKind = recurring.supplyKind;
     active = recurring.active;
     notes = recurring.notes ?? "";
@@ -191,7 +208,7 @@
       interval,
       startDate: fromIsoDate(startDateIso),
       paymentTermsDays,
-      isReverseCharge,
+      reverseChargeType,
       supplyKind,
       notes: notes.trim() || null,
       paymentTerms: paymentTerms.trim() || null,
@@ -278,24 +295,22 @@
             Aktiv (erscheint im Dashboard)
           </label>
           {#if settings && !settings.isKleinunternehmer}
-            <div class="col-span-2 flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
-              <Checkbox
-                id="rc-recurring"
-                bind:checked={isReverseCharge}
-                disabled={!canReverseCharge}
-                class="mt-0.5"
+            <div class="col-span-2 flex flex-col gap-1.5">
+              <Label>Reverse-Charge</Label>
+              <Select
+                bind:value={reverseChargeType}
+                items={REVERSE_CHARGE_ITEMS}
+                disabled={!settings.vatId}
               />
-              <div class="flex-1 text-sm">
-                <label for="rc-recurring" class="font-medium cursor-pointer">
-                  Reverse-Charge (intra-EU B2B)
-                </label>
-                <p class="text-xs text-muted-foreground mt-0.5">
-                  Wird bei jeder erzeugten Rechnung übernommen. Setzt 0&nbsp;% USt und den Hinweistext.
-                </p>
-              </div>
+              <p class="text-xs text-muted-foreground">
+                {REVERSE_CHARGE_HINTS[reverseChargeType]} Wird bei jeder erzeugten Rechnung übernommen.
+              </p>
+              {#if blockedReason}
+                <p class="text-xs text-warning">{blockedReason}</p>
+              {/if}
             </div>
-            {#if isReverseCharge}
-              <SupplyKindField bind:value={supplyKind} />
+            {#if reverseChargeType !== "none"}
+              <SupplyKindField bind:value={supplyKind} {reverseChargeType} />
             {/if}
           {/if}
         </section>

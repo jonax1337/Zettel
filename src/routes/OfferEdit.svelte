@@ -8,20 +8,10 @@
     updateOffer,
     type OfferFormInput,
   } from "$lib/db/offers";
-  import type { SupplyKind } from "$lib/db/invoices";
+  import type { ReverseChargeType, SupplyKind } from "$lib/db/invoices";
   import type { Customer, Offer, OfferItem, Settings } from "$lib/db/schema";
   import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
-  import {
-    Button,
-    Card,
-    CardContent,
-    Checkbox,
-    DatePicker,
-    Label,
-    Select,
-    Textarea,
-    toast,
-  } from "$lib/ui";
+  import { Button, Card, CardContent, DatePicker, Label, Select, Textarea, toast } from "$lib/ui";
   import { CalendarRange } from "$lib/brand-icons";
   import BackLink from "./parts/entity/BackLink.svelte";
   import CurrencyFields from "./invoice/CurrencyFields.svelte";
@@ -30,6 +20,11 @@
   import SupplyKindField from "./invoice/SupplyKindField.svelte";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
   import { vatRateForNewItem } from "./parts/entity/vat";
+  import {
+    REVERSE_CHARGE_HINTS,
+    REVERSE_CHARGE_ITEMS,
+    reverseChargeBlockedReason,
+  } from "./parts/entity/reverse-charge";
   import { exchangeRateError, linePeriodError, servicePeriodError } from "./invoice/form-validation";
   import {
     lineItemFromStored,
@@ -75,7 +70,7 @@
   let validUntilIso = $state("");
   let notes = $state("");
   let introText = $state("");
-  let isReverseCharge = $state(false);
+  let reverseChargeType = $state<ReverseChargeType>("none");
   let supplyKind = $state<SupplyKind>(DEFAULT_SUPPLY_KIND);
   let serviceMode = $state<"none" | "period">("none");
   let servicePeriodStartIso = $state("");
@@ -86,6 +81,7 @@
   let skonto = $state<SkontoForm>(defaultSkontoForm());
   let pdfLanguage = $state<"de" | "en">("de");
 
+  const isReverseCharge = $derived(reverseChargeType !== "none");
   const vatExempt = $derived(!!settings?.isKleinunternehmer || isReverseCharge);
 
   const selectedCustomer = $derived(
@@ -95,18 +91,9 @@
     customers.map((c) => ({ value: String(c.id), label: `${c.customerNumber} · ${c.name}` })),
   );
 
-  const canReverseCharge = $derived(
-    !!settings && !settings.isKleinunternehmer && !!settings.vatId && !!selectedCustomer?.vatId,
+  const blockedReason = $derived(
+    reverseChargeBlockedReason(reverseChargeType, settings, selectedCustomer),
   );
-
-  const reverseChargeBlockedReason = $derived.by(() => {
-    if (!settings) return "";
-    if (settings.isKleinunternehmer) return "Nicht verfügbar für Kleinunternehmer (§ 19 UStG).";
-    if (!settings.vatId) return "Eigene USt-IdNr. in den Einstellungen fehlt.";
-    if (!selectedCustomer) return "Erst Kunden auswählen.";
-    if (!selectedCustomer.vatId) return "Kunde hat keine USt-IdNr. hinterlegt.";
-    return "";
-  });
 
   const totals = $derived(
     settings
@@ -115,9 +102,9 @@
   );
 
   // Judged only once settings and customers are known; otherwise a stored
-  // reverse-charge flag would be reset before the data it depends on arrives.
+  // reverse-charge type would be reset before the data it depends on arrives.
   $effect(() => {
-    if (referenceDataLoaded && !canReverseCharge && isReverseCharge) isReverseCharge = false;
+    if (referenceDataLoaded && blockedReason) reverseChargeType = "none";
   });
 
   $effect(() => {
@@ -179,7 +166,7 @@
     validUntilIso = toIsoDate(offer.validUntil);
     notes = offer.notes ?? "";
     introText = offer.introText ?? "";
-    isReverseCharge = offer.isReverseCharge;
+    reverseChargeType = offer.reverseChargeType;
     supplyKind = offer.supplyKind;
     currency = offer.currency;
     exchangeRate = offer.exchangeRate ?? "";
@@ -194,10 +181,7 @@
   }
 
   function reverseChargeError(): string | null {
-    if (!isReverseCharge) return null;
-    if (!settings?.vatId) return "Reverse-Charge: eigene USt-IdNr. fehlt.";
-    if (!selectedCustomer?.vatId) return "Reverse-Charge: Kunde hat keine USt-IdNr. hinterlegt.";
-    return null;
+    return blockedReason ? `Reverse-Charge: ${blockedReason}` : null;
   }
 
   function formError(): string | null {
@@ -219,7 +203,7 @@
       validUntil: fromIsoDate(validUntilIso),
       notes: notes.trim() || null,
       introText: introText.trim() || null,
-      isReverseCharge,
+      reverseChargeType,
       supplyKind,
       items: toLineItemInputs(items),
       currency,
@@ -338,29 +322,20 @@
             </div>
             <CurrencyFields bind:currency bind:exchangeRate totalCent={totals.total} disabled={readOnly} />
             {#if settings && !settings.isKleinunternehmer}
-              <div class="col-span-2 flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
-                <Checkbox
-                  id="reverse-charge"
-                  bind:checked={isReverseCharge}
-                  disabled={!canReverseCharge || readOnly}
-                  class="mt-0.5"
+              <div class="col-span-2 flex flex-col gap-1.5">
+                <Label>Reverse-Charge</Label>
+                <Select
+                  bind:value={reverseChargeType}
+                  items={REVERSE_CHARGE_ITEMS}
+                  disabled={!settings.vatId || readOnly}
                 />
-                <div class="flex-1 text-sm">
-                  <label for="reverse-charge" class="font-medium cursor-pointer">
-                    Reverse-Charge (intra-EU B2B)
-                  </label>
-                  <p class="text-xs text-muted-foreground mt-0.5">
-                    Innergemeinschaftlicher Umsatz an ein EU-Unternehmen. Setzt alle Positionen
-                    auf 0&nbsp;% USt und schreibt den Hinweis auf das Angebot. Verantwortung
-                    für das EU-B2B-Kriterium liegt beim Nutzer.
-                  </p>
-                  {#if !canReverseCharge && reverseChargeBlockedReason}
-                    <p class="text-xs text-warning mt-1">{reverseChargeBlockedReason}</p>
-                  {/if}
-                </div>
+                <p class="text-xs text-muted-foreground">{REVERSE_CHARGE_HINTS[reverseChargeType]}</p>
+                {#if blockedReason}
+                  <p class="text-xs text-warning">{blockedReason}</p>
+                {/if}
               </div>
-              {#if isReverseCharge}
-                <SupplyKindField bind:value={supplyKind} disabled={readOnly} />
+              {#if reverseChargeType !== "none"}
+                <SupplyKindField bind:value={supplyKind} {reverseChargeType} disabled={readOnly} />
               {/if}
             {/if}
             <div class="col-span-2 flex flex-col gap-1.5">
@@ -399,7 +374,7 @@
         </div>
 
         <div class="flex flex-col gap-1.5">
-          <Label>Notizen (intern)</Label>
+          <Label>Bemerkungen (erscheinen auf dem Angebot)</Label>
           <Textarea rows={3} bind:value={notes} disabled={readOnly} />
         </div>
 

@@ -1,6 +1,13 @@
 import { execute, insert, select } from "./client";
-import { createInvoice, type SupplyKind } from "./invoices";
+import {
+  createInvoice,
+  type InvoiceFormInput,
+  type ReverseChargeType,
+  type SupplyKind,
+} from "./invoices";
+import { storedReverseChargeType } from "./reverse-charge-type";
 import type {
+  Invoice,
   RecurringInterval,
   RecurringInvoice,
   RecurringInvoiceItem,
@@ -8,6 +15,7 @@ import type {
 import { addDaysUnix, nowUnix } from "$lib/utils/date";
 
 const DUE_SOON_DAYS = 7;
+const TEMPLATE_CURRENCY = "EUR";
 const UNKNOWN_CUSTOMER_NAME = "—";
 
 const MONTHS_PER_INTERVAL: Record<RecurringInterval, number> = {
@@ -28,6 +36,7 @@ type RecurringRow = {
   last_generated_at: number | null;
   payment_terms_days: number;
   is_reverse_charge: number;
+  reverse_charge_type: string | null;
   supply_kind: string;
   notes: string | null;
   payment_terms: string | null;
@@ -61,6 +70,7 @@ export function mapRecurring(r: RecurringRow): RecurringInvoice {
     lastGeneratedAt: r.last_generated_at,
     paymentTermsDays: r.payment_terms_days,
     isReverseCharge: r.is_reverse_charge === 1,
+    reverseChargeType: storedReverseChargeType(r.reverse_charge_type, r.is_reverse_charge === 1),
     supplyKind: r.supply_kind as RecurringInvoice["supplyKind"],
     notes: r.notes,
     paymentTerms: r.payment_terms,
@@ -127,13 +137,22 @@ export type RecurringFormInput = {
   interval: RecurringInterval;
   startDate: number;
   paymentTermsDays: number;
-  isReverseCharge: boolean;
+  reverseChargeType: ReverseChargeType;
   supplyKind: SupplyKind;
   notes: string | null;
   paymentTerms: string | null;
   active: boolean;
   items: RecurringItemInput[];
 };
+
+/**
+ * Templates have no currency and always produce EUR invoices, so the unit
+ * prices of a foreign-currency invoice must not be copied into one.
+ */
+export function templatePrefillRejection(invoice: Pick<Invoice, "currency">): string | null {
+  if ((invoice.currency || TEMPLATE_CURRENCY) === TEMPLATE_CURRENCY) return null;
+  return `Vorlagen rechnen immer in EUR. Die Rechnung ist in ${invoice.currency} gestellt und kann nicht als Vorlage übernommen werden.`;
+}
 
 // ----- List / get -----
 
@@ -227,8 +246,8 @@ export async function createRecurring(input: RecurringFormInput): Promise<number
   const id = await insert(
     `INSERT INTO recurring_invoices
       (name, customer_id, interval, start_date, next_due_date, payment_terms_days,
-       is_reverse_charge, supply_kind, notes, payment_terms, active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       is_reverse_charge, reverse_charge_type, supply_kind, notes, payment_terms, active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.name,
       input.customerId,
@@ -236,7 +255,8 @@ export async function createRecurring(input: RecurringFormInput): Promise<number
       input.startDate,
       input.startDate,
       input.paymentTermsDays,
-      input.isReverseCharge ? 1 : 0,
+      input.reverseChargeType !== "none" ? 1 : 0,
+      input.reverseChargeType,
       input.supplyKind,
       input.notes,
       input.paymentTerms,
@@ -254,7 +274,7 @@ export async function updateRecurring(
   await execute(
     `UPDATE recurring_invoices SET
       name = ?, customer_id = ?, interval = ?, start_date = ?,
-      payment_terms_days = ?, is_reverse_charge = ?, supply_kind = ?,
+      payment_terms_days = ?, is_reverse_charge = ?, reverse_charge_type = ?, supply_kind = ?,
       notes = ?, payment_terms = ?, active = ?, updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -263,7 +283,8 @@ export async function updateRecurring(
       input.interval,
       input.startDate,
       input.paymentTermsDays,
-      input.isReverseCharge ? 1 : 0,
+      input.reverseChargeType !== "none" ? 1 : 0,
+      input.reverseChargeType,
       input.supplyKind,
       input.notes,
       input.paymentTerms,
@@ -295,6 +316,10 @@ export async function toggleActive(id: number, active: boolean): Promise<void> {
  * if the customer changed since the template was created, the new
  * invoice reflects the current customer state (rechtssicher zum
  * Rechnungszeitpunkt).
+ *
+ * The due period is claimed first by advancing next_due_date only if it still
+ * holds the value read here, so a double click generates one invoice, not two.
+ * If the invoice cannot be created, the claim is released again.
  */
 export async function generateInvoiceFromRecurring(
   id: number,
@@ -304,27 +329,47 @@ export async function generateInvoiceFromRecurring(
   const { recurring } = tmpl;
 
   const now = nowUnix();
-  const invoiceId = await createInvoice({
-    customerId: recurring.customerId,
-    issueDate: now,
-    deliveryDate: null,
-    dueDate: addDaysUnix(now, recurring.paymentTermsDays),
-    notes: recurring.notes,
-    paymentTerms: recurring.paymentTerms,
-    reverseChargeType: recurring.isReverseCharge ? "intra_eu" : "none",
-    supplyKind: recurring.supplyKind,
-    items: tmpl.items.map(toItemInput),
-  });
-
   const startDay = new Date(recurring.startDate * 1000).getDate();
   const nextDue = addInterval(recurring.nextDueDate, recurring.interval, startDay);
-  await execute(
+  const claim = await execute(
     `UPDATE recurring_invoices SET
       last_generated_at = ?, next_due_date = ?, updated_at = unixepoch()
-     WHERE id = ?`,
-    [now, nextDue, id],
+     WHERE id = ? AND next_due_date = ?`,
+    [now, nextDue, id, recurring.nextDueDate],
   );
-  return invoiceId;
+  if (claim.rowsAffected !== 1) {
+    throw new Error("Für diesen Zeitraum wurde bereits eine Rechnung aus der Vorlage erzeugt.");
+  }
+
+  try {
+    return await createInvoice(invoiceInputFromRecurring(recurring, tmpl.items, now));
+  } catch (error) {
+    await execute(
+      `UPDATE recurring_invoices SET
+        last_generated_at = ?, next_due_date = ?, updated_at = unixepoch()
+       WHERE id = ? AND next_due_date = ?`,
+      [recurring.lastGeneratedAt, recurring.nextDueDate, id, nextDue],
+    );
+    throw error;
+  }
+}
+
+function invoiceInputFromRecurring(
+  recurring: RecurringInvoice,
+  items: RecurringInvoiceItem[],
+  issueDate: number,
+): InvoiceFormInput {
+  return {
+    customerId: recurring.customerId,
+    issueDate,
+    deliveryDate: null,
+    dueDate: addDaysUnix(issueDate, recurring.paymentTermsDays),
+    notes: recurring.notes,
+    paymentTerms: recurring.paymentTerms,
+    reverseChargeType: recurring.reverseChargeType,
+    supplyKind: recurring.supplyKind,
+    items: items.map(toItemInput),
+  };
 }
 
 function toItemInput(it: RecurringInvoiceItem): RecurringItemInput {
