@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { StatusTable } from "$lib/ui/status-meta";
 import {
   customerFilterItems,
   numberOrAll,
@@ -7,11 +8,24 @@ import {
 } from "./list-support";
 
 describe("statusFilterItems", () => {
-  it("prepends the catch-all option and keeps the label order", () => {
-    expect(statusFilterItems({ draft: "Entwurf", sent: "Versendet" })).toEqual([
+  const table: StatusTable<"draft" | "sent"> = {
+    draft: { label: "Entwurf", variant: "secondary" },
+    sent: { label: "Versendet", variant: "warning" },
+  };
+
+  it("prepends the catch-all option and keeps the table order", () => {
+    expect(statusFilterItems(table)).toEqual([
       { value: "all", label: "Alle Status" },
       { value: "draft", label: "Entwurf" },
       { value: "sent", label: "Versendet" },
+    ]);
+  });
+
+  it("follows an explicit order", () => {
+    expect(statusFilterItems(table, ["sent", "draft"]).map((item) => item.value)).toEqual([
+      "all",
+      "sent",
+      "draft",
     ]);
   });
 });

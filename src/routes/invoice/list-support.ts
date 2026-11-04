@@ -1,14 +1,16 @@
+import type { StatusTable } from "$lib/ui/status-meta";
+
 export const ALL = "all";
 
 type FilterItem<V extends string> = { value: V; label: string };
 
 export function statusFilterItems<S extends string>(
-  labels: Record<S, string>,
+  table: StatusTable<S>,
+  order: S[] = Object.keys(table) as S[],
 ): FilterItem<S | typeof ALL>[] {
-  const entries = Object.entries(labels) as [S, string][];
   return [
     { value: ALL, label: "Alle Status" },
-    ...entries.map(([value, label]) => ({ value, label })),
+    ...order.map((value) => ({ value, label: table[value].label })),
   ];
 }
 
