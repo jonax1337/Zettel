@@ -30,6 +30,7 @@
     totals: Totals;
     language: "de" | "en";
     readOnly?: boolean;
+    totalLabel?: string;
   };
   let {
     items = $bindable(),
@@ -38,6 +39,7 @@
     totals,
     language,
     readOnly = false,
+    totalLabel = "Gesamtbetrag",
   }: Props = $props();
 
   const subtleButton =
@@ -275,7 +277,7 @@
           </tr>
         {/if}
         <tr class="border-t">
-          <td colspan={labelColspan} class="px-1.5 @3xl:px-3 py-2 text-right font-semibold">Gesamtbetrag</td>
+          <td colspan={labelColspan} class="px-1.5 @3xl:px-3 py-2 text-right font-semibold">{totalLabel}</td>
           <td class="px-1.5 @3xl:px-3 py-2 text-right font-mono text-xs @3xl:text-sm font-semibold whitespace-nowrap">{formatMoney(totals.total, currency)}</td>
           <td></td>
         </tr>

@@ -8,6 +8,7 @@ import type {
 } from "$lib/sidecar/extract";
 import { nowUnix, toIsoDate } from "$lib/utils/date";
 import { computeLineTotal } from "$lib/utils/totals";
+import { DEFAULT_UNIT } from "$lib/utils/units";
 import { centsToPriceText } from "../entity/format";
 import { STANDARD_VAT_RATE } from "../entity/vat";
 
@@ -36,7 +37,6 @@ type StoredExpenseItem = {
   vatRate: number;
 };
 
-const DEFAULT_UNIT = "Stk";
 const LUMP_SUM_UNIT = "Pauschal";
 
 export function emptyItemRow(overrides: Partial<ExpenseItemRow> = {}): ExpenseItemRow {

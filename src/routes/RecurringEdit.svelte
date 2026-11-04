@@ -1,14 +1,13 @@
 <script lang="ts">
   import { link, push } from "svelte-spa-router";
-  import { listCustomers, loadSettings } from "$lib/db/queries";
   import {
     createRecurring,
     getRecurring,
     updateRecurring,
     type RecurringFormInput,
   } from "$lib/db/recurring";
-  import { computeTotals, getInvoice, type SupplyKind } from "$lib/db/invoices";
-  import type { CatalogItem, Customer, RecurringInterval, Settings } from "$lib/db/schema";
+  import { computeTotals, getInvoice, type ReverseChargeType, type SupplyKind } from "$lib/db/invoices";
+  import type { RecurringInterval, Settings } from "$lib/db/schema";
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import {
     Button,
@@ -17,7 +16,6 @@
     Label,
     Card,
     CardContent,
-    CatalogPicker,
     DatePicker,
     Select,
     Checkbox,
@@ -25,19 +23,20 @@
   } from "$lib/ui";
   import BackLink from "./parts/entity/BackLink.svelte";
   import { fetchEditTarget, parseId } from "./parts/entity/edit-target";
-  import { centsToPriceText } from "./parts/entity/format";
   import { RECURRING_INTERVAL_ITEMS } from "./parts/entity/recurring";
   import { vatRateForNewItem } from "./parts/entity/vat";
-  import SupplyKindField from "./invoice/SupplyKindField.svelte";
+  import ReverseChargeField from "./invoice/ReverseChargeField.svelte";
+  import { createDocumentFormData } from "./invoice/document-form.svelte";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
-  import RecurringItemsTable from "./parts/recurring/RecurringItemsTable.svelte";
+  import LineItemsEditor from "./invoice/LineItemsEditor.svelte";
   import {
-    emptyItemRow,
-    itemInputFromRow,
-    itemRowFromStored,
-    paymentTermDays,
-    type RecurringItemRow,
-  } from "./parts/recurring/recurring-items";
+    lineItemFromStored,
+    newLineItem,
+    toLineItemInputs,
+    zeroVatRates,
+    type LineItemForm,
+  } from "./invoice/line-items";
+  import { paymentTermDays } from "./parts/recurring/payment-term-days";
 
   type Props = {
     mode: "new" | "edit";
@@ -53,9 +52,6 @@
     return Number.isFinite(parsed) ? parsed : null;
   });
 
-  let customers = $state<Customer[]>([]);
-  let settings = $state<Settings | null>(null);
-  let referenceDataLoaded = $state(false);
   let id = $state<number | null>(null);
   let loaded = $state(false);
   const loading = $derived(mode === "edit" && !loaded);
@@ -68,51 +64,32 @@
   let interval = $state<RecurringInterval>("monthly");
   let startDateIso = $state(toIsoDate(nowUnix()));
   let paymentTermsDays = $state(14);
-  let isReverseCharge = $state(false);
+  let reverseChargeType = $state<ReverseChargeType>("none");
   let supplyKind = $state<SupplyKind>(DEFAULT_SUPPLY_KIND);
   let active = $state(true);
   let notes = $state("");
   let paymentTerms = $state("");
-  let items = $state<RecurringItemRow[]>([emptyItemRow(0)]);
+  let items = $state<LineItemForm[]>([newLineItem()]);
 
-  let catalogPickerOpen = $state(false);
-
-  const selectedCustomer = $derived(
-    customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
-  );
-
-  const canReverseCharge = $derived(
-    !!settings && !settings.isKleinunternehmer && !!settings.vatId && !!selectedCustomer?.vatId,
-  );
+  const isReverseCharge = $derived(reverseChargeType !== "none");
+  const reference = createDocumentFormData({
+    customerId: () => customerIdStr,
+    onLoaded: async (loadedSettings) => {
+      if (mode === "new") await prepareNewTemplate(loadedSettings);
+    },
+    onError: (message) => (error = message),
+  });
+  const settings = $derived(reference.settings);
   const vatExempt = $derived(!!settings?.isKleinunternehmer || isReverseCharge);
-  const customerItems = $derived(
-    customers.map((c) => ({ value: String(c.id), label: `${c.customerNumber} · ${c.name}` })),
-  );
+
   const totals = $derived(
     settings
       ? computeTotals(items, { isKleinunternehmer: settings.isKleinunternehmer, isReverseCharge })
       : { subtotal: 0, vatAmount: 0, total: 0 },
   );
 
-  // Not before the customers and settings are in: a template loaded earlier would otherwise lose its flag.
   $effect(() => {
-    if (referenceDataLoaded && !canReverseCharge && isReverseCharge) isReverseCharge = false;
-  });
-
-  $effect(() => {
-    if (!isReverseCharge) return;
-    for (const item of items) item.vatRate = 0;
-  });
-
-  $effect(() => {
-    Promise.all([loadSettings(), listCustomers()])
-      .then(async ([loadedSettings, loadedCustomers]) => {
-        settings = loadedSettings;
-        customers = loadedCustomers;
-        referenceDataLoaded = true;
-        if (mode === "new") await prepareNewTemplate(loadedSettings);
-      })
-      .catch((e) => (error = String(e)));
+    if (isReverseCharge) zeroVatRates(items);
   });
 
   async function prepareNewTemplate(loadedSettings: Settings) {
@@ -126,7 +103,7 @@
     if (!source) return;
     const { invoice } = source;
     customerIdStr = String(invoice.customerId);
-    isReverseCharge = invoice.isReverseCharge;
+    reverseChargeType = invoice.isReverseCharge ? "intra_eu" : "none";
     supplyKind = invoice.supplyKind;
     paymentTerms = invoice.paymentTerms ?? "";
     paymentTermsDays = paymentTermDays(
@@ -134,7 +111,7 @@
       invoice.dueDate,
       loadedSettings.defaultPaymentTermsDays,
     );
-    if (source.items.length > 0) items = source.items.map(itemRowFromStored);
+    if (source.items.length > 0) items = source.items.map(lineItemFromStored);
     startDateIso = "";
   }
 
@@ -159,29 +136,12 @@
     interval = recurring.interval;
     startDateIso = toIsoDate(recurring.startDate);
     paymentTermsDays = recurring.paymentTermsDays;
-    isReverseCharge = recurring.isReverseCharge;
+    reverseChargeType = recurring.isReverseCharge ? "intra_eu" : "none";
     supplyKind = recurring.supplyKind;
     active = recurring.active;
     notes = recurring.notes ?? "";
     paymentTerms = recurring.paymentTerms ?? "";
-    items = storedItems.map(itemRowFromStored);
-  }
-
-  function addItem() {
-    items = [...items, emptyItemRow(vatRateForNewItem(!!settings?.isKleinunternehmer))];
-  }
-
-  function addFromCatalog(catalogItem: CatalogItem) {
-    const row = emptyItemRow(vatExempt ? 0 : catalogItem.defaultVatRate);
-    row.description = catalogItem.name;
-    row.unit = catalogItem.unit;
-    row.unitPrice = catalogItem.defaultUnitPrice;
-    row.priceText = centsToPriceText(catalogItem.defaultUnitPrice);
-    if (catalogItem.descriptionDe) {
-      row.longDescription = catalogItem.descriptionDe;
-      row.showDetail = true;
-    }
-    items = [...items, row];
+    items = storedItems.map(lineItemFromStored);
   }
 
   function buildInput(customerId: number): RecurringFormInput {
@@ -196,7 +156,7 @@
       notes: notes.trim() || null,
       paymentTerms: paymentTerms.trim() || null,
       active,
-      items: items.map(itemInputFromRow),
+      items: toLineItemInputs(items),
     };
   }
 
@@ -256,7 +216,7 @@
           </div>
           <div class="col-span-2 flex flex-col gap-1.5">
             <Label>Kunde <span class="text-destructive">*</span></Label>
-            <Select bind:value={customerIdStr} items={customerItems} placeholder="— bitte wählen —" />
+            <Select bind:value={customerIdStr} items={reference.customerItems} placeholder="— bitte wählen —" />
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>Intervall</Label>
@@ -277,37 +237,25 @@
             <Checkbox bind:checked={active} />
             Aktiv (erscheint im Dashboard)
           </label>
-          {#if settings && !settings.isKleinunternehmer}
-            <div class="col-span-2 flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
-              <Checkbox
-                id="rc-recurring"
-                bind:checked={isReverseCharge}
-                disabled={!canReverseCharge}
-                class="mt-0.5"
-              />
-              <div class="flex-1 text-sm">
-                <label for="rc-recurring" class="font-medium cursor-pointer">
-                  Reverse-Charge (intra-EU B2B)
-                </label>
-                <p class="text-xs text-muted-foreground mt-0.5">
-                  Wird bei jeder erzeugten Rechnung übernommen. Setzt 0&nbsp;% USt und den Hinweistext.
-                </p>
-              </div>
-            </div>
-            {#if isReverseCharge}
-              <SupplyKindField bind:value={supplyKind} />
-            {/if}
-          {/if}
+          <ReverseChargeField
+            bind:type={reverseChargeType}
+            bind:supplyKind
+            {settings}
+            customer={reference.selectedCustomer}
+            allowThirdCountry={false}
+            note="Wird bei jeder erzeugten Rechnung übernommen."
+          />
         </section>
       </CardContent>
     </Card>
 
-    <RecurringItemsTable
+    <LineItemsEditor
       bind:items
+      currency="EUR"
       {vatExempt}
-      totalCents={totals.total}
-      onAdd={addItem}
-      onAddFromCatalog={() => (catalogPickerOpen = true)}
+      {totals}
+      language="de"
+      totalLabel="Voraussichtlicher Gesamtbetrag pro Erzeugung"
     />
 
     <Card>
@@ -335,6 +283,4 @@
       {/if}
     </div>
   </form>
-
-  <CatalogPicker bind:open={catalogPickerOpen} onPick={addFromCatalog} />
 {/if}
