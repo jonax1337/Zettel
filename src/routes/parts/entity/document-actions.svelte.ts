@@ -8,23 +8,41 @@ type DeleteOptions = {
   redirectTo: string;
 };
 
+export type DocumentTask = "action" | "pdf" | "validate" | "convert" | "credit-note";
+
+/** A step that must succeed before the PDF is generated, e.g. issuing a draft invoice. */
+export type PdfPreparation = {
+  run: () => Promise<unknown>;
+  failureTitle: string;
+};
+
 /** Busy/PDF state and the toast-wrapped actions shared by the invoice and offer detail pages. */
 export function createDocumentActions({ reload }: { reload: () => Promise<void> }) {
-  let busy = $state(false);
-  let generating = $state(false);
+  // One task at a time, so status changes, PDF generation, validation and conversions never overlap.
+  let task = $state<DocumentTask | null>(null);
   let pdfError = $state<string | null>(null);
 
-  async function run(label: string, action: () => Promise<unknown>) {
-    busy = true;
+  /** Runs `work` unless another task is still running; a second click is ignored. */
+  async function exclusive(next: DocumentTask, work: () => Promise<void>) {
+    if (task) return;
+    task = next;
     try {
-      await action();
-      await reload();
-      toast.success(label);
-    } catch (e) {
-      toast.error("Aktion fehlgeschlagen", String(e));
+      await work();
     } finally {
-      busy = false;
+      task = null;
     }
+  }
+
+  async function run(label: string, action: () => Promise<unknown>) {
+    await exclusive("action", async () => {
+      try {
+        await action();
+        await reload();
+        toast.success(label);
+      } catch (e) {
+        toast.error("Aktion fehlgeschlagen", String(e));
+      }
+    });
   }
 
   async function remove({ remove: deleteDocument, deletedLabel, redirectTo }: DeleteOptions) {
@@ -40,23 +58,31 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
   async function generatePdf(
     generate: () => Promise<SidecarResponse>,
     onCreated: (created: SidecarSuccess) => Promise<void>,
+    prepare?: PdfPreparation,
   ) {
-    generating = true;
-    pdfError = null;
-    try {
-      const res = await generate();
-      if (res.success) {
-        await onCreated(res);
-      } else {
-        pdfError = `${res.error.code}: ${res.error.message}`;
-        toast.error("PDF-Generierung fehlgeschlagen", res.error.message);
+    await exclusive("pdf", async () => {
+      pdfError = null;
+      if (prepare) {
+        try {
+          await prepare.run();
+        } catch (e) {
+          toast.error(prepare.failureTitle, String(e));
+          return;
+        }
       }
-    } catch (e) {
-      pdfError = String(e);
-      toast.error("PDF-Generierung fehlgeschlagen", String(e));
-    } finally {
-      generating = false;
-    }
+      try {
+        const res = await generate();
+        if (res.success) {
+          await onCreated(res);
+        } else {
+          pdfError = `${res.error.code}: ${res.error.message}`;
+          toast.error("PDF-Generierung fehlgeschlagen", res.error.message);
+        }
+      } catch (e) {
+        pdfError = String(e);
+        toast.error("PDF-Generierung fehlgeschlagen", String(e));
+      }
+    });
   }
 
   async function usePdfFile(path: string | null, open: (path: string) => Promise<void>) {
@@ -68,19 +94,29 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
     }
   }
 
+  /** For a page that switches to another document: its PDF error does not carry over. */
+  function clearPdfError() {
+    pdfError = null;
+  }
+
   return {
+    get task() {
+      return task;
+    },
     get busy() {
-      return busy;
+      return task !== null;
     },
     get generating() {
-      return generating;
+      return task === "pdf";
     },
     get pdfError() {
       return pdfError;
     },
+    exclusive,
     run,
     remove,
     generatePdf,
     usePdfFile,
+    clearPdfError,
   };
 }

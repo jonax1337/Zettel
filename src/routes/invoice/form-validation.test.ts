@@ -67,51 +67,44 @@ describe("reverseChargeState", () => {
   const euCustomer = { vatId: "FR12345678901" };
   const privateCustomer = { vatId: null };
 
-  it("allows both types when sender and customer have a VAT-ID", () => {
-    expect(reverseChargeState("intra_eu", sender, euCustomer)).toMatchObject({
+  it("offers both types when sender and customer have a VAT-ID", () => {
+    expect(reverseChargeState("intra_eu", sender, euCustomer)).toEqual({
       canIntraEu: true,
       canThirdCountry: true,
-      allowedType: "intra_eu",
-      blockedReason: "",
+      unavailableReason: "",
+      selectionBlocked: false,
     });
   });
 
   it("allows third-country export without a customer VAT-ID but not intra-EU", () => {
     const state = reverseChargeState("third_country", sender, privateCustomer);
-    expect(state).toMatchObject({ canIntraEu: false, canThirdCountry: true, allowedType: "third_country" });
-    expect(state.blockedReason).toBe("");
+    expect(state).toMatchObject({ canIntraEu: false, canThirdCountry: true, selectionBlocked: false });
+    expect(state.unavailableReason).toContain("Der Kunde benötigt eine USt-IdNr.");
   });
 
-  it("explains the missing customer VAT-ID only for intra-EU", () => {
-    expect(reverseChargeState("intra_eu", sender, privateCustomer).blockedReason).toContain(
-      "Kunde benötigt USt-IdNr.",
-    );
-    expect(reverseChargeState("intra_eu", sender, null).blockedReason).toBe("Erst Kunden auswählen.");
+  it("explains why intra-EU is unavailable without a customer", () => {
+    expect(reverseChargeState("none", sender, null).unavailableReason).toContain("Kunden auswählen");
   });
 
-  it("stays quiet for an ordinary document to a customer without VAT-ID", () => {
-    expect(reverseChargeState("none", sender, privateCustomer).blockedReason).toBe("");
+  it("keeps a selection that became unavailable and flags it instead of resetting it", () => {
+    expect(reverseChargeState("intra_eu", sender, privateCustomer).selectionBlocked).toBe(true);
+    expect(reverseChargeState("intra_eu", sender, null).selectionBlocked).toBe(true);
   });
 
-  it("resets intra-EU when the customer has no VAT-ID or none is selected", () => {
-    expect(reverseChargeState("intra_eu", sender, privateCustomer).allowedType).toBe("none");
-    expect(reverseChargeState("intra_eu", sender, null).allowedType).toBe("none");
+  it("never flags the regular treatment", () => {
+    expect(reverseChargeState("none", { isKleinunternehmer: true, vatId: null }, null).selectionBlocked).toBe(false);
   });
 
   it("blocks everything for a Kleinunternehmer", () => {
     const state = reverseChargeState("third_country", { ...sender, isKleinunternehmer: true }, euCustomer);
-    expect(state).toMatchObject({ canIntraEu: false, canThirdCountry: false, allowedType: "none" });
-    expect(state.blockedReason).toContain("Kleinunternehmer");
+    expect(state).toMatchObject({ canIntraEu: false, canThirdCountry: false, selectionBlocked: true });
+    expect(state.unavailableReason).toContain("Kleinunternehmer");
   });
 
   it("blocks everything without an own VAT-ID", () => {
     const state = reverseChargeState("intra_eu", { ...sender, vatId: null }, euCustomer);
-    expect(state.allowedType).toBe("none");
-    expect(state.blockedReason).toContain("Eigene USt-IdNr.");
-  });
-
-  it("keeps none and stays quiet before a customer is selected", () => {
-    expect(reverseChargeState("none", sender, null)).toMatchObject({ allowedType: "none", blockedReason: "" });
+    expect(state).toMatchObject({ canIntraEu: false, canThirdCountry: false, selectionBlocked: true });
+    expect(state.unavailableReason).toContain("Eigene USt-IdNr.");
   });
 });
 

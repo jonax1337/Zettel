@@ -53,6 +53,23 @@ describe("createDocumentActions", () => {
     });
   });
 
+  describe("exclusive", () => {
+    it("ignores a second task while one is still running", async () => {
+      const actions = createDocumentActions({ reload: vi.fn().mockResolvedValue(undefined) });
+      let release!: () => void;
+      const first = actions.exclusive("validate", () => new Promise<void>((resolve) => (release = resolve)));
+      const second = vi.fn();
+
+      await actions.run("Erledigt", second);
+      expect(actions.task).toBe("validate");
+      release();
+      await first;
+
+      expect(second).not.toHaveBeenCalled();
+      expect(actions.busy).toBe(false);
+    });
+  });
+
   describe("remove", () => {
     it("navigates to the list after deleting", async () => {
       const actions = createDocumentActions({ reload: vi.fn() });
@@ -106,6 +123,20 @@ describe("createDocumentActions", () => {
       await actions.generatePdf(async () => created, () => Promise.reject(new Error("open failed")));
 
       expect(actions.pdfError).toBe("Error: open failed");
+      expect(actions.generating).toBe(false);
+    });
+
+    it("runs the preparation first and skips the PDF when it fails", async () => {
+      const actions = createDocumentActions({ reload: vi.fn() });
+      const generate = vi.fn();
+
+      await actions.generatePdf(generate, vi.fn(), {
+        run: () => Promise.reject(new Error("claimed")),
+        failureTitle: "Festschreiben fehlgeschlagen",
+      });
+
+      expect(generate).not.toHaveBeenCalled();
+      expect(toast.error).toHaveBeenCalledWith("Festschreiben fehlgeschlagen", "Error: claimed");
       expect(actions.generating).toBe(false);
     });
 

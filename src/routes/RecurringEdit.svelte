@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { link, push } from "svelte-spa-router";
+  import { link, push, router } from "svelte-spa-router";
+  import { intQueryParam } from "./invoice/route-query";
   import {
     createRecurring,
     getRecurring,
@@ -29,6 +30,7 @@
   import { vatRateForNewItem } from "./parts/entity/vat";
   import ReverseChargeField from "./invoice/ReverseChargeField.svelte";
   import { createDocumentFormData } from "./invoice/document-form.svelte";
+  import { reverseChargeError } from "./invoice/form-validation";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
   import LineItemsEditor from "./invoice/LineItemsEditor.svelte";
   import {
@@ -43,16 +45,12 @@
   type Props = {
     mode: "new" | "edit";
     params?: { id?: string };
-    querystring?: string;
   };
-  let { mode, params, querystring }: Props = $props();
+  let { mode, params }: Props = $props();
 
-  const fromInvoiceId = $derived.by(() => {
-    if (mode !== "new" || !querystring) return null;
-    const raw = new URLSearchParams(querystring).get("fromInvoice");
-    const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-    return Number.isFinite(parsed) ? parsed : null;
-  });
+  const fromInvoiceId = $derived(
+    mode === "new" ? intQueryParam(router.querystring, "fromInvoice") : null,
+  );
 
   let id = $state<number | null>(null);
   let loaded = $state(false);
@@ -193,12 +191,17 @@
     }
   }
 
+  function reverseChargeFormError(): string | null {
+    return settings ? reverseChargeError(reverseChargeType, settings, reference.selectedCustomer, items) : null;
+  }
+
   function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     const customerId = parseId(customerIdStr);
     if (!name.trim()) error = "Bitte einen Namen vergeben.";
     else if (customerId === null) error = "Bitte einen Kunden auswählen.";
     else if (items.length === 0) error = "Mindestens eine Position erforderlich.";
+    else if (reverseChargeFormError()) error = reverseChargeFormError();
     else void save(buildInput(customerId));
   }
 </script>
@@ -247,7 +250,7 @@
           <ReverseChargeField
             bind:type={reverseChargeType}
             bind:supplyKind
-            {settings}
+            sender={settings}
             customer={reference.selectedCustomer}
             note="Wird bei jeder erzeugten Rechnung übernommen."
           />

@@ -81,6 +81,14 @@ describe("createEntityForm", () => {
     expect(entity.saving).toBe(false);
   });
 
+  it("continues to the route built from the saved record's ID", async () => {
+    const { entity } = build({ mode: "new" });
+
+    await entity.save((savedId) => `/invoices/new?customerId=${savedId}`);
+
+    expect(push).toHaveBeenCalledWith("/invoices/new?customerId=1");
+  });
+
   it("updates the loaded record in edit mode", async () => {
     const { entity, create, update } = build({ mode: "edit" });
     await entity.loadTarget("5");

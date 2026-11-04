@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { flip } from "svelte/animate";
   import { Button, Card, CatalogPicker, Input, LinePeriodPopover, Select, Textarea } from "$lib/ui";
   import {
@@ -51,9 +52,17 @@
   let catalogPickerOpen = $state(false);
   let dragIndex = $state<number | null>(null);
   let dragOverIndex = $state<number | null>(null);
+  let tableElement = $state<HTMLTableElement>();
 
   function addItem() {
-    items = [...items, newLineItem(vatRateForNewItem(vatExempt))];
+    const added = newLineItem(vatRateForNewItem(vatExempt));
+    items = [...items, added];
+    void focusDescription(added.uid);
+  }
+
+  async function focusDescription(uid: number) {
+    await tick();
+    tableElement?.querySelector<HTMLInputElement>(`[data-line-description="${uid}"]`)?.focus();
   }
 
   function addFromCatalog(catalogItem: CatalogItem) {
@@ -105,7 +114,7 @@
     </div>
   </div>
   <Card class="overflow-hidden py-0">
-    <table class="w-full table-fixed text-sm">
+    <table bind:this={tableElement} class="w-full table-fixed text-sm">
       <thead class="bg-muted/40 text-left">
         <tr class="text-xs uppercase tracking-wider text-muted-foreground whitespace-nowrap">
           <th class="px-1.5 @3xl:px-3 py-2 w-10 @3xl:w-14 font-medium">#</th>
@@ -147,7 +156,7 @@
               </div>
             </td>
             <td class="px-1.5 @3xl:px-2 py-1.5">
-              <Input bind:value={it.description} required disabled={readOnly} />
+              <Input bind:value={it.description} data-line-description={it.uid} required disabled={readOnly} />
               {#if it.showDetail}
                 <div class="mt-1.5">
                   <Textarea
@@ -255,6 +264,7 @@
                   disabled={items.length === 1 || readOnly}
                   class="inline-flex items-center justify-center size-8 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30 disabled:pointer-events-none transition-colors"
                   title="Position entfernen"
+                  aria-label="Position {idx + 1} entfernen"
                 >
                   <Trash2 class="size-4" />
                 </button>

@@ -288,7 +288,7 @@
             <ReverseChargeField
               bind:type={reverseChargeType}
               bind:supplyKind
-              {settings}
+              sender={settings}
               customer={reference.selectedCustomer}
               disabled={readOnly}
             />

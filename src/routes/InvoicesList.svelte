@@ -13,7 +13,7 @@
   import type { Customer, InvoiceStatus } from "$lib/db/schema";
   import { listCustomers } from "$lib/db/queries";
   import { formatMoney } from "$lib/utils/currency";
-  import { formatDate } from "$lib/utils/date";
+  import { formatDate, nowUnix } from "$lib/utils/date";
   import {
     Button,
     Card,
@@ -35,9 +35,11 @@
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
   import { ALL, numberOrAll, statusFilterItems } from "./invoice/list-support";
+  import { isOverdue as isInvoiceOverdue } from "./invoice/invoice-actions";
   import { INVOICE_STATUS } from "./invoice/status";
 
   const statusItems = statusFilterItems(INVOICE_STATUS);
+  const now = nowUnix();
 
   let customers = $state<Customer[]>([]);
   let years = $state<number[]>([]);
@@ -193,7 +195,12 @@
             </td>
             <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
               {#if inv.status !== "draft"}
-                <StatusBadge status={inv.status} table={INVOICE_STATUS} />
+                <span class="inline-flex items-center gap-1.5">
+                  <StatusBadge status={inv.status} table={INVOICE_STATUS} />
+                  {#if isInvoiceOverdue(inv, inv.hasCreditNote, now)}
+                    <Badge variant="destructive">Überfällig</Badge>
+                  {/if}
+                </span>
               {:else}
                 <span class="text-muted-foreground">—</span>
               {/if}

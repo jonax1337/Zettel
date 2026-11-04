@@ -3,7 +3,7 @@ import type { Customer, Settings } from "$lib/db/schema";
 
 type Options = {
   customerId: () => string;
-  onLoaded: (settings: Settings) => void | Promise<void>;
+  onLoaded: (settings: Settings, customers: Customer[]) => void | Promise<void>;
   onError: (message: string) => void;
 };
 
@@ -24,7 +24,7 @@ export function createDocumentFormData({ customerId, onLoaded, onError }: Option
       .then(async ([loadedSettings, loadedCustomers]) => {
         customers = loadedCustomers;
         settings = loadedSettings;
-        await onLoaded(loadedSettings);
+        await onLoaded(loadedSettings, loadedCustomers);
       })
       .catch((e) => onError(String(e)));
   });

@@ -5,7 +5,7 @@
     updateCustomer,
     type CustomerInput,
   } from "$lib/db/queries";
-  import { DatePicker, Label } from "$lib/ui";
+  import { Button, DatePicker, Label } from "$lib/ui";
   import { fromIsoDate, toIsoDate } from "$lib/utils/date";
   import { INVALID_COUNTRY_MESSAGE, normalizeCountryCode } from "./parts/entity/country";
   import { createEntityForm } from "./parts/entity/entity-form.svelte";
@@ -43,12 +43,14 @@
     if (mode === "edit") entity.loadTarget(params?.id);
   });
 
-  function onSubmit() {
+  const newInvoiceRoute = (customerId: number) => `/invoices/new?customerId=${customerId}`;
+
+  function onSubmit(submitter: HTMLElement | null) {
     const country = normalizeCountryCode(form.country);
     if (!country) return entity.reject("Land ungültig", INVALID_COUNTRY_MESSAGE);
     form.country = country;
     form.followUpDate = followUpIso ? fromIsoDate(followUpIso) : null;
-    return entity.save();
+    return entity.save(submitter?.dataset.next === "invoice" ? newInvoiceRoute : undefined);
   }
 </script>
 
@@ -62,6 +64,11 @@
   error={entity.error}
   {onSubmit}
 >
+  {#snippet extraActions()}
+    <Button type="submit" variant="outline" disabled={entity.saving} data-next="invoice">
+      Speichern &amp; Rechnung erstellen
+    </Button>
+  {/snippet}
   <PartyAddressFields bind:form requireAddress />
 
   <section class="grid grid-cols-2 gap-4">

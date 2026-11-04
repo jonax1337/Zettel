@@ -2,8 +2,8 @@
   import { push } from "svelte-spa-router";
   import { deleteCustomer, listCustomers } from "$lib/db/queries";
   import type { Customer } from "$lib/db/schema";
-  import { Button, Card, Checkbox, ConfirmDialog, EmptyState, PageHeader, QueryBoundary } from "$lib/ui";
-  import { Plus } from "$lib/brand-icons";
+  import { Button, Card, Checkbox, ConfirmDialog, DropdownItem, EmptyState, PageHeader, QueryBoundary } from "$lib/ui";
+  import { FilePlus2, Plus } from "$lib/brand-icons";
   import { applySort } from "$lib/utils/sort";
   import RowActionsMenu from "./parts/entity/RowActionsMenu.svelte";
   import SearchInput from "./parts/entity/SearchInput.svelte";
@@ -105,7 +105,14 @@
             <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground whitespace-nowrap">{c.city}</td>
             <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground whitespace-nowrap">{c.email ?? ""}</td>
             <td class="px-4 py-3 text-right">
-              <RowActionsMenu onEdit={() => editCustomer(c)} onDelete={() => deletion.ask(c)} />
+              <RowActionsMenu onEdit={() => editCustomer(c)} onDelete={() => deletion.ask(c)}>
+                {#snippet extraItems()}
+                  <DropdownItem onSelect={() => push(`/invoices/new?customerId=${c.id}`)}>
+                    <FilePlus2 />
+                    Neue Rechnung
+                  </DropdownItem>
+                {/snippet}
+              </RowActionsMenu>
             </td>
           </tr>
         {/each}

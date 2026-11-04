@@ -12,6 +12,8 @@
     hint: string;
     confirmLabel: string;
     warning: string | null;
+    /** Blocks confirming while another action on the page is still running. */
+    busy?: boolean;
     onConfirm: () => void;
   };
   let {
@@ -24,6 +26,7 @@
     hint,
     confirmLabel,
     warning,
+    busy = false,
     onConfirm,
   }: Props = $props();
 </script>
@@ -43,6 +46,6 @@
   </div>
   {#snippet footer()}
     <Button variant="outline" onclick={() => (open = false)}>Abbrechen</Button>
-    <Button onclick={onConfirm} disabled={!date}>{confirmLabel}</Button>
+    <Button onclick={onConfirm} disabled={!date || busy}>{confirmLabel}</Button>
   {/snippet}
 </Dialog>

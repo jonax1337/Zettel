@@ -13,14 +13,18 @@
     loading: boolean;
     saving: boolean;
     error: string | null;
-    onSubmit: () => void;
+    /** Receives the button that submitted, so extra submit buttons can pick a different next step. */
+    onSubmit: (submitter: HTMLElement | null) => void;
+    /** Further buttons next to the primary submit button. */
+    extraActions?: Snippet;
     children: Snippet;
   };
-  let { backHref, backLabel, title, mode, loading, saving, error, onSubmit, children }: Props = $props();
+  let { backHref, backLabel, title, mode, loading, saving, error, onSubmit, extraActions, children }: Props =
+    $props();
 
   function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
-    onSubmit();
+    onSubmit(e.submitter);
   }
 </script>
 
@@ -43,6 +47,7 @@
       <Button type="submit" disabled={saving}>
         {saving ? "Speichere…" : mode === "new" ? "Anlegen" : "Speichern"}
       </Button>
+      {@render extraActions?.()}
       <Button type="button" onclick={() => push(backHref)} variant="ghost">Abbrechen</Button>
       {#if error}
         <span class="text-sm text-destructive">{error}</span>

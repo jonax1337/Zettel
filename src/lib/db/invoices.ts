@@ -91,7 +91,7 @@ export type InvoiceFilter = {
   search?: string;
 };
 
-export type InvoiceListRow = Invoice & { customerName: string };
+export type InvoiceListRow = Invoice & { customerName: string; hasCreditNote: boolean };
 
 export function buildInvoiceFilter(filter: InvoiceFilter) {
   const { customerId, ...rest } = filter;
@@ -105,8 +105,11 @@ export async function listInvoices(
   filter: InvoiceFilter = {},
 ): Promise<InvoiceListRow[]> {
   const { where, binds } = buildInvoiceFilter(filter);
-  const rows = await select<InvoiceRow & { customer_name: string | null }>(
-    `SELECT i.*, c.name AS customer_name
+  const rows = await select<
+    InvoiceRow & { customer_name: string | null; has_credit_note: number }
+  >(
+    `SELECT i.*, c.name AS customer_name,
+            EXISTS (SELECT 1 FROM invoices cn WHERE cn.corrects_invoice_id = i.id) AS has_credit_note
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
      ${where}
@@ -116,6 +119,7 @@ export async function listInvoices(
   return rows.map((r) => ({
     ...mapInvoice(r),
     customerName: r.customer_name ?? MISSING_NAME,
+    hasCreditNote: r.has_credit_note === 1,
   }));
 }
 

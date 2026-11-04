@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { untrack } from "svelte";
+  import { push, router } from "svelte-spa-router";
   import {
     createInvoice,
     getInvoice,
@@ -8,9 +9,9 @@
     type ReverseChargeType,
     type SupplyKind,
   } from "$lib/db/invoices";
-  import type { Invoice, InvoiceItem, Settings } from "$lib/db/schema";
+  import type { Customer, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
   import { computeEurTotalCent } from "$lib/utils/currency";
-  import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
+  import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { defaultPaymentTermsText } from "$lib/utils/payment-terms";
   import { computeTotals } from "$lib/utils/totals";
   import { Button, Card, CardContent, DatePicker, Label, Select, Textarea, toast } from "$lib/ui";
@@ -23,6 +24,7 @@
   import ServicePeriodField from "./invoice/ServicePeriodField.svelte";
   import SkontoFields from "./invoice/SkontoFields.svelte";
   import { createDocumentFormData } from "./invoice/document-form.svelte";
+  import { dueDateFromIssue, followDerivedDueDate } from "./invoice/due-date";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
   import { vatRateForNewItem } from "./parts/entity/vat";
   import {
@@ -35,10 +37,11 @@
     lineItemFromStored,
     newLineItem,
     toLineItemInputs,
-    zeroVatRates,
     type LineItemForm,
   } from "./invoice/line-items";
+  import { restoreVatRates, zeroVatRatesRemembering, type VatRateSnapshot } from "./invoice/reverse-charge";
   import { INVALID_ROUTE_ID_MESSAGE, parseRouteId } from "./invoice/route-id";
+  import { preselectedCustomerId } from "./invoice/route-query";
   import {
     defaultSkontoForm,
     skontoFormFromSettings,
@@ -52,8 +55,6 @@
     params?: { id?: string };
   };
   let { mode, params }: Props = $props();
-
-  const DEFAULT_DUE_DAYS = 14;
 
   let id = $state<number | null>(null);
   let loaded = $state(false);
@@ -69,7 +70,9 @@
   let deliveryDateIso = $state("");
   let servicePeriodStartIso = $state("");
   let servicePeriodEndIso = $state("");
-  let dueDateIso = $state(toIsoDate(addDaysUnix(nowUnix(), DEFAULT_DUE_DAYS)));
+  let dueDateIso = $state("");
+  // Last due date derived from issue date + payment terms; a due date that differs was chosen by the user.
+  let derivedDueDateIso = "";
   let notes = $state("");
   let paymentTerms = $state("");
   let reverseChargeType = $state<ReverseChargeType>("none");
@@ -81,25 +84,40 @@
   let skonto = $state<SkontoForm>(defaultSkontoForm());
   let pdfLanguage = $state<"de" | "en">("de");
 
+  // A stored invoice keeps the Kleinunternehmer status it was created with, whatever the settings say now.
+  let storedKleinunternehmer = $state<boolean | null>(null);
+  const vatRateSnapshot: VatRateSnapshot = new Map();
+
   const isReverseCharge = $derived(reverseChargeType !== "none");
   const reference = createDocumentFormData({
     customerId: () => customerIdStr,
-    onLoaded: (loadedSettings) => {
-      if (mode === "new") applyNewInvoiceDefaults(loadedSettings);
+    onLoaded: (loadedSettings, loadedCustomers) => {
+      if (mode === "new") applyNewInvoiceDefaults(loadedSettings, loadedCustomers);
     },
     onError: (message) => (error = message),
   });
   const settings = $derived(reference.settings);
-  const vatExempt = $derived(!!settings?.isKleinunternehmer || isReverseCharge);
+  const isKleinunternehmer = $derived(storedKleinunternehmer ?? settings?.isKleinunternehmer ?? false);
+  const vatExempt = $derived(isKleinunternehmer || isReverseCharge);
+  const reverseChargeSender = $derived(settings ? { isKleinunternehmer, vatId: settings.vatId } : null);
 
   const totals = $derived(
-    settings
-      ? computeTotals(items, { isKleinunternehmer: settings.isKleinunternehmer, isReverseCharge })
-      : { subtotal: 0, vatAmount: 0, total: 0 },
+    settings ? computeTotals(items, { isKleinunternehmer, isReverseCharge }) : { subtotal: 0, vatAmount: 0, total: 0 },
   );
 
+  // Reverse charge forces 0 % VAT; the rates come back when it is switched off again.
   $effect(() => {
-    if (isReverseCharge) zeroVatRates(items);
+    if (isReverseCharge) zeroVatRatesRemembering(items, vatRateSnapshot);
+    else if (vatRateSnapshot.size > 0) restoreVatRates(items, vatRateSnapshot);
+  });
+
+  $effect(() => {
+    if (!settings || loading) return;
+    const nextDerived = dueDateFromIssue(issueDateIso, settings.defaultPaymentTermsDays);
+    untrack(() => {
+      dueDateIso = followDerivedDueDate(dueDateIso, derivedDueDateIso, nextDerived);
+      derivedDueDateIso = nextDerived;
+    });
   });
 
   $effect(() => {
@@ -121,7 +139,8 @@
       .finally(() => (loaded = true));
   });
 
-  function applyNewInvoiceDefaults(s: Settings) {
+  function applyNewInvoiceDefaults(s: Settings, availableCustomers: Customer[]) {
+    customerIdStr = preselectedCustomerId(router.querystring, availableCustomers);
     paymentTerms = defaultPaymentTermsText(s.defaultPaymentTermsDays);
     for (const item of items) item.vatRate = vatRateForNewItem(s.isKleinunternehmer);
     skonto = skontoFormFromSettings(s);
@@ -129,6 +148,7 @@
   }
 
   function applyStoredInvoice(invoice: Invoice, storedItems: InvoiceItem[]) {
+    storedKleinunternehmer = invoice.isKleinunternehmer;
     customerIdStr = String(invoice.customerId);
     issueDateIso = toIsoDate(invoice.issueDate);
     deliveryDateIso = invoice.deliveryDate ? toIsoDate(invoice.deliveryDate) : "";
@@ -153,7 +173,9 @@
   function formError(): string | null {
     if (items.length === 0) return "Mindestens eine Position erforderlich.";
     return (
-      (settings ? reverseChargeError(reverseChargeType, settings, reference.selectedCustomer, items) : null) ??
+      (reverseChargeSender
+        ? reverseChargeError(reverseChargeType, reverseChargeSender, reference.selectedCustomer, items)
+        : null) ??
       exchangeRateError(currency, exchangeRate) ??
       (serviceMode === "period" ? servicePeriodError(servicePeriodStartIso, servicePeriodEndIso) : null) ??
       linePeriodError(items)
@@ -288,13 +310,12 @@
             bind:endIso={servicePeriodEndIso}
           />
           <CurrencyFields bind:currency bind:exchangeRate totalCent={totals.total} />
-          <!-- Not mounted for credit notes: the field's reset effect must not alter the
-               reverse-charge type a Storno inherited from its original invoice. -->
+          <!-- A Storno keeps the reverse-charge type of the invoice it corrects. -->
           {#if !isCreditNote}
             <ReverseChargeField
               bind:type={reverseChargeType}
               bind:supplyKind
-              {settings}
+              sender={reverseChargeSender}
               customer={reference.selectedCustomer}
             />
           {/if}

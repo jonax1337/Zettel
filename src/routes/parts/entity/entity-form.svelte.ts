@@ -8,7 +8,8 @@ type Options<T> = {
   notFoundMessage: string;
   /** Copies the loaded record into the page's form state. */
   onLoaded: (value: T) => void;
-  create: () => Promise<unknown>;
+  /** Resolves to the new record's ID. */
+  create: () => Promise<number>;
   update: (id: number) => Promise<unknown>;
   createdMessage: string;
   /** Where a saved or cancelled form returns to. */
@@ -45,24 +46,25 @@ export function createEntityForm<T>(options: Options<T>) {
     toast.error(title, message);
   }
 
-  async function persist() {
+  async function persist(): Promise<number> {
     if (options.mode() === "new") {
-      await options.create();
+      const createdId = await options.create();
       toast.success(options.createdMessage);
-    } else if (id !== null) {
-      await options.update(id);
-      toast.success("Änderungen gespeichert");
-    } else {
-      throw new Error("Keine ID");
+      return createdId;
     }
+    if (id === null) throw new Error("Keine ID");
+    await options.update(id);
+    toast.success("Änderungen gespeichert");
+    return id;
   }
 
-  async function save() {
+  /** Returns to the list, or to the route `nextRoute` builds from the saved record's ID. */
+  async function save(nextRoute?: (savedId: number) => string) {
     saving = true;
     error = null;
     try {
-      await persist();
-      push(options.listRoute);
+      const savedId = await persist();
+      push(nextRoute ? nextRoute(savedId) : options.listRoute);
     } catch (e) {
       reject("Speichern fehlgeschlagen", String(e));
     } finally {

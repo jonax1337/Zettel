@@ -24,7 +24,11 @@
   import { createDeleteFlow } from "./parts/entity/delete-flow.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
-  import { RECURRING_INTERVAL_LABEL, generateInvoiceAndOpen } from "./parts/entity/recurring";
+  import {
+    RECURRING_INTERVAL_LABEL,
+    generateInvoiceAndOpen,
+    generatingRecurringIds,
+  } from "./parts/entity/recurring";
   import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
   import { RECURRING_STATE, recurringState } from "./parts/entity/status";
 
@@ -122,7 +126,11 @@
             <td class="px-4 py-3 text-right whitespace-nowrap">
               <div class="inline-flex items-center gap-1">
                 {#if row.active && isDue(row)}
-                  <Button size="sm" onclick={() => generateInvoiceAndOpen(row.id)}>
+                  <Button
+                    size="sm"
+                    disabled={generatingRecurringIds.has(row.id)}
+                    onclick={() => generateInvoiceAndOpen(row.id)}
+                  >
                     <FileText class="size-3.5" />
                     Jetzt erzeugen
                   </Button>

@@ -32,20 +32,22 @@ export function linePeriodError(
   return `Positions-Zeitraum: Enddatum vor Startdatum (${reversed.description || "ohne Beschreibung"}).`;
 }
 
-type ReverseChargeSender = { isKleinunternehmer: boolean; vatId: string | null };
+export type ReverseChargeSender = { isKleinunternehmer: boolean; vatId: string | null };
 type ReverseChargeCustomer = { vatId: string | null };
 
 export type ReverseChargeState = {
   canIntraEu: boolean;
   canThirdCountry: boolean;
-  blockedReason: string;
-  /** The chosen type when it is still permitted, otherwise "none". */
-  allowedType: ReverseChargeType;
+  /** Why an option cannot be chosen; "" when everything the sender can offer is selectable. */
+  unavailableReason: string;
+  /** The chosen type is no longer allowed, e.g. after switching to a customer without VAT-ID. */
+  selectionBlocked: boolean;
 };
 
 // Sender must not be Kleinunternehmer and needs a VAT-ID. intra_eu also needs the
 // customer's VAT-ID; third_country (export outside EU) does not. Whether the
-// customer is in the EU stays the user's judgement.
+// customer is in the EU stays the user's judgement. A blocked selection is kept
+// and reported, not reset, so the user sees why; saving refuses it.
 export function reverseChargeState(
   type: ReverseChargeType,
   sender: ReverseChargeSender,
@@ -58,22 +60,19 @@ export function reverseChargeState(
   return {
     canIntraEu,
     canThirdCountry,
-    blockedReason: reverseChargeBlockedReason(type, sender, customer),
-    allowedType: permitted ? type : "none",
+    unavailableReason: reverseChargeUnavailableReason(sender, customer),
+    selectionBlocked: !permitted,
   };
 }
 
-function reverseChargeBlockedReason(
-  type: ReverseChargeType,
+function reverseChargeUnavailableReason(
   sender: ReverseChargeSender,
   customer: ReverseChargeCustomer | null,
 ): string {
   if (sender.isKleinunternehmer) return "Nicht verfügbar für Kleinunternehmer (§ 19 UStG).";
   if (!sender.vatId) return "Eigene USt-IdNr. in den Einstellungen fehlt.";
-  if (type === "intra_eu") {
-    if (!customer) return "Erst Kunden auswählen.";
-    if (!customer.vatId) return "EU-Reverse-Charge: Kunde benötigt USt-IdNr.";
-  }
+  if (!customer) return "Innergemeinschaftlich: erst einen Kunden auswählen.";
+  if (!customer.vatId) return "Innergemeinschaftlich: Der Kunde benötigt eine USt-IdNr.";
   return "";
 }
 
