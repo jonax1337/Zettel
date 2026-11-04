@@ -46,14 +46,19 @@ function migratedDatabase(): SqliteDatabase {
   return db;
 }
 
-function seedInvoice(number: string, total: number, credit?: { status: string; correctsInvoiceId: number }): number {
+function seedInvoice(
+  number: string,
+  total: number,
+  credit?: { status: string; correctsInvoiceId: number },
+  issueDate = LONG_OVERDUE,
+): number {
   const result = sqlite.current!.prepare(
     `INSERT INTO invoices (number, customer_id, customer_snapshot, issue_date, due_date, status,
                            subtotal, vat_amount, total, is_credit_note, corrects_invoice_id, currency)
      VALUES (?, 1, '{"name":"Acme GmbH"}', ?, ?, ?, ?, 0, ?, ?, ?, 'EUR')`,
   ).run(
     number,
-    LONG_OVERDUE,
+    issueDate,
     LONG_OVERDUE,
     credit?.status ?? "sent",
     total,
@@ -142,6 +147,33 @@ describe("a full credit note", () => {
     expect(matchBookings([bookingOver(TOTAL)], await listInvoices())[0].candidates).toEqual([]);
     await expect(addPayment({ invoiceId, paidAt: PAID_AT, amountCent: 100 })).rejects.toThrow("Stornorechnung");
     await expect(markPaid(invoiceId, PAID_AT)).rejects.toThrow("Stornorechnung");
+  });
+});
+
+describe("a credit note dated in another year than its invoice", () => {
+  const INVOICE_ISSUED = Date.UTC(2025, 11, 20) / 1000;
+  const CREDIT_NOTE_ISSUED = Date.UTC(2026, 0, 10) / 1000;
+
+  function invoiceFromLastYearCredited(creditCent: number): number {
+    const invoiceId = seedInvoice("RE-2025-0001", TOTAL, undefined, INVOICE_ISSUED);
+    seedInvoice("RE-2026-0001", -creditCent, { status: "sent", correctsInvoiceId: invoiceId }, CREDIT_NOTE_ISSUED);
+    return invoiceId;
+  }
+
+  it("still reports a full credit note as settling the invoice in the invoice's year", async () => {
+    const invoiceId = invoiceFromLastYearCredited(TOTAL);
+
+    const [invoice] = await listInvoices({ year: 2025 });
+
+    expect(invoice).toMatchObject({ id: invoiceId, creditedCent: TOTAL, settledByCreditNote: true });
+  });
+
+  it("still reports the credited amount of a partial credit note in the invoice's year", async () => {
+    const invoiceId = invoiceFromLastYearCredited(3_000);
+
+    const [invoice] = await listInvoices({ year: 2025 });
+
+    expect(invoice).toMatchObject({ id: invoiceId, creditedCent: 3_000, settledByCreditNote: false });
   });
 });
 

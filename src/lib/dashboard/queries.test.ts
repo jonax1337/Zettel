@@ -129,6 +129,28 @@ describe("open receivables and credit notes", () => {
     expect(await oldestOverdue()).toMatchObject({ openCount: 1, openTotal: 10_000 });
   });
 
+  describe("a credit note issued in a later period than its invoice", () => {
+    const invoicePeriod: Period = { type: "custom", start: 0, end: 5_000, label: "Rechnungsperiode" };
+    const CREDIT_NOTE_ISSUED = 10_000_000;
+
+    function seedCreditedInLaterPeriod(creditCent: number): void {
+      const originalId = seedInvoice({ total: 10_000, issueDate: 1_000 });
+      seedInvoice({ total: -creditCent, issueDate: CREDIT_NOTE_ISSUED, isCreditNote: true, correctsInvoiceId: originalId });
+    }
+
+    it("still takes a full credit note off the open receivables of the invoice's period", async () => {
+      seedCreditedInLaterPeriod(10_000);
+
+      expect(await loadKpis(invoicePeriod)).toMatchObject({ openCount: 0, openTotal: 0 });
+    });
+
+    it("still reduces the open receivables of the invoice's period by a partial credit note", async () => {
+      seedCreditedInLaterPeriod(3_000);
+
+      expect(await loadKpis(invoicePeriod)).toMatchObject({ openCount: 1, openTotal: 7_000 });
+    });
+  });
+
   describe("a partially credited invoice", () => {
     function seedPartlyCredited(opts: { amountPaidCent?: number } = {}): void {
       const originalId = seedInvoice({ total: 10_000, status: opts.amountPaidCent ? "partial" : "sent", ...opts });

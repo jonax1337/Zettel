@@ -450,6 +450,16 @@ class TestStats:
     def last_id(self, con):
         return con.execute("SELECT MAX(id) FROM invoices").fetchone()[0]
 
+    def test_partial_credit_note_on_a_foreign_currency_invoice_is_converted_with_the_frozen_rate(self, cli, con):
+        # 100,00 USD frozen at 92,00 EUR; 25,00 USD paid and 30,00 USD credited (frozen at 27,60 EUR) -> 41,40 EUR open.
+        self.add(con, status="partial", total=10_000, amount_paid_cent=2_500, eur_total_cent=9_200, currency="USD")
+        self.credit(con, self.last_id(con), -3_000, eur_total_cent=-2_760, currency="USD")
+
+        revenue, open_count, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert (open_count, open_total) == (1, 4_140)
+        assert revenue == 9_200 - 2_760
+
     def test_credit_note_in_another_currency_is_ignored(self, cli, con):
         self.add(con, total=10_000)
         invoice_id = self.last_id(con)
