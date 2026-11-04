@@ -13,7 +13,7 @@
   import type { Customer, InvoiceStatus } from "$lib/db/schema";
   import { listCustomers } from "$lib/db/queries";
   import { formatMoney } from "$lib/utils/currency";
-  import { formatDate } from "$lib/utils/date";
+  import { formatDate, nowUnix } from "$lib/utils/date";
   import { Button, Card, Badge, Checkbox, SortableTh, BulkActionBar, ConfirmDialog, EmptyState } from "$lib/ui";
   import { Plus, Send, Trash2, CheckCircle2 } from "$lib/brand-icons";
   import { applySort } from "$lib/utils/sort";
@@ -27,9 +27,12 @@
     numberOrAll,
     statusFilterItems,
   } from "./invoice/list-support";
+  import { isOverdue as isInvoiceOverdue } from "./invoice/invoice-actions";
   import { INVOICE_STATUS_LABEL, INVOICE_STATUS_VARIANT } from "./invoice/status";
 
   const statusItems = statusFilterItems(INVOICE_STATUS_LABEL);
+  // The list cannot tell whether a credit note cancelled the invoice, so that case still shows as overdue here.
+  const now = nowUnix();
 
   let customers = $state<Customer[]>([]);
   let years = $state<number[]>([]);
@@ -197,7 +200,12 @@
             </td>
             <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
               {#if inv.status !== "draft"}
-                <Badge variant={INVOICE_STATUS_VARIANT[inv.status]}>{INVOICE_STATUS_LABEL[inv.status]}</Badge>
+                <span class="inline-flex items-center gap-1.5">
+                  <Badge variant={INVOICE_STATUS_VARIANT[inv.status]}>{INVOICE_STATUS_LABEL[inv.status]}</Badge>
+                  {#if isInvoiceOverdue(inv, false, now)}
+                    <Badge variant="destructive">Überfällig</Badge>
+                  {/if}
+                </span>
               {:else}
                 <span class="text-muted-foreground">—</span>
               {/if}

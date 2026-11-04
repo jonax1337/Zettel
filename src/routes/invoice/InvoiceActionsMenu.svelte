@@ -3,6 +3,7 @@
   import { DropdownItem, DropdownMenu, DropdownSeparator } from "$lib/ui";
   import { Ban, FileWarning, MoreHorizontal, Pencil, Repeat, Trash2, Undo2 } from "$lib/brand-icons";
   import type { Invoice, ReminderLevel } from "$lib/db/schema";
+  import { canDiscardInvoice } from "./invoice-actions";
   import { REMINDER_CREATE_LABEL } from "./reminder-levels";
 
   type Props = {
@@ -10,9 +11,10 @@
     /** Level of the reminder that can be created next, or null when none can. */
     creatableReminderLevel: ReminderLevel | null;
     canCreateCreditNote: boolean;
-    creatingCreditNote: boolean;
-    onReopenDraft: () => void;
-    onCancelInvoice: () => void;
+    canReopenDraft: boolean;
+    busy: boolean;
+    onRequestReopenDraft: () => void;
+    onRequestCancel: () => void;
     onRequestCreditNote: () => void;
     onRequestDelete: () => void;
   };
@@ -20,15 +22,15 @@
     invoice,
     creatableReminderLevel,
     canCreateCreditNote,
-    creatingCreditNote,
-    onReopenDraft,
-    onCancelInvoice,
+    canReopenDraft,
+    busy,
+    onRequestReopenDraft,
+    onRequestCancel,
     onRequestCreditNote,
     onRequestDelete,
   }: Props = $props();
 
-  const canCancel = $derived(invoice.status !== "cancelled" && invoice.status !== "paid");
-  const canDelete = $derived(invoice.status === "draft" || invoice.status === "cancelled");
+  const canDiscard = $derived(canDiscardInvoice(invoice));
 </script>
 
 <DropdownMenu>
@@ -54,7 +56,7 @@
     </DropdownItem>
   {/if}
   {#if canCreateCreditNote}
-    <DropdownItem disabled={creatingCreditNote} onSelect={onRequestCreditNote}>
+    <DropdownItem disabled={busy} onSelect={onRequestCreditNote}>
       <Ban /> Stornorechnung erstellen
     </DropdownItem>
   {/if}
@@ -63,20 +65,18 @@
       <Repeat /> Als Vorlage speichern
     </DropdownItem>
   {/if}
-  {#if invoice.status === "sent"}
+  {#if canReopenDraft}
     <DropdownSeparator />
-    <DropdownItem onSelect={onReopenDraft}>
+    <DropdownItem disabled={busy} onSelect={onRequestReopenDraft}>
       <Undo2 /> Zurück zu Entwurf
     </DropdownItem>
   {/if}
-  {#if canCancel}
-    <DropdownItem onSelect={onCancelInvoice}>
+  {#if canDiscard}
+    <DropdownItem disabled={busy} onSelect={onRequestCancel}>
       <Ban /> Stornieren
     </DropdownItem>
-  {/if}
-  {#if canDelete}
     <DropdownSeparator />
-    <DropdownItem destructive onSelect={onRequestDelete}>
+    <DropdownItem destructive disabled={busy} onSelect={onRequestDelete}>
       <Trash2 /> Löschen
     </DropdownItem>
   {/if}

@@ -4,6 +4,8 @@
 
   type Props = {
     hasPdf: boolean;
+    /** Any action on the page is running; PDF generation and status changes must not overlap. */
+    busy: boolean;
     generating: boolean;
     revalidating: boolean;
     onGenerate: () => void;
@@ -11,10 +13,10 @@
     onReveal: () => void;
     onRevalidate: () => void;
   };
-  let { hasPdf, generating, revalidating, onGenerate, onOpen, onReveal, onRevalidate }: Props = $props();
+  let { hasPdf, busy, generating, revalidating, onGenerate, onOpen, onReveal, onRevalidate }: Props = $props();
 </script>
 
-<Button disabled={generating} onclick={onGenerate}>
+<Button disabled={busy} onclick={onGenerate}>
   <FileDown />
   {generating ? "Erzeuge…" : hasPdf ? "PDF neu erzeugen" : "PDF erzeugen"}
 </Button>
@@ -35,7 +37,7 @@
       Öffnen
     </Button>
     <DropdownMenu trigger={moreTrigger}>
-      <DropdownItem onSelect={onRevalidate} disabled={revalidating}>
+      <DropdownItem onSelect={onRevalidate} disabled={busy}>
         <ShieldCheck /> {revalidating ? "Prüfe…" : "Validieren"}
       </DropdownItem>
       <DropdownItem onSelect={onReveal}>
