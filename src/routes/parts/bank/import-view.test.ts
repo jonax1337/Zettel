@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const db = vi.hoisted(() => ({ execute: vi.fn(), insert: vi.fn(), select: vi.fn() }));
+vi.mock("$lib/db/client", () => db);
+
 import type { InvoiceListRow } from "$lib/db/invoices";
 import type { MatchCandidate } from "$lib/bank/match";
 import type { ImportRow } from "./import-rows";
@@ -6,11 +10,11 @@ import {
   MANUAL_REASON,
   assignManualInvoice,
   candidateLabel,
-  classifyPaymentResult,
   formatBookingDate,
   invoicePickerLabel,
   manualCandidate,
   payableInvoices,
+  recordBooking,
   summarizeOutcomes,
   type ApplyOutcome,
 } from "./import-view";
@@ -79,16 +83,44 @@ describe("invoicePickerLabel", () => {
   });
 });
 
-describe("classifyPaymentResult", () => {
-  it("books a plain payment id", () => {
-    expect(classifyPaymentResult(42)).toBe("applied");
-    expect(classifyPaymentResult(undefined)).toBe("applied");
+describe("recordBooking", () => {
+  const payment = { invoiceId: 7, paidAt: 1_750_000_000, amountCent: 4_000, bankTransactionId: "key-1" };
+  const booked = { invoiceId: 7, invoiceNumber: "RE-2026-0007", amountCent: 4_000, currency: "EUR" };
+
+  function partiallyPaidInvoice(opts: { bookingRecorded: boolean }) {
+    db.select.mockImplementation(async (sql: string) => {
+      if (sql.includes("bank_transaction_id = ?")) return opts.bookingRecorded ? [{ id: 1 }] : [];
+      if (sql.includes("MAX(paid_at)")) return [{ paid_cent: 9_000, last_paid_at: 1_750_000_000 }];
+      return [{ status: "partial", total: 11_900, paid_cent: 5_000 }];
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db.insert.mockResolvedValue(55);
+    db.execute.mockResolvedValue({ rowsAffected: 1 });
   });
 
-  it("reports a result that flags itself as duplicate or skipped as a duplicate", () => {
-    expect(classifyPaymentResult({ duplicate: true })).toBe("duplicate");
-    expect(classifyPaymentResult({ skipped: true, id: null })).toBe("duplicate");
-    expect(classifyPaymentResult({ id: 3 })).toBe("applied");
+  it("reports a recorded booking as applied", async () => {
+    partiallyPaidInvoice({ bookingRecorded: false });
+
+    expect(await recordBooking(payment, booked)).toEqual({ kind: "applied", ...booked });
+  });
+
+  it("skips a booking an earlier import of the same statement already recorded", async () => {
+    partiallyPaidInvoice({ bookingRecorded: true });
+
+    expect(await recordBooking(payment, booked)).toEqual({ kind: "duplicate", ...booked });
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("reports any other refusal as failed, with the reason", async () => {
+    db.select.mockResolvedValue([{ status: "paid", total: 11_900, paid_cent: 11_900 }]);
+
+    const outcome = await recordBooking(payment, booked);
+
+    expect(outcome.kind).toBe("failed");
+    expect(outcome.kind === "failed" && outcome.message).toContain("versendete oder teilbezahlte");
   });
 });
 

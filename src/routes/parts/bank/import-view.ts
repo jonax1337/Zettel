@@ -1,4 +1,5 @@
 import { openBalance, type MatchCandidate } from "$lib/bank/match";
+import { addPayment, DuplicateBankBookingError, type AddPaymentInput } from "$lib/db/invoice-payments";
 import type { InvoiceListRow } from "$lib/db/invoices";
 import { formatMoney } from "$lib/utils/currency";
 import { formatDate, fromIsoDate } from "$lib/utils/date";
@@ -57,16 +58,17 @@ export type ApplyOutcome =
   | { kind: "duplicate"; invoiceId: number; invoiceNumber: string; amountCent: number; currency: string }
   | { kind: "failed"; invoiceNumber: string; amountCent: number; currency: string; message: string };
 
-/**
- * `addPayment` returns the new payment id. A result that flags itself as duplicate or skipped
- * (the booking was imported before) is reported as skipped instead of booked.
- */
-export function classifyPaymentResult(result: unknown): "applied" | "duplicate" {
-  if (typeof result === "object" && result !== null) {
-    const flags = result as { duplicate?: unknown; skipped?: unknown };
-    if (flags.duplicate === true || flags.skipped === true) return "duplicate";
+export type BookedPayment = { invoiceId: number; invoiceNumber: string; amountCent: number; currency: string };
+
+/** Records one booking; a booking that an earlier import already recorded is skipped, not failed. */
+export async function recordBooking(payment: AddPaymentInput, booked: BookedPayment): Promise<ApplyOutcome> {
+  try {
+    await addPayment(payment);
+    return { kind: "applied", ...booked };
+  } catch (e) {
+    if (e instanceof DuplicateBankBookingError) return { kind: "duplicate", ...booked };
+    return { kind: "failed", ...booked, message: String(e) };
   }
-  return "applied";
 }
 
 export function summarizeOutcomes(outcomes: ApplyOutcome[]): string {

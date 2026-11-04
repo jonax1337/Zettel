@@ -4,7 +4,6 @@
   import { parseBankStatement } from "$lib/sidecar/bank";
   import { matchBookings, openBalance, type MatchCandidate } from "$lib/bank/match";
   import { listInvoices, type InvoiceListRow } from "$lib/db/invoices";
-  import { addPayment } from "$lib/db/invoice-payments";
   import { nowUnix } from "$lib/utils/date";
   import { centsToEur } from "$lib/utils/money";
   import { formatMoney } from "$lib/utils/currency";
@@ -36,10 +35,10 @@
   import {
     assignManualInvoice,
     candidateLabel,
-    classifyPaymentResult,
     formatBookingDate,
     invoicePickerLabel,
     payableInvoices,
+    recordBooking,
     summarizeOutcomes,
     type ApplyOutcome,
   } from "./parts/bank/import-view";
@@ -119,17 +118,12 @@
     const payment = paymentFor(row, format, nowUnix());
     const invoice = pickedMatch(row)?.invoice;
     if (!payment || !invoice) return null;
-    const booked = {
+    return recordBooking(payment, {
       invoiceId: invoice.id,
       invoiceNumber: invoice.number,
       amountCent: payment.amountCent,
       currency: invoice.currency,
-    };
-    try {
-      return { kind: classifyPaymentResult(await addPayment(payment)), ...booked };
-    } catch (e) {
-      return { kind: "failed", ...booked, message: String(e) };
-    }
+    });
   }
 
   /** Records every ticked booking; rows that fail stay in the list so they can be retried. */
