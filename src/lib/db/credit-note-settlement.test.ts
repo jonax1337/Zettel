@@ -27,8 +27,8 @@ vi.mock("./client", async (importOriginal) => {
 });
 
 import { matchBookings } from "$lib/bank/match";
-import { addPayment, listPayments } from "./invoice-payments";
-import { listInvoices, markPaid } from "./invoices";
+import { addPayment, deletePayment, listPayments } from "./invoice-payments";
+import { issueInvoice, listInvoices, markPaid, reopenDraft } from "./invoices";
 import { listOverdueInvoices, remindableAmountCents } from "./reminders";
 
 const MIGRATIONS = import.meta.glob<string>("./migrations/*.sql", { query: "?raw", import: "default", eager: true });
@@ -151,5 +151,86 @@ describe.each(["draft", "cancelled"])("a %s credit note", (status) => {
     expect(await listed(invoiceId)).toMatchObject({ creditedCent: 0, settledByCreditNote: false });
     await markPaid(invoiceId, PAID_AT);
     expect(invoiceState(invoiceId)).toEqual({ status: "paid", amount_paid_cent: TOTAL });
+  });
+});
+
+describe("the status of an invoice after payments and an issued credit note", () => {
+  const INVOICE_TOTAL = 10_000;
+
+  let pairs = 0;
+
+  function originalWithDraftCreditNote(creditCent: number): { invoiceId: number; creditNoteId: number } {
+    pairs += 1;
+    const invoiceId = seedInvoice(`RE-2026-1${pairs}0`, INVOICE_TOTAL);
+    const creditNoteId = seedInvoice(`RE-2026-1${pairs}1`, -creditCent, { status: "draft", correctsInvoiceId: invoiceId });
+    return { invoiceId, creditNoteId };
+  }
+
+  function fullState(invoiceId: number) {
+    const [row] = sqlite.current!.prepare("SELECT status, amount_paid_cent, paid_at FROM invoices WHERE id = ?").all(invoiceId);
+    return row as { status: string; amount_paid_cent: number; paid_at: number | null };
+  }
+
+  it("is the same whether the payment or the credit note came first", async () => {
+    const paymentFirst = originalWithDraftCreditNote(4_000);
+    await addPayment({ invoiceId: paymentFirst.invoiceId, paidAt: PAID_AT, amountCent: 6_000 });
+    await issueInvoice(paymentFirst.creditNoteId);
+
+    const creditNoteFirst = originalWithDraftCreditNote(4_000);
+    await issueInvoice(creditNoteFirst.creditNoteId);
+    await addPayment({ invoiceId: creditNoteFirst.invoiceId, paidAt: PAID_AT, amountCent: 6_000 });
+
+    expect(fullState(paymentFirst.invoiceId)).toEqual({ status: "paid", amount_paid_cent: 6_000, paid_at: PAID_AT });
+    expect(fullState(creditNoteFirst.invoiceId)).toEqual(fullState(paymentFirst.invoiceId));
+  });
+
+  it("stays partial when the credit note and the payments still leave something open", async () => {
+    const { invoiceId, creditNoteId } = originalWithDraftCreditNote(1_000);
+    await addPayment({ invoiceId, paidAt: PAID_AT, amountCent: 6_000 });
+
+    await issueInvoice(creditNoteId);
+
+    expect(invoiceState(invoiceId)).toEqual({ status: "partial", amount_paid_cent: 6_000 });
+  });
+
+  it("stays sent when a credit note is issued on an unpaid invoice", async () => {
+    const { invoiceId, creditNoteId } = originalWithDraftCreditNote(INVOICE_TOTAL);
+
+    await issueInvoice(creditNoteId);
+
+    expect(invoiceState(invoiceId)).toEqual({ status: "sent", amount_paid_cent: 0 });
+  });
+
+  it("falls back to partial when the issued credit note is reopened as a draft", async () => {
+    const { invoiceId, creditNoteId } = originalWithDraftCreditNote(4_000);
+    await addPayment({ invoiceId, paidAt: PAID_AT, amountCent: 6_000 });
+    await issueInvoice(creditNoteId);
+
+    await reopenDraft(creditNoteId);
+
+    expect(fullState(invoiceId)).toEqual({ status: "partial", amount_paid_cent: 6_000, paid_at: null });
+  });
+
+  it("lets the only payment of an invoice settled by a credit note be deleted, which makes it unpaid again", async () => {
+    const { invoiceId, creditNoteId } = originalWithDraftCreditNote(4_000);
+    await addPayment({ invoiceId, paidAt: PAID_AT, amountCent: 6_000 });
+    await issueInvoice(creditNoteId);
+    const [payment] = await listPayments(invoiceId);
+
+    await deletePayment(payment.id);
+
+    expect(fullState(invoiceId)).toEqual({ status: "sent", amount_paid_cent: 0, paid_at: null });
+  });
+
+  it("derives the status again when one of two payments of a fully credited invoice is deleted", async () => {
+    const { invoiceId, creditNoteId } = originalWithDraftCreditNote(INVOICE_TOTAL);
+    await addPayment({ invoiceId, paidAt: PAID_AT, amountCent: 5_000 });
+    await addPayment({ invoiceId, paidAt: PAID_AT + 1, amountCent: 5_000 });
+    await issueInvoice(creditNoteId);
+    const [first] = await listPayments(invoiceId);
+
+    await deletePayment(first.id);
+
+    expect(fullState(invoiceId)).toEqual({ status: "paid", amount_paid_cent: 5_000, paid_at: PAID_AT + 1 });
   });
 });

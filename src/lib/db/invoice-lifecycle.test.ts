@@ -5,6 +5,7 @@ import {
   canCancelInvoice,
   canCreateCreditNote,
   canDeleteInvoice,
+  canRemovePayment,
   canReopenInvoice,
   creditedCentOf,
   creditedCentSql,
@@ -196,5 +197,29 @@ describe("credit note settlement in SQL", () => {
 
     expect(creditedCent(db)).toBe(5_000);
     expect(settledIds(db)).toEqual([]);
+  });
+});
+
+describe("canRemovePayment", () => {
+  const invoice = { total: 10_000, amountPaidCent: 6_000 };
+
+  it("keeps the only payment of a paid invoice", () => {
+    expect(canRemovePayment({ ...invoice, status: "paid", creditedCent: 0 }, 1)).toBe(false);
+  });
+
+  it("allows removing one of several payments of a paid invoice", () => {
+    expect(canRemovePayment({ ...invoice, status: "paid", creditedCent: 0 }, 2)).toBe(true);
+  });
+
+  it("allows removing a payment of an invoice that is not paid", () => {
+    expect(canRemovePayment({ ...invoice, status: "partial", creditedCent: 0 }, 1)).toBe(true);
+  });
+
+  it("allows removing the only payment once credit notes settle the invoice", () => {
+    expect(canRemovePayment({ ...invoice, status: "paid", creditedCent: 4_000 }, 1)).toBe(true);
+  });
+
+  it("keeps the only payment while a partial credit note still leaves the invoice due", () => {
+    expect(canRemovePayment({ ...invoice, status: "paid", creditedCent: 1_000 }, 1)).toBe(false);
   });
 });

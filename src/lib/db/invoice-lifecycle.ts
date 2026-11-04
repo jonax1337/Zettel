@@ -73,6 +73,18 @@ export function isSettledByCreditNote(invoice: SettlementFacts): boolean {
   return invoice.creditedCent > 0 && openBalanceCent(invoice) <= 0;
 }
 
+/**
+ * The only payment of a paid invoice stays, or the invoice would silently turn
+ * unpaid. When credit notes settle the invoice, "paid" does not mean cash was
+ * received, so a payment booked by mistake must still be removable.
+ */
+export function canRemovePayment(
+  invoice: SettlementFacts & Pick<Invoice, "status">,
+  paymentCount: number,
+): boolean {
+  return invoice.status !== "paid" || paymentCount > 1 || isSettledByCreditNote(invoice);
+}
+
 export const SETTLED_BY_CREDIT_NOTE_ERROR =
   "Die Rechnung ist durch eine Stornorechnung ausgeglichen. Zahlungen können nicht mehr erfasst werden.";
 

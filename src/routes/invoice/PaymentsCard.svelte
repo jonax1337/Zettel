@@ -2,7 +2,7 @@
   import { Badge, Button, Card, CardContent, DatePicker, Dialog, Input, Label, toast } from "$lib/ui";
   import { Plus, Trash2 } from "$lib/brand-icons";
   import type { Invoice, InvoicePayment } from "$lib/db/schema";
-  import { openBalanceCent } from "$lib/db/invoice-lifecycle";
+  import { canRemovePayment, openBalanceCent } from "$lib/db/invoice-lifecycle";
   import { addPayment, deletePayment } from "$lib/db/invoice-payments";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
@@ -29,7 +29,7 @@
   const totalCent = $derived(Math.abs(invoice.total));
   const paidCent = $derived(invoice.amountPaidCent ?? 0);
   const remainingCent = $derived(Math.max(0, openBalanceCent({ ...invoice, creditedCent })));
-  const canRemovePayment = $derived(invoice.status !== "paid" || payments.length > 1);
+  const removable = $derived(canRemovePayment({ ...invoice, creditedCent }, payments.length));
 
   function openDialog() {
     paidAtIso = toIsoDate(nowUnix());
@@ -124,7 +124,7 @@
                 <span class="text-xs text-muted-foreground truncate">{p.notes}</span>
               {/if}
             </div>
-            {#if canRemovePayment}
+            {#if removable}
               <button
                 type="button"
                 onclick={() => remove(p)}

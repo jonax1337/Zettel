@@ -23,6 +23,7 @@ import {
   openBalanceCent,
   SETTLED_BY_CREDIT_NOTE_ERROR,
 } from "./invoice-lifecycle";
+import { recomputeInvoiceStatus } from "./invoice-payments";
 import { drawNextNumber } from "./numbering";
 import { loadSettings } from "./queries";
 import { parseSnapshot } from "./snapshot-json";
@@ -490,8 +491,16 @@ export async function issueInvoice(
     [sentAt ?? nowUnix(), snapshot, id],
   );
   if (claim.rowsAffected !== 1) return numberIssuedConcurrently(id);
-  if (!isDraftNumber(invoice.number)) return invoice.number;
-  return assignFinalNumber(invoice);
+  const number = isDraftNumber(invoice.number) ? await assignFinalNumber(invoice) : invoice.number;
+  await recomputeCorrectedInvoice(invoice);
+  return number;
+}
+
+/** An issued credit note changes what its original still owes, so the original's status is derived again. */
+async function recomputeCorrectedInvoice(creditNote: Invoice): Promise<void> {
+  if (creditNote.isCreditNote && creditNote.correctsInvoiceId !== null) {
+    await recomputeInvoiceStatus(creditNote.correctsInvoiceId);
+  }
 }
 
 async function numberIssuedConcurrently(id: number): Promise<string> {
@@ -607,6 +616,7 @@ export async function reopenDraft(id: number): Promise<void> {
     "UPDATE invoices SET status = 'draft', sent_at = NULL, paid_at = NULL, updated_at = unixepoch() WHERE id = ? AND status = ?",
     [id, invoice.status],
   );
+  await recomputeCorrectedInvoice(invoice);
 }
 
 // --- Export ---

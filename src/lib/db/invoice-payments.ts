@@ -59,11 +59,12 @@ export function statusForPaidAmount(paidCent: number, dueCent: number): PayableS
 }
 
 /**
- * Re-derives status, paid amount and paid_at from the payment list. Drafts and
- * cancelled invoices are left alone; a payment on a draft would be a data
- * consistency error the calling UI has to prevent.
+ * Re-derives status, paid amount and paid_at from the payment list and the
+ * issued credit notes, so the result does not depend on which came first.
+ * Drafts and cancelled invoices are left alone; a payment on a draft would be a
+ * data consistency error the calling UI has to prevent.
  */
-async function recomputeInvoiceStatus(invoiceId: number): Promise<void> {
+export async function recomputeInvoiceStatus(invoiceId: number): Promise<void> {
   const [invoice] = await select<{ total: number; status: InvoiceStatus; credited_cent: number }>(
     `SELECT i.total, i.status, ${creditedCentSql("i")} AS credited_cent FROM invoices i WHERE i.id = ?`,
     [invoiceId],
