@@ -11,7 +11,6 @@ export type ValidationReport = {
   valid: boolean;
   scenario: string | null;
   findings: ValidationFinding[];
-  rawReportPath: string;
 };
 
 export type ValidatorStatus = {
@@ -25,7 +24,6 @@ type RustReport = {
   valid: boolean;
   scenario: string | null;
   findings: ValidationFinding[];
-  raw_report_path: string;
 };
 
 type RustStatus = {
@@ -40,7 +38,6 @@ function mapReport(r: RustReport): ValidationReport {
     valid: r.valid,
     scenario: r.scenario,
     findings: r.findings ?? [],
-    rawReportPath: r.raw_report_path,
   };
 }
 
