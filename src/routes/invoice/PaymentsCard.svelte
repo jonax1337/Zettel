@@ -11,10 +11,11 @@
   type Props = {
     invoice: Invoice;
     payments: InvoicePayment[];
+    canAddPayment: boolean;
     /** Called after a payment was added or removed, so the parent can reload. */
     onChanged: () => Promise<void>;
   };
-  let { invoice, payments, onChanged }: Props = $props();
+  let { invoice, payments, canAddPayment, onChanged }: Props = $props();
 
   let dialogOpen = $state(false);
   let paidAtIso = $state(toIsoDate(nowUnix()));
@@ -25,7 +26,6 @@
   const totalCent = $derived(Math.abs(invoice.total));
   const paidCent = $derived(invoice.amountPaidCent ?? 0);
   const remainingCent = $derived(Math.max(0, totalCent - paidCent));
-  const canAddPayment = $derived(invoice.status !== "paid" && !invoice.isCreditNote);
   const canRemovePayment = $derived(invoice.status !== "paid" || payments.length > 1);
 
   function openDialog() {

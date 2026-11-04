@@ -3,15 +3,22 @@ import { isDraftNumber } from "$lib/utils/invoice-number";
 
 type ActionInvoice = Pick<Invoice, "status" | "isCreditNote" | "number" | "amountPaidCent" | "dueDate">;
 
-/** Payments only exist on regular invoices that were sent and are not settled yet. */
-export function canRecordPayments(invoice: ActionInvoice): boolean {
-  return !invoice.isCreditNote && (invoice.status === "sent" || invoice.status === "partial");
+/** Payments are recorded on regular, open invoices that a credit note has not reversed. */
+export function canRecordPayments(invoice: ActionInvoice, cancelledByCreditNote: boolean): boolean {
+  if (invoice.isCreditNote || cancelledByCreditNote) return false;
+  return invoice.status === "sent" || invoice.status === "partial";
 }
 
-/** Settled invoices keep the card so recorded payments stay visible and correctable. */
-export function showsPayments(invoice: ActionInvoice, paymentCount: number): boolean {
-  if (canRecordPayments(invoice)) return true;
-  return !invoice.isCreditNote && invoice.status === "paid" && paymentCount > 0;
+/** Settled or reversed invoices keep the card so recorded payments stay visible and correctable. */
+export function showsPayments(
+  invoice: ActionInvoice,
+  paymentCount: number,
+  cancelledByCreditNote: boolean,
+): boolean {
+  if (invoice.isCreditNote) return false;
+  if (canRecordPayments(invoice, cancelledByCreditNote)) return true;
+  const issued = invoice.status === "sent" || invoice.status === "partial" || invoice.status === "paid";
+  return issued && paymentCount > 0;
 }
 
 export function canCreateCreditNote(invoice: ActionInvoice, cancelledByCreditNote: boolean): boolean {
@@ -20,7 +27,7 @@ export function canCreateCreditNote(invoice: ActionInvoice, cancelledByCreditNot
 }
 
 export function isOverdue(invoice: ActionInvoice, cancelledByCreditNote: boolean, now: number): boolean {
-  return canRecordPayments(invoice) && !cancelledByCreditNote && invoice.dueDate < now;
+  return canRecordPayments(invoice, cancelledByCreditNote) && invoice.dueDate < now;
 }
 
 /**

@@ -31,7 +31,6 @@
   import { INVOICE_STATUS_LABEL, INVOICE_STATUS_VARIANT } from "./invoice/status";
 
   const statusItems = statusFilterItems(INVOICE_STATUS_LABEL);
-  // The list cannot tell whether a credit note cancelled the invoice, so that case still shows as overdue here.
   const now = nowUnix();
 
   let customers = $state<Customer[]>([]);
@@ -202,7 +201,7 @@
               {#if inv.status !== "draft"}
                 <span class="inline-flex items-center gap-1.5">
                   <Badge variant={INVOICE_STATUS_VARIANT[inv.status]}>{INVOICE_STATUS_LABEL[inv.status]}</Badge>
-                  {#if isInvoiceOverdue(inv, false, now)}
+                  {#if isInvoiceOverdue(inv, inv.hasCreditNote, now)}
                     <Badge variant="destructive">Überfällig</Badge>
                   {/if}
                 </span>

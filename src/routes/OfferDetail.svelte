@@ -116,7 +116,10 @@
       lastPdfPath = res.offer.pdfPath;
       convertedInvoiceNumber = linkedInvoiceNumber;
     } catch (e) {
-      if (token === loadToken) error = String(e);
+      if (token === loadToken) {
+        if (offer?.id !== offerId) offer = null;
+        error = String(e);
+      }
     } finally {
       if (token === loadToken) loading = false;
     }

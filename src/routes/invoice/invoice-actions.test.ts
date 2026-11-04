@@ -24,36 +24,51 @@ function invoice(overrides: Partial<TestInvoice> = {}): TestInvoice {
 
 describe("canRecordPayments", () => {
   it("allows a first partial payment on a sent invoice", () => {
-    expect(canRecordPayments(invoice({ status: "sent" }))).toBe(true);
+    expect(canRecordPayments(invoice({ status: "sent" }), false)).toBe(true);
   });
 
   it("allows further payments on a partial invoice", () => {
-    expect(canRecordPayments(invoice({ status: "partial" }))).toBe(true);
+    expect(canRecordPayments(invoice({ status: "partial" }), false)).toBe(true);
   });
 
   it.each(["draft", "paid", "cancelled"] as const)("rejects %s invoices", (status) => {
-    expect(canRecordPayments(invoice({ status }))).toBe(false);
+    expect(canRecordPayments(invoice({ status }), false)).toBe(false);
   });
 
   it("rejects credit notes", () => {
-    expect(canRecordPayments(invoice({ isCreditNote: true }))).toBe(false);
+    expect(canRecordPayments(invoice({ isCreditNote: true }), false)).toBe(false);
+  });
+
+  it("rejects invoices already reversed by a credit note", () => {
+    expect(canRecordPayments(invoice({ status: "sent" }), true)).toBe(false);
+    expect(canRecordPayments(invoice({ status: "partial" }), true)).toBe(false);
   });
 });
 
 describe("showsPayments", () => {
   it("shows the card on a sent invoice without payments", () => {
-    expect(showsPayments(invoice({ status: "sent" }), 0)).toBe(true);
+    expect(showsPayments(invoice({ status: "sent" }), 0, false)).toBe(true);
   });
 
   it("shows the card on a paid invoice only when payments exist", () => {
-    expect(showsPayments(invoice({ status: "paid" }), 2)).toBe(true);
-    expect(showsPayments(invoice({ status: "paid" }), 0)).toBe(false);
+    expect(showsPayments(invoice({ status: "paid" }), 2, false)).toBe(true);
+    expect(showsPayments(invoice({ status: "paid" }), 0, false)).toBe(false);
   });
 
   it("hides the card on drafts, cancelled invoices and credit notes", () => {
-    expect(showsPayments(invoice({ status: "draft" }), 0)).toBe(false);
-    expect(showsPayments(invoice({ status: "cancelled" }), 1)).toBe(false);
-    expect(showsPayments(invoice({ isCreditNote: true, status: "paid" }), 1)).toBe(false);
+    expect(showsPayments(invoice({ status: "draft" }), 0, false)).toBe(false);
+    expect(showsPayments(invoice({ status: "cancelled" }), 1, false)).toBe(false);
+    expect(showsPayments(invoice({ isCreditNote: true, status: "paid" }), 1, false)).toBe(false);
+  });
+});
+
+describe("showsPayments on reversed invoices", () => {
+  it("hides the card when nothing was paid", () => {
+    expect(showsPayments(invoice({ status: "sent" }), 0, true)).toBe(false);
+  });
+
+  it("keeps recorded payments visible", () => {
+    expect(showsPayments(invoice({ status: "partial" }), 2, true)).toBe(true);
   });
 });
 

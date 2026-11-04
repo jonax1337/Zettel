@@ -103,8 +103,10 @@
     return null;
   });
 
-  const paymentCardVisible = $derived(!!invoice && showsPayments(invoice, payments.length));
-  const canMarkPaid = $derived(!!invoice && canRecordPayments(invoice));
+  const paymentCardVisible = $derived(
+    !!invoice && showsPayments(invoice, payments.length, !!cancelledByCreditNote),
+  );
+  const canMarkPaid = $derived(!!invoice && canRecordPayments(invoice, !!cancelledByCreditNote));
   const canCreateCreditNote = $derived(
     !!invoice && creditNoteAllowed(invoice, !!cancelledByCreditNote),
   );
@@ -165,7 +167,10 @@
       reminders = loadedReminders;
       void maybeAutoRevalidate();
     } catch (e) {
-      if (token === loadToken) error = String(e);
+      if (token === loadToken) {
+        if (invoice?.id !== invoiceId) invoice = null;
+        error = String(e);
+      }
     } finally {
       if (token === loadToken) loading = false;
     }
@@ -575,7 +580,7 @@
   {/if}
 
   {#if paymentCardVisible}
-    <PaymentsCard {invoice} {payments} onChanged={load} />
+    <PaymentsCard {invoice} {payments} canAddPayment={canMarkPaid} onChanged={load} />
   {/if}
 
   <SkontoCard {invoice} />
