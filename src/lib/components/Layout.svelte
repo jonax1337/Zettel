@@ -84,7 +84,7 @@
     <Sidebar onOpenSearch={() => (paletteOpen = true)} />
 
     <main class="flex-1 overflow-auto">
-      <div class="mx-auto max-w-6xl px-8 py-8">
+      <div class="@container mx-auto max-w-6xl px-8 py-8">
         {#key router.location}
           <div class="animate-route">
             {@render children?.()}

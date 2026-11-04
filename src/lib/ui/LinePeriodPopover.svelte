@@ -84,7 +84,7 @@
   <Popover.Trigger
     {disabled}
     class={cn(
-      "inline-flex items-center gap-1.5 rounded-md border border-input bg-transparent px-2 h-7 text-xs",
+      "inline-flex max-w-full min-w-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-input bg-transparent px-2 h-7 text-xs",
       "text-muted-foreground transition-colors cursor-pointer",
       "hover:bg-accent hover:text-foreground",
       "data-[state=open]:bg-accent data-[state=open]:text-foreground",
@@ -99,9 +99,9 @@
   >
     <CalendarRange class="size-3.5 shrink-0" />
     {#if hasValue}
-      <span class="tabular-nums">{chipLabel(startIso, endIso)}</span>
+      <span class="truncate tabular-nums">{chipLabel(startIso, endIso)}</span>
     {:else}
-      <span>Leistungsdatum</span>
+      <span class="sr-only @2xl:not-sr-only">Leistungsdatum</span>
     {/if}
   </Popover.Trigger>
 

@@ -12,7 +12,7 @@
   let { loading, receivables }: Props = $props();
 </script>
 
-<Card class="lg:col-span-2">
+<Card class="@4xl:col-span-2">
   <CardContent>
     <div class="flex items-center justify-between mb-3">
       <div class="text-xs text-muted-foreground uppercase tracking-wider">Offene Forderungen</div>

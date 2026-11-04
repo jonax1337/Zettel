@@ -14,14 +14,18 @@
     /** Makes the whole card a link-like button. */
     onclick?: () => void;
     caption?: Snippet;
+    class?: string;
   };
-  let { label, icon: Icon, value, valueClass, iconClass, onclick, caption }: Props = $props();
+  let { label, icon: Icon, value, valueClass, iconClass, onclick, caption, class: className }: Props =
+    $props();
 </script>
 
 <Card
-  class={onclick
-    ? "cursor-pointer hover:bg-muted/30 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
-    : undefined}
+  class={cn(
+    onclick &&
+      "cursor-pointer hover:bg-muted/30 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200",
+    className,
+  )}
   {onclick}
 >
   <CardContent>
@@ -29,7 +33,7 @@
       <span class="text-xs text-muted-foreground uppercase tracking-wider">{label}</span>
       <Icon class={cn("size-4", iconClass ?? "text-muted-foreground")} />
     </div>
-    <div class={cn("text-2xl font-semibold mt-2 tabular-nums", valueClass)}>{value ?? "…"}</div>
+    <div class={cn("text-2xl font-semibold mt-2 tabular-nums whitespace-nowrap", valueClass)}>{value ?? "…"}</div>
     {#if caption}
       <div class="text-xs text-muted-foreground mt-1">{@render caption()}</div>
     {/if}

@@ -194,8 +194,8 @@
 {:else if offer && !customer}
   <p class="text-sm text-destructive">{UNREADABLE_SNAPSHOT_MESSAGE}</p>
 {:else if offer && customer}
-  <div class="flex items-start justify-between gap-4 mb-6">
-    <div>
+  <div class="flex flex-col @3xl:flex-row @3xl:items-start @3xl:justify-between gap-4 mb-6">
+    <div class="min-w-0">
       <div class="flex items-center gap-3">
         <h1 class="text-3xl font-semibold tracking-tight font-mono">{offer.number}</h1>
         <Badge variant={OFFER_STATUS_VARIANT[offer.status]}>{OFFER_STATUS_LABEL[offer.status]}</Badge>

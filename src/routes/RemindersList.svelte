@@ -69,12 +69,12 @@
         <table class="w-full text-sm">
           <thead class="bg-muted/40 text-left">
             <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-              <th class="px-4 py-3 font-medium">Rechnung</th>
-              <th class="px-4 py-3 font-medium">Kunde</th>
-              <th class="px-4 py-3 font-medium text-right">Betrag</th>
-              <th class="px-4 py-3 font-medium">Fällig</th>
-              <th class="px-4 py-3 font-medium">Tage</th>
-              <th class="px-4 py-3 font-medium">Bestehend</th>
+              <th class="px-4 py-3 font-medium whitespace-nowrap">Rechnung</th>
+              <th class="px-4 py-3 font-medium min-w-32">Kunde</th>
+              <th class="px-4 py-3 font-medium text-right whitespace-nowrap">Betrag</th>
+              <th class="hidden @3xl:table-cell px-4 py-3 font-medium whitespace-nowrap">Fällig</th>
+              <th class="px-4 py-3 font-medium whitespace-nowrap">Tage</th>
+              <th class="hidden @4xl:table-cell px-4 py-3 font-medium whitespace-nowrap">Bestehend</th>
               <th class="px-4 py-3 font-medium"></th>
             </tr>
           </thead>
@@ -82,28 +82,30 @@
             {#each overview.data.overdue as o (o.invoice.id)}
               {@const nextLevel = suggestNextLevel(o.existingReminderLevels)}
               <tr class="border-t hover:bg-muted/30 transition-colors">
-                <td class="px-4 py-3 font-mono text-xs">{o.invoice.number}</td>
-                <td class="px-4 py-3">{o.customerName}</td>
-                <td class="px-4 py-3 text-right font-mono">{centsToEur(o.invoice.total)}</td>
-                <td class="px-4 py-3 text-muted-foreground text-xs">{formatDate(o.invoice.dueDate)}</td>
-                <td class="px-4 py-3">
+                <td class="px-4 py-3 font-mono text-xs whitespace-nowrap">{o.invoice.number}</td>
+                <td class="px-4 py-3 min-w-32"><span class="line-clamp-2" title={o.customerName}>{o.customerName}</span></td>
+                <td class="px-4 py-3 text-right font-mono whitespace-nowrap">{centsToEur(o.invoice.total)}</td>
+                <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDate(o.invoice.dueDate)}</td>
+                <td class="px-4 py-3 whitespace-nowrap">
                   <Badge variant={o.daysOverdue > SEVERE_OVERDUE_DAYS ? "destructive" : "warning"}>
                     {o.daysOverdue} Tage
                   </Badge>
                 </td>
-                <td class="px-4 py-3 text-xs text-muted-foreground">
+                <td class="hidden @4xl:table-cell px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                   {#if o.existingReminderLevels.length === 0}—
                   {:else}Stufe {o.existingReminderLevels.join(", ")}
                   {/if}
                 </td>
-                <td class="px-4 py-3 text-right">
+                <td class="px-4 py-3 text-right whitespace-nowrap">
                   <Button
                     size="sm"
                     variant="outline"
+                    title={levelLabel(nextLevel)}
+                    aria-label={levelLabel(nextLevel)}
                     onclick={() => push(`/reminders/new/${o.invoice.id}/${nextLevel}`)}
                   >
                     <Plus class="size-3.5" />
-                    {levelLabel(nextLevel)}
+                    <span class="hidden @3xl:inline">{levelLabel(nextLevel)}</span>
                   </Button>
                 </td>
               </tr>
@@ -125,13 +127,13 @@
         <table class="w-full text-sm">
           <thead class="bg-muted/40 text-left">
             <tr>
-              <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Nummer</SortableTh>
-              <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Datum</SortableTh>
-              <SortableTh column="invoice" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Rechnung</SortableTh>
-              <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Kunde</SortableTh>
-              <SortableTh column="level" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Stufe</SortableTh>
-              <SortableTh column="totalDue" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-4 py-3 text-right">Zu zahlen</SortableTh>
-              <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Status</SortableTh>
+              <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3 whitespace-nowrap">Nummer</SortableTh>
+              <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-4 py-3 whitespace-nowrap">Datum</SortableTh>
+              <SortableTh column="invoice" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3 whitespace-nowrap">Rechnung</SortableTh>
+              <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3 min-w-32">Kunde</SortableTh>
+              <SortableTh column="level" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-4 py-3 whitespace-nowrap">Stufe</SortableTh>
+              <SortableTh column="totalDue" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-4 py-3 text-right whitespace-nowrap">Zu zahlen</SortableTh>
+              <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3 whitespace-nowrap">Status</SortableTh>
             </tr>
           </thead>
           <tbody class="stagger">
@@ -140,13 +142,13 @@
                 class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
                 onclick={() => push(`/reminders/${r.id}`)}
               >
-                <td class="px-4 py-3 font-mono text-xs">{r.number}</td>
-                <td class="px-4 py-3 text-muted-foreground">{formatDate(r.issueDate)}</td>
-                <td class="px-4 py-3 font-mono text-xs">{r.invoiceNumber}</td>
-                <td class="px-4 py-3">{r.customerName}</td>
-                <td class="px-4 py-3">{levelLabel(r.level as ReminderLevel)}</td>
-                <td class="px-4 py-3 text-right font-mono">{centsToEur(r.totalDueCents)}</td>
-                <td class="px-4 py-3">
+                <td class="px-4 py-3 font-mono text-xs whitespace-nowrap">{r.number}</td>
+                <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(r.issueDate)}</td>
+                <td class="px-4 py-3 font-mono text-xs whitespace-nowrap">{r.invoiceNumber}</td>
+                <td class="px-4 py-3 min-w-32"><span class="line-clamp-2" title={r.customerName}>{r.customerName}</span></td>
+                <td class="hidden @3xl:table-cell px-4 py-3 whitespace-nowrap">{levelLabel(r.level as ReminderLevel)}</td>
+                <td class="px-4 py-3 text-right font-mono whitespace-nowrap">{centsToEur(r.totalDueCents)}</td>
+                <td class="px-4 py-3 whitespace-nowrap">
                   <Badge variant={r.status === "sent" ? "success" : "secondary"}>
                     {r.status === "sent" ? "Versendet" : "Entwurf"}
                   </Badge>

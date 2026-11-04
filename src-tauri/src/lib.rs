@@ -1,5 +1,8 @@
-use tauri::{Runtime, plugin::TauriPlugin};
+use std::time::Duration;
+
+use tauri::{AppHandle, Manager, Runtime, plugin::TauriPlugin};
 use tauri_plugin_sql::{Migration, MigrationKind, PluginConfig};
+use tauri_plugin_window_state::StateFlags;
 
 mod backup;
 mod crypto;
@@ -72,6 +75,35 @@ fn sql_plugin<R: Runtime>() -> TauriPlugin<R, Option<PluginConfig>> {
     sql.build()
 }
 
+const MAIN_WINDOW: &str = "main";
+const MAIN_WINDOW_REVEAL_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The main window starts hidden (`tauri.conf.json`) so the saved size is
+/// restored and the first frame painted before anyone sees it. Showing it is
+/// the frontend's job (`main.ts`), so window-state must not show it.
+fn window_state_plugin<R: Runtime>() -> TauriPlugin<R> {
+    tauri_plugin_window_state::Builder::default()
+        .with_state_flags(StateFlags::all() - StateFlags::VISIBLE)
+        .build()
+}
+
+/// Safety net: show the main window even if the frontend never does (e.g. it
+/// failed to load), so the app cannot keep running invisibly.
+fn reveal_main_window_after_timeout(app: AppHandle) {
+    std::thread::spawn(move || {
+        std::thread::sleep(MAIN_WINDOW_REVEAL_TIMEOUT);
+        let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
+            return;
+        };
+        if window.is_visible().unwrap_or(true) {
+            return;
+        }
+        if let Err(e) = window.show() {
+            eprintln!("Could not show main window: {e}");
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Apply any pending restore BEFORE the SQL plugin opens the DB.
@@ -81,10 +113,14 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(window_state_plugin())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(sql_plugin())
+        .setup(|app| {
+            reveal_main_window_after_timeout(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             sidecar::generate_invoice,
             sidecar::generate_offer,

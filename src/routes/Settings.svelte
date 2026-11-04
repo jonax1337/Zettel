@@ -112,7 +112,7 @@
   </div>
 </header>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
+<div class="grid grid-cols-1 sm:grid-cols-2 @4xl:grid-cols-3 gap-4 stagger">
   {#each categories as cat (cat.href)}
     {@const Icon = cat.icon}
     <Card

@@ -149,19 +149,19 @@
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
         <tr>
-          <th class="px-4 py-3 w-10">
+          <th class="px-3 @3xl:px-4 py-3 w-10">
             <Checkbox
               checked={selection.allSelected}
               onCheckedChange={selection.toggleAll}
               aria-label="Alle auswählen"
             />
           </th>
-          <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Nummer</SortableTh>
-          <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Datum</SortableTh>
-          <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Kunde</SortableTh>
-          <SortableTh column="total" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-4 py-3 text-right">Betrag</SortableTh>
-          <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Status</SortableTh>
-          <SortableTh column="dueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Fällig</SortableTh>
+          <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Nummer</SortableTh>
+          <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Datum</SortableTh>
+          <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 min-w-32">Kunde</SortableTh>
+          <SortableTh column="total" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-3 @3xl:px-4 py-3 text-right whitespace-nowrap">Betrag</SortableTh>
+          <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Status</SortableTh>
+          <SortableTh column="dueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 whitespace-nowrap">Fällig</SortableTh>
         </tr>
       </thead>
       <tbody class="stagger">
@@ -170,14 +170,14 @@
             class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
             onclick={() => push(`/invoices/${inv.id}`)}
           >
-            <td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
+            <td class="px-3 @3xl:px-4 py-3" onclick={(e) => e.stopPropagation()}>
               <Checkbox
                 checked={selection.isSelected(inv.id)}
                 onCheckedChange={() => selection.toggle(inv.id)}
                 aria-label={`Rechnung ${inv.number} auswählen`}
               />
             </td>
-            <td class="px-4 py-3 font-mono text-xs">
+            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">
               <span class="inline-flex items-center gap-1.5">
                 {displayInvoiceNumber(inv)}
                 {#if inv.isCreditNote}
@@ -185,9 +185,9 @@
                 {/if}
               </span>
             </td>
-            <td class="px-4 py-3 text-muted-foreground">{formatDate(inv.issueDate)}</td>
-            <td class="px-4 py-3">{inv.customerName}</td>
-            <td class="px-4 py-3 text-right font-mono">
+            <td class="px-3 @3xl:px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(inv.issueDate)}</td>
+            <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={inv.customerName}>{inv.customerName}</span></td>
+            <td class="px-3 @3xl:px-4 py-3 text-right font-mono whitespace-nowrap">
               <span class="inline-flex items-center gap-1.5">
                 {formatMoney(inv.total, inv.currency)}
                 {#if inv.currency && inv.currency !== "EUR"}
@@ -195,14 +195,14 @@
                 {/if}
               </span>
             </td>
-            <td class="px-4 py-3">
+            <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
               {#if inv.status !== "draft"}
                 <Badge variant={INVOICE_STATUS_VARIANT[inv.status]}>{INVOICE_STATUS_LABEL[inv.status]}</Badge>
               {:else}
                 <span class="text-muted-foreground">—</span>
               {/if}
             </td>
-            <td class="px-4 py-3 text-muted-foreground text-xs">
+            <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
               {inv.isCreditNote ? "—" : formatDate(inv.dueDate)}
             </td>
           </tr>

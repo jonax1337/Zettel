@@ -142,19 +142,19 @@
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
         <tr>
-          <th class="px-4 py-3 w-10">
+          <th class="px-3 @3xl:px-4 py-3 w-10">
             <Checkbox
               checked={selection.allSelected}
               onCheckedChange={selection.toggleAll}
               aria-label="Alle auswählen"
             />
           </th>
-          <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Nummer</SortableTh>
-          <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Datum</SortableTh>
-          <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Kunde</SortableTh>
-          <SortableTh column="total" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-4 py-3 text-right">Betrag</SortableTh>
-          <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Status</SortableTh>
-          <SortableTh column="validUntil" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Gültig bis</SortableTh>
+          <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Nummer</SortableTh>
+          <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Datum</SortableTh>
+          <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 min-w-32">Kunde</SortableTh>
+          <SortableTh column="total" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-3 @3xl:px-4 py-3 text-right whitespace-nowrap">Betrag</SortableTh>
+          <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Status</SortableTh>
+          <SortableTh column="validUntil" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 whitespace-nowrap">Gültig bis</SortableTh>
         </tr>
       </thead>
       <tbody class="stagger">
@@ -163,21 +163,21 @@
             class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
             onclick={() => push(`/offers/${off.id}`)}
           >
-            <td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
+            <td class="px-3 @3xl:px-4 py-3" onclick={(e) => e.stopPropagation()}>
               <Checkbox
                 checked={selection.isSelected(off.id)}
                 onCheckedChange={() => selection.toggle(off.id)}
                 aria-label={`Angebot ${off.number} auswählen`}
               />
             </td>
-            <td class="px-4 py-3 font-mono text-xs">{off.number}</td>
-            <td class="px-4 py-3 text-muted-foreground">{formatDate(off.issueDate)}</td>
-            <td class="px-4 py-3">{off.customerName}</td>
-            <td class="px-4 py-3 text-right font-mono">{formatMoney(off.total, off.currency)}</td>
-            <td class="px-4 py-3">
+            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">{off.number}</td>
+            <td class="px-3 @3xl:px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(off.issueDate)}</td>
+            <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={off.customerName}>{off.customerName}</span></td>
+            <td class="px-3 @3xl:px-4 py-3 text-right font-mono whitespace-nowrap">{formatMoney(off.total, off.currency)}</td>
+            <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
               <Badge variant={OFFER_STATUS_VARIANT[off.status]}>{OFFER_STATUS_LABEL[off.status]}</Badge>
             </td>
-            <td class="px-4 py-3 text-muted-foreground text-xs">{formatDate(off.validUntil)}</td>
+            <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDate(off.validUntil)}</td>
           </tr>
         {/each}
       </tbody>

@@ -28,7 +28,7 @@
   const customerItems = $derived(customerFilterItems(customers));
 </script>
 
-<div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+<div class="grid grid-cols-2 @3xl:grid-cols-4 gap-3">
   <div class="flex flex-col gap-1.5">
     <Label class="text-xs text-muted-foreground">Status</Label>
     <Select bind:value={status} items={statusItems} />

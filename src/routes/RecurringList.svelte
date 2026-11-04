@@ -92,25 +92,25 @@
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
         <tr>
-          <SortableTh column="name" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Name</SortableTh>
-          <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Kunde</SortableTh>
-          <SortableTh column="interval" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Intervall</SortableTh>
-          <SortableTh column="nextDueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Nächste Fälligkeit</SortableTh>
-          <SortableTh column="active" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Status</SortableTh>
+          <SortableTh column="name" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2 min-w-32">Name</SortableTh>
+          <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-3 py-2 min-w-32">Kunde</SortableTh>
+          <SortableTh column="interval" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-3 py-2 whitespace-nowrap">Intervall</SortableTh>
+          <SortableTh column="nextDueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2 whitespace-nowrap">Nächste Fälligkeit</SortableTh>
+          <SortableTh column="active" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2 whitespace-nowrap">Status</SortableTh>
           <th class="px-3 py-2 font-medium text-right w-px text-xs uppercase tracking-wider text-muted-foreground">Aktionen</th>
         </tr>
       </thead>
       <tbody class="stagger">
         {#each sortedTemplates as row (row.id)}
           <tr class="border-t">
-            <td class="px-3 py-2">
-              <a href={`/recurring/${row.id}`} use:link class="font-medium hover:underline">
-                {row.name}
+            <td class="px-3 py-2 min-w-32">
+              <a href={`/recurring/${row.id}`} use:link class="font-medium hover:underline" title={row.name}>
+                <span class="line-clamp-2">{row.name}</span>
               </a>
             </td>
-            <td class="px-3 py-2 text-muted-foreground">{row.customerName}</td>
-            <td class="px-3 py-2">{RECURRING_INTERVAL_LABEL[row.interval]}</td>
-            <td class="px-3 py-2">
+            <td class="hidden @3xl:table-cell px-3 py-2 text-muted-foreground min-w-32"><span class="line-clamp-2" title={row.customerName}>{row.customerName}</span></td>
+            <td class="hidden @3xl:table-cell px-3 py-2 whitespace-nowrap">{RECURRING_INTERVAL_LABEL[row.interval]}</td>
+            <td class="px-3 py-2 whitespace-nowrap">
               <span class={isDue(row) && row.active ? "text-warning font-medium" : ""}>
                 {formatDate(row.nextDueDate)}
               </span>
@@ -120,7 +120,7 @@
                 </div>
               {/if}
             </td>
-            <td class="px-3 py-2">
+            <td class="px-3 py-2 whitespace-nowrap">
               {#if row.active}
                 <Badge variant="default">Aktiv</Badge>
               {:else}

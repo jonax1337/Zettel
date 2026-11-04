@@ -64,6 +64,12 @@
     })),
   );
   const formatKpi = (pick: (k: Kpis) => number) => (kpis ? centsToEur(pick(kpis)) : null);
+
+  // Breakpoints follow the content area (@container in Layout), not the window,
+  // because the sidebar eats 240px. Five cards only share one row once each one
+  // fits a six-digit amount; in between they split 3 + 2 on a six-column grid.
+  const KPI_TOP_ROW = "@2xl:col-span-2 @5xl:col-span-1";
+  const KPI_BOTTOM_ROW = "@2xl:col-span-3 @5xl:col-span-1";
   const balanceClass = $derived(
     !kpis || kpis.balance === 0 ? "" : kpis.balance < 0 ? "text-destructive" : "text-success",
   );
@@ -99,12 +105,34 @@
   <p class="mb-6 text-sm text-destructive">Dashboard konnte nicht geladen werden: {dashboard.error}</p>
 {/if}
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6 stagger">
-  <KpiCard label="Umsatz netto" icon={TrendingUp} value={formatKpi((k) => k.revenueNet)} />
-  <KpiCard label="Umsatz brutto" icon={TrendingUp} value={formatKpi((k) => k.revenueGross)} />
-  <KpiCard label="Aufwand netto" icon={TrendingDown} value={formatKpi((k) => k.expenseNet)} />
-  <KpiCard label="Saldo" icon={Scale} value={formatKpi((k) => k.balance)} valueClass={balanceClass} />
+<div class="grid grid-cols-2 @2xl:grid-cols-6 @5xl:grid-cols-5 gap-4 mb-6 stagger">
   <KpiCard
+    class={KPI_TOP_ROW}
+    label="Umsatz netto"
+    icon={TrendingUp}
+    value={formatKpi((k) => k.revenueNet)}
+  />
+  <KpiCard
+    class={KPI_TOP_ROW}
+    label="Umsatz brutto"
+    icon={TrendingUp}
+    value={formatKpi((k) => k.revenueGross)}
+  />
+  <KpiCard
+    class={KPI_TOP_ROW}
+    label="Aufwand netto"
+    icon={TrendingDown}
+    value={formatKpi((k) => k.expenseNet)}
+  />
+  <KpiCard
+    class={KPI_BOTTOM_ROW}
+    label="Saldo"
+    icon={Scale}
+    value={formatKpi((k) => k.balance)}
+    valueClass={balanceClass}
+  />
+  <KpiCard
+    class="col-span-2 {KPI_BOTTOM_ROW}"
     label="Offene Posten"
     icon={Clock}
     value={formatKpi((k) => k.openTotal)}
@@ -144,8 +172,8 @@
   </KpiCard>
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-  <Card class="lg:col-span-2">
+<div class="grid grid-cols-1 @4xl:grid-cols-3 gap-4 mb-6">
+  <Card class="@4xl:col-span-2">
     <CardContent>
       <div class="mb-3">
         <div class="text-xs text-muted-foreground uppercase tracking-wider">Umsatz pro Monat</div>
@@ -180,7 +208,7 @@
   <TaxReserveCard reserve={taxReserve.data} />
 {/if}
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+<div class="grid grid-cols-1 @4xl:grid-cols-3 gap-4 mb-6">
   <ReceivablesCard
     loading={dashboard.loading}
     receivables={data?.receivables ?? { daysOverdue: null, openTotal: 0, openCount: 0 }}
