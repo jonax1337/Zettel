@@ -34,6 +34,14 @@ export function reverseChargeAvailability(input: ReverseChargeAvailability): Rec
   return { third_country: thirdCountry, intra_eu: thirdCountry && !!input.customer?.vatId };
 }
 
+/** True when the chosen type is no longer allowed, e.g. after switching to a customer without VAT ID. */
+export function isSelectedReverseChargeBlocked(
+  selected: ReverseChargeType,
+  availability: Record<Exclude<ReverseChargeType, "none">, boolean>,
+): boolean {
+  return selected !== "none" && !availability[selected];
+}
+
 /** Why an option is unavailable; empty when everything the sender can offer is selectable. */
 export function reverseChargeBlockedReason(input: ReverseChargeAvailability): string {
   if (input.senderIsKleinunternehmer) return "Nicht verfügbar für Kleinunternehmer (§ 19 UStG).";

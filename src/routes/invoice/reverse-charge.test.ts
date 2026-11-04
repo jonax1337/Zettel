@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isSelectedReverseChargeBlocked,
   restoreVatRates,
   reverseChargeAvailability,
   reverseChargeBlockedReason,
@@ -87,5 +88,18 @@ describe("reverse-charge availability", () => {
     const noVatId = { senderIsKleinunternehmer: false, senderVatId: "", customer: { vatId: "FR1" } };
     expect(reverseChargeAvailability(noVatId)).toEqual({ third_country: false, intra_eu: false });
     expect(reverseChargeBlockedReason(noVatId)).toContain("Eigene USt-IdNr.");
+  });
+});
+
+describe("isSelectedReverseChargeBlocked", () => {
+  const onlyThirdCountry = { third_country: true, intra_eu: false };
+
+  it("flags a selected option that became unavailable", () => {
+    expect(isSelectedReverseChargeBlocked("intra_eu", onlyThirdCountry)).toBe(true);
+  });
+
+  it("does not flag available options or no selection", () => {
+    expect(isSelectedReverseChargeBlocked("third_country", onlyThirdCountry)).toBe(false);
+    expect(isSelectedReverseChargeBlocked("none", { third_country: false, intra_eu: false })).toBe(false);
   });
 });
