@@ -22,6 +22,9 @@
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
   import { CheckCircle2, Send } from "$lib/brand-icons";
   import BackLink from "./parts/entity/BackLink.svelte";
+  import { createDocumentActions } from "./parts/entity/document-actions.svelte";
+  import DocumentLoadMessage from "./parts/entity/DocumentLoadMessage.svelte";
+  import PdfLocation from "./parts/entity/PdfLocation.svelte";
   import { parseCustomerSnapshot, UNREADABLE_SNAPSHOT_MESSAGE } from "./invoice/customer-snapshot";
   import CustomerSnapshotCard from "./invoice/CustomerSnapshotCard.svelte";
   import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
@@ -54,12 +57,11 @@
   let reminders = $state<Reminder[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let busy = $state(false);
+
+  const actions = createDocumentActions({ reload: load });
 
   let lastPdfPath = $state<string | null>(null);
   let pdfVersions = $state<PdfVersion[]>([]);
-  let pdfError = $state<string | null>(null);
-  let generating = $state(false);
   let revalidating = $state(false);
   // Invoices validated by an older build carry a stale 'unavailable' status; each is re-checked once.
   let autoRevalidatedId: number | null = null;
@@ -188,21 +190,6 @@
     }
   }
 
-  async function action(label: string, fn: () => Promise<unknown>) {
-    busy = true;
-    error = null;
-    try {
-      await fn();
-      await load();
-      toast.success(label);
-    } catch (e) {
-      error = String(e);
-      toast.error("Aktion fehlgeschlagen", String(e));
-    } finally {
-      busy = false;
-    }
-  }
-
   function openSendDialog() {
     dialogDate = toIsoDate(nowUnix());
     sendDialogOpen = true;
@@ -218,7 +205,7 @@
     const { id } = invoice;
     const sentAt = fromIsoDate(dialogDate);
     sendDialogOpen = false;
-    await action("Als versendet markiert", () => markSent(id, sentAt));
+    await actions.run("Als versendet markiert", () => markSent(id, sentAt));
   }
 
   async function confirmPaid() {
@@ -226,18 +213,17 @@
     const { id } = invoice;
     const paidAt = fromIsoDate(dialogDate);
     paidDialogOpen = false;
-    await action("Als bezahlt markiert", () => markPaid(id, paidAt));
+    await actions.run("Als bezahlt markiert", () => markPaid(id, paidAt));
   }
 
   async function performDelete() {
     if (!invoice) return;
-    try {
-      await deleteInvoice(invoice.id);
-      toast.success("Rechnung gelöscht");
-      push("/invoices");
-    } catch (e) {
-      toast.error("Löschen fehlgeschlagen", String(e));
-    }
+    const { id } = invoice;
+    await actions.remove({
+      remove: () => deleteInvoice(id),
+      deletedLabel: "Rechnung gelöscht",
+      redirectTo: "/invoices",
+    });
   }
 
   async function performCreateCreditNote() {
@@ -294,24 +280,15 @@
 
   async function onGeneratePdf() {
     if (!invoice) return;
-    generating = true;
-    pdfError = null;
-    try {
-      const res = await generateInvoicePdf(invoice.id);
-      if (res.success) {
-        lastPdfPath = res.pdfPath;
+    const { id } = invoice;
+    await actions.generatePdf(
+      () => generateInvoicePdf(id),
+      async ({ pdfPath, kositReport }) => {
+        lastPdfPath = pdfPath;
         await load();
-        announcePdfCreated(res.pdfPath, res.kositReport);
-      } else {
-        pdfError = `${res.error.code}: ${res.error.message}`;
-        toast.error("PDF-Generierung fehlgeschlagen", res.error.message);
-      }
-    } catch (e) {
-      pdfError = String(e);
-      toast.error("PDF-Generierung fehlgeschlagen", String(e));
-    } finally {
-      generating = false;
-    }
+        announcePdfCreated(pdfPath, kositReport);
+      },
+    );
   }
 
   function announcePdfCreated(pdfPath: string, report: ValidationReport | null | undefined) {
@@ -324,28 +301,21 @@
       toast.action(report?.valid ? "PDF erstellt · ZUGFeRD-konform" : "PDF erstellt", openAction);
     }
   }
-
-  async function usePdfFile(open: (path: string) => Promise<void>) {
-    if (!lastPdfPath) return;
-    try {
-      await open(lastPdfPath);
-    } catch (e) {
-      pdfError = String(e);
-    }
-  }
 </script>
 
 <header class="mb-6">
   <BackLink href="/invoices">Rechnungen</BackLink>
 </header>
 
-{#if loading}
-  <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if error && !invoice}
-  <p class="text-sm text-destructive">{error}</p>
-{:else if invoice && !customer}
-  <p class="text-sm text-destructive">{UNREADABLE_SNAPSHOT_MESSAGE}</p>
-{:else if invoice && customer}
+<DocumentLoadMessage
+  {loading}
+  {error}
+  hasDocument={!!invoice}
+  unreadable={!customer}
+  unreadableMessage={UNREADABLE_SNAPSHOT_MESSAGE}
+/>
+
+{#if !loading && invoice && customer}
   {#if invoice.isCreditNote}
     <NoticeCard tone="warning" title="Stornorechnung">
       <div class="mt-0.5 text-muted-foreground">
@@ -413,21 +383,21 @@
     <div class="flex flex-wrap gap-2">
       <InvoicePdfActions
         hasPdf={!!lastPdfPath}
-        {generating}
+        generating={actions.generating}
         {revalidating}
         onGenerate={onGeneratePdf}
-        onOpen={() => usePdfFile(openPath)}
-        onReveal={() => usePdfFile(revealItemInDir)}
+        onOpen={() => actions.usePdfFile(lastPdfPath, openPath)}
+        onReveal={() => actions.usePdfFile(lastPdfPath, revealItemInDir)}
         {onRevalidate}
       />
 
       {#if invoice.status === "draft"}
-        <Button disabled={busy} onclick={openSendDialog}>
+        <Button disabled={actions.busy} onclick={openSendDialog}>
           <Send />
           Versenden
         </Button>
       {:else if invoice.status === "sent"}
-        <Button disabled={busy} onclick={openPaidDialog}>
+        <Button disabled={actions.busy} onclick={openPaidDialog}>
           <CheckCircle2 />
           Bezahlt
         </Button>
@@ -438,21 +408,21 @@
         {creatableReminderLevel}
         {canCreateCreditNote}
         {creatingCreditNote}
-        onReopenDraft={() => action("Zurück zu Entwurf", () => reopenDraft(invoice!.id))}
-        onCancelInvoice={() => action("Storniert", () => cancelInvoice(invoice!.id))}
+        onReopenDraft={() => actions.run("Zurück zu Entwurf", () => reopenDraft(invoice!.id))}
+        onCancelInvoice={() => actions.run("Storniert", () => cancelInvoice(invoice!.id))}
         onRequestCreditNote={() => (confirmCreditNoteOpen = true)}
         onRequestDelete={() => (confirmDeleteOpen = true)}
       />
     </div>
   </div>
 
-  {#if pdfError}
-    <PdfErrorNotice message={pdfError} />
+  {#if actions.pdfError}
+    <PdfErrorNotice message={actions.pdfError} />
   {:else if lastPdfPath}
     {#if pdfVersions.length > 0}
       <PdfVersionList versions={pdfVersions} />
     {:else}
-      <p class="text-xs text-muted-foreground mb-4 font-mono">PDF: {lastPdfPath}</p>
+      <PdfLocation path={lastPdfPath} />
     {/if}
   {/if}
 

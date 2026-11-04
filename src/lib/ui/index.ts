@@ -20,6 +20,7 @@ export { default as ConfirmDialog } from "./ConfirmDialog.svelte";
 export { default as DropdownMenu } from "./DropdownMenu.svelte";
 export { default as DropdownItem } from "./DropdownItem.svelte";
 export { default as DropdownSeparator } from "./DropdownSeparator.svelte";
+export { default as MoreActionsTrigger } from "./MoreActionsTrigger.svelte";
 export { default as Titlebar } from "./Titlebar.svelte";
 export { default as CommandPalette } from "./CommandPalette.svelte";
 export { default as CatalogPicker } from "./CatalogPicker.svelte";
