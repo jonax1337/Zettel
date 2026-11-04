@@ -13,11 +13,13 @@
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
   import { applySort } from "$lib/utils/sort";
-  import { Button, Card, Badge, SortableTh, EmptyState } from "$lib/ui";
+  import { Button, Card, Badge, EmptyState, PageHeader, QueryBoundary, StatusBadge } from "$lib/ui";
   import { Plus, AlertTriangle } from "$lib/brand-icons";
   import { pluralize } from "./parts/entity/format";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
+  import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
+  import { REMINDER_STATUS } from "./parts/entity/status";
   import { suggestNextLevel } from "./parts/reminder/reminder-level";
 
   const SEVERE_OVERDUE_DAYS = 30;
@@ -34,6 +36,15 @@
 
   type SortKey = "number" | "issueDate" | "invoice" | "customer" | "level" | "totalDue" | "status";
   const sort = createListSort<SortKey>("reminders", { key: "issueDate", dir: "desc" });
+  const columns: SortColumn<SortKey>[] = [
+    { key: "number", label: "Nummer", class: "whitespace-nowrap" },
+    { key: "issueDate", label: "Datum", class: "hidden @3xl:table-cell whitespace-nowrap" },
+    { key: "invoice", label: "Rechnung", class: "whitespace-nowrap" },
+    { key: "customer", label: "Kunde", class: "min-w-32" },
+    { key: "level", label: "Stufe", class: "hidden @3xl:table-cell whitespace-nowrap" },
+    { key: "totalDue", label: "Zu zahlen", align: "right", class: "text-right whitespace-nowrap" },
+    { key: "status", label: "Status", class: "whitespace-nowrap" },
+  ];
   const sortedReminders = $derived(
     applySort(overview.data.reminders, sort.state, {
       number: (r) => r.number,
@@ -47,20 +58,12 @@
   );
 </script>
 
-<header class="mb-6 flex items-end justify-between gap-4">
-  <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Mahnungen</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      {overview.data.reminders.length} {pluralize(overview.data.reminders.length, "Mahnung", "Mahnungen")} · {overview.data.overdue.length} {pluralize(overview.data.overdue.length, "überfällige Rechnung", "überfällige Rechnungen")}
-    </p>
-  </div>
-</header>
+<PageHeader
+  title="Mahnungen"
+  subtitle="{overview.data.reminders.length} {pluralize(overview.data.reminders.length, "Mahnung", "Mahnungen")} · {overview.data.overdue.length} {pluralize(overview.data.overdue.length, "überfällige Rechnung", "überfällige Rechnungen")}"
+/>
 
-{#if overview.error}
-  <p class="text-sm text-destructive">Fehler: {overview.error}</p>
-{:else if overview.loading}
-  <p class="text-sm text-muted-foreground">Lade…</p>
-{:else}
+<QueryBoundary query={overview}>
   {#if overview.data.overdue.length > 0}
     <section class="mb-8">
       <h2 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
@@ -129,17 +132,7 @@
     {:else}
       <Card class="overflow-hidden py-0">
         <table class="w-full text-sm">
-          <thead class="bg-muted/40 text-left">
-            <tr>
-              <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3 whitespace-nowrap">Nummer</SortableTh>
-              <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-4 py-3 whitespace-nowrap">Datum</SortableTh>
-              <SortableTh column="invoice" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3 whitespace-nowrap">Rechnung</SortableTh>
-              <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3 min-w-32">Kunde</SortableTh>
-              <SortableTh column="level" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-4 py-3 whitespace-nowrap">Stufe</SortableTh>
-              <SortableTh column="totalDue" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-4 py-3 text-right whitespace-nowrap">Zu zahlen</SortableTh>
-              <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3 whitespace-nowrap">Status</SortableTh>
-            </tr>
-          </thead>
+          <SortableHeaderRow {sort} {columns} />
           <tbody class="stagger">
             {#each sortedReminders as r (r.id)}
               <tr
@@ -153,9 +146,7 @@
                 <td class="hidden @3xl:table-cell px-4 py-3 whitespace-nowrap">{levelLabel(r.level as ReminderLevel)}</td>
                 <td class="px-4 py-3 text-right font-mono whitespace-nowrap">{centsToEur(r.totalDueCents)}</td>
                 <td class="px-4 py-3 whitespace-nowrap">
-                  <Badge variant={r.status === "sent" ? "success" : "secondary"}>
-                    {r.status === "sent" ? "Versendet" : "Entwurf"}
-                  </Badge>
+                  <StatusBadge status={r.status} table={REMINDER_STATUS} />
                 </td>
               </tr>
             {/each}
@@ -164,4 +155,4 @@
       </Card>
     {/if}
   </section>
-{/if}
+</QueryBoundary>

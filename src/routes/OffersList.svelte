@@ -14,7 +14,18 @@
   import { listCustomers } from "$lib/db/queries";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
-  import { Button, Card, Badge, Checkbox, SortableTh, BulkActionBar, ConfirmDialog, toast, EmptyState } from "$lib/ui";
+  import {
+    Button,
+    Card,
+    Checkbox,
+    BulkActionBar,
+    ConfirmDialog,
+    toast,
+    EmptyState,
+    PageHeader,
+    QueryBoundary,
+    StatusBadge,
+  } from "$lib/ui";
   import { Plus, Send, Ban, Trash2 } from "$lib/brand-icons";
   import { applySort } from "$lib/utils/sort";
   import DocumentListFilters from "./invoice/DocumentListFilters.svelte";
@@ -22,14 +33,11 @@
   import { pluralize } from "./parts/entity/format";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
-  import {
-    ALL,
-    numberOrAll,
-    statusFilterItems,
-  } from "./invoice/list-support";
-  import { OFFER_STATUS_LABEL, OFFER_STATUS_VARIANT } from "./offer/status";
+  import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
+  import { ALL, numberOrAll, statusFilterItems } from "./invoice/list-support";
+  import { OFFER_STATUS } from "./offer/status";
 
-  const statusItems = statusFilterItems(OFFER_STATUS_LABEL);
+  const statusItems = statusFilterItems(OFFER_STATUS);
 
   let customers = $state<Customer[]>([]);
   let years = $state<number[]>([]);
@@ -46,19 +54,23 @@
     search,
   });
 
-  const offers = createQueryState<OfferListRow[]>([], () => listOffers(filter));
+  let expiryChecked = false;
 
-  async function expireOutdatedOffers() {
-    try {
-      await expireDueOffers();
-    } catch (e) {
-      toast.error("Abgelaufene Angebote konnten nicht aktualisiert werden", String(e));
+  const offers = createQueryState<OfferListRow[]>([], async () => {
+    // Read the filter before the first await so the surrounding effect tracks it.
+    const currentFilter = filter;
+    if (!expiryChecked) {
+      expiryChecked = true;
+      try {
+        await expireDueOffers();
+      } catch (e) {
+        toast.error("Abgelaufene Angebote konnten nicht aktualisiert werden", String(e));
+      }
     }
-    await offers.reload();
-  }
+    return listOffers(currentFilter);
+  });
 
   $effect(() => {
-    expireOutdatedOffers();
     listCustomers().then((c) => (customers = c));
     getOfferYears().then((y) => (years = y));
   });
@@ -69,6 +81,14 @@
 
   type SortKey = "number" | "issueDate" | "customer" | "total" | "status" | "validUntil";
   const sort = createListSort<SortKey>("offers", { key: "issueDate", dir: "desc" });
+  const columns: SortColumn<SortKey>[] = [
+    { key: "number", label: "Nummer", class: "whitespace-nowrap" },
+    { key: "issueDate", label: "Datum", class: "whitespace-nowrap" },
+    { key: "customer", label: "Kunde", class: "min-w-32" },
+    { key: "total", label: "Betrag", align: "right", class: "text-right whitespace-nowrap" },
+    { key: "status", label: "Status", class: "whitespace-nowrap" },
+    { key: "validUntil", label: "Gültig bis", class: "hidden @3xl:table-cell whitespace-nowrap" },
+  ];
   const sortedOffers = $derived(
     applySort(offers.data, sort.state, {
       number: (r) => r.number,
@@ -106,18 +126,17 @@
   }
 </script>
 
-<header class="mb-6 flex items-end justify-between gap-4">
-  <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Angebote</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      {offers.data.length} {pluralize(offers.data.length, "Angebot", "Angebote")}
-    </p>
-  </div>
-  <Button onclick={() => push("/offers/new")}>
-    <Plus />
-    Neues Angebot
-  </Button>
-</header>
+<PageHeader
+  title="Angebote"
+  subtitle="{offers.data.length} {pluralize(offers.data.length, "Angebot", "Angebote")}"
+>
+  {#snippet actions()}
+    <Button onclick={() => push("/offers/new")}>
+      <Plus />
+      Neues Angebot
+    </Button>
+  {/snippet}
+</PageHeader>
 
 <div class="mb-5">
   <DocumentListFilters
@@ -131,32 +150,13 @@
   />
 </div>
 
-{#if offers.error}
-  <p class="text-sm text-destructive">Fehler: {offers.error}</p>
-{:else if offers.loading}
-  <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if offers.data.length === 0}
-  <EmptyState variant={search ? "no-results" : "empty"} message="Keine Angebote gefunden." />
-{:else}
+<QueryBoundary query={offers} isEmpty={offers.data.length === 0}>
+  {#snippet empty()}
+    <EmptyState variant={search ? "no-results" : "empty"} message="Keine Angebote gefunden." />
+  {/snippet}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
-      <thead class="bg-muted/40 text-left">
-        <tr>
-          <th class="px-3 @3xl:px-4 py-3 w-10">
-            <Checkbox
-              checked={selection.allSelected}
-              onCheckedChange={selection.toggleAll}
-              aria-label="Alle auswählen"
-            />
-          </th>
-          <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Nummer</SortableTh>
-          <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Datum</SortableTh>
-          <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 min-w-32">Kunde</SortableTh>
-          <SortableTh column="total" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-3 @3xl:px-4 py-3 text-right whitespace-nowrap">Betrag</SortableTh>
-          <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Status</SortableTh>
-          <SortableTh column="validUntil" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 whitespace-nowrap">Gültig bis</SortableTh>
-        </tr>
-      </thead>
+      <SortableHeaderRow {sort} {columns} cellClass="px-3 @3xl:px-4 py-3" {selection} />
       <tbody class="stagger">
         {#each sortedOffers as off (off.id)}
           <tr
@@ -175,7 +175,7 @@
             <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={off.customerName}>{off.customerName}</span></td>
             <td class="px-3 @3xl:px-4 py-3 text-right font-mono whitespace-nowrap">{formatMoney(off.total, off.currency)}</td>
             <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
-              <Badge variant={OFFER_STATUS_VARIANT[off.status]}>{OFFER_STATUS_LABEL[off.status]}</Badge>
+              <StatusBadge status={off.status} table={OFFER_STATUS} />
             </td>
             <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDate(off.validUntil)}</td>
           </tr>
@@ -183,7 +183,7 @@
       </tbody>
     </table>
   </Card>
-{/if}
+</QueryBoundary>
 
 <BulkActionBar count={selection.selected.length} label={selectedLabel} onClear={selection.clear}>
   {#if canBulkMarkSent}

@@ -14,7 +14,18 @@
   import { listCustomers } from "$lib/db/queries";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
-  import { Button, Card, Badge, Checkbox, SortableTh, BulkActionBar, ConfirmDialog, EmptyState } from "$lib/ui";
+  import {
+    Button,
+    Card,
+    Badge,
+    Checkbox,
+    BulkActionBar,
+    ConfirmDialog,
+    EmptyState,
+    PageHeader,
+    QueryBoundary,
+    StatusBadge,
+  } from "$lib/ui";
   import { Plus, Send, Trash2, CheckCircle2 } from "$lib/brand-icons";
   import { applySort } from "$lib/utils/sort";
   import DocumentListFilters from "./invoice/DocumentListFilters.svelte";
@@ -22,14 +33,11 @@
   import { pluralize } from "./parts/entity/format";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
-  import {
-    ALL,
-    numberOrAll,
-    statusFilterItems,
-  } from "./invoice/list-support";
-  import { INVOICE_STATUS_LABEL, INVOICE_STATUS_VARIANT } from "./invoice/status";
+  import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
+  import { ALL, numberOrAll, statusFilterItems } from "./invoice/list-support";
+  import { INVOICE_STATUS } from "./invoice/status";
 
-  const statusItems = statusFilterItems(INVOICE_STATUS_LABEL);
+  const statusItems = statusFilterItems(INVOICE_STATUS);
 
   let customers = $state<Customer[]>([]);
   let years = $state<number[]>([]);
@@ -66,6 +74,14 @@
 
   type SortKey = "number" | "issueDate" | "customer" | "total" | "status" | "dueDate";
   const sort = createListSort<SortKey>("invoices", { key: "issueDate", dir: "desc" });
+  const columns: SortColumn<SortKey>[] = [
+    { key: "number", label: "Nummer", class: "whitespace-nowrap" },
+    { key: "issueDate", label: "Datum", class: "whitespace-nowrap" },
+    { key: "customer", label: "Kunde", class: "min-w-32" },
+    { key: "total", label: "Betrag", align: "right", class: "text-right whitespace-nowrap" },
+    { key: "status", label: "Status", class: "whitespace-nowrap" },
+    { key: "dueDate", label: "Fällig", class: "hidden @3xl:table-cell whitespace-nowrap" },
+  ];
   const sortedInvoices = $derived(
     applySort(visibleInvoices, sort.state, {
       number: (r) => r.number,
@@ -102,18 +118,17 @@
   }
 </script>
 
-<header class="mb-6 flex items-end justify-between gap-4">
-  <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Rechnungen</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      {visibleInvoices.length} {pluralize(visibleInvoices.length, "Rechnung", "Rechnungen")}
-    </p>
-  </div>
-  <Button onclick={() => push("/invoices/new")}>
-    <Plus />
-    Neue Rechnung
-  </Button>
-</header>
+<PageHeader
+  title="Rechnungen"
+  subtitle="{visibleInvoices.length} {pluralize(visibleInvoices.length, "Rechnung", "Rechnungen")}"
+>
+  {#snippet actions()}
+    <Button onclick={() => push("/invoices/new")}>
+      <Plus />
+      Neue Rechnung
+    </Button>
+  {/snippet}
+</PageHeader>
 
 <div class="mb-3">
   <DocumentListFilters
@@ -138,32 +153,13 @@
   </label>
 </div>
 
-{#if invoices.error}
-  <p class="text-sm text-destructive">Fehler: {invoices.error}</p>
-{:else if invoices.loading}
-  <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if visibleInvoices.length === 0}
-  <EmptyState variant={search ? "no-results" : "empty"} message="Keine Rechnungen gefunden." />
-{:else}
+<QueryBoundary query={invoices} isEmpty={visibleInvoices.length === 0}>
+  {#snippet empty()}
+    <EmptyState variant={search ? "no-results" : "empty"} message="Keine Rechnungen gefunden." />
+  {/snippet}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
-      <thead class="bg-muted/40 text-left">
-        <tr>
-          <th class="px-3 @3xl:px-4 py-3 w-10">
-            <Checkbox
-              checked={selection.allSelected}
-              onCheckedChange={selection.toggleAll}
-              aria-label="Alle auswählen"
-            />
-          </th>
-          <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Nummer</SortableTh>
-          <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Datum</SortableTh>
-          <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 min-w-32">Kunde</SortableTh>
-          <SortableTh column="total" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-3 @3xl:px-4 py-3 text-right whitespace-nowrap">Betrag</SortableTh>
-          <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Status</SortableTh>
-          <SortableTh column="dueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 whitespace-nowrap">Fällig</SortableTh>
-        </tr>
-      </thead>
+      <SortableHeaderRow {sort} {columns} cellClass="px-3 @3xl:px-4 py-3" {selection} />
       <tbody class="stagger">
         {#each sortedInvoices as inv (inv.id)}
           <tr
@@ -197,7 +193,7 @@
             </td>
             <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
               {#if inv.status !== "draft"}
-                <Badge variant={INVOICE_STATUS_VARIANT[inv.status]}>{INVOICE_STATUS_LABEL[inv.status]}</Badge>
+                <StatusBadge status={inv.status} table={INVOICE_STATUS} />
               {:else}
                 <span class="text-muted-foreground">—</span>
               {/if}
@@ -210,7 +206,7 @@
       </tbody>
     </table>
   </Card>
-{/if}
+</QueryBoundary>
 
 <BulkActionBar count={selection.selected.length} label={selectedLabel} onClear={selection.clear}>
   {#if canBulkMarkSent}
