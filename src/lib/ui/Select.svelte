@@ -11,6 +11,9 @@
     placeholder?: string;
     disabled?: boolean;
     name?: string;
+    id?: string;
+    "aria-label"?: string;
+    "aria-labelledby"?: string;
     class?: string;
     onValueChange?: (value: T) => void;
   };
@@ -21,6 +24,9 @@
     placeholder = "Auswählen…",
     disabled,
     name,
+    id,
+    "aria-label": ariaLabel,
+    "aria-labelledby": ariaLabelledby,
     class: klass,
     onValueChange,
   }: Props = $props();
@@ -37,6 +43,9 @@
   items={items.map((i) => ({ value: i.value, label: i.label, disabled: i.disabled }))}
 >
   <SelectPrimitive.Trigger
+    {id}
+    aria-label={ariaLabel}
+    aria-labelledby={ariaLabelledby}
     class={cn(
       "border-input data-[placeholder]:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 dark:hover:bg-input/50 flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
       klass,

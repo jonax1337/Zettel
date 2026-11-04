@@ -44,7 +44,10 @@
   }
 </script>
 
-<th class={cn("font-medium select-none", klass)}>
+<th
+  class={cn("font-medium select-none", klass)}
+  aria-sort={isActive && activeDir ? (activeDir === "asc" ? "ascending" : "descending") : "none"}
+>
   <button
     type="button"
     onclick={onClick}
