@@ -11,9 +11,9 @@
     markSent,
     reopenDraft,
   } from "$lib/db/offers";
-  import { getInvoice } from "$lib/db/invoices";
+  import { displayInvoiceNumber, getInvoice } from "$lib/db/invoices";
   import type { Offer, OfferItem } from "$lib/db/schema";
-  import { formatDate } from "$lib/utils/date";
+  import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { SUPPLY_KIND_LABEL } from "./invoice/supply-kind";
   import { generateOfferPdf } from "$lib/sidecar/offer";
   import {
@@ -42,29 +42,44 @@
   } from "$lib/brand-icons";
   import { parseCustomerSnapshot, UNREADABLE_SNAPSHOT_MESSAGE } from "./invoice/customer-snapshot";
   import CustomerSnapshotCard from "./invoice/CustomerSnapshotCard.svelte";
+  import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
+  import { sendDateWarning } from "./invoice/date-warnings";
   import LineItemsTable from "./invoice/LineItemsTable.svelte";
   import PdfErrorNotice from "./invoice/PdfErrorNotice.svelte";
   import { INVALID_ROUTE_ID_MESSAGE, parseRouteId } from "./invoice/route-id";
   import TextSection from "./invoice/TextSection.svelte";
+  import { canReopenOffer } from "./offer/offer-actions";
   import { OFFER_STATUS_LABEL, OFFER_STATUS_VARIANT } from "./offer/status";
 
   type Props = { params?: { id?: string } };
   let { params }: Props = $props();
 
+  type BusyTask = "action" | "pdf" | "convert";
+
   let offer = $state<Offer | null>(null);
   let items = $state<OfferItem[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let busy = $state(false);
-  let generating = $state(false);
-  let converting = $state(false);
+  // One flag for every mutating action, so status changes, PDF generation and conversion never overlap.
+  let busyTask = $state<BusyTask | null>(null);
+  const busy = $derived(busyTask !== null);
+  const generating = $derived(busyTask === "pdf");
+  const converting = $derived(busyTask === "convert");
+  let loadToken = 0;
   let lastPdfPath = $state<string | null>(null);
   let pdfError = $state<string | null>(null);
   let confirmDeleteOpen = $state(false);
+  let confirmAcceptOpen = $state(false);
+  let confirmRejectOpen = $state(false);
+  let sendDialogOpen = $state(false);
+  let sendDate = $state(toIsoDate(nowUnix()));
   let convertedInvoiceNumber = $state<string | null>(null);
 
   const customer = $derived(offer ? parseCustomerSnapshot(offer.customerSnapshot) : null);
   const awaitsConversion = $derived(offer?.status === "accepted" && !offer.convertedInvoiceId);
+  const sendWarning = $derived(
+    offer && sendDate ? sendDateWarning(fromIsoDate(sendDate), offer.issueDate, nowUnix()) : null,
+  );
 
   $effect(() => {
     void params?.id;
@@ -79,23 +94,31 @@
       loading = false;
       return;
     }
-    loading = true;
+    const token = ++loadToken;
+    // Reloading the offer that is already shown keeps the page (scroll, dialogs) in place.
+    if (offer?.id !== offerId) {
+      loading = true;
+      pdfError = null;
+    }
     error = null;
     try {
       const res = await getOffer(offerId);
+      if (token !== loadToken) return;
       if (!res) {
         offer = null;
         error = "Angebot nicht gefunden.";
         return;
       }
+      const linkedInvoiceNumber = await findConvertedInvoiceNumber(res.offer);
+      if (token !== loadToken) return;
       offer = res.offer;
       items = res.items;
       lastPdfPath = res.offer.pdfPath;
-      convertedInvoiceNumber = await findConvertedInvoiceNumber(res.offer);
+      convertedInvoiceNumber = linkedInvoiceNumber;
     } catch (e) {
-      error = String(e);
+      if (token === loadToken) error = String(e);
     } finally {
-      loading = false;
+      if (token === loadToken) loading = false;
     }
   }
 
@@ -103,26 +126,48 @@
     if (!source.convertedInvoiceId) return null;
     try {
       const converted = await getInvoice(source.convertedInvoiceId);
-      return converted?.invoice.number ?? null;
+      return converted ? displayInvoiceNumber(converted.invoice) : null;
     } catch (e) {
       toast.error("Verknüpfte Rechnung konnte nicht geladen werden", String(e));
       return null;
     }
   }
 
-  async function action(label: string, fn: () => Promise<void>) {
-    busy = true;
-    error = null;
+  async function runExclusive(task: BusyTask, fn: () => Promise<void>) {
+    if (busyTask) return;
+    busyTask = task;
     try {
       await fn();
-      await load();
-      toast.success(label);
-    } catch (e) {
-      error = String(e);
-      toast.error("Aktion fehlgeschlagen", String(e));
     } finally {
-      busy = false;
+      busyTask = null;
     }
+  }
+
+  async function action(label: string, fn: () => Promise<void>) {
+    await runExclusive("action", async () => {
+      error = null;
+      try {
+        await fn();
+        await load();
+        toast.success(label);
+      } catch (e) {
+        error = String(e);
+        toast.error("Aktion fehlgeschlagen", String(e));
+      }
+    });
+  }
+
+  function openSendDialog() {
+    sendDate = toIsoDate(nowUnix());
+    sendDialogOpen = true;
+  }
+
+  async function confirmSend() {
+    if (!offer || busy) return;
+    const { id } = offer;
+    const sentAt = fromIsoDate(sendDate);
+    sendDialogOpen = false;
+    await action("Als versendet markiert", () => markSent(id, sentAt));
   }
 
   async function performDelete() {
@@ -138,24 +183,23 @@
 
   async function onGeneratePdf() {
     if (!offer) return;
-    generating = true;
-    pdfError = null;
-    try {
-      const res = await generateOfferPdf(offer.id);
-      if (res.success) {
-        lastPdfPath = res.pdfPath;
-        toast.success("PDF erstellt");
-        await openPath(res.pdfPath);
-      } else {
-        pdfError = `${res.error.code}: ${res.error.message}`;
-        toast.error("PDF-Generierung fehlgeschlagen", res.error.message);
+    const { id } = offer;
+    await runExclusive("pdf", async () => {
+      pdfError = null;
+      try {
+        const res = await generateOfferPdf(id);
+        if (res.success) {
+          lastPdfPath = res.pdfPath;
+          toast.action("PDF erstellt", { label: "Öffnen", onClick: () => openPath(res.pdfPath) });
+        } else {
+          pdfError = `${res.error.code}: ${res.error.message}`;
+          toast.error("PDF-Generierung fehlgeschlagen", res.error.message);
+        }
+      } catch (e) {
+        pdfError = String(e);
+        toast.error("PDF-Generierung fehlgeschlagen", String(e));
       }
-    } catch (e) {
-      pdfError = String(e);
-      toast.error("PDF-Generierung fehlgeschlagen", String(e));
-    } finally {
-      generating = false;
-    }
+    });
   }
 
   async function usePdfFile(open: (path: string) => Promise<void>) {
@@ -169,17 +213,18 @@
 
   async function onConvert() {
     if (!offer) return;
-    converting = true;
-    try {
-      const newId = await convertToInvoice(offer.id);
-      const created = await getInvoice(newId);
-      toast.success(`Rechnung ${created?.invoice.number ?? `#${newId}`} erstellt — bitte Daten prüfen`);
-      push(`/invoices/${newId}/edit`);
-    } catch (e) {
-      toast.error("Umwandlung fehlgeschlagen", String(e));
-    } finally {
-      converting = false;
-    }
+    const { id } = offer;
+    await runExclusive("convert", async () => {
+      try {
+        const newId = await convertToInvoice(id);
+        const created = await getInvoice(newId);
+        const label = created ? displayInvoiceNumber(created.invoice) : `#${newId}`;
+        toast.success(`Rechnung ${label} erstellt — bitte Daten prüfen`);
+        push(`/invoices/${newId}/edit`);
+      } catch (e) {
+        toast.error("Umwandlung fehlgeschlagen", String(e));
+      }
+    });
   }
 </script>
 
@@ -206,13 +251,13 @@
     </div>
     <div class="flex flex-wrap gap-2">
       {#if awaitsConversion}
-        <Button disabled={converting} onclick={onConvert}>
+        <Button disabled={busy} onclick={onConvert}>
           <FileSignature />
           {converting ? "Erzeuge…" : "In Rechnung umwandeln"}
         </Button>
       {/if}
 
-      <Button disabled={generating} onclick={onGeneratePdf} variant={awaitsConversion ? "outline" : "default"}>
+      <Button disabled={busy} onclick={onGeneratePdf} variant={awaitsConversion ? "outline" : "default"}>
         <FileDown />
         {generating ? "Erzeuge…" : lastPdfPath ? "PDF neu erzeugen" : "PDF erzeugen"}
       </Button>
@@ -237,21 +282,17 @@
           <Pencil />
           Bearbeiten
         </Button>
-        <Button disabled={busy} onclick={() => action("Als versendet markiert", () => markSent(offer!.id))}>
+        <Button disabled={busy} onclick={openSendDialog}>
           <Send />
           Versenden
         </Button>
       {/if}
       {#if offer.status === "sent"}
-        <Button disabled={busy} onclick={() => action("Als angenommen markiert", () => markAccepted(offer!.id))}>
+        <Button disabled={busy} onclick={() => (confirmAcceptOpen = true)}>
           <CheckCircle2 />
           Angenommen
         </Button>
-        <Button
-          variant="outline"
-          disabled={busy}
-          onclick={() => action("Als abgelehnt markiert", () => markRejected(offer!.id))}
-        >
+        <Button variant="outline" disabled={busy} onclick={() => (confirmRejectOpen = true)}>
           <XCircle />
           Abgelehnt
         </Button>
@@ -268,8 +309,8 @@
           </button>
         {/snippet}
 
-        {#if offer.status === "sent" || offer.status === "rejected" || offer.status === "expired"}
-          <DropdownItem onSelect={() => action("Zurück zu Entwurf", () => reopenDraft(offer!.id))}>
+        {#if canReopenOffer(offer)}
+          <DropdownItem disabled={busy} onSelect={() => action("Zurück zu Entwurf", () => reopenDraft(offer!.id))}>
             <Undo2 /> Zurück zu Entwurf
           </DropdownItem>
         {/if}
@@ -369,5 +410,36 @@
     confirmLabel="Löschen"
     destructive
     onConfirm={performDelete}
+  />
+
+  <ConfirmDialog
+    bind:open={confirmAcceptOpen}
+    title="Angebot als angenommen markieren?"
+    description={`${offer.number} gilt danach als angenommen und kann in eine Rechnung umgewandelt werden.`}
+    confirmLabel="Angenommen"
+    onConfirm={() => action("Als angenommen markiert", () => markAccepted(offer!.id))}
+  />
+
+  <ConfirmDialog
+    bind:open={confirmRejectOpen}
+    title="Angebot als abgelehnt markieren?"
+    description={`${offer.number} gilt danach als abgelehnt und kann nicht in eine Rechnung umgewandelt werden.`}
+    confirmLabel="Abgelehnt"
+    destructive
+    onConfirm={() => action("Als abgelehnt markiert", () => markRejected(offer!.id))}
+  />
+
+  <DateConfirmDialog
+    bind:open={sendDialogOpen}
+    bind:date={sendDate}
+    title="Als versendet markieren"
+    description="Das Versanddatum wird im Angebot festgehalten."
+    dateInputId="offer-send-date"
+    dateLabel="Versanddatum"
+    hint="Standard ist heute. Für Nacherfassung das tatsächliche Versanddatum eintragen."
+    confirmLabel="Versenden"
+    warning={sendWarning}
+    {busy}
+    onConfirm={confirmSend}
   />
 {/if}

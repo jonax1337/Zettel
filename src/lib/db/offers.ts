@@ -370,10 +370,11 @@ export async function deleteOffer(id: number): Promise<void> {
 
 // --- Status transitions ---
 
-export async function markSent(id: number): Promise<void> {
+/** sentAt defaults to now; pass the original send date (unix seconds) when recording an offer after the fact. */
+export async function markSent(id: number, sentAt?: number): Promise<void> {
   await execute(
-    "UPDATE offers SET status = 'sent', sent_at = unixepoch(), updated_at = unixepoch() WHERE id = ? AND status = 'draft'",
-    [id],
+    "UPDATE offers SET status = 'sent', sent_at = COALESCE(?, unixepoch()), updated_at = unixepoch() WHERE id = ? AND status = 'draft'",
+    [sentAt ?? null, id],
   );
 }
 
@@ -393,7 +394,8 @@ export async function markRejected(id: number): Promise<void> {
 
 export async function reopenDraft(id: number): Promise<void> {
   await execute(
-    "UPDATE offers SET status = 'draft', sent_at = NULL, accepted_at = NULL, rejected_at = NULL, updated_at = unixepoch() WHERE id = ? AND status IN ('sent','rejected','expired')",
+    `UPDATE offers SET status = 'draft', sent_at = NULL, accepted_at = NULL, rejected_at = NULL, updated_at = unixepoch()
+     WHERE id = ? AND (status IN ('sent','rejected','expired') OR (status = 'accepted' AND converted_invoice_id IS NULL))`,
     [id],
   );
 }
