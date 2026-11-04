@@ -6,7 +6,7 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 - **Released:** v0.22.0 on `main`. Auto-Update aktiv seit v0.4.3.
 - **DB schema:** `user_version = 28` (letzte Migration `0027_v0.23_lifecycle.sql`).
 - **Dev-Linie:** neue Arbeit auf `release/vX.Y`-Branches.
-- **Test-Suite:** 640 Vitest-Cases (`pnpm test`, Zeitzone in `vite.config.ts` auf Europe/Berlin gepinnt) + 262 Pytest-Cases (`sidecar/tests/`, inkl. CLI-Logik; `sidecar/tests/fixtures/invoice-parity.json` wird von Vitest und Pytest gemeinsam geprüft) + 81 Rust-Tests (`cargo test`). Pure-Math (Totals/Tax/Skonto/Currency/Date/DATEV) ist voll abgedeckt, Sidecar deckt ZUGFeRD-XML-Goldens + KoSIT-Validator-Roundtrip + i18n ab.
+- **Test-Suite:** 902 Vitest-Cases (`pnpm test`, Zeitzone in `vite.config.ts` auf Europe/Berlin gepinnt) + 270 Pytest-Cases (`sidecar/tests/`, inkl. CLI-Logik; 19 weitere brauchen den lokalen KoSIT-Validator; `sidecar/tests/fixtures/invoice-parity.json` wird von Vitest und Pytest gemeinsam geprüft) + 116 Rust-Tests (`cargo test`). Pure-Math (Totals/Tax/Skonto/Currency/Date/DATEV) ist voll abgedeckt, Sidecar deckt ZUGFeRD-XML-Goldens + KoSIT-Validator-Roundtrip + i18n ab.
 
 ## Architecture
 
