@@ -253,6 +253,7 @@
                   disabled={items.length === 1 || readOnly}
                   class="inline-flex items-center justify-center size-8 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30 disabled:pointer-events-none transition-colors"
                   title="Position entfernen"
+                  aria-label="Position entfernen"
                 >
                   <Trash2 class="size-4" />
                 </button>
