@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
   import { push } from "svelte-spa-router";
   import {
     createCatalogItem,
@@ -91,6 +92,7 @@
     error = null;
     try {
       await persist();
+      unsaved.markClean();
       push("/catalog");
     } catch (err) {
       error = String(err);
@@ -99,6 +101,11 @@
       saving = false;
     }
   }
+
+  const unsaved = guardUnsavedChanges(
+    () => [form, priceText],
+    () => !loading,
+  );
 </script>
 
 <header class="mb-6">

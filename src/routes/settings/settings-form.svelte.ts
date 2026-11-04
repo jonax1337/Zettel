@@ -1,6 +1,7 @@
 import { loadSettings, saveSettings } from "$lib/db/queries";
 import type { Settings } from "$lib/db/schema";
 import { toast } from "$lib/ui/toast.svelte";
+import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
 
 /** Load/edit/save lifecycle shared by the settings pages that edit the settings row as one form. */
 export class SettingsForm {
@@ -8,6 +9,10 @@ export class SettingsForm {
   loading = $state(true);
   saving = $state(false);
   error = $state<string | null>(null);
+  private readonly unsaved = guardUnsavedChanges(
+    () => this.settings,
+    () => !this.loading,
+  );
 
   async load() {
     try {
@@ -26,6 +31,7 @@ export class SettingsForm {
     this.error = null;
     try {
       await saveSettings(this.settings);
+      this.unsaved.markClean();
       toast.success("Einstellungen gespeichert");
     } catch (e) {
       this.error = String(e);

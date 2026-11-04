@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
   import { link, push } from "svelte-spa-router";
   import { listCustomers, loadSettings } from "$lib/db/queries";
   import {
@@ -217,6 +218,7 @@
     error = null;
     try {
       await persist(input);
+      unsaved.markClean();
       push("/recurring");
     } catch (err) {
       error = String(err);
@@ -234,6 +236,23 @@
     else if (items.length === 0) error = "Mindestens eine Position erforderlich.";
     else void save(buildInput(customerId));
   }
+
+  const unsaved = guardUnsavedChanges(
+    () => ({
+      name,
+      customerIdStr,
+      interval,
+      startDateIso,
+      paymentTermsDays,
+      isReverseCharge,
+      supplyKind,
+      active,
+      notes,
+      paymentTerms,
+      items,
+    }),
+    () => !loading && referenceDataLoaded,
+  );
 </script>
 
 <header class="mb-6">

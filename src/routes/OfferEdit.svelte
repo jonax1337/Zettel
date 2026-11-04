@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
   import { push } from "svelte-spa-router";
   import { listCustomers, loadSettings } from "$lib/db/queries";
   import {
@@ -259,7 +260,9 @@
     saving = true;
     error = null;
     try {
-      push(`/offers/${await persist(buildInput(customerId))}`);
+      const savedId = await persist(buildInput(customerId));
+      unsaved.markClean();
+      push(`/offers/${savedId}`);
     } catch (err) {
       error = String(err);
       toast.error("Speichern fehlgeschlagen", String(err));
@@ -271,6 +274,27 @@
   function onCancel() {
     push(mode === "edit" && id !== null ? `/offers/${id}` : "/offers");
   }
+
+  const unsaved = guardUnsavedChanges(
+    () => ({
+      customerIdStr,
+      issueDateIso,
+      validUntilIso,
+      notes,
+      introText,
+      isReverseCharge,
+      supplyKind,
+      serviceMode,
+      servicePeriodStartIso,
+      servicePeriodEndIso,
+      items,
+      currency,
+      exchangeRate,
+      skonto,
+      pdfLanguage,
+    }),
+    () => !loading && referenceDataLoaded,
+  );
 </script>
 
 <header class="mb-6">

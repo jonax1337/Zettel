@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
   import { link, push } from "svelte-spa-router";
   import { untrack } from "svelte";
   import { listVendors } from "$lib/db/queries";
@@ -292,6 +293,7 @@
     try {
       const savedId = await persist(buildInput(vendorId));
       if (savedId !== null && validation) await recordValidation(savedId, validation);
+      unsaved.markClean();
       push("/expenses");
     } catch (err) {
       error = String(err);
@@ -310,6 +312,7 @@
     try {
       await action(id);
       toast.success(successMessage);
+      unsaved.markClean();
       push("/expenses");
     } catch (e) {
       toast.error(failureTitle, String(e));
@@ -320,6 +323,11 @@
     updateStatusAndLeave((expenseId) => markExpensePaid(expenseId), "Als bezahlt markiert", "Fehler");
   const onCancel = () => updateStatusAndLeave(cancelExpense, "Storniert", "Fehler");
   const onDelete = () => updateStatusAndLeave(deleteExpense, "Gelöscht", "Löschen fehlgeschlagen");
+
+  const unsaved = guardUnsavedChanges(
+    () => [form, pdfPath],
+    () => !loading,
+  );
 </script>
 
 <header class="mb-6 flex items-start justify-between gap-4">
