@@ -101,6 +101,8 @@
   let confirmDuplicateOpen = $state(false);
   let duplicateOf = $state<ComparableExpense | null>(null);
   let afterDuplicateConfirm = $state<AfterSave>("leave");
+  // Both save buttons submit the form, so the browser still enforces the required fields.
+  let submitMode: AfterSave = "leave";
 
   let importing = $state(false);
   let importedNote = $state<string | null>(null);
@@ -419,7 +421,7 @@
 
   function onSubmit(e: SubmitEvent) {
     e.preventDefault();
-    return requestSave("leave");
+    return requestSave(submitMode);
   }
 
   async function updateStatusAndLeave(
@@ -579,11 +581,11 @@
 
     <div class="flex items-center gap-3 mt-6">
       {#if editable}
-        <Button type="submit" disabled={saving}>
+        <Button type="submit" disabled={saving} onclick={() => (submitMode = "leave")}>
           {saving ? "Speichere…" : mode === "new" ? "Erfassen" : "Speichern"}
         </Button>
         {#if mode === "new"}
-          <Button type="button" variant="outline" disabled={saving} onclick={() => requestSave("again")}>
+          <Button type="submit" variant="outline" disabled={saving} onclick={() => (submitMode = "again")}>
             Speichern & weitere erfassen
           </Button>
         {/if}
