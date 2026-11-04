@@ -13,10 +13,16 @@ defensively rather than trying to keep up.
 """
 from __future__ import annotations
 
-import re
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from xml.etree import ElementTree as ET
+
+from .booking import make_booking, to_cents
+
+DEBIT_INDICATOR = "DBIT"
+ISO_DATE_LENGTH = len("YYYY-MM-DD")
+FORMAT_SNIFF_LENGTH = 512
+XML_PROLOG_SNIFF_LENGTH = 50
 
 
 def _strip_ns(tag: str) -> str:
@@ -54,86 +60,66 @@ def _text(elem: ET.Element | None) -> str:
 
 def _amount_cents(elem: ET.Element | None) -> int:
     """Convert an <Amt Ccy="EUR">123.45</Amt> element to integer cents."""
-    if elem is None or elem.text is None:
-        return 0
-    s = elem.text.strip()
-    if not s:
+    text = _text(elem)
+    if not text:
         return 0
     try:
         # CAMT amounts use '.' as decimal separator always (ISO 20022).
-        return int((Decimal(s) * 100).to_integral_value())
-    except Exception:
-        return 0
+        return to_cents(Decimal(text))
+    except InvalidOperation as e:
+        raise ValueError(f"Ungültiger Betrag im CAMT-Eintrag: {text!r}") from e
+
+
+def _entry_date(entry: ET.Element) -> str:
+    """Valuta date (Wertstellung), else booking date, as ISO YYYY-MM-DD."""
+    for container in ("ValDt", "BookgDt"):
+        parent = _find_direct(entry, container)
+        # CAMT dates are ISO-8601: YYYY-MM-DD (Dt) or YYYY-MM-DDTHH:MM:SS (DtTm).
+        date_text = _text(_find(parent, "Dt")) or _text(_find(parent, "DtTm"))
+        if date_text:
+            return date_text[:ISO_DATE_LENGTH]
+    return ""
+
+
+def _counterparty_name(entry: ET.Element, is_debit: bool) -> str:
+    """Name of the other account: the creditor for outgoing, the debtor for incoming money."""
+    party = _find(entry, "Cdtr" if is_debit else "Dbtr")
+    return _text(_find(party, "Nm"))
+
+
+def _purpose(entry: ET.Element) -> str:
+    return " ".join(text for text in map(_text, _findall(entry, "Ustrd")) if text)
 
 
 def _entry_to_booking(entry: ET.Element) -> dict[str, Any]:
     amount_el = _find_direct(entry, "Amt")
-    amount = _amount_cents(amount_el)
-    currency = ""
-    if amount_el is not None:
-        currency = amount_el.attrib.get("Ccy", "")
-
     # CdtDbtInd: CRDT = Geldeingang (positiv), DBIT = Geldausgang (negativ).
-    cdtdbt = _text(_find_direct(entry, "CdtDbtInd"))
-    if cdtdbt == "DBIT":
-        amount = -amount
+    is_debit = _text(_find_direct(entry, "CdtDbtInd")) == DEBIT_INDICATOR
+    amount = _amount_cents(amount_el)
 
-    # Valuta-Datum (Wertstellung) — sonst Buchungstag.
-    val_dt = _find(_find_direct(entry, "ValDt"), "Dt") or _find(
-        _find_direct(entry, "ValDt"), "DtTm"
+    return make_booking(
+        valuta_date=_entry_date(entry),
+        amount_cent=-amount if is_debit else amount,
+        currency=amount_el.attrib.get("Ccy", "") if amount_el is not None else "",
+        party_name=_counterparty_name(entry, is_debit),
+        purpose=_purpose(entry),
+        transaction_id=_text(_find(entry, "AcctSvcrRef")) or _text(_find(entry, "EndToEndId")),
     )
-    book_dt = _find(_find_direct(entry, "BookgDt"), "Dt") or _find(
-        _find_direct(entry, "BookgDt"), "DtTm"
-    )
-    date_str = _text(val_dt) or _text(book_dt) or ""
-    # CAMT dates are ISO-8601: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS
-    if date_str:
-        date_str = date_str[:10]
-
-    # Transaction-Details (Verwendungszweck, Partner).
-    purpose_parts: list[str] = []
-    for ustrd in _findall(entry, "Ustrd"):
-        purpose_parts.append(_text(ustrd))
-    purpose = " ".join(p for p in purpose_parts if p).strip()
-
-    # Partner name — different paths depending on credit/debit direction:
-    # Kreditor (incoming) = RltdPties/Cdtr/Nm; Debitor (outgoing) = Dbtr/Nm.
-    # Wir nehmen das jeweils "andere" Konto, d. h. den Kontrahenten.
-    partner = ""
-    for path_name in ("Dbtr", "Cdtr"):
-        node = _find(entry, path_name)
-        if node is not None:
-            nm = _find(node, "Nm")
-            if nm is not None and _text(nm):
-                partner = _text(nm)
-                break
-
-    tx_id = _text(_find(entry, "AcctSvcrRef")) or _text(_find(entry, "EndToEndId"))
-
-    return {
-        "valutaDate": date_str,
-        "amountCent": amount,
-        "currency": currency,
-        "partyName": partner,
-        "purpose": purpose,
-        "transactionId": tx_id,
-    }
 
 
 def parse_camt053(content: str) -> list[dict[str, Any]]:
     """Parse a CAMT.053 file. Returns list of booking dicts."""
     root = ET.fromstring(content)
-    entries = [c for c in root.iter() if _strip_ns(c.tag) == "Ntry"]
-    return [_entry_to_booking(e) for e in entries]
+    return [_entry_to_booking(e) for e in _findall(root, "Ntry")]
 
 
 def detect_format(content: str) -> str:
     """Return 'camt' if the content looks like CAMT.053 XML, else 'mt940'."""
-    head = content.lstrip()[:512]
+    head = content.lstrip()[:FORMAT_SNIFF_LENGTH]
     if head.startswith("<?xml") or "<Document" in head or "camt.053" in head.lower():
         return "camt"
     # MT940 uses `:20:` tag near the top.
-    if re.search(r":20:", head):
+    if ":20:" in head:
         return "mt940"
     # Fallback — try XML first.
-    return "camt" if "<" in head[:50] else "mt940"
+    return "camt" if "<" in head[:XML_PROLOG_SNIFF_LENGTH] else "mt940"

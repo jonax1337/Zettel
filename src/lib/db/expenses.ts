@@ -1,12 +1,19 @@
-import { execute, getDb, select } from "./client";
-import { getVendor } from "./queries";
+import { execute, insert, select } from "./client";
+import { drawNextNumber } from "./numbering";
 import type {
   Expense,
   ExpenseItem,
   ExpenseStatus,
   VendorSnapshot,
 } from "./schema";
-import { formatInvoiceNumber } from "$lib/utils/invoice-number";
+import { parseSnapshot } from "./snapshot-json";
+import { buildVendorSnapshot } from "./snapshots";
+import { nowUnix } from "$lib/utils/date";
+import { computeLineTotal, computeTotals as computeTotalsPure, type Totals } from "$lib/utils/totals";
+
+export { computeLineTotal };
+
+const MISSING_VENDOR_NAME = "—";
 
 type ExpenseRow = {
   id: number;
@@ -116,14 +123,6 @@ export type ExpenseFormInput = {
   items: ExpenseItemInput[];
 };
 
-import {
-  computeLineTotal as computeLineTotalPure,
-  computeTotals as computeTotalsPure,
-  type Totals,
-} from "$lib/utils/totals";
-
-export const computeLineTotal = computeLineTotalPure;
-
 export function computeTotals(
   items: ExpenseItemInput[],
   opts: { isReverseCharge: boolean },
@@ -143,7 +142,7 @@ export type ExpenseFilter = {
 
 export type ExpenseListRow = Expense & { vendorName: string };
 
-export async function listExpenses(filter: ExpenseFilter = {}): Promise<ExpenseListRow[]> {
+function buildExpenseFilter(filter: ExpenseFilter): { where: string; binds: unknown[] } {
   const wheres: string[] = [];
   const binds: unknown[] = [];
 
@@ -167,8 +166,12 @@ export async function listExpenses(filter: ExpenseFilter = {}): Promise<ExpenseL
     binds.push(q, q, q);
   }
 
-  const where = wheres.length ? `WHERE ${wheres.join(" AND ")}` : "";
-  const rows = await select<ExpenseRow & { vendor_name: string }>(
+  return { where: wheres.length ? `WHERE ${wheres.join(" AND ")}` : "", binds };
+}
+
+export async function listExpenses(filter: ExpenseFilter = {}): Promise<ExpenseListRow[]> {
+  const { where, binds } = buildExpenseFilter(filter);
+  const rows = await select<ExpenseRow & { vendor_name: string | null }>(
     `SELECT e.*, v.name AS vendor_name
      FROM expenses e
      LEFT JOIN vendors v ON v.id = e.vendor_id
@@ -178,7 +181,7 @@ export async function listExpenses(filter: ExpenseFilter = {}): Promise<ExpenseL
   );
   return rows.map((r) => ({
     ...mapExpense(r),
-    vendorName: r.vendor_name ?? "—",
+    vendorName: r.vendor_name ?? MISSING_VENDOR_NAME,
   }));
 }
 
@@ -196,7 +199,7 @@ export async function getExpense(
 
 export async function getExpenseYears(): Promise<number[]> {
   const rows = await select<{ y: number }>(
-    "SELECT DISTINCT CAST(strftime('%Y', issue_date, 'unixepoch') AS INTEGER) AS y FROM expenses ORDER BY y DESC",
+    "SELECT DISTINCT CAST(strftime('%Y', issue_date, 'unixepoch', 'localtime') AS INTEGER) AS y FROM expenses ORDER BY y DESC",
   );
   return rows.map((r) => r.y).filter((y) => Number.isFinite(y));
 }
@@ -206,39 +209,6 @@ export async function listCategories(): Promise<string[]> {
     "SELECT DISTINCT category FROM expense_items WHERE category IS NOT NULL AND category != '' ORDER BY category COLLATE NOCASE ASC",
   );
   return rows.map((r) => r.category);
-}
-
-// --- Numbering ---
-
-async function nextInternalNumber(): Promise<string> {
-  const db = await getDb();
-  await db.execute(
-    "UPDATE settings SET expense_number_counter = expense_number_counter + 1, updated_at = unixepoch() WHERE id = 1",
-  );
-  const rows = await db.select<
-    Array<{ expense_number_counter: number; expense_number_format: string }>
-  >(
-    "SELECT expense_number_counter, expense_number_format FROM settings WHERE id = 1",
-  );
-  const counter = rows[0]?.expense_number_counter ?? 1;
-  const pattern = rows[0]?.expense_number_format ?? "EX-{YYYY}-{NNNN}";
-  return formatInvoiceNumber(pattern, counter);
-}
-
-async function buildVendorSnapshot(vendorId: number): Promise<VendorSnapshot> {
-  const v = await getVendor(vendorId);
-  if (!v) throw new Error(`Vendor ${vendorId} not found`);
-  return {
-    vendorNumber: v.vendorNumber,
-    name: v.name,
-    contactPerson: v.contactPerson,
-    street: v.street,
-    postalCode: v.postalCode,
-    city: v.city,
-    country: v.country,
-    email: v.email,
-    vatId: v.vatId,
-  };
 }
 
 async function writeItems(expenseId: number, items: ExpenseItemInput[]): Promise<void> {
@@ -280,9 +250,9 @@ export async function createExpense(
   const snapshot = await buildVendorSnapshot(input.vendorId);
   const isReverseCharge = input.reverseChargeType !== "none";
   const totals = computeTotals(input.items, { isReverseCharge });
-  const internalNumber = await nextInternalNumber();
+  const internalNumber = await drawNextNumber("expense", input.issueDate);
 
-  const res = await execute(
+  const id = await insert(
     `INSERT INTO expenses
       (number, internal_number, vendor_id, vendor_snapshot, issue_date, due_date,
        status, subtotal, vat_amount, total, currency,
@@ -306,7 +276,6 @@ export async function createExpense(
       input.notes,
     ],
   );
-  const id = Number(res.lastInsertId ?? 0);
   await writeItems(id, input.items);
   return id;
 }
@@ -362,11 +331,22 @@ export async function deleteExpense(id: number): Promise<void> {
 }
 
 export async function markExpensePaid(id: number, paidDate?: number): Promise<void> {
-  const ts = paidDate ?? Math.floor(Date.now() / 1000);
+  const ts = paidDate ?? nowUnix();
   await execute(
     `UPDATE expenses SET status = 'paid', paid_date = ?, updated_at = unixepoch()
      WHERE id = ? AND status IN ('open','draft')`,
     [ts, id],
+  );
+}
+
+export async function recordExpenseValidation(
+  id: number,
+  status: NonNullable<Expense["lastValidationStatus"]>,
+  findingsCount: number | null,
+): Promise<void> {
+  await execute(
+    "UPDATE expenses SET last_validation_status = ?, last_validated_at = unixepoch(), last_validation_findings_count = ? WHERE id = ?",
+    [status, findingsCount, id],
   );
 }
 
@@ -386,6 +366,21 @@ export type ExpenseForExport = {
   vendorVatId: string | null;
 };
 
+async function loadItemsByExpense(expenseIds: number[]): Promise<Map<number, ExpenseItem[]>> {
+  const placeholders = expenseIds.map(() => "?").join(",");
+  const itemRows = await select<ExpenseItemRow>(
+    `SELECT * FROM expense_items WHERE expense_id IN (${placeholders}) ORDER BY expense_id, position`,
+    expenseIds,
+  );
+  const itemsByExpense = new Map<number, ExpenseItem[]>();
+  for (const row of itemRows) {
+    const items = itemsByExpense.get(row.expense_id) ?? [];
+    items.push(mapItem(row));
+    itemsByExpense.set(row.expense_id, items);
+  }
+  return itemsByExpense;
+}
+
 export async function loadExpensesForExport(
   dateFromUnix: number,
   dateToUnix: number,
@@ -402,55 +397,15 @@ export async function loadExpensesForExport(
     [dateFromUnix, dateToUnix],
   );
   if (!rows.length) return [];
-  const ids = rows.map((r) => r.id);
-  const placeholders = ids.map(() => "?").join(",");
-  const itemRows = await select<ExpenseItemRow>(
-    `SELECT * FROM expense_items WHERE expense_id IN (${placeholders}) ORDER BY expense_id, position`,
-    ids,
-  );
-  const itemsByExp = new Map<number, ExpenseItem[]>();
-  for (const ir of itemRows) {
-    const arr = itemsByExp.get(ir.expense_id) ?? [];
-    arr.push(mapItem(ir));
-    itemsByExp.set(ir.expense_id, arr);
-  }
+
+  const itemsByExpense = await loadItemsByExpense(rows.map((r) => r.id));
   return rows.map((r) => {
-    const expense = mapExpense(r);
-    let vendorName = "—";
-    let vendorVatId: string | null = null;
-    try {
-      const snap = JSON.parse(r.vendor_snapshot) as { name?: string; vatId?: string | null };
-      vendorName = snap.name ?? "—";
-      vendorVatId = snap.vatId ?? null;
-    } catch {
-      /* defaults */
-    }
+    const vendor = parseSnapshot<VendorSnapshot>(r.vendor_snapshot, `Lieferantensnapshot ${r.internal_number}`);
     return {
-      expense,
-      items: itemsByExp.get(r.id) ?? [],
-      vendorName,
-      vendorVatId,
+      expense: mapExpense(r),
+      items: itemsByExpense.get(r.id) ?? [],
+      vendorName: vendor.name ?? MISSING_VENDOR_NAME,
+      vendorVatId: vendor.vatId ?? null,
     };
   });
-}
-
-// --- Aggregates for dashboard ---
-
-export async function sumOpenExpenses(): Promise<{ count: number; total: number }> {
-  const rows = await select<{ c: number; t: number | null }>(
-    "SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS t FROM expenses WHERE status = 'open'",
-  );
-  return { count: rows[0]?.c ?? 0, total: rows[0]?.t ?? 0 };
-}
-
-export async function sumExpensesYtd(year?: number): Promise<number> {
-  const y = year ?? new Date().getFullYear();
-  const start = Math.floor(new Date(y, 0, 1).getTime() / 1000);
-  const end = Math.floor(new Date(y + 1, 0, 1).getTime() / 1000);
-  const rows = await select<{ t: number | null }>(
-    `SELECT COALESCE(SUM(total), 0) AS t FROM expenses
-     WHERE status = 'paid' AND paid_date >= ? AND paid_date < ?`,
-    [start, end],
-  );
-  return rows[0]?.t ?? 0;
 }

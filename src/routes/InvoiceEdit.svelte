@@ -1,48 +1,43 @@
 <script lang="ts">
-  import { link, push } from "svelte-spa-router";
-  import { invoke } from "@tauri-apps/api/core";
+  import { push } from "svelte-spa-router";
   import { listCustomers, loadSettings } from "$lib/db/queries";
   import {
-    computeLineTotal,
     computeTotals,
     createInvoice,
     getInvoice,
     updateInvoice,
     type InvoiceFormInput,
-    type InvoiceItemInput,
     type ReverseChargeType,
+    type SupplyKind,
   } from "$lib/db/invoices";
-  import type { Customer, Settings } from "$lib/db/schema";
-  import { centsToEur, eurStringToCents } from "$lib/utils/money";
+  import type { Customer, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
+  import { computeEurTotalCent } from "$lib/utils/currency";
+  import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
+  import { Button, Card, CardContent, DatePicker, Label, Select, Textarea, toast } from "$lib/ui";
+  import { AlertTriangle, CalendarRange } from "$lib/brand-icons";
+  import BackLink from "./parts/entity/BackLink.svelte";
+  import CurrencyFields from "./invoice/CurrencyFields.svelte";
+  import LineItemsEditor from "./invoice/LineItemsEditor.svelte";
+  import SkontoFields from "./invoice/SkontoFields.svelte";
+  import SupplyKindField from "./invoice/SupplyKindField.svelte";
+  import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
+  import { vatRateForNewItem } from "./parts/entity/vat";
+  import { exchangeRateError, linePeriodError, servicePeriodError } from "./invoice/form-validation";
   import {
-    SUPPORTED_CURRENCIES,
-    computeEurTotalCent,
-    formatMoney,
-    parseExchangeRateScaled,
-  } from "$lib/utils/currency";
+    lineItemFromStored,
+    newLineItem,
+    toLineItemInputs,
+    zeroVatRates,
+    type LineItemForm,
+  } from "./invoice/line-items";
+  import { INVALID_ROUTE_ID_MESSAGE, parseRouteId } from "./invoice/route-id";
   import {
-    addDaysUnix,
-    fromIsoDate,
-    nowUnix,
-    toIsoDate,
-  } from "$lib/utils/date";
-  import {
-    Button,
-    Input,
-    Textarea,
-    Label,
-    Card,
-    CardContent,
-    CatalogPicker,
-    Checkbox,
-    DatePicker,
-    LinePeriodPopover,
-    Select,
-    toast,
-  } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2, AlertTriangle, CalendarRange, FileText, X, Package, GripVertical, ChevronUp, ChevronDown } from "$lib/brand-icons";
-  import { flip } from "svelte/animate";
-  import type { CatalogItem } from "$lib/db/schema";
+    defaultSkontoForm,
+    skontoFormFromSettings,
+    skontoFormFromStored,
+    skontoInput,
+    type SkontoForm,
+  } from "./invoice/skonto-form";
 
   type Props = {
     mode: "new" | "edit";
@@ -50,418 +45,222 @@
   };
   let { mode, params }: Props = $props();
 
+  const DEFAULT_DUE_DAYS = 14;
+  const PDF_LANGUAGE_ITEMS: { value: "de" | "en"; label: string }[] = [
+    { value: "de", label: "Deutsch" },
+    { value: "en", label: "Englisch" },
+  ];
+  const REVERSE_CHARGE_ITEMS: { value: ReverseChargeType; label: string }[] = [
+    { value: "none", label: "Keine" },
+    { value: "intra_eu", label: "Innergemeinschaftlich (EU-B2B)" },
+    { value: "third_country", label: "Ausfuhrlieferung Drittland" },
+  ];
+
   let customers = $state<Customer[]>([]);
   let settings = $state<Settings | null>(null);
+  let referenceDataLoaded = $state(false);
   let id = $state<number | null>(null);
-  let invoiceNumber = $state<string>("");
   let loaded = $state(false);
   const loading = $derived(mode === "edit" && !loaded);
 
   let saving = $state(false);
   let error = $state<string | null>(null);
+  let loadError = $state<string | null>(null);
 
-  let customerIdStr = $state<string>("");
+  let customerIdStr = $state("");
   let issueDateIso = $state(toIsoDate(nowUnix()));
   let serviceMode = $state<"single" | "period">("single");
   let deliveryDateIso = $state("");
   let servicePeriodStartIso = $state("");
   let servicePeriodEndIso = $state("");
-  let dueDateIso = $state(toIsoDate(addDaysUnix(nowUnix(), 14)));
+  let dueDateIso = $state(toIsoDate(addDaysUnix(nowUnix(), DEFAULT_DUE_DAYS)));
   let notes = $state("");
   let paymentTerms = $state("");
   let reverseChargeType = $state<ReverseChargeType>("none");
-  const isReverseCharge = $derived(reverseChargeType !== "none");
+  let supplyKind = $state<SupplyKind>(DEFAULT_SUPPLY_KIND);
   let isCreditNote = $state(false);
-  let correctsInvoiceId = $state<number | null>(null);
-
-  type ItemUI = InvoiceItemInput & {
-    uid: number;
-    priceText: string;
-    longDescription: string;
-    periodStartIso: string;
-    periodEndIso: string;
-    showDetail: boolean;
-  };
-  // Stable per-row id so keyed {#each} + animate:flip survive reordering.
-  let itemUid = 0;
-  function emptyItem(vatRate = 0): ItemUI {
-    return {
-      uid: ++itemUid,
-      description: "",
-      quantity: 1,
-      unit: "Stk",
-      unitPrice: 0,
-      vatRate,
-      priceText: "",
-      longDescription: "",
-      periodStartIso: "",
-      periodEndIso: "",
-      showDetail: false,
-    };
-  }
-  let items = $state<ItemUI[]>([emptyItem()]);
-  let currency = $state<string>("EUR");
-  let exchangeRate = $state<string>("");
-  let fetchingRate = $state(false);
-
-  let skontoEnabled = $state(false);
-  let skontoPercent = $state<number>(2);
-  let skontoDays = $state<number>(7);
+  let items = $state<LineItemForm[]>([newLineItem()]);
+  let currency = $state("EUR");
+  let exchangeRate = $state("");
+  let skonto = $state<SkontoForm>(defaultSkontoForm());
   let pdfLanguage = $state<"de" | "en">("de");
 
-  const pdfLanguageItems = [
-    { value: "de", label: "Deutsch" },
-    { value: "en", label: "Englisch" },
-  ];
-
-  async function fetchEcbRate() {
-    if (currency === "EUR") return;
-    fetchingRate = true;
-    try {
-      const rate = await invoke<string>("fetch_ecb_exchange_rate", { currency });
-      exchangeRate = rate.replace(".", ",");
-      toast.success("EZB-Tageskurs übernommen", `1 EUR = ${exchangeRate} ${currency}`);
-    } catch (e) {
-      toast.error("Kurs konnte nicht geholt werden", String(e));
-    } finally {
-      fetchingRate = false;
-    }
-  }
+  const isReverseCharge = $derived(reverseChargeType !== "none");
+  const vatExempt = $derived(!!settings?.isKleinunternehmer || isReverseCharge);
 
   const selectedCustomer = $derived(
-    customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
+    customerIdStr ? (customers.find((c) => String(c.id) === customerIdStr) ?? null) : null,
+  );
+  const customerItems = $derived(
+    customers.map((c) => ({ value: String(c.id), label: `${c.customerNumber} · ${c.name}` })),
   );
 
   // Reverse-Charge: sender must not be Kleinunternehmer. intra_eu requires both
   // VAT-IDs; third_country (export outside EU) only requires the sender's. The
   // EU/non-EU country judgement stays with the user.
-  const canReverseChargeIntraEu = $derived(
-    !!settings &&
-      !settings.isKleinunternehmer &&
-      !!settings.vatId &&
-      !!selectedCustomer?.vatId,
-  );
-
   const canReverseChargeThirdCountry = $derived(
     !!settings && !settings.isKleinunternehmer && !!settings.vatId,
   );
+  const canReverseChargeIntraEu = $derived(canReverseChargeThirdCountry && !!selectedCustomer?.vatId);
 
   const reverseChargeBlockedReason = $derived.by(() => {
     if (!settings) return "";
-    if (settings.isKleinunternehmer)
-      return "Nicht verfügbar für Kleinunternehmer (§ 19 UStG).";
-    if (!settings.vatId)
-      return "Eigene USt-IdNr. in den Einstellungen fehlt.";
+    if (settings.isKleinunternehmer) return "Nicht verfügbar für Kleinunternehmer (§ 19 UStG).";
+    if (!settings.vatId) return "Eigene USt-IdNr. in den Einstellungen fehlt.";
     if (reverseChargeType === "intra_eu") {
       if (!selectedCustomer) return "Erst Kunden auswählen.";
-      if (!selectedCustomer.vatId)
-        return "Innergemeinschaftliche Lieferung: Kunde benötigt USt-IdNr.";
+      if (!selectedCustomer.vatId) return "EU-Reverse-Charge: Kunde benötigt USt-IdNr.";
     }
     return "";
   });
 
+  const totals = $derived(
+    settings
+      ? computeTotals(items, { isKleinunternehmer: settings.isKleinunternehmer, isReverseCharge })
+      : { subtotal: 0, vatAmount: 0, total: 0 },
+  );
+
+  // Judged only once settings and customers are known; otherwise a stored
+  // reverse-charge type would be reset before the data it depends on arrives.
   $effect(() => {
-    if (reverseChargeType === "intra_eu" && !canReverseChargeIntraEu)
-      reverseChargeType = "none";
-    if (reverseChargeType === "third_country" && !canReverseChargeThirdCountry)
-      reverseChargeType = "none";
+    if (!referenceDataLoaded) return;
+    if (reverseChargeType === "intra_eu" && !canReverseChargeIntraEu) reverseChargeType = "none";
+    if (reverseChargeType === "third_country" && !canReverseChargeThirdCountry) reverseChargeType = "none";
   });
 
   $effect(() => {
-    if (isReverseCharge) {
-      let changed = false;
-      for (const it of items) {
-        if (it.vatRate !== 0) {
-          it.vatRate = 0;
-          changed = true;
-        }
-      }
-      if (changed) items = [...items];
-    }
+    if (isReverseCharge) zeroVatRates(items);
   });
-
-  const vatExempt = $derived(!!settings?.isKleinunternehmer || isReverseCharge);
 
   $effect(() => {
     Promise.all([loadSettings(), listCustomers()])
-      .then(([s, cs]) => {
-        settings = s;
-        customers = cs;
-        if (mode === "new") {
-          paymentTerms = `Zahlbar innerhalb von ${s.defaultPaymentTermsDays} Tagen ohne Abzug.`;
-          for (const it of items) it.vatRate = s.isKleinunternehmer ? 0 : 19;
-          items = [...items];
-          if (s.defaultSkontoActive) {
-            skontoEnabled = true;
-            skontoPercent = s.defaultSkontoPercent;
-            skontoDays = s.defaultSkontoDays;
-          }
-          pdfLanguage = s.defaultPdfLanguage;
-        }
+      .then(([loadedSettings, loadedCustomers]) => {
+        settings = loadedSettings;
+        customers = loadedCustomers;
+        referenceDataLoaded = true;
+        if (mode === "new") applyNewInvoiceDefaults(loadedSettings);
       })
       .catch((e) => (error = String(e)));
   });
 
   $effect(() => {
-    if (mode === "edit" && params?.id) {
-      const numId = Number.parseInt(params.id, 10);
-      if (Number.isNaN(numId)) return;
-      id = numId;
-      getInvoice(numId)
-        .then((res) => {
-          if (!res) {
-            error = "Rechnung nicht gefunden.";
-            return;
-          }
-          if (res.invoice.status !== "draft") {
-            error = "Nur Entwürfe können bearbeitet werden.";
-            return;
-          }
-          customerIdStr = String(res.invoice.customerId);
-          invoiceNumber = res.invoice.number;
-          issueDateIso = toIsoDate(res.invoice.issueDate);
-          deliveryDateIso = res.invoice.deliveryDate
-            ? toIsoDate(res.invoice.deliveryDate)
-            : "";
-          if (res.invoice.servicePeriodStart && res.invoice.servicePeriodEnd) {
-            serviceMode = "period";
-            servicePeriodStartIso = toIsoDate(res.invoice.servicePeriodStart);
-            servicePeriodEndIso = toIsoDate(res.invoice.servicePeriodEnd);
-          } else {
-            serviceMode = "single";
-          }
-          dueDateIso = toIsoDate(res.invoice.dueDate);
-          notes = res.invoice.notes ?? "";
-          paymentTerms = res.invoice.paymentTerms ?? "";
-          reverseChargeType = res.invoice.reverseChargeType;
-          isCreditNote = res.invoice.isCreditNote;
-          correctsInvoiceId = res.invoice.correctsInvoiceId;
-          currency = res.invoice.currency ?? "EUR";
-          exchangeRate = res.invoice.exchangeRate ?? "";
-          if (res.invoice.skontoPercent != null && res.invoice.skontoDays != null) {
-            skontoEnabled = true;
-            skontoPercent = res.invoice.skontoPercent;
-            skontoDays = res.invoice.skontoDays;
-          }
-          pdfLanguage = (res.invoice.pdfLanguage ?? "de") as "de" | "en";
-          items = res.items.map((it) => ({
-            uid: ++itemUid,
-            description: it.description,
-            quantity: it.quantity,
-            unit: it.unit,
-            unitPrice: it.unitPrice,
-            vatRate: it.vatRate,
-            priceText: (it.unitPrice / 100).toFixed(2).replace(".", ","),
-            longDescription: it.longDescription ?? "",
-            periodStartIso: it.linePeriodStart ? toIsoDate(it.linePeriodStart) : "",
-            periodEndIso: it.linePeriodEnd ? toIsoDate(it.linePeriodEnd) : "",
-            showDetail: !!it.longDescription,
-          }));
-        })
-        .catch((e) => (error = String(e)))
-        .finally(() => (loaded = true));
+    if (mode !== "edit") return;
+    const invoiceId = parseRouteId(params?.id);
+    if (invoiceId === null) {
+      loadError = INVALID_ROUTE_ID_MESSAGE;
+      loaded = true;
+      return;
     }
+    id = invoiceId;
+    getInvoice(invoiceId)
+      .then((res) => {
+        if (!res) loadError = "Rechnung nicht gefunden.";
+        else if (res.invoice.status !== "draft") loadError = "Nur Entwürfe können bearbeitet werden.";
+        else applyStoredInvoice(res.invoice, res.items);
+      })
+      .catch((e) => (loadError = String(e)))
+      .finally(() => (loaded = true));
   });
 
-  function addItem() {
-    items = [...items, emptyItem(settings?.isKleinunternehmer ? 0 : 19)];
+  function applyNewInvoiceDefaults(s: Settings) {
+    paymentTerms = `Zahlbar innerhalb von ${s.defaultPaymentTermsDays} Tagen ohne Abzug.`;
+    for (const item of items) item.vatRate = vatRateForNewItem(s.isKleinunternehmer);
+    skonto = skontoFormFromSettings(s);
+    pdfLanguage = s.defaultPdfLanguage;
   }
 
-  let catalogPickerOpen = $state(false);
-  function addFromCatalog(it: CatalogItem) {
-    const vatRate = vatExempt ? 0 : it.defaultVatRate;
-    const next = emptyItem(vatRate);
-    next.description = it.name;
-    next.quantity = 1;
-    next.unit = it.unit;
-    next.unitPrice = it.defaultUnitPrice;
-    next.priceText = (it.defaultUnitPrice / 100).toFixed(2).replace(".", ",");
-    const desc = pdfLanguage === "en" && it.descriptionEn ? it.descriptionEn : it.descriptionDe;
-    if (desc) {
-      next.longDescription = desc;
-      next.showDetail = true;
+  function applyStoredInvoice(invoice: Invoice, storedItems: InvoiceItem[]) {
+    customerIdStr = String(invoice.customerId);
+    issueDateIso = toIsoDate(invoice.issueDate);
+    deliveryDateIso = invoice.deliveryDate ? toIsoDate(invoice.deliveryDate) : "";
+    if (invoice.servicePeriodStart && invoice.servicePeriodEnd) {
+      serviceMode = "period";
+      servicePeriodStartIso = toIsoDate(invoice.servicePeriodStart);
+      servicePeriodEndIso = toIsoDate(invoice.servicePeriodEnd);
     }
-    items = [...items, next];
+    dueDateIso = toIsoDate(invoice.dueDate);
+    notes = invoice.notes ?? "";
+    paymentTerms = invoice.paymentTerms ?? "";
+    reverseChargeType = invoice.reverseChargeType;
+    supplyKind = invoice.supplyKind;
+    isCreditNote = invoice.isCreditNote;
+    currency = invoice.currency;
+    exchangeRate = invoice.exchangeRate ?? "";
+    skonto = skontoFormFromStored(invoice.skontoPercent, invoice.skontoDays);
+    pdfLanguage = invoice.pdfLanguage;
+    items = storedItems.map(lineItemFromStored);
   }
 
-  function removeItem(idx: number) {
-    items = items.filter((_, i) => i !== idx);
+  function reverseChargeError(): string | null {
+    if (reverseChargeType === "none") return null;
+    if (settings?.isKleinunternehmer) return "Reverse-Charge ist für Kleinunternehmer nicht zulässig.";
+    if (reverseChargeType === "intra_eu" && !selectedCustomer?.vatId) {
+      return "EU-Reverse-Charge erfordert eine USt-IdNr. des Kunden.";
+    }
+    if (items.some((it) => it.vatRate !== 0)) return "Bei Reverse-Charge müssen alle Positionen 0 % USt haben.";
+    return null;
   }
 
-  function moveItem(from: number, to: number) {
-    if (from === to || to < 0 || to >= items.length) return;
-    const next = [...items];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    items = next;
-  }
-  function moveUp(idx: number) {
-    moveItem(idx, idx - 1);
-  }
-  function moveDown(idx: number) {
-    moveItem(idx, idx + 1);
+  function formError(): string | null {
+    if (items.length === 0) return "Mindestens eine Position erforderlich.";
+    return (
+      reverseChargeError() ??
+      exchangeRateError(currency, exchangeRate) ??
+      (serviceMode === "period" ? servicePeriodError(servicePeriodStartIso, servicePeriodEndIso) : null) ??
+      linePeriodError(items)
+    );
   }
 
-  let dragIndex = $state<number | null>(null);
-  let dragOverIndex = $state<number | null>(null);
-  function onDragStart(idx: number) {
-    dragIndex = idx;
-  }
-  function onDragOver(e: DragEvent, idx: number) {
-    e.preventDefault();
-    dragOverIndex = idx;
-  }
-  function onDrop(idx: number) {
-    if (dragIndex !== null) moveItem(dragIndex, idx);
-    dragIndex = null;
-    dragOverIndex = null;
-  }
-  function onDragEnd() {
-    dragIndex = null;
-    dragOverIndex = null;
-  }
-
-  function onPriceBlur(idx: number) {
-    const it = items[idx];
-    it.unitPrice = eurStringToCents(it.priceText);
-    it.priceText = (it.unitPrice / 100).toFixed(2).replace(".", ",");
-    items = [...items];
+  function buildInput(customerId: number): InvoiceFormInput {
+    const usesPeriod = serviceMode === "period";
+    return {
+      customerId,
+      issueDate: fromIsoDate(issueDateIso),
+      deliveryDate: !usesPeriod && deliveryDateIso ? fromIsoDate(deliveryDateIso) : null,
+      dueDate: fromIsoDate(dueDateIso),
+      notes: notes.trim() || null,
+      paymentTerms: paymentTerms.trim() || null,
+      reverseChargeType,
+      supplyKind,
+      items: toLineItemInputs(items),
+      currency,
+      exchangeRate: currency === "EUR" ? null : exchangeRate.trim(),
+      eurTotalCent: computeEurTotalCent(currency, totals.total, exchangeRate),
+      servicePeriodStart: usesPeriod ? fromIsoDate(servicePeriodStartIso) : null,
+      servicePeriodEnd: usesPeriod ? fromIsoDate(servicePeriodEndIso) : null,
+      ...skontoInput(skonto, !isCreditNote),
+      pdfLanguage,
+    };
   }
 
-  const totals = $derived.by(() => {
-    if (!settings) return { subtotal: 0, vatAmount: 0, total: 0 };
-    return computeTotals(items, {
-      isKleinunternehmer: settings.isKleinunternehmer,
-      isReverseCharge,
-    });
-  });
-
-  const customerItems = $derived(
-    customers.map((c) => ({ value: String(c.id), label: `${c.customerNumber} · ${c.name}` })),
-  );
-
-  const currencyItems = SUPPORTED_CURRENCIES.map((c) => ({
-    value: c.code,
-    label: c.label,
-  }));
-
-  const isForeignCurrency = $derived(currency !== "EUR");
-  const rateScaled = $derived(
-    isForeignCurrency ? parseExchangeRateScaled(exchangeRate) : null,
-  );
-  const eurEquivalentCent = $derived(
-    isForeignCurrency
-      ? computeEurTotalCent(currency, totals.total, exchangeRate)
-      : totals.total,
-  );
-
-  const rcItems: { value: ReverseChargeType; label: string }[] = [
-    { value: "none", label: "Keine" },
-    { value: "intra_eu", label: "Innergemeinschaftliche Lieferung (EU)" },
-    { value: "third_country", label: "Ausfuhrlieferung Drittland" },
-  ];
+  async function persist(input: InvoiceFormInput): Promise<number> {
+    if (mode === "new") {
+      const createdId = await createInvoice(input);
+      toast.success("Rechnung erstellt");
+      return createdId;
+    }
+    if (id === null) throw new Error("Keine ID");
+    await updateInvoice(id, input);
+    toast.success("Änderungen gespeichert");
+    return id;
+  }
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
-    const customerId = customerIdStr ? Number.parseInt(customerIdStr, 10) : null;
-    if (customerId === null || Number.isNaN(customerId)) {
+    const customerId = Number.parseInt(customerIdStr, 10);
+    if (Number.isNaN(customerId)) {
       error = "Bitte einen Kunden auswählen.";
       return;
     }
-    if (items.length === 0) {
-      error = "Mindestens eine Position erforderlich.";
+    const validationError = formError();
+    if (validationError) {
+      error = validationError;
       return;
-    }
-    if (reverseChargeType !== "none") {
-      if (settings?.isKleinunternehmer) {
-        error = "Reverse-Charge ist für Kleinunternehmer nicht zulässig.";
-        return;
-      }
-      if (reverseChargeType === "intra_eu" && !selectedCustomer?.vatId) {
-        error = "Innergemeinschaftliche Lieferung erfordert eine USt-IdNr. des Kunden.";
-        return;
-      }
-      if (items.some((it) => it.vatRate !== 0)) {
-        error = "Bei Reverse-Charge müssen alle Positionen 0 % USt haben.";
-        return;
-      }
-    }
-    if (currency !== "EUR") {
-      if (!exchangeRate || !parseExchangeRateScaled(exchangeRate)) {
-        error = `Wechselkurs erforderlich für ${currency}. Format: 1 EUR = X ${currency}.`;
-        return;
-      }
-    }
-    if (serviceMode === "period") {
-      if (!servicePeriodStartIso || !servicePeriodEndIso) {
-        error = "Leistungszeitraum: Start- und Enddatum erforderlich.";
-        return;
-      }
-      if (fromIsoDate(servicePeriodEndIso) < fromIsoDate(servicePeriodStartIso)) {
-        error = "Leistungszeitraum: Enddatum vor Startdatum.";
-        return;
-      }
-    }
-    for (const it of items) {
-      if (it.periodStartIso && it.periodEndIso) {
-        if (fromIsoDate(it.periodEndIso) < fromIsoDate(it.periodStartIso)) {
-          error = `Positions-Zeitraum: Enddatum vor Startdatum (${it.description || "ohne Beschreibung"}).`;
-          return;
-        }
-      }
     }
     saving = true;
     error = null;
     try {
-      const eurTotalCent =
-        currency === "EUR"
-          ? totals.total
-          : computeEurTotalCent(currency, totals.total, exchangeRate);
-      const usePeriod = serviceMode === "period";
-      const input: InvoiceFormInput = {
-        customerId,
-        issueDate: fromIsoDate(issueDateIso),
-        deliveryDate: usePeriod
-          ? null
-          : deliveryDateIso
-            ? fromIsoDate(deliveryDateIso)
-            : null,
-        dueDate: fromIsoDate(dueDateIso),
-        notes: notes.trim() || null,
-        paymentTerms: paymentTerms.trim() || null,
-        reverseChargeType,
-        items: items.map((it) => ({
-          description: it.description,
-          quantity: it.quantity,
-          unit: it.unit,
-          unitPrice: it.unitPrice,
-          vatRate: it.vatRate,
-          longDescription:
-            it.showDetail && it.longDescription.trim() ? it.longDescription.trim() : null,
-          linePeriodStart: it.periodStartIso ? fromIsoDate(it.periodStartIso) : null,
-          linePeriodEnd: it.periodEndIso ? fromIsoDate(it.periodEndIso) : null,
-        })),
-        currency,
-        exchangeRate: currency === "EUR" ? null : exchangeRate.trim(),
-        eurTotalCent,
-        servicePeriodStart: usePeriod ? fromIsoDate(servicePeriodStartIso) : null,
-        servicePeriodEnd: usePeriod ? fromIsoDate(servicePeriodEndIso) : null,
-        skontoPercent: skontoEnabled && !isCreditNote ? skontoPercent : null,
-        skontoDays: skontoEnabled && !isCreditNote ? skontoDays : null,
-        pdfLanguage,
-      };
-      let savedId: number;
-      if (mode === "new") {
-        savedId = await createInvoice(input);
-        toast.success("Rechnung erstellt");
-      } else if (id !== null) {
-        await updateInvoice(id, input);
-        toast.success("Änderungen gespeichert");
-        savedId = id;
-      } else {
-        throw new Error("Keine ID");
-      }
-      push(`/invoices/${savedId}`);
+      push(`/invoices/${await persist(buildInput(customerId))}`);
     } catch (err) {
       error = String(err);
       toast.error("Speichern fehlgeschlagen", String(err));
@@ -469,26 +268,10 @@
       saving = false;
     }
   }
-
-  function onCancel() {
-    push("/invoices");
-  }
-
-  const vatItems = [
-    { value: "0", label: "0 %" },
-    { value: "7", label: "7 %" },
-    { value: "19", label: "19 %" },
-  ];
 </script>
 
 <header class="mb-6">
-  <a
-    href="/invoices"
-    use:link
-    class="group inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-  >
-    <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" /> Rechnungen
-  </a>
+  <BackLink href="/invoices">Rechnungen</BackLink>
   <h1 class="text-3xl font-semibold tracking-tight mt-2">
     {#if isCreditNote}
       Stornorechnung bearbeiten
@@ -502,6 +285,8 @@
 
 {#if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
+{:else if loadError}
+  <p class="text-sm text-destructive">{loadError}</p>
 {:else}
   {#if isCreditNote}
     <Card class="border-warning/40 bg-warning/10 mb-4">
@@ -573,278 +358,46 @@
               <DatePicker bind:value={deliveryDateIso} />
             {/if}
           </div>
-          <div class="flex flex-col gap-1.5">
-            <Label>Währung</Label>
-            <Select bind:value={currency} items={currencyItems} />
-          </div>
-          {#if isForeignCurrency}
-            <div class="flex flex-col gap-1.5">
-              <Label>Wechselkurs</Label>
-              <div class="flex gap-2">
-                <Input
-                  type="text"
-                  bind:value={exchangeRate}
-                  placeholder="z. B. 1,0832"
-                  inputmode="decimal"
-                  class="flex-1"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={fetchingRate}
-                  onclick={fetchEcbRate}
-                >
-                  {fetchingRate ? "Lädt…" : "EZB-Kurs"}
-                </Button>
-              </div>
-              <p class="text-xs text-muted-foreground">
-                1 EUR = X {currency}. Acht Nachkommastellen werden berücksichtigt.
-              </p>
-              {#if exchangeRate && !rateScaled}
-                <p class="text-xs text-destructive">Ungültiger Wechselkurs.</p>
-              {:else if rateScaled && eurEquivalentCent !== null}
-                <p class="text-xs text-muted-foreground">
-                  Gesamtbetrag in EUR: <span class="font-mono">{centsToEur(eurEquivalentCent)}</span>
-                </p>
-              {/if}
-            </div>
-          {/if}
+          <CurrencyFields bind:currency bind:exchangeRate totalCent={totals.total} />
           {#if settings && !settings.isKleinunternehmer && !isCreditNote}
             <div class="col-span-2 flex flex-col gap-1.5">
               <Label>Reverse-Charge</Label>
               <Select
                 bind:value={reverseChargeType}
-                items={rcItems}
+                items={REVERSE_CHARGE_ITEMS}
                 disabled={!canReverseChargeThirdCountry}
               />
               <p class="text-xs text-muted-foreground">
                 {#if reverseChargeType === "intra_eu"}
-                  Steuerschuldnerschaft des Leistungsempfängers (EU-B2B). Alle Positionen auf 0&nbsp;% USt.
+                  Innergemeinschaftlicher Umsatz an ein EU-Unternehmen. Alle Positionen auf 0&nbsp;% USt.
                 {:else if reverseChargeType === "third_country"}
-                  Steuerfreie Ausfuhrlieferung (Drittland). Alle Positionen auf 0&nbsp;% USt.
+                  Umsatz an einen Kunden im Drittland. Alle Positionen auf 0&nbsp;% USt.
                 {:else}
                   Inlandsumsatz oder regulärer Umsatzsteuerausweis.
                 {/if}
               </p>
               {#if reverseChargeBlockedReason}
-                <p class="text-xs text-warning">
-                  {reverseChargeBlockedReason}
-                </p>
+                <p class="text-xs text-warning">{reverseChargeBlockedReason}</p>
               {/if}
             </div>
+            {#if reverseChargeType !== "none"}
+              <SupplyKindField bind:value={supplyKind} {reverseChargeType} />
+            {/if}
           {/if}
         </section>
       </CardContent>
     </Card>
 
-    <section>
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-sm font-semibold uppercase text-muted-foreground tracking-wider">
-          Positionen
-        </h2>
-        <div class="inline-flex items-center gap-2">
-          <Button type="button" size="sm" variant="outline" onclick={() => (catalogPickerOpen = true)}>
-            <Package />
-            Aus Katalog…
-          </Button>
-          <Button type="button" size="sm" variant="outline" onclick={addItem}>
-            <Plus />
-            Position
-          </Button>
-        </div>
-      </div>
-      <Card class="overflow-hidden py-0">
-        <table class="w-full text-sm">
-          <thead class="bg-muted/40 text-left">
-            <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-              <th class="px-3 py-2 w-14 font-medium">#</th>
-              <th class="px-3 py-2 font-medium">Beschreibung</th>
-              <th class="px-3 py-2 w-20 font-medium">Menge</th>
-              <th class="px-3 py-2 w-20 font-medium">Einheit</th>
-              <th class="px-3 py-2 w-28 font-medium">Preis ({currency})</th>
-              {#if !vatExempt}
-                <th class="px-3 py-2 w-24 font-medium">USt</th>
-              {/if}
-              <th class="px-3 py-2 w-28 font-medium text-right">Summe</th>
-              <th class="px-3 py-2 w-24 font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each items as it, idx (it.uid)}
-              <tr
-                class="border-t {dragOverIndex === idx && dragIndex !== idx ? 'bg-accent/40' : ''}"
-                class:opacity-50={dragIndex === idx}
-                animate:flip={{ duration: 150 }}
-                ondragover={(e) => onDragOver(e, idx)}
-                ondrop={() => onDrop(idx)}
-              >
-                <td class="px-2 py-2 align-top">
-                  <div class="flex items-center gap-1">
-                    <button
-                      type="button"
-                      draggable="true"
-                      ondragstart={() => onDragStart(idx)}
-                      ondragend={onDragEnd}
-                      class="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-foreground transition-colors"
-                      title="Ziehen zum Sortieren"
-                      aria-label="Position verschieben"
-                    >
-                      <GripVertical class="size-4" />
-                    </button>
-                    <span class="text-xs text-muted-foreground tabular-nums">{idx + 1}</span>
-                  </div>
-                </td>
-                <td class="px-2 py-1.5">
-                  <Input bind:value={it.description} required />
-                  {#if it.showDetail}
-                    <div class="mt-1.5">
-                      <Textarea
-                        rows={2}
-                        placeholder="Detail-Beschreibung (BT-154) — z. B. Sub-Leistungen, Spezifikation"
-                        bind:value={it.longDescription}
-                      />
-                    </div>
-                  {/if}
-                  <div class="mt-1.5 flex flex-wrap gap-1.5">
-                    <LinePeriodPopover
-                      bind:startIso={it.periodStartIso}
-                      bind:endIso={it.periodEndIso}
-                    />
-                    {#if it.showDetail}
-                      <button
-                        type="button"
-                        class="inline-flex items-center gap-1 rounded-md border border-input bg-transparent px-2 h-7 text-xs text-muted-foreground hover:bg-accent hover:text-destructive transition-colors cursor-pointer"
-                        onclick={() => {
-                          it.showDetail = false;
-                          it.longDescription = "";
-                          items = [...items];
-                        }}
-                      >
-                        <X class="size-3" /> Detail entfernen
-                      </button>
-                    {:else}
-                      <button
-                        type="button"
-                        class="inline-flex items-center gap-1 rounded-md border border-input bg-transparent px-2 h-7 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
-                        onclick={() => {
-                          it.showDetail = true;
-                          items = [...items];
-                        }}
-                      >
-                        <FileText class="size-3" /> Detail-Beschreibung
-                      </button>
-                    {/if}
-                  </div>
-                </td>
-                <td class="px-2 py-1.5 align-top pt-1.5">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    bind:value={it.quantity}
-                  />
-                </td>
-                <td class="px-2 py-1.5 align-top pt-1.5">
-                  <Input bind:value={it.unit} />
-                </td>
-                <td class="px-2 py-1.5 align-top pt-1.5">
-                  <Input
-                    bind:value={it.priceText}
-                    onblur={() => onPriceBlur(idx)}
-                    placeholder="0,00"
-                    class="text-right"
-                  />
-                </td>
-                {#if !vatExempt}
-                  <td class="px-2 py-1.5 align-top pt-1.5">
-                    <Select
-                      bind:value={
-                        () => String(it.vatRate),
-                        (v) => {
-                          it.vatRate = Number.parseInt(v, 10);
-                          items = [...items];
-                        }
-                      }
-                      items={vatItems}
-                    />
-                  </td>
-                {/if}
-                <td class="px-3 py-2 text-right font-mono text-xs align-top pt-3">
-                  {formatMoney(computeLineTotal(it), currency)}
-                </td>
-                <td class="px-2 py-1.5 text-right align-top pt-1.5">
-                  <div class="inline-flex items-center gap-0.5">
-                    <div class="flex flex-col">
-                      <button
-                        type="button"
-                        onclick={() => moveUp(idx)}
-                        disabled={idx === 0}
-                        class="inline-flex items-center justify-center size-5 rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:pointer-events-none transition-colors"
-                        title="Nach oben"
-                        aria-label="Position nach oben"
-                      >
-                        <ChevronUp class="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onclick={() => moveDown(idx)}
-                        disabled={idx === items.length - 1}
-                        class="inline-flex items-center justify-center size-5 rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:pointer-events-none transition-colors"
-                        title="Nach unten"
-                        aria-label="Position nach unten"
-                      >
-                        <ChevronDown class="size-3.5" />
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      onclick={() => removeItem(idx)}
-                      disabled={items.length === 1}
-                      class="inline-flex items-center justify-center size-8 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                      title="Position entfernen"
-                    >
-                      <Trash2 class="size-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-          <tfoot class="bg-muted/40 text-sm">
-            <tr class="border-t">
-              <td colspan={vatExempt ? 5 : 6} class="px-3 py-2 text-right text-muted-foreground">
-                Zwischensumme
-              </td>
-              <td class="px-3 py-2 text-right font-mono">{formatMoney(totals.subtotal, currency)}</td>
-              <td></td>
-            </tr>
-            {#if !vatExempt}
-              <tr>
-                <td colspan="6" class="px-3 py-2 text-right text-muted-foreground">USt</td>
-                <td class="px-3 py-2 text-right font-mono">{formatMoney(totals.vatAmount, currency)}</td>
-                <td></td>
-              </tr>
-            {/if}
-            <tr class="border-t">
-              <td colspan={vatExempt ? 5 : 6} class="px-3 py-2 text-right font-semibold">
-                Gesamtbetrag
-              </td>
-              <td class="px-3 py-2 text-right font-mono font-semibold">{formatMoney(totals.total, currency)}</td>
-              <td></td>
-            </tr>
-          </tfoot>
-        </table>
-      </Card>
-    </section>
+    <LineItemsEditor bind:items {currency} {vatExempt} {totals} language={pdfLanguage} />
 
     <Card>
       <CardContent class="space-y-4">
         <div class="flex flex-col gap-1.5 max-w-xs">
           <Label>Sprache der PDF</Label>
           <Select
-            items={pdfLanguageItems}
+            items={PDF_LANGUAGE_ITEMS}
             value={pdfLanguage}
-            onValueChange={(v) => (pdfLanguage = v as "de" | "en")}
+            onValueChange={(v) => (pdfLanguage = v)}
           />
           <p class="text-xs text-muted-foreground">
             Labels und Hinweistexte auf der PDF. Das eingebettete ZUGFeRD-XML
@@ -858,39 +411,11 @@
             <Textarea rows={2} bind:value={paymentTerms} />
           </div>
 
-          <div class="border-t pt-4">
-            <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
-              <Checkbox bind:checked={skontoEnabled} />
-              <span class="font-medium">Skonto bei Frühzahlung anbieten</span>
-            </label>
-            {#if skontoEnabled}
-              <div class="mt-3 ml-7 grid grid-cols-2 gap-3 max-w-md">
-                <div class="flex flex-col gap-1.5">
-                  <Label class="text-xs">Prozent</Label>
-                  <Input
-                    type="number"
-                    min="0.1"
-                    max="20"
-                    step="0.1"
-                    bind:value={skontoPercent}
-                  />
-                </div>
-                <div class="flex flex-col gap-1.5">
-                  <Label class="text-xs">Innerhalb (Tage)</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="60"
-                    step="1"
-                    bind:value={skontoDays}
-                  />
-                </div>
-                <p class="col-span-2 text-xs text-muted-foreground">
-                  Wird strukturiert im ZUGFeRD-XML (BT-20) und als Textzeile auf der PDF ausgewiesen.
-                </p>
-              </div>
-            {/if}
-          </div>
+          <SkontoFields bind:skonto>
+            {#snippet hint()}
+              Wird strukturiert im ZUGFeRD-XML (BT-20) und als Textzeile auf der PDF ausgewiesen.
+            {/snippet}
+          </SkontoFields>
         {/if}
         <div class="flex flex-col gap-1.5">
           <Label>Notizen / Fußtext</Label>
@@ -903,12 +428,10 @@
       <Button type="submit" disabled={saving}>
         {saving ? "Speichere…" : mode === "new" ? "Anlegen" : "Speichern"}
       </Button>
-      <Button type="button" onclick={onCancel} variant="ghost">Abbrechen</Button>
+      <Button type="button" onclick={() => push("/invoices")} variant="ghost">Abbrechen</Button>
       {#if error}
         <span class="text-sm text-destructive">{error}</span>
       {/if}
     </div>
   </form>
 {/if}
-
-<CatalogPicker bind:open={catalogPickerOpen} onPick={addFromCatalog} context="invoice" language={pdfLanguage} />

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Booking } from "$lib/bank/match";
+import type { SidecarErrorInfo } from "./types";
 
 export type BankParseResult = {
   success: true;
@@ -9,7 +10,7 @@ export type BankParseResult = {
 
 export type BankParseError = {
   success: false;
-  error: { code: string; message: string; details: string };
+  error: SidecarErrorInfo;
 };
 
 export async function parseBankStatement(

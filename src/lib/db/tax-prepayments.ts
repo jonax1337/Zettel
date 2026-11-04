@@ -1,6 +1,9 @@
 import { execute, select } from "./client";
+import type { Quarter } from "$lib/dashboard/period";
 
-export type Quarter = 1 | 2 | 3 | 4;
+export type { Quarter };
+
+const QUARTERS: readonly Quarter[] = [1, 2, 3, 4];
 
 export interface PrepaymentRow {
   year: number;
@@ -26,7 +29,7 @@ export async function listPrepayments(year: number): Promise<PrepaymentRow[]> {
   );
   const byQuarter = new Map<number, number>();
   for (const r of rows) byQuarter.set(r.quarter, r.amount_cent);
-  return ([1, 2, 3, 4] as Quarter[]).map((q) => ({
+  return QUARTERS.map((q) => ({
     year,
     quarter: q,
     amountCent: byQuarter.get(q) ?? 0,
@@ -56,12 +59,4 @@ export async function sumPrepaymentsForYear(year: number): Promise<number> {
     [year],
   );
   return rows[0]?.total ?? 0;
-}
-
-/** Liste der Jahre, für die irgendein Eintrag existiert. */
-export async function listPrepaymentYears(): Promise<number[]> {
-  const rows = await select<{ year: number }>(
-    `SELECT DISTINCT year FROM tax_prepayments ORDER BY year DESC`,
-  );
-  return rows.map((r) => r.year);
 }

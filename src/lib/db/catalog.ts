@@ -1,5 +1,9 @@
-import { execute, select } from "./client";
+import { execute, insert, select } from "./client";
 import type { CatalogItem } from "./schema";
+
+const DEFAULT_UNIT = "Stk";
+const DEFAULT_VAT_RATE = 19;
+const DEFAULT_SEARCH_LIMIT = 30;
 
 type CatalogRow = {
   id: number;
@@ -46,7 +50,7 @@ export async function listCatalog(opts: { includeArchived?: boolean } = {}): Pro
   return rows.map(mapCatalog);
 }
 
-export async function searchCatalog(query: string, limit = 30): Promise<CatalogItem[]> {
+export async function searchCatalog(query: string, limit = DEFAULT_SEARCH_LIMIT): Promise<CatalogItem[]> {
   const q = query.trim();
   if (q === "") return (await listCatalog()).slice(0, limit);
   const like = `%${q}%`;
@@ -66,25 +70,28 @@ export async function getCatalogItem(id: number): Promise<CatalogItem | null> {
   return rows.length ? mapCatalog(rows[0]) : null;
 }
 
+function catalogColumnValues(input: CatalogInput): unknown[] {
+  return [
+    input.name,
+    input.descriptionDe ?? "",
+    input.descriptionEn ?? null,
+    input.unit ?? DEFAULT_UNIT,
+    input.defaultUnitPrice ?? 0,
+    input.defaultVatRate ?? DEFAULT_VAT_RATE,
+    input.defaultDatevAccount ?? null,
+    input.tags ?? null,
+    input.archived ? 1 : 0,
+  ];
+}
+
 export async function createCatalogItem(input: CatalogInput): Promise<number> {
-  const res = await execute(
+  return insert(
     `INSERT INTO catalog_items
       (name, description_de, description_en, unit, default_unit_price,
        default_vat_rate, default_datev_account, tags, archived)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      input.name,
-      input.descriptionDe ?? "",
-      input.descriptionEn ?? null,
-      input.unit ?? "Stk",
-      input.defaultUnitPrice ?? 0,
-      input.defaultVatRate ?? 19,
-      input.defaultDatevAccount ?? null,
-      input.tags ?? null,
-      input.archived ? 1 : 0,
-    ],
+    catalogColumnValues(input),
   );
-  return Number(res.lastInsertId ?? 0);
 }
 
 export async function updateCatalogItem(id: number, input: CatalogInput): Promise<void> {
@@ -94,18 +101,7 @@ export async function updateCatalogItem(id: number, input: CatalogInput): Promis
       default_unit_price = ?, default_vat_rate = ?, default_datev_account = ?,
       tags = ?, archived = ?, updated_at = unixepoch()
      WHERE id = ?`,
-    [
-      input.name,
-      input.descriptionDe ?? "",
-      input.descriptionEn ?? null,
-      input.unit ?? "Stk",
-      input.defaultUnitPrice ?? 0,
-      input.defaultVatRate ?? 19,
-      input.defaultDatevAccount ?? null,
-      input.tags ?? null,
-      input.archived ? 1 : 0,
-      id,
-    ],
+    [...catalogColumnValues(input), id],
   );
 }
 

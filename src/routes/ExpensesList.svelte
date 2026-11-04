@@ -1,8 +1,10 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
   import {
+    deleteExpense,
     getExpenseYears,
     listExpenses,
+    markExpensePaid,
     type ExpenseFilter,
     type ExpenseListRow,
   } from "$lib/db/expenses";
@@ -10,97 +12,87 @@
   import { listVendors } from "$lib/db/queries";
   import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
-  import { Button, Card, Input, Select, Badge, Label, Checkbox, SortableTh, BulkActionBar, ConfirmDialog, toast, EmptyState } from "$lib/ui";
-  import { Plus, Search, CheckCircle2, Trash2 } from "$lib/brand-icons";
-  import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
-  import { deleteExpense, markExpensePaid } from "$lib/db/expenses";
+  import { applySort } from "$lib/utils/sort";
+  import {
+    Button,
+    Card,
+    Select,
+    Badge,
+    Label,
+    Checkbox,
+    SortableTh,
+    BulkActionBar,
+    ConfirmDialog,
+    toast,
+    EmptyState,
+  } from "$lib/ui";
+  import { Plus, CheckCircle2, Trash2 } from "$lib/brand-icons";
+  import SearchInput from "./parts/entity/SearchInput.svelte";
+  import { pluralize } from "./parts/entity/format";
+  import { createListSort } from "./parts/entity/list-sort.svelte";
+  import { createQueryState } from "./parts/entity/query-state.svelte";
+  import {
+    EXPENSE_STATUS_FILTER_ORDER,
+    EXPENSE_STATUS_LABEL,
+    EXPENSE_STATUS_VARIANT,
+  } from "./parts/expense/expense-status";
 
-  let expenses = $state<ExpenseListRow[]>([]);
+  const ALL = "all";
+
   let vendors = $state<Vendor[]>([]);
   let years = $state<number[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
 
-  let status = $state<string>("all");
-  let year = $state<string>("all");
-  let vendorId = $state<string>("all");
+  let status = $state<string>(ALL);
+  let year = $state<string>(ALL);
+  let vendorId = $state<string>(ALL);
   let search = $state("");
 
-  async function reload() {
-    loading = true;
-    try {
-      const filter: ExpenseFilter = {
-        status: (status === "all" ? "all" : status) as ExpenseStatus | "all",
-        year: year === "all" ? "all" : Number.parseInt(year, 10),
-        vendorId: vendorId === "all" ? "all" : Number.parseInt(vendorId, 10),
-        search,
-      };
-      expenses = await listExpenses(filter);
-      error = null;
-    } catch (e) {
-      error = String(e);
-    } finally {
-      loading = false;
-    }
+  function numericFilter(value: string): number | typeof ALL {
+    return value === ALL ? ALL : Number.parseInt(value, 10);
   }
 
+  function currentFilter(): ExpenseFilter {
+    return {
+      status: status === ALL ? ALL : (status as ExpenseStatus),
+      year: numericFilter(year),
+      vendorId: numericFilter(vendorId),
+      search,
+    };
+  }
+
+  const expenses = createQueryState<ExpenseListRow[]>([], () => listExpenses(currentFilter()));
   $effect(() => {
-    listVendors().then((v) => (vendors = v));
-    getExpenseYears().then((y) => (years = y));
+    expenses.reload();
   });
 
   $effect(() => {
-    void status;
-    void year;
-    void vendorId;
-    void search;
-    reload();
+    listVendors()
+      .then((v) => (vendors = v))
+      .catch((e) => toast.error("Lieferanten konnten nicht geladen werden", String(e)));
+    getExpenseYears()
+      .then((y) => (years = y))
+      .catch((e) => toast.error("Jahre konnten nicht geladen werden", String(e)));
   });
 
-  function newExpense() {
-    push("/expenses/new");
-  }
-
-  const statusLabel: Record<ExpenseStatus, string> = {
-    draft: "Entwurf",
-    open: "Offen",
-    paid: "Bezahlt",
-    cancelled: "Storniert",
-  };
-
-  const statusVariant: Record<ExpenseStatus, "secondary" | "warning" | "success" | "outline"> = {
-    draft: "secondary",
-    open: "warning",
-    paid: "success",
-    cancelled: "outline",
-  };
-
-  const statusItems = $derived([
-    { value: "all", label: "Alle Status" },
-    { value: "open", label: "Offen" },
-    { value: "paid", label: "Bezahlt" },
-    { value: "draft", label: "Entwurf" },
-    { value: "cancelled", label: "Storniert" },
-  ]);
+  const statusItems = [
+    { value: ALL, label: "Alle Status" },
+    ...EXPENSE_STATUS_FILTER_ORDER.map((s) => ({ value: s, label: EXPENSE_STATUS_LABEL[s] })),
+  ];
 
   const yearItems = $derived([
-    { value: "all", label: "Alle Jahre" },
+    { value: ALL, label: "Alle Jahre" },
     ...years.map((y) => ({ value: String(y), label: String(y) })),
   ]);
 
   const vendorItems = $derived([
-    { value: "all", label: "Alle Lieferanten" },
+    { value: ALL, label: "Alle Lieferanten" },
     ...vendors.map((v) => ({ value: String(v.id), label: v.name })),
   ]);
 
   type SortKey = "internalNumber" | "number" | "issueDate" | "vendor" | "total" | "status" | "dueDate";
-  let sort = $state<SortState<SortKey>>(loadSortState<SortKey>("expenses", { key: "issueDate", dir: "desc" }));
-  function setSort(key: SortKey, dir: SortState<SortKey>["dir"]) {
-    sort = { key: dir === null ? null : key, dir };
-    saveSortState("expenses", sort);
-  }
+  const sort = createListSort<SortKey>("expenses", { key: "issueDate", dir: "desc" });
   const sortedExpenses = $derived(
-    applySort(expenses, sort, {
+    applySort(expenses.data, sort.state, {
       internalNumber: (r) => r.internalNumber,
       number: (r) => r.number,
       issueDate: (r) => r.issueDate,
@@ -123,6 +115,9 @@
     selectedExpenses.length > 0 &&
       selectedExpenses.every((e) => e.status === "draft" || e.status === "cancelled"),
   );
+  const selectionLabel = $derived(
+    pluralize(selectedIds.size, "Eingangsrechnung", "Eingangsrechnungen"),
+  );
 
   function toggleSelect(id: number) {
     const next = new Set(selectedIds);
@@ -130,23 +125,27 @@
     else next.add(id);
     selectedIds = next;
   }
+
   function toggleSelectAll() {
-    if (selectedIds.size === sortedExpenses.length) selectedIds = new Set();
-    else selectedIds = new Set(sortedExpenses.map((e) => e.id));
+    selectedIds =
+      selectedIds.size === sortedExpenses.length
+        ? new Set()
+        : new Set(sortedExpenses.map((e) => e.id));
   }
 
-  async function bulkAction(label: string, fn: (id: number) => Promise<void>) {
+  async function runBulkAction(successMessage: string, action: (id: number) => Promise<void>) {
+    const targets = selectedExpenses;
     bulkBusy = true;
     try {
-      for (const e of selectedExpenses) await fn(e.id);
-      toast.success(`${selectedExpenses.length} ${label}`);
+      for (const e of targets) await action(e.id);
+      toast.success(`${targets.length} ${successMessage}`);
       selectedIds = new Set();
-      await reload();
     } catch (e) {
       toast.error("Bulk-Aktion fehlgeschlagen", String(e));
     } finally {
       bulkBusy = false;
       bulkDeleteConfirmOpen = false;
+      await expenses.reload();
     }
   }
 </script>
@@ -155,10 +154,10 @@
   <div>
     <h1 class="text-3xl font-semibold tracking-tight">Eingangsrechnungen</h1>
     <p class="text-sm text-muted-foreground mt-1">
-      {expenses.length} {expenses.length === 1 ? "Beleg" : "Belege"}
+      {expenses.data.length} {pluralize(expenses.data.length, "Beleg", "Belege")}
     </p>
   </div>
-  <Button onclick={newExpense}>
+  <Button onclick={() => push("/expenses/new")}>
     <Plus />
     Neue Eingangsrechnung
   </Button>
@@ -179,18 +178,15 @@
   </div>
   <div class="flex flex-col gap-1.5">
     <Label class="text-xs text-muted-foreground">Suche</Label>
-    <div class="relative">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-      <Input type="search" placeholder="Nummer oder Lieferant…" bind:value={search} class="pl-9" />
-    </div>
+    <SearchInput bind:value={search} placeholder="Nummer oder Lieferant…" />
   </div>
 </div>
 
-{#if error}
-  <p class="text-sm text-destructive">Fehler: {error}</p>
-{:else if loading}
+{#if expenses.error}
+  <p class="text-sm text-destructive">Fehler: {expenses.error}</p>
+{:else if expenses.loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if expenses.length === 0}
+{:else if expenses.data.length === 0}
   <EmptyState variant={search ? "no-results" : "empty"} message="Keine Eingangsrechnungen gefunden." />
 {:else}
   <Card class="overflow-hidden py-0">
@@ -204,13 +200,13 @@
               aria-label="Alle auswählen"
             />
           </th>
-          <SortableTh column="internalNumber" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Interne Nr.</SortableTh>
-          <SortableTh column="number" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Beleg-Nr.</SortableTh>
-          <SortableTh column="issueDate" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Datum</SortableTh>
-          <SortableTh column="vendor" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Lieferant</SortableTh>
-          <SortableTh column="total" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} align="right" class="px-4 py-3 text-right">Brutto</SortableTh>
-          <SortableTh column="status" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Status</SortableTh>
-          <SortableTh column="dueDate" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Fällig</SortableTh>
+          <SortableTh column="internalNumber" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Interne Nr.</SortableTh>
+          <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Beleg-Nr.</SortableTh>
+          <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Datum</SortableTh>
+          <SortableTh column="vendor" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Lieferant</SortableTh>
+          <SortableTh column="total" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-4 py-3 text-right">Brutto</SortableTh>
+          <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Status</SortableTh>
+          <SortableTh column="dueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Fällig</SortableTh>
         </tr>
       </thead>
       <tbody class="stagger">
@@ -232,7 +228,7 @@
             <td class="px-4 py-3">{e.vendorName}</td>
             <td class="px-4 py-3 text-right font-mono">{centsToEur(e.total)}</td>
             <td class="px-4 py-3">
-              <Badge variant={statusVariant[e.status]}>{statusLabel[e.status]}</Badge>
+              <Badge variant={EXPENSE_STATUS_VARIANT[e.status]}>{EXPENSE_STATUS_LABEL[e.status]}</Badge>
             </td>
             <td class="px-4 py-3 text-muted-foreground text-xs">
               {e.dueDate ? formatDate(e.dueDate) : "—"}
@@ -244,9 +240,9 @@
   </Card>
 {/if}
 
-<BulkActionBar count={selectedIds.size} label="Eingangsrechnung{selectedIds.size === 1 ? '' : 'en'}" onClear={() => (selectedIds = new Set())}>
+<BulkActionBar count={selectedIds.size} label={selectionLabel} onClear={() => (selectedIds = new Set())}>
   {#if canBulkMarkPaid}
-    <Button size="sm" variant="outline" onclick={() => bulkAction('als bezahlt markiert', (id) => markExpensePaid(id))} disabled={bulkBusy}>
+    <Button size="sm" variant="outline" onclick={() => runBulkAction("als bezahlt markiert", markExpensePaid)} disabled={bulkBusy}>
       <CheckCircle2 class="size-3.5" />
       Als bezahlt
     </Button>
@@ -261,9 +257,9 @@
 
 <ConfirmDialog
   bind:open={bulkDeleteConfirmOpen}
-  title="{selectedIds.size} Eingangsrechnung{selectedIds.size === 1 ? '' : 'en'} löschen?"
+  title="{selectedIds.size} {selectionLabel} löschen?"
   description="Nur Entwürfe und stornierte Belege werden gelöscht. Offene/bezahlte bleiben unangetastet."
   confirmLabel="Löschen"
   destructive
-  onConfirm={() => bulkAction('gelöscht', deleteExpense)}
+  onConfirm={() => runBulkAction("gelöscht", deleteExpense)}
 />

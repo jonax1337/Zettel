@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { fromIsoDate, SECONDS_PER_DAY, toIsoDate } from "./date";
 import { computeSkonto, formatSkontoLineDe, isSkontoActive } from "./skonto";
 
 const ISSUE = 1714521600; // 2024-05-01
@@ -49,9 +50,15 @@ describe("computeSkonto", () => {
     expect(r!.discountCent).toBe(199);
   });
 
-  it("computes deadline = issueDate + days * 86400", () => {
+  it("computes deadline = issueDate + days * SECONDS_PER_DAY", () => {
     const r = computeSkonto({ totalCent: 10000, percent: 2, days: 7, issueDate: ISSUE });
-    expect(r!.deadlineUnix).toBe(ISSUE + 7 * 86400);
+    expect(r!.deadlineUnix).toBe(ISSUE + 7 * SECONDS_PER_DAY);
+  });
+
+  it("lands on the same local calendar day across the autumn DST change", () => {
+    const issueDate = fromIsoDate("2026-10-20");
+    const r = computeSkonto({ totalCent: 10000, percent: 2, days: 10, issueDate });
+    expect(toIsoDate(r!.deadlineUnix)).toBe("2026-10-30");
   });
 });
 
@@ -59,7 +66,7 @@ describe("formatSkontoLineDe", () => {
   it("produces the expected German line", () => {
     const r = {
       discountCent: 17850,
-      deadlineUnix: ISSUE + 7 * 86400,
+      deadlineUnix: ISSUE + 7 * SECONDS_PER_DAY,
       percent: 3,
       days: 7,
     };

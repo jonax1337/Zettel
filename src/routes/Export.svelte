@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { save } from "@tauri-apps/plugin-dialog";
-  import { invoke } from "@tauri-apps/api/core";
   import { Download, FileSpreadsheet } from "$lib/brand-icons";
   import {
     Button,
@@ -18,25 +16,32 @@
   } from "$lib/ui";
   import { loadInvoicesForExport } from "$lib/db/invoices";
   import { loadExpensesForExport } from "$lib/db/expenses";
-  import { listCategories as listCuratedCategories, accountForSkr } from "$lib/db/expense-categories";
+  import { listCategories as listCuratedCategories } from "$lib/db/expense-categories";
+  import type { ExpenseCategory } from "$lib/db/schema";
   import {
     ACCOUNT_MAPS,
     buildDatevCsv,
     defaultDatevFilename,
     type Skr,
   } from "$lib/export/datev";
-  import { fromIsoDate, toIsoDate, nowUnix } from "$lib/utils/date";
+  import { fromIsoDate, nowUnix, toIsoDate, toUnix } from "$lib/utils/date";
+  import {
+    describeExportCounts,
+    endOfDayUnix,
+    fiscalYearStart,
+    resolveItemAccounts,
+  } from "./parts/reports/datev-export";
+  import { saveTextFileWithDialog } from "./parts/reports/save-text-file";
 
-  function startOfYearIso(): string {
-    const d = new Date();
-    return `${d.getFullYear()}-01-01`;
-  }
+  const DATEV_ACCOUNT_LENGTH = 4;
+  const DEFAULT_ADVISOR_NUMBER = 1001;
+  const DEFAULT_CLIENT_NUMBER = 1;
 
-  let dateFromIso = $state(startOfYearIso());
+  let dateFromIso = $state(toIsoDate(toUnix(fiscalYearStart(nowUnix()))));
   let dateToIso = $state(toIsoDate(nowUnix()));
   let skr = $state<Skr>("SKR03");
-  let beraternr = $state(1001);
-  let mandantennr = $state(1);
+  let beraternr = $state(DEFAULT_ADVISOR_NUMBER);
+  let mandantennr = $state(DEFAULT_CLIENT_NUMBER);
   let bezeichnung = $state("Zettel-Export");
   let includeInvoices = $state(true);
   let includeExpenses = $state(true);
@@ -47,6 +52,26 @@
     { value: "SKR03", label: "SKR03 (Standard)" },
     { value: "SKR04", label: "SKR04" },
   ];
+  const accounts = $derived(ACCOUNT_MAPS[skr]);
+
+  async function loadCategoriesById(): Promise<Map<number, ExpenseCategory>> {
+    const categories = await listCuratedCategories({ includeArchived: true });
+    return new Map(categories.map((c) => [c.id, c]));
+  }
+
+  async function loadDocuments(from: number, to: number) {
+    const invoices = includeInvoices ? await loadInvoicesForExport(from, to) : [];
+    if (!includeExpenses) return { invoices, expenses: [] };
+    const [rawExpenses, categoriesById] = await Promise.all([
+      loadExpensesForExport(from, to, { includeCancelled }),
+      loadCategoriesById(),
+    ]);
+    const expenses = rawExpenses.map((expense) => ({
+      ...expense,
+      items: resolveItemAccounts(expense.items, categoriesById, skr),
+    }));
+    return { invoices, expenses };
+  }
 
   async function onExport() {
     if (!includeInvoices && !includeExpenses) {
@@ -59,64 +84,36 @@
     busy = true;
     try {
       const from = fromIsoDate(dateFromIso);
-      const toEnd = fromIsoDate(dateToIso) + 86399; // ganzen Tag inkludieren
-      const invoices = includeInvoices ? await loadInvoicesForExport(from, toEnd) : [];
-      const rawExpenses = includeExpenses
-        ? await loadExpensesForExport(from, toEnd, { includeCancelled })
-        : [];
-      // Curated-Category-Override: items mit categoryId bekommen das
-      // SKR-spezifische Konto. Explizites it.datevAccount (Override) gewinnt
-      // weiter — der Picker setzt es aber nur als SKR03-Default, also wenn
-      // der User SKR04 exportiert ohne den Wert manuell zu überschreiben,
-      // nimmt der Resolver hier das SKR04-Konto aus der Kategorie.
-      const categoriesById = new Map<number, Awaited<ReturnType<typeof listCuratedCategories>>[number]>();
-      if (includeExpenses) {
-        const cats = await listCuratedCategories({ includeArchived: true });
-        for (const c of cats) categoriesById.set(c.id, c);
-      }
-      const expenses = rawExpenses.map((e) => ({
-        ...e,
-        items: e.items.map((it) => {
-          if (it.categoryId && !it.datevAccount) {
-            const c = categoriesById.get(it.categoryId);
-            if (c) {
-              return { ...it, datevAccount: accountForSkr(c, skr) };
-            }
-          }
-          return it;
-        }),
-      }));
-      const total = invoices.length + expenses.length;
-      if (total === 0) {
+      const to = endOfDayUnix(fromIsoDate(dateToIso));
+      const documents = await loadDocuments(from, to);
+      if (documents.invoices.length + documents.expenses.length === 0) {
         toast.error(
           "Keine Belege im Zeitraum",
           "Rechnungen müssen 'Versandt' oder 'Bezahlt' sein. Eingangsrechnungen 'Offen' oder 'Bezahlt'.",
         );
         return;
       }
-      const csv = buildDatevCsv(
-        { invoices, expenses },
-        {
-          beraternr,
-          mandantennr,
-          wjBeginn: new Date(new Date().getFullYear(), 0, 1),
-          dateFrom: new Date(from * 1000),
-          dateTo: new Date(toEnd * 1000),
-          sachkontenlaenge: 4,
-          bezeichnung,
-          accounts: ACCOUNT_MAPS[skr],
-        },
-      );
-      const targetPath = await save({
-        defaultPath: defaultDatevFilename(),
-        filters: [{ name: "DATEV CSV", extensions: ["csv"] }],
+      const csv = buildDatevCsv(documents, {
+        beraternr,
+        mandantennr,
+        wjBeginn: fiscalYearStart(from),
+        dateFrom: new Date(from * 1000),
+        dateTo: new Date(to * 1000),
+        sachkontenlaenge: DATEV_ACCOUNT_LENGTH,
+        bezeichnung,
+        accounts,
       });
-      if (!targetPath) return;
-      await invoke<string>("save_text_file", { path: targetPath, content: csv });
-      const parts: string[] = [];
-      if (invoices.length) parts.push(`${invoices.length} Rechnung${invoices.length === 1 ? "" : "en"}`);
-      if (expenses.length) parts.push(`${expenses.length} Eingangsrechnung${expenses.length === 1 ? "" : "en"}`);
-      toast.success(`Export gespeichert (${parts.join(" + ")})`);
+      const saved = await saveTextFileWithDialog({
+        defaultPath: defaultDatevFilename(),
+        filterName: "DATEV CSV",
+        extension: "csv",
+        content: csv,
+      });
+      if (saved) {
+        toast.success(
+          `Export gespeichert (${describeExportCounts(documents.invoices.length, documents.expenses.length)})`,
+        );
+      }
     } catch (e) {
       toast.error("Export fehlgeschlagen", String(e));
     } finally {
@@ -158,7 +155,7 @@
         </div>
         <div class="flex flex-col gap-1.5">
           <Label>Kontenrahmen</Label>
-          <Select bind:value={skr as unknown as string} items={skrItems} />
+          <Select bind:value={() => skr, (v) => (skr = v as Skr)} items={skrItems} />
         </div>
         <div class="flex flex-col gap-1.5">
           <Label>Bezeichnung (max. 30)</Label>
@@ -192,10 +189,10 @@
       <div class="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
         <p>
           <strong>Kontenmapping ({skr}):</strong>
-          Debitor {ACCOUNT_MAPS[skr].debitor} · Kreditor {ACCOUNT_MAPS[skr].kreditor} ·
-          Erlöse 19 % {ACCOUNT_MAPS[skr].revenue19}, 7 % {ACCOUNT_MAPS[skr].revenue7} ·
-          Aufwand 19 % {ACCOUNT_MAPS[skr].expense19}, 7 % {ACCOUNT_MAPS[skr].expense7} ·
-          §13b Aufwand {ACCOUNT_MAPS[skr].expenseReverseCharge}.
+          Debitor {accounts.debitor} · Kreditor {accounts.kreditor} ·
+          Erlöse 19 % {accounts.revenue19}, 7 % {accounts.revenue7} ·
+          Aufwand 19 % {accounts.expense19}, 7 % {accounts.expense7} ·
+          §13b Aufwand {accounts.expenseReverseCharge}.
         </p>
         <p>
           Stornorechnungen werden mit Soll/Haben-Drehung als Storno-Buchung exportiert.

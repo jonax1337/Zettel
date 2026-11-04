@@ -13,6 +13,9 @@
  * kann das beim Schreiben übersetzen.
  */
 import type { Expense, ExpenseItem, Invoice, InvoiceItem } from "$lib/db/schema";
+import { CSV_LINE_BREAK, UTF8_BOM } from "$lib/utils/csv";
+
+export { UTF8_BOM };
 
 export type DatevAccountMap = {
   /** Sammel-Debitor (Forderungen aus Lieferungen und Leistungen). */
@@ -105,11 +108,11 @@ export type DatevExpenseInput = {
 
 // ----- Helpers -----
 
+const MAX_BOOKING_TEXT_LENGTH = 60;
+const MAX_BATCH_LABEL_LENGTH = 30;
+
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
-}
-function pad4(n: number): string {
-  return String(n).padStart(4, "0");
 }
 
 function fmtDdmm(d: Date): string {
@@ -123,10 +126,7 @@ function fmtYyyymmdd(d: Date): string {
 function fmtHeaderTimestamp(d: Date): string {
   // YYYYMMDDhhmmssfff
   const ms = String(d.getMilliseconds()).padStart(3, "0");
-  return (
-    `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}` +
-    `${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}${ms}`
-  );
+  return `${fmtYyyymmdd(d)}${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}${ms}`;
 }
 
 function centsToDatev(cents: number): string {
@@ -146,6 +146,15 @@ function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max);
 }
 
+/** Line VAT, rounded per line like the invoice totals. */
+function lineVat(item: { lineTotal: number; vatRate: number }): number {
+  return Math.round((item.lineTotal * item.vatRate) / 100);
+}
+
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
+
 // ----- Booking-row construction -----
 
 type Booking = {
@@ -154,13 +163,13 @@ type Booking = {
   credit: number;
   /** "S" = standard Forderung. "H" flips the booking direction for credit notes. */
   sollHaben: "S" | "H";
-  buSchluessel: string;
   belegdatum: Date;
   belegfeld1: string;
   buchungstext: string;
   euVatId: string | null;
-  euLand: string | null;
 };
+
+type RateGroup = { rate: number; gross: number };
 
 function revenueAccountFor(
   vatRate: number,
@@ -175,84 +184,74 @@ function revenueAccountFor(
   return accounts.revenueExempt;
 }
 
+/** Gross amount (incl. VAT) per effective VAT rate, ascending by rate. KU/RC invoices book everything at rate 0. */
+function grossByEffectiveRate(items: InvoiceItem[], vatExempt: boolean): RateGroup[] {
+  const grossByRate = new Map<number, number>();
+  for (const item of items) {
+    const rate = vatExempt ? 0 : item.vatRate;
+    const vat = vatExempt ? 0 : lineVat(item);
+    grossByRate.set(rate, (grossByRate.get(rate) ?? 0) + item.lineTotal + vat);
+  }
+  return [...grossByRate]
+    .map(([rate, gross]) => ({ rate, gross }))
+    .sort((a, b) => a.rate - b.rate);
+}
+
 /**
- * Group invoice items by their effective VAT rate and produce one booking row
- * per group. Returns gross amounts (including VAT) per row so the importer
- * doesn't need to re-calculate.
+ * Scales each group's gross to its share of the invoice's authoritative EUR
+ * total. The rounding residual goes to the group with the largest absolute
+ * gross (first one on ties) so the bookings sum exactly to `eurTotal`.
+ */
+function apportionEurTotal(groups: RateGroup[], eurTotal: number): RateGroup[] {
+  const originalTotal = sum(groups.map((g) => g.gross));
+  if (originalTotal === 0) return groups;
+
+  const shares = groups.map((g) => ({
+    rate: g.rate,
+    gross: Math.round((g.gross / originalTotal) * eurTotal),
+  }));
+  const residual = eurTotal - sum(shares.map((g) => g.gross));
+
+  let largest = 0;
+  groups.forEach((g, i) => {
+    if (Math.abs(g.gross) > Math.abs(groups[largest].gross)) largest = i;
+  });
+  shares[largest].gross += residual;
+  return shares;
+}
+
+/**
+ * One booking row per effective VAT rate, with gross amounts (including VAT)
+ * so the importer doesn't need to re-calculate. Non-EUR invoices are booked
+ * in EUR via `invoice.eurTotalCent`.
  */
 function bookingsForInvoice(input: DatevInvoiceInput, accounts: DatevAccountMap): Booking[] {
   const { invoice, items, customerName, customerVatId } = input;
   const isKu = invoice.isKleinunternehmer;
   const isRc = invoice.isReverseCharge;
+  const isCreditNote = invoice.isCreditNote;
 
-  // Gruppen-Key = effektive Rate für die Buchung (bei KU/RC immer 0).
-  const groups = new Map<number, { net: number; vat: number }>();
-  for (const it of items) {
-    const effectiveRate = isKu || isRc ? 0 : it.vatRate;
-    const net = it.lineTotal;
-    const vat = isKu || isRc ? 0 : Math.round((net * it.vatRate) / 100);
-    const g = groups.get(effectiveRate) ?? { net: 0, vat: 0 };
-    g.net += net;
-    g.vat += vat;
-    groups.set(effectiveRate, g);
-  }
-
-  const dueDate = new Date(invoice.issueDate * 1000);
-  const isCn = invoice.isCreditNote;
-  const out: Booking[] = [];
-  const sortedRates = [...groups.keys()].sort((a, b) => a - b);
-
-  // Multi-currency: if the invoice is non-EUR, scale each VAT-group gross to
-  // its EUR-equivalent share. `invoice.eurTotalCent` is the authoritative EUR
-  // amount (computed at issue time); we apportion it proportionally and assign
-  // the rounding residual to the largest group so the bookings sum exactly.
+  let groups = grossByEffectiveRate(items, isKu || isRc);
   const isForeignCurrency =
     !!invoice.currency && invoice.currency !== "EUR" && invoice.eurTotalCent != null;
-  const grossByRate = new Map<number, number>();
-  let originalTotal = 0;
-  for (const rate of sortedRates) {
-    const g = groups.get(rate)!;
-    const gross = g.net + g.vat;
-    grossByRate.set(rate, gross);
-    originalTotal += gross;
-  }
-  if (isForeignCurrency && originalTotal !== 0) {
-    const eurTotal = invoice.eurTotalCent!;
-    let allocated = 0;
-    let largestRate = sortedRates[0];
-    let largestGross = -Infinity;
-    for (const rate of sortedRates) {
-      const gross = grossByRate.get(rate)!;
-      if (Math.abs(gross) > Math.abs(largestGross)) {
-        largestGross = gross;
-        largestRate = rate;
-      }
-      const share = Math.round((gross / originalTotal) * eurTotal);
-      grossByRate.set(rate, share);
-      allocated += share;
-    }
-    const residual = eurTotal - allocated;
-    if (residual !== 0) {
-      grossByRate.set(largestRate, grossByRate.get(largestRate)! + residual);
-    }
+  if (isForeignCurrency) {
+    groups = apportionEurTotal(groups, invoice.eurTotalCent!);
   }
 
-  for (const rate of sortedRates) {
-    const gross = grossByRate.get(rate)!;
-    out.push({
-      amountCents: gross,
-      debit: accounts.debitor,
-      credit: revenueAccountFor(rate, isKu, isRc, accounts),
-      sollHaben: isCn ? "H" : "S",
-      buSchluessel: "",
-      belegdatum: dueDate,
-      belegfeld1: invoice.number,
-      buchungstext: truncate(`${isCn ? "Storno" : "Rechnung"} ${customerName}`, 60),
-      euVatId: isRc ? customerVatId : null,
-      euLand: isRc && customerVatId ? customerVatId.slice(0, 2) : null,
-    });
-  }
-  return out;
+  const belegdatum = new Date(invoice.issueDate * 1000);
+  return groups.map(({ rate, gross }) => ({
+    amountCents: gross,
+    debit: accounts.debitor,
+    credit: revenueAccountFor(rate, isKu, isRc, accounts),
+    sollHaben: isCreditNote ? "H" : "S",
+    belegdatum,
+    belegfeld1: invoice.number,
+    buchungstext: truncate(
+      `${isCreditNote ? "Storno" : "Rechnung"} ${customerName}`,
+      MAX_BOOKING_TEXT_LENGTH,
+    ),
+    euVatId: isRc ? customerVatId : null,
+  }));
 }
 
 function expenseAccountFor(
@@ -266,57 +265,54 @@ function expenseAccountFor(
   return accounts.expenseExempt;
 }
 
+type ExpenseGroup = { key: string; account: number; gross: number };
+
+/**
+ * Gross amount per (account, effective rate). An explicit
+ * `expense_items.datev_account` overrides the default account of the position.
+ */
+function grossByAccountAndRate(
+  items: ExpenseItem[],
+  isReverseCharge: boolean,
+  accounts: DatevAccountMap,
+): ExpenseGroup[] {
+  const groups = new Map<string, ExpenseGroup>();
+  for (const item of items) {
+    const account =
+      Number.parseInt(item.datevAccount ?? "", 10) ||
+      expenseAccountFor(item.vatRate, isReverseCharge, accounts);
+    const rate = isReverseCharge ? 0 : item.vatRate;
+    const vat = isReverseCharge ? 0 : lineVat(item);
+    const key = `${account}|${rate}`;
+    const group = groups.get(key) ?? { key, account, gross: 0 };
+    group.gross += item.lineTotal + vat;
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+}
+
 /**
  * Eingangsrechnung → Buchungen. Soll = Aufwandskonto (passend zum USt-Satz),
  * Haben = Sammel-Kreditor. Stornierte Eingangsrechnungen drehen Soll/Haben.
- * `expense_items.datev_account` (falls gesetzt) überschreibt das Default-Konto
- * pro Position — innerhalb der Gruppe wird per Account aggregiert.
  */
 function bookingsForExpense(input: DatevExpenseInput, accounts: DatevAccountMap): Booking[] {
   const { expense, items, vendorName, vendorVatId } = input;
   const isRc = expense.isReverseCharge;
   const isCancelled = expense.status === "cancelled";
 
-  // Gruppen-Key: "<account>|<rate>" — explizite datev_account-Overrides bleiben
-  // pro Position erhalten.
-  const groups = new Map<string, { account: number; rate: number; net: number; vat: number }>();
-  for (const it of items) {
-    const account = it.datevAccount
-      ? Number.parseInt(it.datevAccount, 10) || expenseAccountFor(it.vatRate, isRc, accounts)
-      : expenseAccountFor(it.vatRate, isRc, accounts);
-    const effectiveRate = isRc ? 0 : it.vatRate;
-    const net = it.lineTotal;
-    const vat = isRc ? 0 : Math.round((net * it.vatRate) / 100);
-    const key = `${account}|${effectiveRate}`;
-    const g = groups.get(key) ?? { account, rate: effectiveRate, net: 0, vat: 0 };
-    g.net += net;
-    g.vat += vat;
-    groups.set(key, g);
-  }
-
   const belegdatum = new Date(expense.issueDate * 1000);
-  const out: Booking[] = [];
-  const sortedKeys = [...groups.keys()].sort();
-  for (const key of sortedKeys) {
-    const g = groups.get(key)!;
-    const gross = g.net + g.vat;
-    out.push({
-      amountCents: gross,
-      debit: g.account,
-      credit: accounts.kreditor,
-      sollHaben: isCancelled ? "H" : "S",
-      buSchluessel: "",
-      belegdatum,
-      belegfeld1: expense.internalNumber,
-      buchungstext: truncate(
-        `${isCancelled ? "Storno" : "Eingangsrechnung"} ${vendorName}${expense.number ? ` (${expense.number})` : ""}`,
-        60,
-      ),
-      euVatId: isRc ? vendorVatId : null,
-      euLand: isRc && vendorVatId ? vendorVatId.slice(0, 2) : null,
-    });
-  }
-  return out;
+  const label = isCancelled ? "Storno" : "Eingangsrechnung";
+  const vendorReference = expense.number ? ` (${expense.number})` : "";
+  return grossByAccountAndRate(items, isRc, accounts).map(({ account, gross }) => ({
+    amountCents: gross,
+    debit: account,
+    credit: accounts.kreditor,
+    sollHaben: isCancelled ? "H" : "S",
+    belegdatum,
+    belegfeld1: expense.internalNumber,
+    buchungstext: truncate(`${label} ${vendorName}${vendorReference}`, MAX_BOOKING_TEXT_LENGTH),
+    euVatId: isRc ? vendorVatId : null,
+  }));
 }
 
 // ----- CSV assembly -----
@@ -374,15 +370,37 @@ const COLUMN_HEADERS = [
   "Zusatzinformation - Inhalt 1",
 ];
 
+function columnIndex(header: string): number {
+  return COLUMN_HEADERS.indexOf(header);
+}
+
+const COLUMN = {
+  amount: columnIndex("Umsatz (ohne Soll-/Haben-Kz)"),
+  sollHaben: columnIndex("Soll-/Haben-Kennzeichen"),
+  currency: columnIndex("WKZ Umsatz"),
+  account: columnIndex("Konto"),
+  contraAccount: columnIndex("Gegenkonto (ohne BU-Schlüssel)"),
+  belegdatum: columnIndex("Belegdatum"),
+  belegfeld1: columnIndex("Belegfeld 1"),
+  buchungstext: columnIndex("Buchungstext"),
+  euVatId: columnIndex("EU-Land u. UStID (Bestimmung)"),
+};
+
+const HEADER_FORMAT_VERSION = 700;
+const HEADER_DATA_CATEGORY_BOOKING_BATCH = 21;
+const HEADER_BOOKING_BATCH_VERSION = 9;
+const BOOKING_TYPE_FINANCIAL_ACCOUNTING = 1;
+const NOT_COMMITTED = 0;
+
 function buildHeaderLine(opts: DatevExportOpts, now: Date): string {
   // DATEV-Header für Format 700, Buchungsstapel (21).
   // Spec: https://developer.datev.de/datev/platform/en/dtvf/formate/header
   const fields: Array<string | number> = [
     quote("EXTF"),
-    700,
-    21,
+    HEADER_FORMAT_VERSION,
+    HEADER_DATA_CATEGORY_BOOKING_BATCH,
     quote("Buchungsstapel"),
-    9,
+    HEADER_BOOKING_BATCH_VERSION,
     fmtHeaderTimestamp(now),
     "", // imported on (leer = Stapel ist neu)
     quote("Zettel"),
@@ -394,11 +412,11 @@ function buildHeaderLine(opts: DatevExportOpts, now: Date): string {
     opts.sachkontenlaenge,
     fmtYyyymmdd(opts.dateFrom),
     fmtYyyymmdd(opts.dateTo),
-    quote(truncate(opts.bezeichnung, 30)),
+    quote(truncate(opts.bezeichnung, MAX_BATCH_LABEL_LENGTH)),
     quote(""), // Diktatkürzel
-    1,         // Buchungstyp: 1 = Finanzbuchführung
-    0,         // Rechnungslegungszweck
-    0,         // Festschreibung (0 = nicht festgeschrieben)
+    BOOKING_TYPE_FINANCIAL_ACCOUNTING,
+    0, // Rechnungslegungszweck
+    NOT_COMMITTED, // Festschreibung
     quote("EUR"),
     "", "", "", "",
     "", "",
@@ -408,21 +426,17 @@ function buildHeaderLine(opts: DatevExportOpts, now: Date): string {
 
 function rowFor(b: Booking): string {
   const fields: string[] = new Array(COLUMN_HEADERS.length).fill("");
-  fields[0] = centsToDatev(b.amountCents);
-  fields[1] = quote(b.sollHaben);
-  fields[2] = quote("EUR");
-  fields[6] = String(b.debit);
-  fields[7] = String(b.credit);
-  fields[8] = b.buSchluessel; // numerischer Schlüssel, ohne Quotes
-  fields[9] = fmtDdmm(b.belegdatum);
-  fields[10] = quote(b.belegfeld1);
-  fields[13] = quote(b.buchungstext);
-  if (b.euVatId) fields[39] = quote(b.euVatId);
+  fields[COLUMN.amount] = centsToDatev(b.amountCents);
+  fields[COLUMN.sollHaben] = quote(b.sollHaben);
+  fields[COLUMN.currency] = quote("EUR");
+  fields[COLUMN.account] = String(b.debit);
+  fields[COLUMN.contraAccount] = String(b.credit);
+  fields[COLUMN.belegdatum] = fmtDdmm(b.belegdatum);
+  fields[COLUMN.belegfeld1] = quote(b.belegfeld1);
+  fields[COLUMN.buchungstext] = quote(b.buchungstext);
+  if (b.euVatId) fields[COLUMN.euVatId] = quote(b.euVatId);
   return fields.join(";");
 }
-
-/** UTF-8-BOM-Präfix, von DATEV ab Format 700 akzeptiert. */
-export const UTF8_BOM = "﻿";
 
 export type DatevBatchInput = {
   invoices?: DatevInvoiceInput[];
@@ -437,18 +451,16 @@ export function buildDatevCsv(
   const batch: DatevBatchInput = Array.isArray(inputs) ? { invoices: inputs } : inputs;
   const headerLine = buildHeaderLine(opts, now);
   const columnLine = COLUMN_HEADERS.map(quote).join(";");
-  const rows: string[] = [];
-  for (const input of batch.invoices ?? []) {
-    for (const b of bookingsForInvoice(input, opts.accounts)) rows.push(rowFor(b));
-  }
-  for (const input of batch.expenses ?? []) {
-    for (const b of bookingsForExpense(input, opts.accounts)) rows.push(rowFor(b));
-  }
+  const bookings = [
+    ...(batch.invoices ?? []).flatMap((input) => bookingsForInvoice(input, opts.accounts)),
+    ...(batch.expenses ?? []).flatMap((input) => bookingsForExpense(input, opts.accounts)),
+  ];
+  const lines = [headerLine, columnLine, ...bookings.map(rowFor)];
   // DATEV erwartet CRLF.
-  return UTF8_BOM + [headerLine, columnLine, ...rows].join("\r\n") + "\r\n";
+  return UTF8_BOM + lines.join(CSV_LINE_BREAK) + CSV_LINE_BREAK;
 }
 
 export function defaultDatevFilename(now: Date = new Date()): string {
-  // EXTF_Buchungsstapel_YYYYMMDD.csv — gängiges Pattern für DATEV-Importe.
-  return `EXTF_Buchungsstapel_${fmtYyyymmdd(now)}_${pad4(now.getHours() * 100 + now.getMinutes())}.csv`;
+  // EXTF_Buchungsstapel_YYYYMMDD_hhmm.csv — gängiges Pattern für DATEV-Importe.
+  return `EXTF_Buchungsstapel_${fmtYyyymmdd(now)}_${pad2(now.getHours())}${pad2(now.getMinutes())}.csv`;
 }

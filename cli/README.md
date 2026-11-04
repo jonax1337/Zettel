@@ -37,7 +37,11 @@ Der CLI repliziert bewusst die App-Logik aus `src/lib/db/invoices.ts`:
 - **Draft-Placeholder** `DRAFT-<hex>` — kein Nummern-Slot wird verbrannt
 - **Lazy Numbering**: echte `RE-{YYYY}-{NNNN}` erst bei `issue`/`pdf`
 - **Per-Line-Rundung** (`computeTotals`), Cent-Integer überall
-- **markPaid** protokolliert Restbetrag als `invoice_payments`-Eintrag (`auto`)
+- **markPaid** protokolliert Restbetrag als `invoice_payments`-Eintrag (`auto`);
+  nur bei Status `sent`/`partial` (Entwürfe werden vorher bereitgestellt),
+  bei `paid`/`cancelled` bricht `invoice:paid` ohne Änderung mit Fehler ab
+- **Fristen** (Fälligkeit, Skonto) zählen Kalendertage in lokaler Zeit (DST-sicher),
+  Skonto-Betrag wird abgerundet; Jahresfilter/-statistik gruppieren nach lokalem Jahr
 - **PDF-Versionierung**: existierendes PDF wird vor Regeneration nach
   `Versionen/<stem>__<mtime>.pdf` verschoben (wie `archive_pdf_version`)
 - **Sidecar**: JSON-RPC über stdin/stdout, Dev-Venv oder `ZETTEL_SIDECAR`-Binary

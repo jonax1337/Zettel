@@ -1,11 +1,35 @@
 import { select } from "$lib/db/client";
+import type { InvoiceStatus } from "$lib/db/schema";
+import { nowUnix, SECONDS_PER_DAY } from "$lib/utils/date";
+import { displayInvoiceNumber } from "$lib/utils/invoice-number";
+import { classifyFollowUp, followUpWindow, type FollowUpGroup } from "./follow-up";
 import type { Period } from "./period";
 import { monthsIn } from "./period";
 
+const REVENUE_STATUSES = `('sent','partial','paid')`;
+const OPEN_STATUSES = `('sent','partial')`;
+
+// Non-EUR invoices prefer the frozen eur_total_cent, otherwise total as-is.
+const REVENUE_AMOUNT_SQL = `COALESCE(eur_total_cent, total)`;
+const REVENUE_NET_SQL = `(CASE
+  WHEN eur_total_cent IS NOT NULL AND total <> 0 THEN
+    CAST(eur_total_cent * subtotal AS REAL) / total
+  ELSE subtotal
+END)`;
+// Offener Saldo in EUR-Cent. total und amount_paid_cent stehen in der
+// Rechnungswährung, eur_total_cent ist der eingefrorene EUR-Gegenwert von total:
+// der gezahlte Anteil wird daher proportional umgerechnet (Integer-Rundung
+// half-up, kein Float), statt Fremdwährungs-Cent von EUR-Cent abzuziehen.
+const OPEN_BALANCE_SQL = `(CASE
+  WHEN eur_total_cent IS NULL OR total = 0 THEN total - COALESCE(amount_paid_cent, 0)
+  ELSE eur_total_cent - (2 * eur_total_cent * COALESCE(amount_paid_cent, 0) + total) / (2 * total)
+END)`;
+
+type CountAndTotal = { count: number; total: number };
+
 /**
- * Revenue figure: invoices issued in [period.start, period.end), status sent or
- * paid, signed totals (credit notes are negative). Non-EUR invoices prefer
- * eur_total_cent if set, otherwise total_cent as-is.
+ * Revenue figures count invoices issued in [period.start, period.end) with
+ * status sent, partial or paid. Totals are signed, so credit notes are negative.
  */
 export type Kpis = {
   revenueNet: number;
@@ -16,55 +40,54 @@ export type Kpis = {
   openTotal: number;
 };
 
-const REVENUE_AMOUNT_SQL = `COALESCE(eur_total_cent, total)`;
-const REVENUE_NET_SQL = `(CASE
-  WHEN eur_total_cent IS NOT NULL AND total <> 0 THEN
-    CAST(eur_total_cent * subtotal AS REAL) / total
-  ELSE subtotal
-END)`;
-// Offener Saldo = Brutto-Total − bereits gezahlt. Bei Multi-Currency-Rechnungen
-// stehen total und amount_paid_cent in der Rechnungswährung — die Differenz ist
-// dieselbe Einheit. Wir zeigen also den Rest in Originalwährung; bei einer
-// gemischten Liste bleibt das eine Approximation (so wie REVENUE_AMOUNT_SQL).
-const OPEN_BALANCE_SQL = `(COALESCE(eur_total_cent, total) - COALESCE(amount_paid_cent, 0))`;
-
-export async function loadKpis(p: Period): Promise<Kpis> {
-  const [rev] = await select<{ net: number; gross: number }>(
+async function loadRevenue(p: Period): Promise<{ net: number; gross: number }> {
+  const [row] = await select<{ net: number; gross: number }>(
     `SELECT
        COALESCE(SUM(${REVENUE_NET_SQL}), 0) AS net,
        COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS gross
      FROM invoices
-     WHERE status IN ('sent','partial','paid')
+     WHERE status IN ${REVENUE_STATUSES}
        AND issue_date >= ? AND issue_date < ?`,
     [p.start, p.end],
   );
+  return { net: Math.round(row?.net ?? 0), gross: Math.round(row?.gross ?? 0) };
+}
 
-  const [exp] = await select<{ net: number }>(
+async function loadExpenseNet(p: Period): Promise<number> {
+  const [row] = await select<{ net: number }>(
     `SELECT COALESCE(SUM(subtotal), 0) AS net
      FROM expenses
      WHERE status IN ('open','paid')
        AND issue_date >= ? AND issue_date < ?`,
     [p.start, p.end],
   );
+  return Math.round(row?.net ?? 0);
+}
 
-  const [open] = await select<{ c: number; t: number }>(
+async function loadOpenReceivables(p: Period): Promise<CountAndTotal> {
+  const [row] = await select<{ c: number; t: number }>(
     `SELECT COUNT(*) AS c, COALESCE(SUM(${OPEN_BALANCE_SQL}), 0) AS t
      FROM invoices
-     WHERE status IN ('sent','partial')
+     WHERE status IN ${OPEN_STATUSES}
        AND issue_date >= ? AND issue_date < ?`,
     [p.start, p.end],
   );
+  return { count: row?.c ?? 0, total: row?.t ?? 0 };
+}
 
-  const net = Math.round(rev?.net ?? 0);
-  const gross = Math.round(rev?.gross ?? 0);
-  const expNet = Math.round(exp?.net ?? 0);
+export async function loadKpis(p: Period): Promise<Kpis> {
+  const [revenue, expenseNet, open] = await Promise.all([
+    loadRevenue(p),
+    loadExpenseNet(p),
+    loadOpenReceivables(p),
+  ]);
   return {
-    revenueNet: net,
-    revenueGross: gross,
-    expenseNet: expNet,
-    balance: net - expNet,
-    openCount: open?.c ?? 0,
-    openTotal: open?.t ?? 0,
+    revenueNet: revenue.net,
+    revenueGross: revenue.gross,
+    expenseNet,
+    balance: revenue.net - expenseNet,
+    openCount: open.count,
+    openTotal: open.total,
   };
 }
 
@@ -74,24 +97,24 @@ export type MonthPoint = { year: number; month: number; label: string; total: nu
 
 export async function monthlyRevenueInPeriod(p: Period): Promise<MonthPoint[]> {
   const rows = await select<{ ym: string; t: number }>(
-    `SELECT strftime('%Y-%m', issue_date, 'unixepoch') AS ym,
+    `SELECT strftime('%Y-%m', issue_date, 'unixepoch', 'localtime') AS ym,
             COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS t
      FROM invoices
-     WHERE status IN ('sent','partial','paid')
+     WHERE status IN ${REVENUE_STATUSES}
        AND issue_date >= ? AND issue_date < ?
      GROUP BY ym`,
     [p.start, p.end],
   );
-  const byKey = new Map(rows.map((r) => [r.ym, r.t]));
+  const totalByMonthKey = new Map(rows.map((r) => [r.ym, r.t]));
   return monthsIn(p).map((m) => ({
     year: m.year,
     month: m.month,
     label: m.label,
-    total: byKey.get(`${m.year}-${String(m.month).padStart(2, "0")}`) ?? 0,
+    total: totalByMonthKey.get(`${m.year}-${String(m.month).padStart(2, "0")}`) ?? 0,
   }));
 }
 
-// --- Top 5 customers within period ---
+// --- Top customers within period ---
 
 export type TopCustomerRow = {
   customerId: number;
@@ -103,7 +126,7 @@ export type TopCustomerRow = {
 
 export async function topCustomersInPeriod(
   p: Period,
-  limit = 5,
+  limit: number,
 ): Promise<TopCustomerRow[]> {
   const rows = await select<{
     customer_id: number;
@@ -117,7 +140,7 @@ export async function topCustomersInPeriod(
             COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS t
      FROM invoices i
      INNER JOIN customers c ON c.id = i.customer_id
-     WHERE i.status IN ('sent','partial','paid')
+     WHERE i.status IN ${REVENUE_STATUSES}
        AND i.issue_date >= ? AND i.issue_date < ?
      GROUP BY i.customer_id
      ORDER BY t DESC
@@ -138,7 +161,7 @@ export async function topCustomersInPeriod(
 export type OldestOverdue = {
   /** Days overdue. Negative = not yet due. null = no open invoices. */
   daysOverdue: number | null;
-  /** Total open (sent, not paid) amount across all currencies, in EUR cents. */
+  /** Total open (sent or partially paid) amount across all currencies, in EUR cents. */
   openTotal: number;
   /** Count of open invoices. */
   openCount: number;
@@ -149,24 +172,18 @@ export type OldestOverdue = {
  * freelancer scale.
  */
 export async function oldestOverdue(): Promise<OldestOverdue> {
-  const now = Math.floor(Date.now() / 1000);
   const rows = await select<{ due_date: number; t: number }>(
     `SELECT due_date, ${OPEN_BALANCE_SQL} AS t
      FROM invoices
-     WHERE status IN ('sent','partial')`,
+     WHERE status IN ${OPEN_STATUSES}`,
   );
   if (rows.length === 0) {
     return { daysOverdue: null, openTotal: 0, openCount: 0 };
   }
-  let openTotal = 0;
-  let oldestDue = rows[0].due_date;
-  for (const r of rows) {
-    openTotal += r.t;
-    if (r.due_date < oldestDue) oldestDue = r.due_date;
-  }
+  const oldestDue = rows.reduce((oldest, r) => Math.min(oldest, r.due_date), rows[0].due_date);
   return {
-    daysOverdue: Math.floor((now - oldestDue) / 86400),
-    openTotal,
+    daysOverdue: Math.floor((nowUnix() - oldestDue) / SECONDS_PER_DAY),
+    openTotal: rows.reduce((total, r) => total + r.t, 0),
     openCount: rows.length,
   };
 }
@@ -182,14 +199,11 @@ export type FollowUpItem = {
   followUpDate: number;
   /** Routing target */
   href: string;
-  group: "overdue" | "today" | "week";
+  group: FollowUpGroup;
 };
 
 export async function loadFollowUps(): Promise<FollowUpItem[]> {
-  const now = new Date();
-  const today0 = Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000);
-  const todayEnd = today0 + 86400;
-  const weekEnd = today0 + 8 * 86400;
+  const window = followUpWindow(new Date());
 
   const customers = await select<{
     id: number;
@@ -200,61 +214,48 @@ export async function loadFollowUps(): Promise<FollowUpItem[]> {
     `SELECT id, name, customer_number, follow_up_date
      FROM customers
      WHERE follow_up_date IS NOT NULL AND follow_up_date < ?`,
-    [weekEnd],
+    [window.horizonEnd],
   );
 
   const invoices = await select<{
     id: number;
     number: string;
+    status: InvoiceStatus;
     follow_up_date: number;
     customer_name: string;
   }>(
-    `SELECT i.id, i.number, i.follow_up_date, c.name AS customer_name
+    `SELECT i.id, i.number, i.status, i.follow_up_date, c.name AS customer_name
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
      WHERE i.follow_up_date IS NOT NULL AND i.follow_up_date < ?
        AND i.status IN ('draft','sent')`,
-    [weekEnd],
+    [window.horizonEnd],
   );
 
-  const items: FollowUpItem[] = [];
-  for (const c of customers) {
-    items.push({
-      kind: "customer",
-      id: c.id,
-      title: c.name,
-      subtitle: c.customer_number,
-      followUpDate: c.follow_up_date,
-      href: `/customers/${c.id}`,
-      group:
-        c.follow_up_date < today0
-          ? "overdue"
-          : c.follow_up_date < todayEnd
-            ? "today"
-            : "week",
-    });
-  }
-  for (const i of invoices) {
-    items.push({
-      kind: "invoice",
-      id: i.id,
-      title: i.number.startsWith("DRAFT-") ? `Entwurf #${i.number.slice(6, 10)}` : i.number,
-      subtitle: i.customer_name ?? "—",
-      followUpDate: i.follow_up_date,
-      href: `/invoices/${i.id}`,
-      group:
-        i.follow_up_date < today0
-          ? "overdue"
-          : i.follow_up_date < todayEnd
-            ? "today"
-            : "week",
-    });
-  }
-  items.sort((a, b) => a.followUpDate - b.followUpDate);
-  return items;
+  const customerItems = customers.map((c): FollowUpItem => ({
+    kind: "customer",
+    id: c.id,
+    title: c.name,
+    subtitle: c.customer_number,
+    followUpDate: c.follow_up_date,
+    href: `/customers/${c.id}`,
+    group: classifyFollowUp(c.follow_up_date, window),
+  }));
+  const invoiceItems = invoices.map((i): FollowUpItem => ({
+    kind: "invoice",
+    id: i.id,
+    title: displayInvoiceNumber(i),
+    subtitle: i.customer_name ?? "—",
+    followUpDate: i.follow_up_date,
+    href: `/invoices/${i.id}`,
+    group: classifyFollowUp(i.follow_up_date, window),
+  }));
+  return [...customerItems, ...invoiceItems].sort((a, b) => a.followUpDate - b.followUpDate);
 }
 
 // --- Cash-Flow-Forecast (next 30 days) ---
+
+const FORECAST_HORIZON_DAYS = 30;
 
 export type CashFlowForecast = {
   /** Open `sent` invoices with due_date in [now, now + 30d]. EUR-Cent. */
@@ -270,37 +271,24 @@ export type CashFlowForecast = {
   total: number;
 };
 
-export async function cashFlowForecast30d(): Promise<CashFlowForecast> {
-  const now = Math.floor(Date.now() / 1000);
-  const horizon = now + 30 * 86400;
-
-  const [open] = await select<{ c: number; t: number }>(
+async function sumOpenBalanceWhere(dueDateCondition: string, params: number[]): Promise<CountAndTotal> {
+  const [row] = await select<{ c: number; t: number }>(
     `SELECT COUNT(*) AS c, COALESCE(SUM(${OPEN_BALANCE_SQL}), 0) AS t
      FROM invoices
-     WHERE status IN ('sent','partial')
-       AND due_date >= ? AND due_date <= ?`,
-    [now, horizon],
+     WHERE status IN ${OPEN_STATUSES}
+       AND ${dueDateCondition}`,
+    params,
   );
+  return { count: row?.c ?? 0, total: Math.round(row?.t ?? 0) };
+}
 
-  const [over] = await select<{ c: number; t: number }>(
-    `SELECT COUNT(*) AS c, COALESCE(SUM(${OPEN_BALANCE_SQL}), 0) AS t
-     FROM invoices
-     WHERE status IN ('sent','partial')
-       AND due_date < ?`,
-    [now],
-  );
-
-  // Recurring estimate: for each active template due in window, sum line totals
-  // gross. Reverse-charge templates emit 0 VAT, others get the items' VAT-rate.
-  const recurringRows = await select<{
-    id: number;
-    is_reverse_charge: number;
-    line_net: number;
-    line_vat: number;
-  }>(
-    `SELECT r.id,
-            r.is_reverse_charge,
-            COALESCE(SUM(ri.quantity * ri.unit_price), 0) AS line_net,
+/**
+ * For each active template due within the horizon, sums line totals gross.
+ * Reverse-charge templates emit 0 VAT, others get the items' VAT rate.
+ */
+async function estimateRecurringWithin(horizon: number): Promise<CountAndTotal> {
+  const rows = await select<{ line_net: number; line_vat: number }>(
+    `SELECT COALESCE(SUM(ri.quantity * ri.unit_price), 0) AS line_net,
             COALESCE(SUM(
               CASE WHEN r.is_reverse_charge = 1 THEN 0
                    ELSE ROUND(ri.quantity * ri.unit_price * ri.vat_rate / 100.0)
@@ -313,23 +301,26 @@ export async function cashFlowForecast30d(): Promise<CashFlowForecast> {
      GROUP BY r.id`,
     [horizon],
   );
-  let recurringEstimate = 0;
-  for (const row of recurringRows) {
-    recurringEstimate += Math.round(row.line_net + row.line_vat);
-  }
-  const recurringCount = recurringRows.length;
+  const total = rows.reduce((sum, row) => sum + Math.round(row.line_net + row.line_vat), 0);
+  return { count: rows.length, total };
+}
 
-  const openDue = Math.round(open?.t ?? 0);
-  const openDueCount = open?.c ?? 0;
-  const overdue = Math.round(over?.t ?? 0);
-  const overdueCount = over?.c ?? 0;
+export async function cashFlowForecast30d(): Promise<CashFlowForecast> {
+  const now = nowUnix();
+  const horizon = now + FORECAST_HORIZON_DAYS * SECONDS_PER_DAY;
+
+  const [dueSoon, overdue, recurring] = await Promise.all([
+    sumOpenBalanceWhere("due_date >= ? AND due_date <= ?", [now, horizon]),
+    sumOpenBalanceWhere("due_date < ?", [now]),
+    estimateRecurringWithin(horizon),
+  ]);
   return {
-    openDue,
-    openDueCount,
-    overdue,
-    overdueCount,
-    recurringEstimate,
-    recurringCount,
-    total: openDue + overdue + recurringEstimate,
+    openDue: dueSoon.total,
+    openDueCount: dueSoon.count,
+    overdue: overdue.total,
+    overdueCount: overdue.count,
+    recurringEstimate: recurring.total,
+    recurringCount: recurring.count,
+    total: dueSoon.total + overdue.total + recurring.total,
   };
 }

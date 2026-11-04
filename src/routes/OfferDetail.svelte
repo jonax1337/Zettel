@@ -1,5 +1,7 @@
 <script lang="ts">
   import { link, push } from "svelte-spa-router";
+  import BackLink from "./parts/entity/BackLink.svelte";
+  import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
   import {
     convertToInvoice,
     deleteOffer,
@@ -10,42 +12,41 @@
     reopenDraft,
   } from "$lib/db/offers";
   import { getInvoice } from "$lib/db/invoices";
-  import type {
-    CustomerSnapshot,
-    Offer,
-    OfferItem,
-    OfferStatus,
-  } from "$lib/db/schema";
-  import { centsToEur } from "$lib/utils/money";
+  import type { Offer, OfferItem } from "$lib/db/schema";
   import { formatDate } from "$lib/utils/date";
+  import { SUPPLY_KIND_LABEL } from "./invoice/supply-kind";
   import { generateOfferPdf } from "$lib/sidecar/offer";
-  import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
   import {
+    Badge,
     Button,
     Card,
     CardContent,
-    Badge,
     ConfirmDialog,
-    DropdownMenu,
     DropdownItem,
+    DropdownMenu,
     DropdownSeparator,
     toast,
   } from "$lib/ui";
   import {
-    ArrowLeft,
+    CheckCircle2,
     FileDown,
+    FileSignature,
     FileText,
     FolderOpen,
+    MoreHorizontal,
     Pencil,
     Send,
-    CheckCircle2,
-    XCircle,
-    Undo2,
     Trash2,
-    MoreHorizontal,
-    AlertTriangle,
-    FileSignature,
+    Undo2,
+    XCircle,
   } from "$lib/brand-icons";
+  import { parseCustomerSnapshot, UNREADABLE_SNAPSHOT_MESSAGE } from "./invoice/customer-snapshot";
+  import CustomerSnapshotCard from "./invoice/CustomerSnapshotCard.svelte";
+  import LineItemsTable from "./invoice/LineItemsTable.svelte";
+  import PdfErrorNotice from "./invoice/PdfErrorNotice.svelte";
+  import { INVALID_ROUTE_ID_MESSAGE, parseRouteId } from "./invoice/route-id";
+  import TextSection from "./invoice/TextSection.svelte";
+  import { OFFER_STATUS_LABEL, OFFER_STATUS_VARIANT } from "./offer/status";
 
   type Props = { params?: { id?: string } };
   let { params }: Props = $props();
@@ -62,38 +63,35 @@
   let confirmDeleteOpen = $state(false);
   let convertedInvoiceNumber = $state<string | null>(null);
 
-  const customer = $derived.by(() => {
-    if (!offer) return null;
-    try {
-      return JSON.parse(offer.customerSnapshot) as CustomerSnapshot;
-    } catch {
-      return null;
-    }
+  const customer = $derived(offer ? parseCustomerSnapshot(offer.customerSnapshot) : null);
+  const awaitsConversion = $derived(offer?.status === "accepted" && !offer.convertedInvoiceId);
+
+  $effect(() => {
+    void params?.id;
+    load();
   });
 
   async function load() {
-    if (!params?.id) return;
-    const numId = Number.parseInt(params.id, 10);
-    if (Number.isNaN(numId)) return;
+    const offerId = parseRouteId(params?.id);
+    if (offerId === null) {
+      offer = null;
+      error = INVALID_ROUTE_ID_MESSAGE;
+      loading = false;
+      return;
+    }
     loading = true;
+    error = null;
     try {
-      const res = await getOffer(numId);
+      const res = await getOffer(offerId);
       if (!res) {
+        offer = null;
         error = "Angebot nicht gefunden.";
         return;
       }
       offer = res.offer;
       items = res.items;
       lastPdfPath = res.offer.pdfPath;
-      convertedInvoiceNumber = null;
-      if (res.offer.convertedInvoiceId) {
-        try {
-          const inv = await getInvoice(res.offer.convertedInvoiceId);
-          convertedInvoiceNumber = inv?.invoice.number ?? null;
-        } catch {
-          convertedInvoiceNumber = null;
-        }
-      }
+      convertedInvoiceNumber = await findConvertedInvoiceNumber(res.offer);
     } catch (e) {
       error = String(e);
     } finally {
@@ -101,10 +99,16 @@
     }
   }
 
-  $effect(() => {
-    void params?.id;
-    load();
-  });
+  async function findConvertedInvoiceNumber(source: Offer): Promise<string | null> {
+    if (!source.convertedInvoiceId) return null;
+    try {
+      const converted = await getInvoice(source.convertedInvoiceId);
+      return converted?.invoice.number ?? null;
+    } catch (e) {
+      toast.error("Verknüpfte Rechnung konnte nicht geladen werden", String(e));
+      return null;
+    }
+  }
 
   async function action(label: string, fn: () => Promise<void>) {
     busy = true;
@@ -154,23 +158,12 @@
     }
   }
 
-  async function onOpenExisting() {
-    if (lastPdfPath) {
-      try {
-        await openPath(lastPdfPath);
-      } catch (e) {
-        pdfError = String(e);
-      }
-    }
-  }
-
-  async function onRevealInExplorer() {
-    if (lastPdfPath) {
-      try {
-        await revealItemInDir(lastPdfPath);
-      } catch (e) {
-        pdfError = String(e);
-      }
+  async function usePdfFile(open: (path: string) => Promise<void>) {
+    if (!lastPdfPath) return;
+    try {
+      await open(lastPdfPath);
+    } catch (e) {
+      pdfError = String(e);
     }
   }
 
@@ -179,9 +172,8 @@
     converting = true;
     try {
       const newId = await convertToInvoice(offer.id);
-      const inv = await getInvoice(newId);
-      const number = inv?.invoice.number ?? `#${newId}`;
-      toast.success(`Rechnung ${number} erstellt — bitte Daten prüfen`);
+      const created = await getInvoice(newId);
+      toast.success(`Rechnung ${created?.invoice.number ?? `#${newId}`} erstellt — bitte Daten prüfen`);
       push(`/invoices/${newId}/edit`);
     } catch (e) {
       toast.error("Umwandlung fehlgeschlagen", String(e));
@@ -189,80 +181,59 @@
       converting = false;
     }
   }
-
-  const statusLabel: Record<OfferStatus, string> = {
-    draft: "Entwurf",
-    sent: "Versendet",
-    accepted: "Angenommen",
-    rejected: "Abgelehnt",
-    expired: "Abgelaufen",
-  };
-
-  const statusVariant: Record<
-    OfferStatus,
-    "secondary" | "warning" | "success" | "destructive" | "outline"
-  > = {
-    draft: "secondary",
-    sent: "warning",
-    accepted: "success",
-    rejected: "destructive",
-    expired: "outline",
-  };
 </script>
 
 <header class="mb-6">
-  <a
-    href="/offers"
-    use:link
-    class="group inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-  >
-    <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" /> Angebote
-  </a>
+  <BackLink href="/offers">Angebote</BackLink>
 </header>
 
 {#if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else if error && !offer}
   <p class="text-sm text-destructive">{error}</p>
+{:else if offer && !customer}
+  <p class="text-sm text-destructive">{UNREADABLE_SNAPSHOT_MESSAGE}</p>
 {:else if offer && customer}
   <div class="flex items-start justify-between gap-4 mb-6">
     <div>
       <div class="flex items-center gap-3">
         <h1 class="text-3xl font-semibold tracking-tight font-mono">{offer.number}</h1>
-        <Badge variant={statusVariant[offer.status]}>{statusLabel[offer.status]}</Badge>
+        <Badge variant={OFFER_STATUS_VARIANT[offer.status]}>{OFFER_STATUS_LABEL[offer.status]}</Badge>
       </div>
       <p class="text-sm text-muted-foreground mt-1.5">
         {customer.name} · {formatDate(offer.issueDate)}
       </p>
     </div>
     <div class="flex flex-wrap gap-2">
-      {#if offer.status === "accepted" && !offer.convertedInvoiceId}
+      {#if awaitsConversion}
         <Button disabled={converting} onclick={onConvert}>
           <FileSignature />
           {converting ? "Erzeuge…" : "In Rechnung umwandeln"}
         </Button>
       {/if}
 
-      <Button disabled={generating} onclick={onGeneratePdf} variant={offer.status === "accepted" && !offer.convertedInvoiceId ? "outline" : "default"}>
+      <Button disabled={generating} onclick={onGeneratePdf} variant={awaitsConversion ? "outline" : "default"}>
         <FileDown />
         {generating ? "Erzeuge…" : lastPdfPath ? "PDF neu erzeugen" : "PDF erzeugen"}
       </Button>
 
       {#if lastPdfPath}
-        <Button variant="outline" onclick={onOpenExisting}>
+        <Button variant="outline" onclick={() => usePdfFile(openPath)}>
           <FileText />
           Öffnen
         </Button>
-        <Button variant="outline" size="icon" onclick={onRevealInExplorer} aria-label="Im Explorer zeigen">
+        <Button
+          variant="outline"
+          size="icon"
+          onclick={() => usePdfFile(revealItemInDir)}
+          aria-label="Im Explorer zeigen"
+        >
           <FolderOpen />
         </Button>
       {/if}
 
       {#if offer.status === "draft"}
-        <Button
-          variant="outline"
-          onclick={() => push(`/offers/${offer!.id}/edit`)}
-        >
+        <Button variant="outline" onclick={() => push(`/offers/${offer!.id}/edit`)}>
           <Pencil />
           Bearbeiten
         </Button>
@@ -276,7 +247,11 @@
           <CheckCircle2 />
           Angenommen
         </Button>
-        <Button variant="outline" disabled={busy} onclick={() => action("Als abgelehnt markiert", () => markRejected(offer!.id))}>
+        <Button
+          variant="outline"
+          disabled={busy}
+          onclick={() => action("Als abgelehnt markiert", () => markRejected(offer!.id))}
+        >
           <XCircle />
           Abgelehnt
         </Button>
@@ -329,49 +304,17 @@
   {/if}
 
   {#if pdfError}
-    <Card class="border-destructive/40 bg-destructive/5 mb-4">
-      <CardContent>
-        <div class="flex items-start gap-3">
-          <AlertTriangle class="size-5 text-destructive shrink-0 mt-0.5" />
-          <div class="flex-1 text-sm">
-            <div class="font-medium text-destructive">PDF-Generierung fehlgeschlagen</div>
-            <div class="mt-1 font-mono text-xs text-muted-foreground whitespace-pre-wrap">{pdfError}</div>
-            <div class="mt-2 text-xs text-muted-foreground">
-              Sidecar-Setup geprüft? Siehe sidecar/README.md (Python 3.12 + GTK + venv).
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  {/if}
-  {#if lastPdfPath && !pdfError}
+    <PdfErrorNotice message={pdfError} />
+  {:else if lastPdfPath}
     <p class="text-xs text-muted-foreground mb-4 font-mono">PDF: {lastPdfPath}</p>
   {/if}
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-    <Card>
-      <CardContent>
-        <h2 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-3">
-          Kunde (Snapshot)
-        </h2>
-        <div class="text-sm space-y-0.5">
-          <div class="font-medium">{customer.name}</div>
-          {#if customer.contactPerson}<div>{customer.contactPerson}</div>{/if}
-          <div class="text-muted-foreground">{customer.street}</div>
-          <div class="text-muted-foreground">{customer.postalCode} {customer.city}</div>
-          <div class="text-muted-foreground">{customer.country}</div>
-          {#if customer.vatId}
-            <div class="text-xs mt-2 text-muted-foreground">USt-IdNr.: {customer.vatId}</div>
-          {/if}
-        </div>
-      </CardContent>
-    </Card>
+    <CustomerSnapshotCard {customer} />
 
     <Card>
       <CardContent>
-        <h2 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-3">
-          Eckdaten
-        </h2>
+        <h2 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-3">Eckdaten</h2>
         <dl class="text-sm grid grid-cols-2 gap-y-1.5">
           <dt class="text-muted-foreground">Angebotsdatum</dt>
           <dd>{formatDate(offer.issueDate)}</dd>
@@ -380,6 +323,10 @@
           {#if offer.servicePeriodStart && offer.servicePeriodEnd}
             <dt class="text-muted-foreground">Leistungszeitraum</dt>
             <dd>{formatDate(offer.servicePeriodStart)} – {formatDate(offer.servicePeriodEnd)}</dd>
+          {/if}
+          {#if offer.isReverseCharge}
+            <dt class="text-muted-foreground">Art des Umsatzes</dt>
+            <dd>{SUPPLY_KIND_LABEL[offer.supplyKind]}</dd>
           {/if}
           {#if offer.sentAt}
             <dt class="text-muted-foreground">Versendet</dt>
@@ -399,94 +346,26 @@
   </div>
 
   {#if offer.introText}
-    <section class="mb-4">
-      <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-1">
-        Einleitung
-      </h3>
-      <p class="text-sm whitespace-pre-line">{offer.introText}</p>
-    </section>
+    <TextSection title="Einleitung" text={offer.introText} />
   {/if}
 
-  <Card class="overflow-hidden mb-6">
-    <table class="w-full text-sm">
-      <thead class="bg-muted/40 text-left">
-        <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-          <th class="px-4 py-3 font-medium w-12">#</th>
-          <th class="px-4 py-3 font-medium">Beschreibung</th>
-          <th class="px-4 py-3 font-medium text-right w-20">Menge</th>
-          <th class="px-4 py-3 font-medium w-20">Einheit</th>
-          <th class="px-4 py-3 font-medium text-right w-28">Preis</th>
-          {#if !offer.isKleinunternehmer}
-            <th class="px-4 py-3 font-medium text-right w-16">USt%</th>
-          {/if}
-          <th class="px-4 py-3 font-medium text-right w-28">Summe</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each items as it (it.id)}
-          <tr class="border-t border-border">
-            <td class="px-4 py-3 text-xs text-muted-foreground align-top">{it.position}</td>
-            <td class="px-4 py-3 align-top">
-              <div>{it.description}</div>
-              {#if it.longDescription}
-                <div class="mt-0.5 text-xs text-muted-foreground whitespace-pre-wrap">{it.longDescription}</div>
-              {/if}
-              {#if it.linePeriodStart && it.linePeriodEnd}
-                <div class="mt-0.5 text-xs text-muted-foreground italic">
-                  {#if it.linePeriodStart === it.linePeriodEnd}
-                    Leistungsdatum {formatDate(it.linePeriodStart)}
-                  {:else}
-                    Leistungszeitraum {formatDate(it.linePeriodStart)} – {formatDate(it.linePeriodEnd)}
-                  {/if}
-                </div>
-              {/if}
-            </td>
-            <td class="px-4 py-3 text-right align-top">{it.quantity}</td>
-            <td class="px-4 py-3 align-top">{it.unit}</td>
-            <td class="px-4 py-3 text-right font-mono align-top">{centsToEur(it.unitPrice)}</td>
-            {#if !offer.isKleinunternehmer}
-              <td class="px-4 py-3 text-right align-top">{it.vatRate}</td>
-            {/if}
-            <td class="px-4 py-3 text-right font-mono align-top">{centsToEur(it.lineTotal)}</td>
-          </tr>
-        {/each}
-      </tbody>
-      <tfoot class="bg-muted/40">
-        <tr class="border-t border-border">
-          <td colspan={offer.isKleinunternehmer ? 5 : 6} class="px-4 py-2 text-right text-muted-foreground">
-            Zwischensumme
-          </td>
-          <td class="px-4 py-2 text-right font-mono">{centsToEur(offer.subtotal)}</td>
-        </tr>
-        {#if !offer.isKleinunternehmer}
-          <tr>
-            <td colspan="6" class="px-4 py-2 text-right text-muted-foreground">USt</td>
-            <td class="px-4 py-2 text-right font-mono">{centsToEur(offer.vatAmount)}</td>
-          </tr>
-        {/if}
-        <tr class="border-t border-border">
-          <td colspan={offer.isKleinunternehmer ? 5 : 6} class="px-4 py-3 text-right font-semibold">
-            Gesamtbetrag
-          </td>
-          <td class="px-4 py-3 text-right font-mono font-semibold">{centsToEur(offer.total)}</td>
-        </tr>
-      </tfoot>
-    </table>
-  </Card>
+  <LineItemsTable
+    {items}
+    currency={offer.currency}
+    showVat={!offer.isKleinunternehmer}
+    subtotal={offer.subtotal}
+    vatAmount={offer.vatAmount}
+    total={offer.total}
+  />
 
   {#if offer.notes}
-    <section class="mb-4">
-      <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-1">
-        Notizen
-      </h3>
-      <p class="text-sm whitespace-pre-line">{offer.notes}</p>
-    </section>
+    <TextSection title="Notizen" text={offer.notes} />
   {/if}
 
   <ConfirmDialog
     bind:open={confirmDeleteOpen}
     title="Angebot löschen?"
-    description={offer ? `${offer.number} wird unwiderruflich entfernt.` : ""}
+    description={`${offer.number} wird unwiderruflich entfernt.`}
     confirmLabel="Löschen"
     destructive
     onConfirm={performDelete}

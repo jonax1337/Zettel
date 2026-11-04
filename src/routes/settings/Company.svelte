@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import SettingsShell from "./SettingsShell.svelte";
-  import { open } from "@tauri-apps/plugin-dialog";
-  import { loadSettings, saveSettings } from "$lib/db/queries";
+  import SettingsFormFooter from "./SettingsFormFooter.svelte";
+  import PrepaymentsEditor from "./PrepaymentsEditor.svelte";
+  import PauschalReserveField from "./PauschalReserveField.svelte";
+  import LogoField from "./LogoField.svelte";
+  import { SettingsForm } from "./settings-form.svelte";
   import type { Settings } from "$lib/db/schema";
   import {
-    Button,
     Input,
     Textarea,
     Label,
@@ -15,103 +18,44 @@
     CardContent,
     Select,
     Checkbox,
-    Slider,
-    toast,
   } from "$lib/ui";
-  import { Image, X, ChevronLeft, ChevronRight } from "$lib/brand-icons";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
-  import {
-    listPrepayments,
-    upsertPrepayment,
-    type PrepaymentRow,
-    type Quarter,
-  } from "$lib/db/tax-prepayments";
 
-  const legalFormItems = [
+  type Choice<T> = { value: T; label: string }[];
+
+  const legalFormItems: Choice<Settings["legalForm"]> = [
     { value: "freelancer", label: "Freiberufler (keine Gewerbesteuer)" },
     { value: "trade", label: "Gewerbetreibender" },
   ];
-  const filingStatusItems = [
+  const filingStatusItems: Choice<Settings["taxFilingStatus"]> = [
     { value: "single", label: "ledig" },
     { value: "married", label: "verheiratet (Splittingtarif)" },
   ];
-  const churchRateItems = [
+  const vatAccountingItems: Choice<Settings["vatAccounting"]> = [
+    { value: "accrual", label: "Soll-Versteuerung (nach Rechnungsdatum, Standard)" },
+    { value: "cash", label: "Ist-Versteuerung (nach Zahlungseingang, § 20 UStG)" },
+  ];
+  const churchRateItems: Choice<string> = [
     { value: "0", label: "keine Kirchensteuer" },
     { value: "0.08", label: "8 % (BY, BW)" },
     { value: "0.09", label: "9 % (übrige Länder)" },
   ];
 
-  let s = $state<Settings | null>(null);
-  let loading = $state(true);
-  let saving = $state(false);
-  let error = $state<string | null>(null);
-
-  let prepaymentYear = $state(new Date().getFullYear());
-  let prepayments = $state<PrepaymentRow[]>([]);
-  let prepaymentBusy = $state(false);
-
-  async function loadPrepayments(year: number) {
-    prepaymentBusy = true;
-    try {
-      prepayments = await listPrepayments(year);
-    } finally {
-      prepaymentBusy = false;
-    }
-  }
-
-  $effect(() => {
-    loadPrepayments(prepaymentYear);
-  });
-
-  async function savePrepayment(quarter: Quarter, euroStr: string) {
-    const cents = eurStringToCents(euroStr);
-    await upsertPrepayment(prepaymentYear, quarter, cents);
-    await loadPrepayments(prepaymentYear);
-  }
-
-  async function pickLogo() {
-    if (!s) return;
-    const picked = await open({
-      multiple: false,
-      filters: [{ name: "Bilder", extensions: ["png", "jpg", "jpeg", "svg"] }],
-    });
-    if (typeof picked === "string") s.logoPath = picked;
-  }
-
-  $effect(() => {
-    loadSettings()
-      .then((row) => (s = row))
-      .catch((e) => (error = String(e)))
-      .finally(() => (loading = false));
-  });
-
-  async function onSubmit(e: SubmitEvent) {
-    e.preventDefault();
-    if (!s) return;
-    saving = true;
-    error = null;
-    try {
-      await saveSettings(s);
-      toast.success("Einstellungen gespeichert");
-    } catch (err) {
-      error = String(err);
-      toast.error("Speichern fehlgeschlagen", String(err));
-    } finally {
-      saving = false;
-    }
-  }
+  const form = new SettingsForm();
+  onMount(() => form.load());
 </script>
 
 <SettingsShell
   title="Unternehmen"
   description="Stammdaten, die im Briefkopf jeder Rechnung erscheinen."
 >
-  {#if loading}
+  {#if form.loading}
     <p class="text-sm text-muted-foreground">Lade…</p>
-  {:else if error && !s}
-    <p class="text-sm text-destructive">Fehler: {error}</p>
-  {:else if s}
-    <form onsubmit={onSubmit} class="space-y-6">
+  {:else if form.error && !form.settings}
+    <p class="text-sm text-destructive">Fehler: {form.error}</p>
+  {:else if form.settings}
+    {@const s = form.settings}
+    <form onsubmit={(e) => form.submit(e)} class="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>Firma</CardTitle>
@@ -221,11 +165,7 @@
           <div class="grid grid-cols-2 gap-4">
             <div class="col-span-2 flex flex-col gap-1.5">
               <Label>Rechtsform</Label>
-              <Select
-                items={legalFormItems}
-                value={s.legalForm}
-                onValueChange={(v) => (s!.legalForm = v as Settings["legalForm"])}
-              />
+              <Select items={legalFormItems} bind:value={s.legalForm} />
             </div>
 
             {#if s.legalForm === "trade"}
@@ -238,8 +178,8 @@
                   step="10"
                   value={Math.round(s.tradeTaxRate * 100)}
                   oninput={(e) => {
-                    const n = Number.parseInt((e.currentTarget as HTMLInputElement).value, 10);
-                    if (!Number.isNaN(n)) s!.tradeTaxRate = n / 100;
+                    const n = Number.parseInt(e.currentTarget.value, 10);
+                    if (!Number.isNaN(n)) s.tradeTaxRate = n / 100;
                   }}
                 />
                 <p class="text-xs text-muted-foreground">
@@ -253,17 +193,13 @@
               <Select
                 items={churchRateItems}
                 value={String(s.churchTaxRate)}
-                onValueChange={(v) => (s!.churchTaxRate = Number.parseFloat(v))}
+                onValueChange={(v) => (s.churchTaxRate = Number.parseFloat(v))}
               />
             </div>
 
             <div class="flex flex-col gap-1.5">
               <Label>Familienstand (Steuer)</Label>
-              <Select
-                items={filingStatusItems}
-                value={s.taxFilingStatus}
-                onValueChange={(v) => (s!.taxFilingStatus = v as Settings["taxFilingStatus"])}
-              />
+              <Select items={filingStatusItems} bind:value={s.taxFilingStatus} />
             </div>
 
             <div class="col-span-2 flex flex-col gap-1.5 border-t pt-4 mt-2">
@@ -272,7 +208,7 @@
                 type="text"
                 inputmode="decimal"
                 value={centsToEur(s.otherIncomeAnnualCent)}
-                onblur={(e) => (s!.otherIncomeAnnualCent = eurStringToCents((e.currentTarget as HTMLInputElement).value))}
+                onblur={(e) => (s.otherIncomeAnnualCent = eurStringToCents(e.currentTarget.value))}
                 class="max-w-xs"
               />
               <p class="text-xs text-muted-foreground">
@@ -280,88 +216,35 @@
               </p>
             </div>
 
-            <div class="col-span-2 mt-2">
-              <div class="flex items-center justify-between mb-1.5">
-                <Label>Geleistete ESt-Vorauszahlungen</Label>
-                <div class="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onclick={() => (prepaymentYear = prepaymentYear - 1)}
-                    disabled={prepaymentBusy}
-                    aria-label="Vorjahr"
-                  >
-                    <ChevronLeft class="size-4" />
-                  </Button>
-                  <span class="tabular-nums font-medium px-2 min-w-[3.5rem] text-center">
-                    {prepaymentYear}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onclick={() => (prepaymentYear = prepaymentYear + 1)}
-                    disabled={prepaymentBusy}
-                    aria-label="Folgejahr"
-                  >
-                    <ChevronRight class="size-4" />
-                  </Button>
-                </div>
-              </div>
-              <div class="grid grid-cols-4 gap-2">
-                {#each prepayments as p (p.quarter)}
-                  <div class="flex flex-col gap-1">
-                    <span class="text-xs text-muted-foreground">Q{p.quarter}</span>
-                    <Input
-                      type="text"
-                      inputmode="decimal"
-                      value={centsToEur(p.amountCent)}
-                      disabled={prepaymentBusy}
-                      onblur={(e) => savePrepayment(p.quarter, (e.currentTarget as HTMLInputElement).value)}
-                    />
-                  </div>
-                {/each}
-              </div>
-              <p class="text-xs text-muted-foreground mt-1.5">
-                Pro Steuerjahr getrennt. Die Steuer-Rücklage im Dashboard rechnet immer mit den Werten des aktuellen Kalenderjahres ({new Date().getFullYear()}). Andere Jahre kannst du hier zur Historie erfassen — z. B. Folgejahres-Vorauszahlungen aus einem Anpassungsbescheid.
-              </p>
-            </div>
-
-            <div class="col-span-2 border-t pt-4 mt-2">
-              <label class="flex items-start gap-2.5 text-sm cursor-pointer select-none">
-                <Checkbox bind:checked={s.usePauschalTaxReserve} />
+            {#if s.isKleinunternehmer}
+              <label class="col-span-2 flex items-start gap-2.5 text-sm cursor-pointer select-none">
+                <Checkbox bind:checked={s.taxReserveExpensesGross} />
                 <span>
-                  <span class="font-medium">Pauschal-Modus zusätzlich anzeigen</span>
+                  <span class="font-medium">Ausgaben in der Steuerrücklage brutto abziehen</span>
                   <span class="block text-xs text-muted-foreground mt-0.5">
-                    Statt der detaillierten Tarif-Rechnung einfach „X % vom Umsatz brutto zurücklegen". Wird neben der Detail-Rücklage angezeigt — du entscheidest, welcher Wert dir besser dient.
+                    Aus = netto (konservatives Minimum für dein Rücklagenkonto). An = brutto, steuerlich korrekt ohne Vorsteuerabzug.
                   </span>
                 </span>
               </label>
-              {#if s.usePauschalTaxReserve}
-                <div class="mt-4 ml-7 space-y-2">
-                  <div class="flex items-center justify-between">
-                    <Label class="text-xs">Prozentsatz vom Brutto-Umsatz</Label>
-                    <span class="text-base font-semibold tabular-nums">{Math.round(s.pauschalTaxPercent)} %</span>
-                  </div>
-                  <Slider
-                    type="single"
-                    min={0}
-                    max={50}
-                    step={1}
-                    value={Math.round(s.pauschalTaxPercent)}
-                    onValueChange={(v) => (s!.pauschalTaxPercent = typeof v === "number" ? v : v[0])}
-                  />
-                  <div class="flex justify-between text-[10px] text-muted-foreground tabular-nums">
-                    <span>0 %</span>
-                    <span>25 %</span>
-                    <span>50 %</span>
-                  </div>
-                  <p class="text-xs text-muted-foreground">
-                    Daumenwert für Solo-Selbstständige: <strong>30 %</strong>.
-                  </p>
-                </div>
-              {/if}
+            {:else}
+              <div class="col-span-2 flex flex-col gap-1.5">
+                <Label>Umsatzsteuer-Versteuerung</Label>
+                <Select items={vatAccountingItems} bind:value={s.vatAccounting} />
+                <p class="text-xs text-muted-foreground">
+                  Ist-Versteuerung nur mit Genehmigung des Finanzamts (§ 20 UStG).
+                </p>
+              </div>
+            {/if}
+
+            <div class="col-span-2 mt-2">
+              <PrepaymentsEditor />
+            </div>
+
+            <div class="col-span-2 border-t pt-4 mt-2">
+              <PauschalReserveField
+                bind:enabled={s.usePauschalTaxReserve}
+                bind:percent={s.pauschalTaxPercent}
+              />
             </div>
           </div>
         </CardContent>
@@ -395,42 +278,11 @@
           <CardDescription>Erscheint im Rechnungs-Header.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div class="flex flex-col gap-1.5">
-            <Label>Logo-Datei</Label>
-            <div class="flex items-center gap-2">
-              <Input
-                bind:value={s.logoPath}
-                placeholder="Kein Logo ausgewählt"
-                class="flex-1"
-              />
-              <Button type="button" variant="outline" onclick={pickLogo}>
-                <Image />
-                Wählen…
-              </Button>
-              {#if s.logoPath}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onclick={() => s && (s.logoPath = null)}
-                  aria-label="Logo entfernen"
-                >
-                  <X />
-                </Button>
-              {/if}
-            </div>
-          </div>
+          <LogoField bind:path={s.logoPath} />
         </CardContent>
       </Card>
 
-      <div class="flex items-center gap-3">
-        <Button type="submit" disabled={saving}>
-          {saving ? "Speichere…" : "Speichern"}
-        </Button>
-        {#if error}
-          <span class="text-sm text-destructive">{error}</span>
-        {/if}
-      </div>
+      <SettingsFormFooter saving={form.saving} error={form.error} />
     </form>
   {/if}
 </SettingsShell>

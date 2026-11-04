@@ -1,35 +1,24 @@
 <script lang="ts">
   import { link, push } from "svelte-spa-router";
-  import { onMount } from "svelte";
+  import { untrack } from "svelte";
   import { listVendors } from "$lib/db/queries";
   import {
     cancelExpense,
-    computeLineTotal,
     computeTotals,
     createExpense,
     deleteExpense,
     getExpense,
     listCategories,
     markExpensePaid,
+    recordExpenseValidation,
     updateExpense,
     type ExpenseFormInput,
-    type ExpenseItemInput,
   } from "$lib/db/expenses";
-  import type { Expense, ExpenseStatus, Vendor, ExpenseCategory } from "$lib/db/schema";
-  import { listCategories as listCuratedCategories, accountForSkr } from "$lib/db/expense-categories";
-  import { centsToEur, eurStringToCents } from "$lib/utils/money";
-  import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
-  import {
-    extractZugferd,
-    extractTextPdf,
-    importExpensePdf,
-    type ExtractedInvoice,
-    type ExtractedText,
-  } from "$lib/sidecar/extract";
-  import { validatePdf } from "$lib/validator";
+  import type { CatalogItem, Expense, ExpenseCategory, Vendor } from "$lib/db/schema";
+  import { listCategories as listCuratedCategories } from "$lib/db/expense-categories";
+  import { importExpensePdf } from "$lib/sidecar/extract";
+  import { fromIsoDate, toIsoDate } from "$lib/utils/date";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
-  import { open as openDialog } from "@tauri-apps/plugin-dialog";
-  import { getCurrentWebview } from "@tauri-apps/api/webview";
   import {
     Button,
     Input,
@@ -45,20 +34,31 @@
     ConfirmDialog,
     toast,
   } from "$lib/ui";
+  import { Check, X, Trash2 } from "$lib/brand-icons";
+  import BackLink from "./parts/entity/BackLink.svelte";
+  import { fetchEditTarget, parseId } from "./parts/entity/edit-target";
+  import { centsToPriceText } from "./parts/entity/format";
+  import { vatRateForNewItem } from "./parts/entity/vat";
+  import ExpenseItemsTable from "./parts/expense/ExpenseItemsTable.svelte";
+  import PdfDropZone from "./parts/expense/PdfDropZone.svelte";
   import {
-    ArrowLeft,
-    Plus,
-    Trash2,
-    Check,
-    X,
-    FileUp,
-    Loader2,
-    ShieldCheck,
-    ShieldAlert,
-    Shield,
-    Package,
-  } from "$lib/brand-icons";
-  import type { CatalogItem } from "$lib/db/schema";
+    applyInvoiceExtract,
+    applyTextExtract,
+    emptyExpenseForm,
+    emptyItemRow,
+    isReverseCharge,
+    itemInputFromRow,
+    itemRowFromStored,
+    type ExpenseFormState,
+  } from "./parts/expense/expense-form";
+  import { EXPENSE_STATUS_LABEL, EXPENSE_STATUS_VARIANT } from "./parts/expense/expense-status";
+  import {
+    readExpensePdf,
+    validateImportedPdf,
+    type ImportValidation,
+    type PdfReadOutcome,
+  } from "./parts/expense/pdf-import";
+  import { vendorFileSlug } from "./parts/expense/vendor-match";
 
   type Props = {
     mode: "new" | "edit";
@@ -67,7 +67,7 @@
   let { mode, params }: Props = $props();
 
   let vendors = $state<Vendor[]>([]);
-  let categories = $state<string[]>([]);
+  let categorySuggestions = $state<string[]>([]);
   let curatedCategories = $state<ExpenseCategory[]>([]);
   let id = $state<number | null>(null);
   let existing = $state<Expense | null>(null);
@@ -77,301 +77,153 @@
   let saving = $state(false);
   let error = $state<string | null>(null);
 
-  let vendorIdStr = $state<string>("");
-  let vendorNumber = $state<string>("");
-  let issueDateIso = $state(toIsoDate(nowUnix()));
-  let dueDateIso = $state("");
-  let notes = $state("");
-  let reverseCharge = $state(false);
-  let items = $state<Array<ExpenseItemInput & { priceText: string }>>([
-    {
-      description: "",
-      category: null,
-      categoryId: null,
-      datevAccount: null,
-      quantity: 1,
-      unit: "Stk",
-      unitPrice: 0,
-      vatRate: 19,
-      priceText: "",
-    },
-  ]);
+  const form = $state<ExpenseFormState>(emptyExpenseForm());
+  let pdfPath = $state<string | null>(null);
 
   let confirmDeleteOpen = $state(false);
   let confirmCancelOpen = $state(false);
+  let catalogPickerOpen = $state(false);
 
   let importing = $state(false);
-  let dropHover = $state(false);
-  let pdfPath = $state<string | null>(null);
   let importedNote = $state<string | null>(null);
   let zugferdExtracted = $state(false);
-  let validationStatus = $state<"valid" | "invalid" | "unavailable" | null>(null);
-  let validationFindingsCount = $state<number | null>(null);
+  let validation = $state<ImportValidation | null>(null);
+
+  const reverseCharge = $derived(isReverseCharge(form));
+  const selectedVendor = $derived(vendors.find((v) => String(v.id) === form.vendorId) ?? null);
+  const totals = $derived(computeTotals(form.items, { isReverseCharge: reverseCharge }));
+  const editable = $derived(
+    mode === "new" ||
+      (existing !== null && existing.status !== "paid" && existing.status !== "cancelled"),
+  );
+  const vendorItems = $derived(
+    vendors.map((v) => ({ value: String(v.id), label: `${v.vendorNumber} — ${v.name}` })),
+  );
 
   $effect(() => {
     Promise.all([listVendors(), listCategories(), listCuratedCategories()])
-      .then(([vs, cs, curated]) => {
-        vendors = vs;
-        categories = cs;
+      .then(([loadedVendors, suggestions, curated]) => {
+        vendors = loadedVendors;
+        categorySuggestions = suggestions;
         curatedCategories = curated;
       })
       .catch((e) => (error = String(e)));
   });
 
-  const curatedCategoryItems = $derived([
-    { value: "", label: "— frei eintragen —" },
-    ...curatedCategories.map((c) => ({ value: String(c.id), label: c.name })),
-  ]);
+  // Only when the vendor changes: a user who clears a category must not get it refilled.
+  $effect(() => {
+    const defaultCategory = selectedVendor?.defaultCategory;
+    if (mode !== "new" || !defaultCategory) return;
+    untrack(() => {
+      for (const item of form.items) item.category ||= defaultCategory;
+    });
+  });
 
-  function pickCuratedCategory(idx: number, valueStr: string) {
-    const it = items[idx];
-    if (valueStr === "") {
-      it.categoryId = null;
-      // Freitext-Feld bleibt unangetastet — User kann manuell tippen.
-    } else {
-      const cId = Number.parseInt(valueStr, 10);
-      const cat = curatedCategories.find((c) => c.id === cId);
-      if (cat) {
-        it.categoryId = cat.id;
-        it.category = cat.name;
-        // DATEV-Konto vorbefüllen wenn leer (SKR03-Default — DATEV-Export
-        // löst pro Beleg über categoryId neu auf, das hier ist nur UI-Hint).
-        if (!it.datevAccount) {
-          it.datevAccount = accountForSkr(cat, "SKR03");
+  $effect(() => {
+    if (!reverseCharge) return;
+    for (const item of form.items) item.vatRate = 0;
+  });
+
+  $effect(() => {
+    if (mode !== "edit") return;
+    fetchEditTarget(params?.id, getExpense, "Eingangsrechnung nicht gefunden.")
+      .then((target) => {
+        if ("error" in target) {
+          error = target.error;
+          return;
         }
-      }
-    }
-    items = [...items];
+        id = target.id;
+        applyStoredExpense(target.value);
+      })
+      .catch((e) => (error = String(e)))
+      .finally(() => (loaded = true));
+  });
+
+  function applyStoredExpense({ expense, items }: NonNullable<Awaited<ReturnType<typeof getExpense>>>) {
+    existing = expense;
+    pdfPath = expense.pdfPath;
+    form.vendorId = String(expense.vendorId);
+    form.vendorNumber = expense.number ?? "";
+    form.issueDateIso = toIsoDate(expense.issueDate);
+    form.dueDateIso = expense.dueDate ? toIsoDate(expense.dueDate) : "";
+    form.notes = expense.notes ?? "";
+    form.reverseChargeType = expense.reverseChargeType;
+    form.items = items.map(itemRowFromStored);
   }
-
-  // Prefill default category from selected vendor when creating a new expense.
-  const selectedVendor = $derived(
-    vendorIdStr ? vendors.find((v) => String(v.id) === vendorIdStr) ?? null : null,
-  );
-  $effect(() => {
-    if (mode === "new" && selectedVendor?.defaultCategory) {
-      let changed = false;
-      for (const it of items) {
-        if (!it.category) {
-          it.category = selectedVendor.defaultCategory;
-          changed = true;
-        }
-      }
-      if (changed) items = [...items];
-    }
-  });
-
-  $effect(() => {
-    if (mode === "edit" && params?.id) {
-      const numId = Number.parseInt(params.id, 10);
-      if (Number.isNaN(numId)) return;
-      id = numId;
-      getExpense(numId)
-        .then((res) => {
-          if (!res) {
-            error = "Eingangsrechnung nicht gefunden.";
-            return;
-          }
-          existing = res.expense;
-          vendorIdStr = String(res.expense.vendorId);
-          vendorNumber = res.expense.number ?? "";
-          issueDateIso = toIsoDate(res.expense.issueDate);
-          dueDateIso = res.expense.dueDate ? toIsoDate(res.expense.dueDate) : "";
-          notes = res.expense.notes ?? "";
-          reverseCharge = res.expense.isReverseCharge;
-          pdfPath = res.expense.pdfPath;
-          items = res.items.map((it) => ({
-            description: it.description,
-            category: it.category,
-            categoryId: it.categoryId ?? null,
-            datevAccount: it.datevAccount,
-            quantity: it.quantity,
-            unit: it.unit,
-            unitPrice: it.unitPrice,
-            vatRate: it.vatRate,
-            priceText: (it.unitPrice / 100).toFixed(2).replace(".", ","),
-          }));
-        })
-        .catch((e) => (error = String(e)))
-        .finally(() => (loaded = true));
-    }
-  });
 
   function addItem() {
-    items = [
-      ...items,
-      {
-        description: "",
+    form.items.push(
+      emptyItemRow({
         category: selectedVendor?.defaultCategory ?? null,
-        categoryId: null,
-        datevAccount: null,
-        quantity: 1,
-        unit: "Stk",
-        unitPrice: 0,
-        vatRate: reverseCharge ? 0 : 19,
-        priceText: "",
-      },
-    ];
-  }
-
-  let catalogPickerOpen = $state(false);
-  function addFromCatalog(it: CatalogItem) {
-    items = [
-      ...items,
-      {
-        description: it.name + (it.descriptionDe ? ` — ${it.descriptionDe}` : ""),
-        category: selectedVendor?.defaultCategory ?? null,
-        categoryId: null,
-        datevAccount: it.defaultDatevAccount ?? null,
-        quantity: 1,
-        unit: it.unit,
-        unitPrice: it.defaultUnitPrice,
-        vatRate: reverseCharge ? 0 : it.defaultVatRate,
-        priceText: (it.defaultUnitPrice / 100).toFixed(2).replace(".", ","),
-      },
-    ];
-  }
-
-  function removeItem(idx: number) {
-    items = items.filter((_, i) => i !== idx);
-  }
-
-  function onPriceBlur(idx: number) {
-    const it = items[idx];
-    it.unitPrice = eurStringToCents(it.priceText);
-    it.priceText = (it.unitPrice / 100).toFixed(2).replace(".", ",");
-    items = [...items];
-  }
-
-  $effect(() => {
-    if (reverseCharge) {
-      let changed = false;
-      for (const it of items) {
-        if (it.vatRate !== 0) {
-          it.vatRate = 0;
-          changed = true;
-        }
-      }
-      if (changed) items = [...items];
-    }
-  });
-
-  const totals = $derived(computeTotals(items, { isReverseCharge: reverseCharge }));
-
-  const editable = $derived(
-    mode === "new" || (existing && existing.status !== "paid" && existing.status !== "cancelled"),
-  );
-
-  const vendorItems = $derived(
-    vendors.map((v) => ({ value: String(v.id), label: `${v.vendorNumber} — ${v.name}` })),
-  );
-
-  const vatItems = [
-    { value: "0", label: "0 %" },
-    { value: "7", label: "7 %" },
-    { value: "19", label: "19 %" },
-  ];
-
-  const statusLabel: Record<ExpenseStatus, string> = {
-    draft: "Entwurf",
-    open: "Offen",
-    paid: "Bezahlt",
-    cancelled: "Storniert",
-  };
-  const statusVariant: Record<ExpenseStatus, "secondary" | "warning" | "success" | "outline"> = {
-    draft: "secondary",
-    open: "warning",
-    paid: "success",
-    cancelled: "outline",
-  };
-
-  // --- ZUGFeRD-Import ---
-
-  function vendorSlug(v: Vendor | null): string | undefined {
-    if (!v) return undefined;
-    return `${v.vendorNumber}-${v.name}`
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60);
-  }
-
-  function matchVendor(seller: ExtractedInvoice["seller"]): Vendor | null {
-    if (seller.vatId) {
-      const byVat = vendors.find(
-        (v) => v.vatId && v.vatId.replace(/\s+/g, "").toUpperCase() ===
-          (seller.vatId ?? "").replace(/\s+/g, "").toUpperCase(),
-      );
-      if (byVat) return byVat;
-    }
-    if (seller.name) {
-      const sn = seller.name.toLowerCase().trim();
-      const byName = vendors.find((v) => v.name.toLowerCase().trim() === sn);
-      if (byName) return byName;
-    }
-    return null;
-  }
-
-  function applyExtract(data: ExtractedInvoice, matched: Vendor | null) {
-    if (matched) vendorIdStr = String(matched.id);
-    if (data.invoiceNumber) vendorNumber = data.invoiceNumber;
-    if (data.issueDate) issueDateIso = toIsoDate(data.issueDate);
-    if (data.dueDate) dueDateIso = toIsoDate(data.dueDate);
-    reverseCharge = data.reverseChargeType !== "none";
-    if (data.lineItems.length > 0) {
-      items = data.lineItems.map((li) => ({
-        description: li.description,
-        category: matched?.defaultCategory ?? null,
-        categoryId: null,
-        datevAccount: null,
-        quantity: li.quantity,
-        unit: li.unit,
-        unitPrice: li.unitPrice,
-        vatRate: li.vatRate,
-        priceText: (li.unitPrice / 100).toFixed(2).replace(".", ","),
-      }));
-    }
-  }
-
-  function matchVendorByName(name: string | null): Vendor | null {
-    if (!name) return null;
-    const sn = name.toLowerCase().trim();
-    return (
-      vendors.find((v) => v.name.toLowerCase().trim() === sn) ??
-      vendors.find((v) => v.name.toLowerCase().includes(sn) || sn.includes(v.name.toLowerCase())) ??
-      null
+        vatRate: vatRateForNewItem(reverseCharge),
+      }),
     );
   }
 
-  function matchVendorByVatId(vatId: string | null): Vendor | null {
-    if (!vatId) return null;
-    const norm = vatId.replace(/\s+/g, "").toUpperCase();
-    return (
-      vendors.find(
-        (v) => v.vatId && v.vatId.replace(/\s+/g, "").toUpperCase() === norm,
-      ) ?? null
+  function addFromCatalog(catalogItem: CatalogItem) {
+    form.items.push(
+      emptyItemRow({
+        description: catalogItem.name + (catalogItem.descriptionDe ? ` — ${catalogItem.descriptionDe}` : ""),
+        category: selectedVendor?.defaultCategory ?? null,
+        datevAccount: catalogItem.defaultDatevAccount ?? null,
+        unit: catalogItem.unit,
+        unitPrice: catalogItem.defaultUnitPrice,
+        vatRate: reverseCharge ? 0 : catalogItem.defaultVatRate,
+        priceText: centsToPriceText(catalogItem.defaultUnitPrice),
+      }),
     );
   }
 
-  function applyTextExtract(data: ExtractedText, matched: Vendor | null) {
-    if (matched) vendorIdStr = String(matched.id);
-    if (data.invoiceNumber) vendorNumber = data.invoiceNumber;
-    if (data.issueDate) issueDateIso = toIsoDate(data.issueDate);
-    if (data.dueDate) dueDateIso = toIsoDate(data.dueDate);
-    if (data.totalCents && data.totalCents > 0 && items.length === 1 && items[0].unitPrice === 0) {
-      items[0].description = data.invoiceNumber
-        ? `Eingangsrechnung ${data.invoiceNumber}`
-        : "Eingangsrechnung (heuristisch)";
-      items[0].quantity = 1;
-      items[0].unit = "Pauschal";
-      items[0].vatRate = reverseCharge ? 0 : 19;
-      const net = reverseCharge
-        ? data.totalCents
-        : Math.round(data.totalCents / (1 + items[0].vatRate / 100));
-      items[0].unitPrice = net;
-      items[0].priceText = (net / 100).toFixed(2).replace(".", ",");
-      items = [...items];
+  function applyReadOutcome(outcome: PdfReadOutcome) {
+    if (outcome.kind === "zugferd") {
+      zugferdExtracted = true;
+      applyInvoiceExtract(form, outcome.data, outcome.vendor);
+    } else if (outcome.kind === "text") {
+      applyTextExtract(form, outcome.data, outcome.vendor);
     }
+  }
+
+  function announceImport(outcome: PdfReadOutcome, storedAt: string) {
+    const storedNote = `PDF abgelegt unter ${storedAt}`;
+    switch (outcome.kind) {
+      case "zugferd":
+        announceZugferdImport(outcome.vendor, storedNote);
+        break;
+      case "text":
+        toast.warning(
+          "Keine ZUGFeRD-XML — Text-Heuristik genutzt",
+          outcome.vendor
+            ? `Lieferant „${outcome.vendor.name}" via Text-Match zugeordnet. Bitte alle Felder prüfen.`
+            : "Felder bestmöglich vorbefüllt — bitte alle Werte prüfen.",
+        );
+        importedNote = `${storedNote}. Heuristisch vorbefüllt — Werte prüfen!`;
+        break;
+      case "extract-failed":
+        toast.error("ZUGFeRD-Extract fehlgeschlagen", outcome.message);
+        importedNote = storedNote;
+        break;
+      case "empty":
+        toast.warning(
+          "Kein extrahierbarer Inhalt in der PDF",
+          "Weder ZUGFeRD-XML noch Text-Layer gefunden — bitte manuell erfassen.",
+        );
+        importedNote = storedNote;
+        break;
+    }
+  }
+
+  function announceZugferdImport(vendor: Vendor | null, storedNote: string) {
+    if (vendor) {
+      toast.success("ZUGFeRD übernommen", `Lieferant „${vendor.name}" automatisch zugeordnet.`);
+      importedNote = storedNote;
+      return;
+    }
+    toast.action(
+      "ZUGFeRD übernommen",
+      { label: "Lieferant anlegen", onClick: () => push("/vendors/new") },
+      { description: "Kein passender Lieferant — bitte vorher anlegen oder oben auswählen." },
+    );
+    importedNote = `${storedNote}. Lieferant fehlt.`;
   }
 
   async function handleImport(srcPath: string) {
@@ -379,75 +231,13 @@
     importing = true;
     importedNote = null;
     try {
-      const result = await extractZugferd(srcPath);
-      let matched: Vendor | null = null;
-      let foundXml = false;
-      let textHeuristicUsed = false;
-      if (result.success && result.found) {
-        foundXml = true;
-        zugferdExtracted = true;
-        matched = matchVendor(result.data.seller);
-        applyExtract(result.data, matched);
-      } else if (result.success === false) {
-        toast.error("ZUGFeRD-Extract fehlgeschlagen", result.error.message);
-      } else {
-        // No ZUGFeRD attachment — fall back to text-layer heuristic.
-        const textResult = await extractTextPdf(srcPath);
-        if (textResult.success && textResult.found) {
-          textHeuristicUsed = true;
-          matched =
-            matchVendorByVatId(textResult.data.vendorVatId) ??
-            matchVendorByName(textResult.data.vendorName);
-          applyTextExtract(textResult.data, matched);
-        }
-      }
-      const dest = await importExpensePdf(srcPath, vendorSlug(matched));
-      pdfPath = dest;
-
-      // Validate the supplier's ZUGFeRD XML against KoSIT — if it's wrong,
-      // we want to know before booking it. Silent fallback if validator
-      // unavailable; UI shows "nicht validiert" then.
-      if (foundXml) {
-        try {
-          const report = await validatePdf(dest);
-          validationStatus = report.valid ? "valid" : "invalid";
-          validationFindingsCount = report.findings.length;
-        } catch {
-          validationStatus = "unavailable";
-          validationFindingsCount = null;
-        }
-      } else {
-        validationStatus = null;
-        validationFindingsCount = null;
-      }
-
-      if (foundXml) {
-        if (matched) {
-          toast.success("ZUGFeRD übernommen", `Lieferant „${matched.name}" automatisch zugeordnet.`);
-          importedNote = `PDF abgelegt unter ${dest}`;
-        } else {
-          toast.action(
-            "ZUGFeRD übernommen",
-            { label: "Lieferant anlegen", onClick: () => push("/vendors/new") },
-            { description: "Kein passender Lieferant — bitte vorher anlegen oder oben auswählen." },
-          );
-          importedNote = `PDF abgelegt unter ${dest}. Lieferant fehlt.`;
-        }
-      } else if (textHeuristicUsed) {
-        toast.warning(
-          "Keine ZUGFeRD-XML — Text-Heuristik genutzt",
-          matched
-            ? `Lieferant „${matched.name}" via Text-Match zugeordnet. Bitte alle Felder prüfen.`
-            : "Felder bestmöglich vorbefüllt — bitte alle Werte prüfen.",
-        );
-        importedNote = `PDF abgelegt unter ${dest}. Heuristisch vorbefüllt — Werte prüfen!`;
-      } else {
-        toast.warning(
-          "Kein extrahierbarer Inhalt in der PDF",
-          "Weder ZUGFeRD-XML noch Text-Layer gefunden — bitte manuell erfassen.",
-        );
-        importedNote = `PDF abgelegt unter ${dest}`;
-      }
+      const outcome = await readExpensePdf(srcPath, vendors);
+      applyReadOutcome(outcome);
+      const vendor = outcome.kind === "zugferd" || outcome.kind === "text" ? outcome.vendor : null;
+      const storedAt = await importExpensePdf(srcPath, vendorFileSlug(vendor));
+      pdfPath = storedAt;
+      validation = outcome.kind === "zugferd" ? await validateImportedPdf(storedAt) : null;
+      announceImport(outcome, storedAt);
     } catch (e) {
       toast.error("Import fehlgeschlagen", String(e));
     } finally {
@@ -455,90 +245,53 @@
     }
   }
 
-  async function pickFile() {
-    try {
-      const selected = await openDialog({
-        multiple: false,
-        directory: false,
-        filters: [{ name: "PDF", extensions: ["pdf"] }],
-      });
-      if (typeof selected === "string") {
-        await handleImport(selected);
-      }
-    } catch (e) {
-      toast.error("Datei-Dialog fehlgeschlagen", String(e));
-    }
+  function buildInput(vendorId: number): ExpenseFormInput {
+    return {
+      number: form.vendorNumber.trim() || null,
+      vendorId,
+      issueDate: fromIsoDate(form.issueDateIso),
+      dueDate: form.dueDateIso ? fromIsoDate(form.dueDateIso) : null,
+      notes: form.notes.trim() || null,
+      reverseChargeType: form.reverseChargeType,
+      pdfPath,
+      items: form.items.map(itemInputFromRow),
+    };
   }
 
-  onMount(() => {
-    if (mode !== "new") return;
-    let unlisten: (() => void) | null = null;
-    getCurrentWebview()
-      .onDragDropEvent((event) => {
-        if (event.payload.type === "over") {
-          dropHover = true;
-        } else if (event.payload.type === "leave") {
-          dropHover = false;
-        } else if (event.payload.type === "drop") {
-          dropHover = false;
-          const paths = event.payload.paths.filter((p) => p.toLowerCase().endsWith(".pdf"));
-          if (paths.length > 0) {
-            void handleImport(paths[0]);
-          } else if (event.payload.paths.length > 0) {
-            toast.warning("Nur PDF-Dateien werden unterstützt.");
-          }
-        }
-      })
-      .then((u) => (unlisten = u));
-    return () => unlisten?.();
-  });
+  async function persist(input: ExpenseFormInput): Promise<number | null> {
+    if (mode === "new") {
+      const createdId = await createExpense(input, { zugferdExtracted });
+      toast.success("Eingangsrechnung erfasst");
+      return createdId;
+    }
+    if (id === null) return null;
+    await updateExpense(id, input);
+    toast.success("Änderungen gespeichert");
+    return id;
+  }
+
+  /** Validation is metadata, not core data, so a failure here must not undo the save. */
+  async function recordValidation(expenseId: number, result: ImportValidation) {
+    try {
+      await recordExpenseValidation(expenseId, result.status, result.findingsCount);
+    } catch (e) {
+      toast.warning("Validierungsstatus nicht gespeichert", String(e));
+    }
+  }
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     if (!editable) return;
+    const vendorId = parseId(form.vendorId);
+    if (vendorId === null) {
+      error = "Bitte Lieferant auswählen.";
+      return;
+    }
     saving = true;
     error = null;
     try {
-      const vid = Number.parseInt(vendorIdStr, 10);
-      if (Number.isNaN(vid)) throw new Error("Bitte Lieferant auswählen.");
-      const input: ExpenseFormInput = {
-        number: vendorNumber.trim() || null,
-        vendorId: vid,
-        issueDate: fromIsoDate(issueDateIso),
-        dueDate: dueDateIso ? fromIsoDate(dueDateIso) : null,
-        notes: notes.trim() || null,
-        reverseChargeType: reverseCharge ? "intra_eu" : "none",
-        pdfPath: pdfPath ?? existing?.pdfPath ?? null,
-        items: items.map((it) => ({
-          description: it.description,
-          category: it.category?.trim() || null,
-          categoryId: it.categoryId ?? null,
-          datevAccount: it.datevAccount?.trim() || null,
-          quantity: it.quantity,
-          unit: it.unit,
-          unitPrice: it.unitPrice,
-          vatRate: it.vatRate,
-        })),
-      };
-      let newId: number | null = id;
-      if (mode === "new") {
-        newId = await createExpense(input, { zugferdExtracted });
-        toast.success("Eingangsrechnung erfasst");
-      } else if (id !== null) {
-        await updateExpense(id, input);
-        toast.success("Änderungen gespeichert");
-      }
-      if (newId !== null && validationStatus !== null) {
-        try {
-          const { execute } = await import("$lib/db/client");
-          await execute(
-            "UPDATE expenses SET last_validation_status = ?, last_validated_at = unixepoch(), last_validation_findings_count = ? WHERE id = ?",
-            [validationStatus, validationFindingsCount, newId],
-          );
-        } catch {
-          // Non-fatal — validation is metadata, not core data.
-        }
-      }
+      const savedId = await persist(buildInput(vendorId));
+      if (savedId !== null && validation) await recordValidation(savedId, validation);
       push("/expenses");
     } catch (err) {
       error = String(err);
@@ -548,62 +301,43 @@
     }
   }
 
-  async function onMarkPaid() {
+  async function updateStatusAndLeave(
+    action: (expenseId: number) => Promise<void>,
+    successMessage: string,
+    failureTitle: string,
+  ) {
     if (id === null) return;
     try {
-      await markExpensePaid(id);
-      toast.success("Als bezahlt markiert");
+      await action(id);
+      toast.success(successMessage);
       push("/expenses");
     } catch (e) {
-      toast.error("Fehler", String(e));
+      toast.error(failureTitle, String(e));
     }
   }
 
-  async function onCancel() {
-    if (id === null) return;
-    try {
-      await cancelExpense(id);
-      toast.success("Storniert");
-      push("/expenses");
-    } catch (e) {
-      toast.error("Fehler", String(e));
-    }
-  }
-
-  async function onDelete() {
-    if (id === null) return;
-    try {
-      await deleteExpense(id);
-      toast.success("Gelöscht");
-      push("/expenses");
-    } catch (e) {
-      toast.error("Löschen fehlgeschlagen", String(e));
-    }
-  }
+  const onMarkPaid = () =>
+    updateStatusAndLeave((expenseId) => markExpensePaid(expenseId), "Als bezahlt markiert", "Fehler");
+  const onCancel = () => updateStatusAndLeave(cancelExpense, "Storniert", "Fehler");
+  const onDelete = () => updateStatusAndLeave(deleteExpense, "Gelöscht", "Löschen fehlgeschlagen");
 </script>
 
 <header class="mb-6 flex items-start justify-between gap-4">
   <div>
-    <a
-      href="/expenses"
-      use:link
-      class="group inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-    >
-      <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" /> Eingangsrechnungen
-    </a>
+    <BackLink href="/expenses">Eingangsrechnungen</BackLink>
     <h1 class="text-3xl font-semibold tracking-tight mt-2">
       {mode === "new" ? "Neue Eingangsrechnung" : existing ? existing.internalNumber : "—"}
     </h1>
     {#if existing}
       <div class="mt-2 flex items-center gap-2">
-        <Badge variant={statusVariant[existing.status]}>{statusLabel[existing.status]}</Badge>
+        <Badge variant={EXPENSE_STATUS_VARIANT[existing.status]}>{EXPENSE_STATUS_LABEL[existing.status]}</Badge>
         {#if existing.zugferdExtracted}
           <Badge variant="secondary">ZUGFeRD-Import</Badge>
         {/if}
       </div>
     {/if}
   </div>
-  {#if mode === "edit" && existing && existing.status === "open"}
+  {#if existing?.status === "open"}
     <div class="flex items-center gap-2">
       <Button type="button" variant="outline" onclick={onMarkPaid}>
         <Check />
@@ -621,46 +355,14 @@
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else}
   {#if mode === "new"}
-    <div
-      class={"mb-6 rounded-lg border-2 border-dashed p-6 text-center transition-colors " +
-        (dropHover
-          ? "border-primary bg-primary/5"
-          : importing
-            ? "border-muted bg-muted/30"
-            : "border-muted-foreground/25 hover:border-muted-foreground/50")}
-    >
-      {#if importing}
-        <div class="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Loader2 class="size-4 animate-spin" />
-          <span>ZUGFeRD-Daten werden gelesen…</span>
-        </div>
-      {:else}
-        <div class="flex flex-col items-center gap-3">
-          <FileUp class="size-8 text-muted-foreground" />
-          <div class="text-sm">
-            <span class="font-medium">PDF hierher ziehen</span>
-            <span class="text-muted-foreground"> oder </span>
-            <button
-              type="button"
-              onclick={pickFile}
-              class="font-medium text-primary hover:underline"
-            >
-              Datei auswählen
-            </button>
-          </div>
-          <p class="text-xs text-muted-foreground">
-            ZUGFeRD/Factur-X-Daten werden automatisch übernommen.
-          </p>
-        </div>
-      {/if}
-    </div>
+    <PdfDropZone {importing} onFile={handleImport} />
     {#if importedNote}
       <p class="mb-4 text-xs text-muted-foreground">{importedNote}</p>
     {/if}
-    {#if validationStatus}
+    {#if validation}
       <div class="mb-4 flex items-center gap-2">
-        <ValidationBadge status={validationStatus} findingsCount={validationFindingsCount} />
-        {#if validationStatus === "invalid"}
+        <ValidationBadge status={validation.status} findingsCount={validation.findingsCount} />
+        {#if validation.status === "invalid"}
           <span class="text-xs text-destructive">
             Lieferanten-XML entspricht nicht der EN16931-Norm.
           </span>
@@ -674,11 +376,7 @@
         <section class="grid grid-cols-2 gap-4">
           <div class="col-span-2 flex flex-col gap-1.5">
             <Label>Lieferant <span class="text-destructive">*</span></Label>
-            <Select
-              bind:value={vendorIdStr}
-              items={vendorItems}
-              placeholder="Lieferant wählen…"
-            />
+            <Select bind:value={form.vendorId} items={vendorItems} placeholder="Lieferant wählen…" />
             {#if vendors.length === 0}
               <p class="text-xs text-muted-foreground">
                 Noch keine Lieferanten —
@@ -688,18 +386,23 @@
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>Beleg-Nr. des Lieferanten</Label>
-            <Input bind:value={vendorNumber} placeholder="z. B. 2026-04-123" />
+            <Input bind:value={form.vendorNumber} placeholder="z. B. 2026-04-123" />
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>Rechnungsdatum <span class="text-destructive">*</span></Label>
-            <DatePicker bind:value={issueDateIso} required />
+            <DatePicker bind:value={form.issueDateIso} required />
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>Fällig am</Label>
-            <DatePicker bind:value={dueDateIso} />
+            <DatePicker bind:value={form.dueDateIso} />
           </div>
           <div class="col-span-2 flex items-center gap-2">
-            <Checkbox id="rc" bind:checked={reverseCharge} />
+            <Checkbox
+              id="rc"
+              bind:checked={
+                () => reverseCharge, (checked) => (form.reverseChargeType = checked ? "intra_eu" : "none")
+              }
+            />
             <label for="rc" class="text-sm cursor-pointer select-none">
               Reverse-Charge (Steuerschuldnerschaft des Leistungsempfängers)
             </label>
@@ -708,148 +411,22 @@
       </CardContent>
     </Card>
 
-    <section class="mt-6">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-lg font-medium">Positionen</h2>
-        <div class="inline-flex items-center gap-2">
-          <Button type="button" variant="outline" onclick={() => (catalogPickerOpen = true)} disabled={!editable}>
-            <Package />
-            Aus Katalog…
-          </Button>
-          <Button type="button" variant="outline" onclick={addItem} disabled={!editable}>
-            <Plus />
-            Position
-          </Button>
-        </div>
-      </div>
-      <Card class="overflow-hidden py-0">
-        <table class="w-full text-sm">
-          <thead class="bg-muted/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
-            <tr>
-              <th class="px-3 py-2 w-8 font-medium">#</th>
-              <th class="px-3 py-2 font-medium">Beschreibung</th>
-              <th class="px-3 py-2 w-40 font-medium">Kategorie</th>
-              <th class="px-3 py-2 w-20 font-medium">Menge</th>
-              <th class="px-3 py-2 w-24 font-medium">Einzelpreis</th>
-              {#if !reverseCharge}
-                <th class="px-3 py-2 w-24 font-medium">USt</th>
-              {/if}
-              <th class="px-3 py-2 w-28 font-medium text-right">Summe</th>
-              <th class="px-3 py-2 w-10 font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each items as it, idx (idx)}
-              <tr class="border-t">
-                <td class="px-3 py-2 text-xs text-muted-foreground">{idx + 1}</td>
-                <td class="px-2 py-1.5">
-                  <Input bind:value={it.description} required disabled={!editable} />
-                </td>
-                <td class="px-2 py-1.5">
-                  <div class="flex flex-col gap-1">
-                    <Select
-                      items={curatedCategoryItems}
-                      value={it.categoryId ? String(it.categoryId) : ""}
-                      onValueChange={(v) => pickCuratedCategory(idx, v)}
-                      disabled={!editable}
-                    />
-                    {#if !it.categoryId}
-                      <Input
-                        bind:value={it.category}
-                        list="expense-categories"
-                        placeholder="oder Freitext…"
-                        disabled={!editable}
-                        class="text-xs"
-                      />
-                    {/if}
-                  </div>
-                </td>
-                <td class="px-2 py-1.5">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    bind:value={it.quantity}
-                    disabled={!editable}
-                  />
-                </td>
-                <td class="px-2 py-1.5">
-                  <Input
-                    bind:value={it.priceText}
-                    onblur={() => onPriceBlur(idx)}
-                    placeholder="0,00"
-                    class="text-right"
-                    disabled={!editable}
-                  />
-                </td>
-                {#if !reverseCharge}
-                  <td class="px-2 py-1.5">
-                    <Select
-                      bind:value={
-                        () => String(it.vatRate),
-                        (v) => {
-                          it.vatRate = Number.parseInt(v, 10);
-                          items = [...items];
-                        }
-                      }
-                      items={vatItems}
-                    />
-                  </td>
-                {/if}
-                <td class="px-3 py-2 text-right font-mono text-xs">
-                  {centsToEur(computeLineTotal(it))}
-                </td>
-                <td class="px-2 py-1.5 text-right">
-                  <button
-                    type="button"
-                    onclick={() => removeItem(idx)}
-                    disabled={items.length === 1 || !editable}
-                    class="inline-flex items-center justify-center size-8 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                    title="Position entfernen"
-                  >
-                    <Trash2 class="size-4" />
-                  </button>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-          <tfoot class="bg-muted/40 text-sm">
-            <tr class="border-t">
-              <td colspan={reverseCharge ? 6 : 7} class="px-3 py-2 text-right text-muted-foreground">
-                Zwischensumme
-              </td>
-              <td class="px-3 py-2 text-right font-mono">{centsToEur(totals.subtotal)}</td>
-              <td></td>
-            </tr>
-            {#if !reverseCharge}
-              <tr>
-                <td colspan="7" class="px-3 py-2 text-right text-muted-foreground">USt (Vorsteuer)</td>
-                <td class="px-3 py-2 text-right font-mono">{centsToEur(totals.vatAmount)}</td>
-                <td></td>
-              </tr>
-            {/if}
-            <tr class="border-t">
-              <td colspan={reverseCharge ? 6 : 7} class="px-3 py-2 text-right font-semibold">
-                Gesamtbetrag
-              </td>
-              <td class="px-3 py-2 text-right font-mono font-semibold">{centsToEur(totals.total)}</td>
-              <td></td>
-            </tr>
-          </tfoot>
-        </table>
-      </Card>
-      <datalist id="expense-categories">
-        {#each categories as c (c)}
-          <option value={c}></option>
-        {/each}
-      </datalist>
-    </section>
+    <ExpenseItemsTable
+      bind:items={form.items}
+      {editable}
+      {reverseCharge}
+      {totals}
+      {curatedCategories}
+      {categorySuggestions}
+      onAdd={addItem}
+      onAddFromCatalog={() => (catalogPickerOpen = true)}
+    />
 
     <Card class="mt-6">
       <CardContent class="space-y-4">
         <div class="flex flex-col gap-1.5">
           <Label>Notizen</Label>
-          <Textarea rows={3} bind:value={notes} disabled={!editable} />
+          <Textarea rows={3} bind:value={form.notes} disabled={!editable} />
         </div>
       </CardContent>
     </Card>
@@ -863,7 +440,7 @@
       <Button type="button" onclick={() => push("/expenses")} variant="ghost">
         {editable ? "Abbrechen" : "Zurück"}
       </Button>
-      {#if mode === "edit" && existing && existing.status !== "paid"}
+      {#if existing && existing.status !== "paid"}
         <Button
           type="button"
           variant="ghost"
@@ -899,4 +476,4 @@
   onConfirm={onCancel}
 />
 
-<CatalogPicker bind:open={catalogPickerOpen} onPick={addFromCatalog} context="expense" />
+<CatalogPicker bind:open={catalogPickerOpen} onPick={addFromCatalog} />

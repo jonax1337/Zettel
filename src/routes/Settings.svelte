@@ -12,8 +12,7 @@
   } from "$lib/brand-icons";
   import { version as appVersion } from "../../package.json";
   import { checkForUpdate } from "$lib/updater";
-
-  type CategoryTone = "default" | "danger";
+  import { cn } from "$lib/utils";
 
   type Category = {
     href: string;
@@ -21,7 +20,7 @@
     title: string;
     description: string;
     items: string[];
-    tone?: CategoryTone;
+    danger?: boolean;
   };
 
   const categories: Category[] = [
@@ -59,7 +58,7 @@
       title: "Erweitert",
       description: "Gefahrenzone — Daten löschen und Counter zurücksetzen.",
       items: ["Daten löschen", "Tabellen leeren", "Counter-Reset"],
-      tone: "danger",
+      danger: true,
     },
   ];
 
@@ -107,7 +106,7 @@
       onclick={onCheckUpdate}
       disabled={updateChecking}
     >
-      <RefreshCw class={"size-3.5 " + (updateChecking ? "animate-spin" : "")} />
+      <RefreshCw class={cn("size-3.5", updateChecking && "animate-spin")} />
       {updateChecking ? "Prüfe…" : "Nach Updates suchen"}
     </Button>
   </div>
@@ -115,15 +114,12 @@
 
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
   {#each categories as cat (cat.href)}
-    {@const isDanger = cat.tone === "danger"}
     {@const Icon = cat.icon}
     <Card
-      class={[
+      class={cn(
         "group cursor-pointer hover:-translate-y-0.5 hover:shadow-md transition-all duration-200 gap-3 py-5",
-        isDanger
-          ? "border-destructive/40 hover:bg-destructive/5"
-          : "hover:bg-muted/30",
-      ].join(" ")}
+        cat.danger ? "border-destructive/40 hover:bg-destructive/5" : "hover:bg-muted/30",
+      )}
       role="button"
       tabindex={0}
       onclick={() => push(cat.href)}
@@ -137,17 +133,17 @@
       <CardContent class="flex flex-col gap-3">
         <div class="flex items-start justify-between gap-3">
           <div
-            class={[
+            class={cn(
               "flex size-10 items-center justify-center rounded-lg",
-              isDanger ? "bg-destructive/10 text-destructive" : "bg-muted text-foreground",
-            ].join(" ")}
+              cat.danger ? "bg-destructive/10 text-destructive" : "bg-muted text-foreground",
+            )}
           >
             <Icon class="size-5" />
           </div>
           <ArrowRight class="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
         </div>
         <div class="space-y-1">
-          <div class={["font-semibold leading-none", isDanger ? "text-destructive" : ""].join(" ")}>
+          <div class={cn("font-semibold leading-none", cat.danger && "text-destructive")}>
             {cat.title}
           </div>
           <p class="text-sm text-muted-foreground">{cat.description}</p>

@@ -1,64 +1,29 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
-  import {
-    listCatalog,
-    deleteCatalogItem,
-    setArchived,
-  } from "$lib/db/catalog";
+  import { listCatalog, deleteCatalogItem, setArchived } from "$lib/db/catalog";
   import type { CatalogItem } from "$lib/db/schema";
-  import {
-    Button,
-    Card,
-    Checkbox,
-    Input,
-    ConfirmDialog,
-    DropdownMenu,
-    DropdownItem,
-    DropdownSeparator,
-    Badge,
-    toast,
-    EmptyState,
-  } from "$lib/ui";
-  import {
-    Plus,
-    MoreHorizontal,
-    Pencil,
-    Trash2,
-    Search,
-    Archive,
-    ArchiveRestore,
-  } from "$lib/brand-icons";
+  import { Button, Card, Checkbox, ConfirmDialog, DropdownItem, Badge, toast, EmptyState } from "$lib/ui";
+  import { Plus, Archive, ArchiveRestore } from "$lib/brand-icons";
   import { centsToEur } from "$lib/utils/money";
+  import RowActionsMenu from "./parts/entity/RowActionsMenu.svelte";
+  import SearchInput from "./parts/entity/SearchInput.svelte";
+  import { pluralize } from "./parts/entity/format";
+  import { createQueryState } from "./parts/entity/query-state.svelte";
 
-  let items = $state<CatalogItem[]>([]);
   let search = $state("");
   let showArchived = $state(false);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-  let confirmOpen = $state(false);
-  let toDelete = $state<CatalogItem | null>(null);
 
-  async function reload() {
-    loading = true;
-    try {
-      items = await listCatalog({ includeArchived: showArchived });
-      error = null;
-    } catch (e) {
-      error = String(e);
-    } finally {
-      loading = false;
-    }
-  }
-
+  const catalog = createQueryState<CatalogItem[]>([], () =>
+    listCatalog({ includeArchived: showArchived }),
+  );
   $effect(() => {
-    void showArchived;
-    reload();
+    catalog.reload();
   });
 
   const filtered = $derived.by(() => {
     const q = search.trim().toLowerCase();
-    if (q === "") return items;
-    return items.filter(
+    if (q === "") return catalog.data;
+    return catalog.data.filter(
       (it) =>
         it.name.toLowerCase().includes(q) ||
         (it.descriptionDe ?? "").toLowerCase().includes(q) ||
@@ -66,10 +31,17 @@
     );
   });
 
+  let confirmOpen = $state(false);
+  let toDelete = $state<CatalogItem | null>(null);
+
+  function editItem(it: CatalogItem) {
+    push(`/catalog/${it.id}`);
+  }
+
   async function toggleArchive(it: CatalogItem) {
     try {
       await setArchived(it.id, !it.archived);
-      await reload();
+      await catalog.reload();
       toast.success(it.archived ? "Wieder aktiv" : "Archiviert");
     } catch (e) {
       toast.error("Aktion fehlgeschlagen", String(e));
@@ -87,7 +59,7 @@
       await deleteCatalogItem(toDelete.id);
       toast.success("Eintrag gelöscht");
       toDelete = null;
-      await reload();
+      await catalog.reload();
     } catch (e) {
       toast.error("Löschen fehlgeschlagen", String(e));
     }
@@ -99,7 +71,7 @@
     <h1 class="text-3xl font-semibold tracking-tight">Artikel-Katalog</h1>
     <p class="text-sm text-muted-foreground mt-1">
       Wiederverwendbare Positionen für Rechnungen, Angebote und Ausgaben.
-      {filtered.length} {filtered.length === 1 ? "Eintrag" : "Einträge"}
+      {filtered.length} {pluralize(filtered.length, "Eintrag", "Einträge")}
     </p>
   </div>
   <Button onclick={() => push("/catalog/new")}>
@@ -109,27 +81,26 @@
 </header>
 
 <div class="mb-4 flex flex-wrap items-center gap-3">
-  <div class="relative max-w-md flex-1 min-w-[200px]">
-    <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-    <Input
-      type="search"
-      placeholder="Suche (Name, Beschreibung, Tag)…"
-      bind:value={search}
-      class="pl-9"
-    />
-  </div>
+  <SearchInput
+    bind:value={search}
+    placeholder="Suche (Name, Beschreibung, Tag)…"
+    class="max-w-md flex-1 min-w-[200px]"
+  />
   <label class="flex items-center gap-2 text-sm cursor-pointer">
     <Checkbox bind:checked={showArchived} />
     <span>Archivierte anzeigen</span>
   </label>
 </div>
 
-{#if error}
-  <p class="text-sm text-destructive">Fehler: {error}</p>
-{:else if loading}
+{#if catalog.error}
+  <p class="text-sm text-destructive">Fehler: {catalog.error}</p>
+{:else if catalog.loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else if filtered.length === 0}
-  <EmptyState variant={search ? "no-results" : "empty"} message={search ? "Keine Treffer." : "Noch keine Katalog-Einträge."} />
+  <EmptyState
+    variant={search ? "no-results" : "empty"}
+    message={search ? "Keine Treffer." : "Noch keine Katalog-Einträge."}
+  />
 {:else}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
@@ -150,7 +121,7 @@
               <button
                 type="button"
                 class="text-left hover:text-foreground font-medium transition-colors"
-                onclick={() => push(`/catalog/${it.id}`)}
+                onclick={() => editItem(it)}
               >
                 {it.name}
               </button>
@@ -159,39 +130,23 @@
               {/if}
             </td>
             <td class="px-4 py-3 text-muted-foreground truncate max-w-xs">{it.descriptionDe}</td>
-            <td class="px-4 py-3 text-right tabular-nums">{centsToEur(it.defaultUnitPrice)} €</td>
+            <td class="px-4 py-3 text-right tabular-nums">{centsToEur(it.defaultUnitPrice)}</td>
             <td class="px-4 py-3 text-right tabular-nums">{it.defaultVatRate} %</td>
             <td class="px-4 py-3 text-muted-foreground">{it.unit}</td>
             <td class="px-4 py-3 text-right">
-              <DropdownMenu>
-                {#snippet trigger()}
-                  <button
-                    type="button"
-                    class="inline-flex items-center justify-center size-8 rounded-md hover:bg-muted transition-colors"
-                    aria-label="Aktionen"
-                  >
-                    <MoreHorizontal class="size-4" />
-                  </button>
+              <RowActionsMenu onEdit={() => editItem(it)} onDelete={() => askDelete(it)}>
+                {#snippet extraItems()}
+                  <DropdownItem onSelect={() => toggleArchive(it)}>
+                    {#if it.archived}
+                      <ArchiveRestore />
+                      Wieder aktivieren
+                    {:else}
+                      <Archive />
+                      Archivieren
+                    {/if}
+                  </DropdownItem>
                 {/snippet}
-                <DropdownItem onSelect={() => push(`/catalog/${it.id}`)}>
-                  <Pencil />
-                  Bearbeiten
-                </DropdownItem>
-                <DropdownItem onSelect={() => toggleArchive(it)}>
-                  {#if it.archived}
-                    <ArchiveRestore />
-                    Wieder aktivieren
-                  {:else}
-                    <Archive />
-                    Archivieren
-                  {/if}
-                </DropdownItem>
-                <DropdownSeparator />
-                <DropdownItem destructive onSelect={() => askDelete(it)}>
-                  <Trash2 />
-                  Löschen
-                </DropdownItem>
-              </DropdownMenu>
+              </RowActionsMenu>
             </td>
           </tr>
         {/each}

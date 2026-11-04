@@ -20,6 +20,12 @@ from typing import Any
 
 from lxml import etree
 
+DEFAULT_UNIT_CODE = "C62"
+COMMERCIAL_INVOICE_TYPE_CODE = "380"
+CREDIT_NOTE_TYPE_CODE = "381"
+INTRA_EU_REVERSE_CHARGE_CATEGORIES = ("K", "AE")
+THIRD_COUNTRY_CATEGORY = "G"
+
 # Namespaces used by all CII-flavored ZUGFeRD profiles.
 NS = {
     "rsm": "urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100",
@@ -43,14 +49,18 @@ def _text(node, xpath: str, default: str | None = None) -> str | None:
     return str(val).strip()
 
 
-def _cents(node, xpath: str) -> int:
-    s = _text(node, xpath)
-    if not s:
-        return 0
+def _number(raw: str | None, default: float) -> float:
+    """Parse a decimal string (comma or dot separator); `default` if unparsable."""
+    if not raw:
+        return default
     try:
-        return round(float(s.replace(",", ".")) * 100)
-    except (ValueError, TypeError):
-        return 0
+        return float(raw.replace(",", "."))
+    except ValueError:
+        return default
+
+
+def _cents(node, xpath: str) -> int:
+    return round(_number(_text(node, xpath), 0.0) * 100)
 
 
 def _yyyymmdd_to_unix(s: str | None) -> int | None:
@@ -80,21 +90,16 @@ def _parse_party(node) -> dict[str, Any]:
 
 def _parse_line(line) -> dict[str, Any]:
     description = _text(line, "ram:SpecifiedTradeProduct/ram:Name") or ""
-    quantity_str = _text(
-        line,
-        "ram:SpecifiedLineTradeDelivery/ram:BilledQuantity",
-        default="1",
+    quantity = _number(
+        _text(line, "ram:SpecifiedLineTradeDelivery/ram:BilledQuantity"),
+        default=1.0,
     )
-    try:
-        quantity = float((quantity_str or "1").replace(",", "."))
-    except (ValueError, TypeError):
-        quantity = 1.0
     unit = (
         line.xpath(
             "ram:SpecifiedLineTradeDelivery/ram:BilledQuantity/@unitCode",
             namespaces=NS,
         )
-        or ["C62"]
+        or [DEFAULT_UNIT_CODE]
     )[0]
     unit_price = _cents(
         line,
@@ -105,15 +110,15 @@ def _parse_line(line) -> dict[str, Any]:
         "ram:SpecifiedLineTradeSettlement/"
         "ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount",
     )
-    vat_rate_str = _text(
-        line,
-        "ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent",
-        default="0",
+    vat_rate = round(
+        _number(
+            _text(
+                line,
+                "ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent",
+            ),
+            default=0.0,
+        )
     )
-    try:
-        vat_rate = round(float((vat_rate_str or "0").replace(",", ".")))
-    except (ValueError, TypeError):
-        vat_rate = 0
     category = _text(
         line,
         "ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode",
@@ -144,19 +149,30 @@ _UNECE_LABELS = {
 
 
 def _unece_to_label(code: str) -> str:
-    return _UNECE_LABELS.get(code, code or "Stk")
+    return _UNECE_LABELS.get(code, code or _UNECE_LABELS[DEFAULT_UNIT_CODE])
 
 
-def extract_from_pdf(pdf_path: str) -> dict[str, Any]:
-    """Top-level extract. Returns `{found: bool, profile?, data?}`."""
+def _read_embedded_xml(pdf_path: str) -> tuple[str | None, bytes | None]:
+    """Embedded Factur-X attachment of a PDF as (filename, bytes), or (None, None)."""
     import facturx  # imported lazily so other commands don't pay the cost
 
     path = Path(pdf_path)
     if not path.is_file():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
+    return facturx.get_xml_from_pdf(path.read_bytes(), check_schematron=False)
 
-    pdf_bytes = path.read_bytes()
-    xml_filename, xml_bytes = facturx.get_xml_from_pdf(pdf_bytes, check_schematron=False)
+
+def extract_xml_only(pdf_path: str) -> dict[str, Any]:
+    """Raw embedded XML for the validator. Returns `{found: bool, xmlFilename?, xml?}`."""
+    xml_filename, xml_bytes = _read_embedded_xml(pdf_path)
+    if not xml_bytes:
+        return {"found": False}
+    return {"found": True, "xmlFilename": xml_filename, "xml": xml_bytes.decode("utf-8")}
+
+
+def extract_from_pdf(pdf_path: str) -> dict[str, Any]:
+    """Top-level extract. Returns `{found: bool, profile?, data?}`."""
+    xml_filename, xml_bytes = _read_embedded_xml(pdf_path)
     if not xml_bytes:
         return {"found": False}
 
@@ -186,21 +202,33 @@ def _detect_profile(root) -> str:
     return "en16931"
 
 
+def _child(parent, path: str):
+    return parent.find(path, NS) if parent is not None else None
+
+
+def _detect_reverse_charge(settlement) -> str:
+    """Any document-level ApplicableTradeTax with CategoryCode K/AE (intra-EU)
+    or G (third country) signals reverse charge."""
+    if settlement is None:
+        return "none"
+    for tax in settlement.findall("ram:ApplicableTradeTax", NS):
+        category = _text(tax, "ram:CategoryCode")
+        if category in INTRA_EU_REVERSE_CHARGE_CATEGORIES:
+            return "intra_eu"
+        if category == THIRD_COUNTRY_CATEGORY:
+            return "third_country"
+    return "none"
+
+
 def _map_invoice(root) -> dict[str, Any]:
     doc = root.find("rsm:ExchangedDocument", NS)
     txn = root.find("rsm:SupplyChainTradeTransaction", NS)
-    agreement = (
-        txn.find("ram:ApplicableHeaderTradeAgreement", NS) if txn is not None else None
-    )
-    delivery = (
-        txn.find("ram:ApplicableHeaderTradeDelivery", NS) if txn is not None else None
-    )
-    settlement = (
-        txn.find("ram:ApplicableHeaderTradeSettlement", NS) if txn is not None else None
-    )
+    agreement = _child(txn, "ram:ApplicableHeaderTradeAgreement")
+    delivery = _child(txn, "ram:ApplicableHeaderTradeDelivery")
+    settlement = _child(txn, "ram:ApplicableHeaderTradeSettlement")
 
     invoice_number = _text(doc, "ram:ID")
-    type_code = _text(doc, "ram:TypeCode") or "380"
+    type_code = _text(doc, "ram:TypeCode") or COMMERCIAL_INVOICE_TYPE_CODE
     issue_date = _yyyymmdd_to_unix(
         _text(doc, "ram:IssueDateTime/udt:DateTimeString")
     )
@@ -218,55 +246,24 @@ def _map_invoice(root) -> dict[str, Any]:
     )
     currency = _text(settlement, "ram:InvoiceCurrencyCode") or "EUR"
 
-    seller = _parse_party(
-        agreement.find("ram:SellerTradeParty", NS) if agreement is not None else None
-    )
-    buyer = _parse_party(
-        agreement.find("ram:BuyerTradeParty", NS) if agreement is not None else None
-    )
-
-    line_nodes = (
-        txn.findall("ram:IncludedSupplyChainTradeLineItem", NS) if txn is not None else []
-    )
-    line_items = [_parse_line(n) for n in line_nodes]
-
-    summary = (
-        settlement.find("ram:SpecifiedTradeSettlementHeaderMonetarySummation", NS)
-        if settlement is not None
-        else None
-    )
-    subtotal = _cents(summary, "ram:LineTotalAmount")
-    vat_total = _cents(summary, "ram:TaxTotalAmount")
-    grand_total = _cents(summary, "ram:GrandTotalAmount")
-
-    # Reverse-charge heuristic: any document-level ApplicableTradeTax with
-    # CategoryCode in {K, AE, G} signals reverse charge.
-    rc_type = "none"
-    if settlement is not None:
-        for tax in settlement.findall("ram:ApplicableTradeTax", NS):
-            cc = _text(tax, "ram:CategoryCode")
-            if cc == "K" or cc == "AE":
-                rc_type = "intra_eu"
-                break
-            if cc == "G":
-                rc_type = "third_country"
-                break
+    line_nodes = txn.findall("ram:IncludedSupplyChainTradeLineItem", NS) if txn is not None else []
+    summary = _child(settlement, "ram:SpecifiedTradeSettlementHeaderMonetarySummation")
 
     return {
         "invoiceNumber": invoice_number,
         "typeCode": type_code,
-        "isCreditNote": type_code == "381",
+        "isCreditNote": type_code == CREDIT_NOTE_TYPE_CODE,
         "issueDate": issue_date,
         "dueDate": due_date,
         "deliveryDate": delivery_date,
         "currency": currency,
-        "reverseChargeType": rc_type,
-        "seller": seller,
-        "buyer": buyer,
-        "lineItems": line_items,
+        "reverseChargeType": _detect_reverse_charge(settlement),
+        "seller": _parse_party(_child(agreement, "ram:SellerTradeParty")),
+        "buyer": _parse_party(_child(agreement, "ram:BuyerTradeParty")),
+        "lineItems": [_parse_line(n) for n in line_nodes],
         "totals": {
-            "subtotal": subtotal,
-            "vatAmount": vat_total,
-            "total": grand_total,
+            "subtotal": _cents(summary, "ram:LineTotalAmount"),
+            "vatAmount": _cents(summary, "ram:TaxTotalAmount"),
+            "total": _cents(summary, "ram:GrandTotalAmount"),
         },
     }

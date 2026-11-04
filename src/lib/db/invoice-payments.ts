@@ -1,5 +1,6 @@
-import { execute, select } from "./client";
-import type { InvoicePayment, InvoicePaymentSource } from "./schema";
+import { execute, insert, select } from "./client";
+import type { InvoicePayment, InvoicePaymentSource, InvoiceStatus } from "./schema";
+import { nowUnix } from "$lib/utils/date";
 
 type PaymentRow = {
   id: number;
@@ -33,55 +34,42 @@ export async function listPayments(invoiceId: number): Promise<InvoicePayment[]>
   return rows.map(mapPayment);
 }
 
-async function sumPayments(invoiceId: number): Promise<number> {
-  const rows = await select<{ s: number }>(
-    "SELECT COALESCE(SUM(amount_cent), 0) AS s FROM invoice_payments WHERE invoice_id = ?",
-    [invoiceId],
-  );
-  return rows[0]?.s ?? 0;
+type PayableStatus = Extract<InvoiceStatus, "sent" | "partial" | "paid">;
+
+/**
+ * Status of a sent invoice given what has been paid so far:
+ *   nothing paid        -> sent
+ *   paid < total        -> partial (remainder outstanding)
+ *   paid >= total       -> paid
+ */
+export function statusForPaidAmount(paidCent: number, totalCent: number): PayableStatus {
+  if (paidCent <= 0) return "sent";
+  return paidCent < totalCent ? "partial" : "paid";
 }
 
 /**
- * Status-Transitions ableiten:
- *   sum = 0          → status bleibt auf 'sent' (oder bleibt was es ist)
- *   0 < sum < total  → 'partial', paid_at = NULL (Restbetrag steht aus)
- *   sum >= total     → 'paid', paid_at = letzter Payment-Timestamp
- *
- * Drafts werden nicht angefasst — eine Teilzahlung auf einen Entwurf wäre ein
- * Datenkonsistenz-Fehler, den die Aufrufer (UI) verhindern müssen.
+ * Re-derives status, paid amount and paid_at from the payment list. Drafts and
+ * cancelled invoices are left alone; a payment on a draft would be a data
+ * consistency error the calling UI has to prevent.
  */
 async function recomputeInvoiceStatus(invoiceId: number): Promise<void> {
-  const rows = await select<{
-    total: number;
-    status: string;
-    sent_at: number | null;
-  }>("SELECT total, status, sent_at FROM invoices WHERE id = ?", [invoiceId]);
-  const inv = rows[0];
-  if (!inv) return;
-  if (inv.status === "draft" || inv.status === "cancelled") return;
-  const total = Math.abs(inv.total);
-  const paid = await sumPayments(invoiceId);
-  // Letzten Payment-Timestamp für paid_at.
-  let nextStatus: "sent" | "partial" | "paid" = "sent";
-  let nextPaidAt: number | null = null;
-  if (paid <= 0) {
-    nextStatus = "sent";
-    nextPaidAt = null;
-  } else if (paid < total) {
-    nextStatus = "partial";
-    nextPaidAt = null;
-  } else {
-    nextStatus = "paid";
-    const lastRows = await select<{ p: number }>(
-      "SELECT MAX(paid_at) AS p FROM invoice_payments WHERE invoice_id = ?",
-      [invoiceId],
-    );
-    nextPaidAt = lastRows[0]?.p ?? Math.floor(Date.now() / 1000);
-  }
+  const [invoice] = await select<{ total: number; status: InvoiceStatus }>(
+    "SELECT total, status FROM invoices WHERE id = ?",
+    [invoiceId],
+  );
+  if (!invoice || invoice.status === "draft" || invoice.status === "cancelled") return;
+
+  const [payments] = await select<{ paid_cent: number; last_paid_at: number | null }>(
+    `SELECT COALESCE(SUM(amount_cent), 0) AS paid_cent, MAX(paid_at) AS last_paid_at
+     FROM invoice_payments WHERE invoice_id = ?`,
+    [invoiceId],
+  );
+  const status = statusForPaidAmount(payments.paid_cent, Math.abs(invoice.total));
+  const paidAt = status === "paid" ? (payments.last_paid_at ?? nowUnix()) : null;
   await execute(
     `UPDATE invoices SET status = ?, amount_paid_cent = ?, paid_at = ?, updated_at = unixepoch()
      WHERE id = ?`,
-    [nextStatus, paid, nextPaidAt, invoiceId],
+    [status, payments.paid_cent, paidAt, invoiceId],
   );
 }
 
@@ -98,7 +86,7 @@ export async function addPayment(input: AddPaymentInput): Promise<number> {
   if (input.amountCent === 0) {
     throw new Error("Zahlbetrag darf nicht 0 sein.");
   }
-  const res = await execute(
+  const id = await insert(
     `INSERT INTO invoice_payments
        (invoice_id, paid_at, amount_cent, eur_amount_cent, source, notes)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -112,28 +100,26 @@ export async function addPayment(input: AddPaymentInput): Promise<number> {
     ],
   );
   await recomputeInvoiceStatus(input.invoiceId);
-  return Number(res.lastInsertId ?? 0);
+  return id;
 }
 
 export async function deletePayment(id: number): Promise<void> {
-  const rows = await select<{ invoice_id: number }>(
+  const [payment] = await select<{ invoice_id: number }>(
     "SELECT invoice_id FROM invoice_payments WHERE id = ?",
     [id],
   );
-  const invoiceId = rows[0]?.invoice_id;
   await execute("DELETE FROM invoice_payments WHERE id = ?", [id]);
-  if (invoiceId) await recomputeInvoiceStatus(invoiceId);
+  if (payment) await recomputeInvoiceStatus(payment.invoice_id);
 }
 
 export async function updatePayment(
   id: number,
   patch: { paidAt?: number; amountCent?: number; notes?: string | null },
 ): Promise<void> {
-  const rows = await select<PaymentRow>(
+  const [existing] = await select<PaymentRow>(
     "SELECT * FROM invoice_payments WHERE id = ?",
     [id],
   );
-  const existing = rows[0];
   if (!existing) return;
   await execute(
     `UPDATE invoice_payments

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { Invoice, InvoiceItem } from "$lib/db/schema";
 import {
   buildDatevCsv,
   defaultDatevFilename,
@@ -58,5 +59,64 @@ describe("defaultDatevFilename", () => {
     const name = defaultDatevFilename(new Date(2026, 4, 17, 14, 32));
     expect(name).toMatch(/^EXTF_Buchungsstapel_\d{8}_\d{4}\.csv$/);
     expect(name).toContain("20260517");
+  });
+});
+
+describe("buildDatevCsv (bookings)", () => {
+  const now = new Date(2026, 4, 17, 12, 0, 0);
+  const issueDate = Math.floor(new Date(2026, 4, 10).getTime() / 1000);
+
+  function invoiceInput(overrides: Partial<Invoice>, items: Array<Pick<InvoiceItem, "lineTotal" | "vatRate">>) {
+    return {
+      invoice: {
+        number: "RE-2026-0001",
+        issueDate,
+        isKleinunternehmer: false,
+        isReverseCharge: false,
+        isCreditNote: false,
+        currency: "EUR",
+        eurTotalCent: null,
+        ...overrides,
+      } as Invoice,
+      items: items as InvoiceItem[],
+      customerName: "Muster GmbH",
+      customerVatId: null,
+    };
+  }
+
+  function bookingRows(csv: string): string[][] {
+    return csv
+      .replace(UTF8_BOM, "")
+      .split("\r\n")
+      .filter(Boolean)
+      .slice(2)
+      .map((line) => line.split(";"));
+  }
+
+  const COLUMN_AMOUNT = 0;
+  const COLUMN_ACCOUNT = 6;
+  const COLUMN_CONTRA_ACCOUNT = 7;
+
+  it("books one row per VAT rate with per-line rounded gross amounts", () => {
+    const input = invoiceInput({}, [
+      { lineTotal: 10000, vatRate: 19 },
+      { lineTotal: 5000, vatRate: 7 },
+    ]);
+    const rows = bookingRows(buildDatevCsv([input], opts, now));
+    expect(rows.map((r) => [r[COLUMN_AMOUNT], r[COLUMN_CONTRA_ACCOUNT]])).toEqual([
+      ["53,50", String(SKR03.revenue7)],
+      ["119,00", String(SKR03.revenue19)],
+    ]);
+    expect(rows.every((r) => r[COLUMN_ACCOUNT] === String(SKR03.debitor))).toBe(true);
+  });
+
+  it("assigns the foreign-currency rounding residual to the largest VAT group, not the first", () => {
+    const input = invoiceInput({ currency: "USD", eurTotalCent: 505 }, [
+      { lineTotal: 100, vatRate: 0 },
+      { lineTotal: 10, vatRate: 7 },
+      { lineTotal: 500, vatRate: 19 },
+    ]);
+    const rows = bookingRows(buildDatevCsv([input], opts, now));
+    expect(rows.map((r) => r[COLUMN_AMOUNT])).toEqual(["0,72", "0,08", "4,25"]);
   });
 });

@@ -31,6 +31,8 @@
   let loading = $state(false);
   let activeFile = $state<string | null>(null);
 
+  const canValidate = $derived(!!status?.installed && !!status?.hasJava);
+
   onMount(async () => {
     try {
       status = await getValidatorStatus();
@@ -39,7 +41,7 @@
     }
   });
 
-  async function pickAndValidate() {
+  async function pickFile(): Promise<string | null> {
     const selected = await open({
       multiple: false,
       directory: false,
@@ -49,8 +51,16 @@
         { name: "XML", extensions: ["xml"] },
       ],
     });
-    if (!selected || Array.isArray(selected)) return;
-    await runValidate(selected);
+    return typeof selected === "string" ? selected : null;
+  }
+
+  async function pickAndValidate() {
+    try {
+      const path = await pickFile();
+      if (path) await runValidate(path);
+    } catch (e) {
+      toast.error("Datei-Dialog fehlgeschlagen", String(e));
+    }
   }
 
   async function runValidate(path: string) {
@@ -67,8 +77,6 @@
       loading = false;
     }
   }
-
-  const canValidate = $derived(!!status?.installed && !!status?.hasJava);
 </script>
 
 <div class="flex flex-col gap-6">
@@ -163,20 +171,21 @@
             {report.findings.length} Findings
           </div>
           <ul class="flex flex-col gap-2">
-            {#each report.findings as f (f.code ?? f.message)}
+            <!-- The same rule can fire at several locations, so code and message are no unique key. -->
+            {#each report.findings as finding, idx (idx)}
               <li class="rounded-md border border-border bg-card/50 p-3 text-sm">
                 <div class="flex items-start gap-2">
                   <ShieldAlert class="size-4 mt-0.5 shrink-0 text-destructive" />
                   <div class="flex-1 min-w-0">
                     <div class="font-medium">
-                      {#if f.code}
-                        <span class="font-mono text-xs text-muted-foreground mr-2">{f.code}</span>
+                      {#if finding.code}
+                        <span class="font-mono text-xs text-muted-foreground mr-2">{finding.code}</span>
                       {/if}
-                      {f.message}
+                      {finding.message}
                     </div>
-                    {#if f.location}
+                    {#if finding.location}
                       <div class="text-xs text-muted-foreground font-mono mt-1 truncate">
-                        {f.location}
+                        {finding.location}
                       </div>
                     {/if}
                   </div>

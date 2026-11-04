@@ -3,7 +3,7 @@
 Ergänzungs-Workflow für neue Strings:
  1. Schlüssel hier in beide Sprachen eintragen.
  2. Im Template `{{ t('schluessel') }}` verwenden.
- 3. Tests in test_i18n_pdf.py erweitern.
+ 3. Tests in test_i18n.py erweitern.
 
 Wir halten die Schlüssel klein, semantisch und ohne Punkt-Notation —
 für ein Solo-Tool reicht ein flaches Mapping. Bei Bedarf später auf
@@ -56,15 +56,18 @@ _DE = {
     "block_notes": "Hinweise",
     "block_skonto_offer": "Skonto-Angebot",
 
-    "rc_intra_eu": "Steuerschuldnerschaft des Leistungsempfängers / Reverse charge — VAT to be paid by the recipient.",
+    "rc_intra_eu_services": "Steuerschuldnerschaft des Leistungsempfängers (Reverse Charge, § 13b UStG / Art. 196 MwStSystRL) / Reverse charge — VAT to be paid by the recipient.",
+    "rc_intra_eu_goods": "Steuerfreie innergemeinschaftliche Lieferung (§ 4 Nr. 1b i. V. m. § 6a UStG) / VAT-exempt intra-community supply.",
     "rc_third_country": "Steuerfreie Ausfuhrlieferung / Export outside EU — VAT exempt.",
+    "rc_third_country_services": "Nicht im Inland steuerbare Leistung (§ 3a Abs. 2 UStG) / Not taxable in Germany — place of supply outside the EU.",
 
     "skonto_inline": "Bei Zahlung bis {date}: {percent} % Skonto = {amount}",
     "skonto_offer_text": "Bei Zahlung der späteren Rechnung innerhalb von {days} Tagen ab Rechnungsdatum gewähren wir {percent} % Skonto.",
 
     "credit_note_ref": "Storno zur Rechnung {number} vom {date}.",
     "offer_disclaimer": "Dieses Angebot ist freibleibend und unverbindlich. Gültig bis {date}. Bei Annahme erstellen wir eine entsprechende Rechnung.",
-    "offer_rc_hint": "Bei Auftragsannahme wird die Rechnung mit dem Hinweis \"Steuerschuldnerschaft des Leistungsempfängers\" ausgestellt (Reverse Charge).",
+    "offer_rc_hint_services": "Bei Auftragsannahme wird die Rechnung mit dem Hinweis \"Steuerschuldnerschaft des Leistungsempfängers\" ausgestellt (Reverse Charge).",
+    "offer_rc_hint_goods": "Bei Auftragsannahme wird die Rechnung als steuerfreie innergemeinschaftliche Lieferung ausgestellt.",
 
     # Footer
     "footer_contact": "Kontakt",
@@ -120,15 +123,18 @@ _EN = {
     "block_notes": "Notes",
     "block_skonto_offer": "Early-payment discount",
 
-    "rc_intra_eu": "Reverse charge — VAT to be paid by the recipient (intra-EU supply).",
+    "rc_intra_eu_services": "Reverse charge — VAT to be paid by the recipient (§ 13b UStG / Art. 196 VAT Directive).",
+    "rc_intra_eu_goods": "VAT-exempt intra-community supply (§ 4 No. 1b in conjunction with § 6a UStG).",
     "rc_third_country": "Export outside EU — VAT exempt.",
+    "rc_third_country_services": "Not taxable in Germany — place of supply outside the EU (§ 3a (2) UStG).",
 
     "skonto_inline": "Pay by {date}: {percent}% discount = {amount}",
     "skonto_offer_text": "If the subsequent invoice is paid within {days} days of invoice date, we grant a {percent}% early-payment discount.",
 
     "credit_note_ref": "Credit note for invoice {number} dated {date}.",
     "offer_disclaimer": "This quotation is non-binding. Valid until {date}. Upon acceptance we will issue a corresponding invoice.",
-    "offer_rc_hint": "Upon acceptance, the invoice will be issued with the note \"VAT to be paid by the recipient (reverse charge)\".",
+    "offer_rc_hint_services": "Upon acceptance, the invoice will be issued with the note \"VAT to be paid by the recipient (reverse charge)\".",
+    "offer_rc_hint_goods": "Upon acceptance, the invoice will be issued as a VAT-exempt intra-community supply.",
 
     "footer_contact": "Contact",
     "footer_tax": "Tax",

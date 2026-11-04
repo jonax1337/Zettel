@@ -26,7 +26,7 @@ export function loadSortState<K extends string>(
       return parsed;
     }
   } catch {
-    /* ignore */
+    // Corrupt or blocked storage: start unsorted.
   }
   return fallback;
 }
@@ -39,7 +39,7 @@ export function saveSortState<K extends string>(scope: string, state: SortState<
       localStorage.setItem(STORAGE_PREFIX + scope, JSON.stringify(state));
     }
   } catch {
-    /* ignore */
+    // Blocked storage: the sort order just won't persist.
   }
 }
 

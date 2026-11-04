@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { X } from "$lib/brand-icons";
-  import { Button } from "$lib/ui";
+  import Button from "./Button.svelte";
 
   type Props = {
     count: number;

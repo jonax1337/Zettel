@@ -26,6 +26,8 @@
     Upload,
   } from "$lib/brand-icons";
 
+  const DEFAULT_TENANT_ID = "default";
+
   type TenantEntry = {
     id: string;
     label: string;
@@ -57,8 +59,9 @@
   async function loadTenants() {
     try {
       tenants = await invoke<TenantEntry[]>("list_tenants");
-    } catch {
+    } catch (e) {
       tenants = [];
+      toast.error("Tenants konnten nicht geladen werden", String(e));
     }
   }
 
@@ -66,24 +69,39 @@
     await loadTenants();
     try {
       companyName = (await loadSettings()).companyName ?? "";
-    } catch {
-      companyName = "";
+    } catch (e) {
+      console.error("Loading the company name failed", e);
     }
   });
+
+  // The default tenant has no label of its own; the company name stands in for it.
+  function tenantDisplayName(t: TenantEntry): string {
+    return t.id === DEFAULT_TENANT_ID ? companyName || t.label : t.label;
+  }
+
+  async function relaunchApp() {
+    const { relaunch } = await import("@tauri-apps/plugin-process");
+    await relaunch();
+  }
+
+  async function changeTenantAndRelaunch(failureTitle: string, change: () => Promise<unknown>) {
+    busy = true;
+    try {
+      await change();
+      await relaunchApp();
+    } catch (e) {
+      toast.error(failureTitle, String(e));
+      busy = false;
+    }
+  }
 
   async function switchTenant(id: string) {
     if (busy) return;
     const target = tenants.find((t) => t.id === id);
     if (!target || target.current) return;
-    busy = true;
-    try {
-      await invoke("set_active_tenant", { id });
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
-    } catch (e) {
-      toast.error("Wechsel fehlgeschlagen", String(e));
-      busy = false;
-    }
+    await changeTenantAndRelaunch("Wechsel fehlgeschlagen", () =>
+      invoke("set_active_tenant", { id }),
+    );
   }
 
   async function pickNew() {
@@ -107,19 +125,13 @@
 
   async function addAndSwitch() {
     if (busy || !newLabel.trim() || !newPath) return;
-    busy = true;
-    try {
+    await changeTenantAndRelaunch("Tenant konnte nicht angelegt werden", async () => {
       const id = await invoke<string>("add_tenant", {
         label: newLabel.trim(),
         path: newPath,
       });
       await invoke("set_active_tenant", { id });
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
-    } catch (e) {
-      toast.error("Tenant konnte nicht angelegt werden", String(e));
-      busy = false;
-    }
+    });
   }
 
   // Move the *active* DB to a new location (e.g. a cloud folder). Uses
@@ -127,24 +139,17 @@
   // stays behind as a backup.
   async function moveToCloud(t: TenantEntry) {
     if (busy || !t.current) return;
-    const baseName = t.id === "default" ? companyName || t.label : t.label;
+    const label = tenantDisplayName(t);
     const dest = await save({
       title: "Datenbank verschieben",
-      defaultPath: `${slugify(baseName)}.db`,
+      defaultPath: `${slugify(label)}.db`,
       filters: [{ name: "SQLite-Datenbank", extensions: ["db"] }],
     });
     if (!dest) return;
-    busy = true;
-    try {
+    await changeTenantAndRelaunch("Verschieben fehlgeschlagen", async () => {
       await execute("VACUUM INTO ?", [dest]);
-      const label = t.id === "default" ? companyName || t.label : t.label;
       await invoke("relocate_active_tenant", { path: dest, label });
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
-    } catch (e) {
-      toast.error("Verschieben fehlgeschlagen", String(e));
-      busy = false;
-    }
+    });
   }
 
   async function removeTenant(id: string) {
@@ -232,7 +237,7 @@
               Wechseln
             </Button>
           {/if}
-          {#if t.id !== "default"}
+          {#if t.id !== DEFAULT_TENANT_ID}
             <button
               type="button"
               onclick={() => removeTenant(t.id)}

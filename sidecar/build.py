@@ -76,15 +76,28 @@ def run_pyinstaller() -> None:
     subprocess.run(args, cwd=ROOT, check=True)
 
 
+STRAY_FILE_PATTERNS = ("err.log", "test-output.pdf", "*.tmp")
+
+
 def remove_stray_files() -> None:
     """Remove smoke-test artifacts that get left in dist/ when running the
     bundled exe interactively. Otherwise they end up shipped in the installer."""
     bundle_dir = DIST / APP_NAME
     if not bundle_dir.is_dir():
         return
-    for pattern in ("err.log", "test-output.pdf", "*.tmp"):
+    for pattern in STRAY_FILE_PATTERNS:
         for p in bundle_dir.glob(pattern):
             p.unlink()
+
+
+def find_gtk_dir() -> Path:
+    for candidate in GTK_SEARCH_PATHS:
+        if candidate and (Path(candidate) / GTK_SENTINEL_DLL).exists():
+            return Path(candidate)
+    raise SystemExit(
+        "GTK3 runtime not found. Install GTK3-Runtime Win64 or set "
+        "ZETTEL_GTK_PATH to its bin directory."
+    )
 
 
 def copy_gtk_dlls() -> None:
@@ -94,26 +107,13 @@ def copy_gtk_dlls() -> None:
     if not bundle_dir.is_dir():
         raise SystemExit(f"PyInstaller output not found at {bundle_dir}")
 
-    src_dir: Path | None = None
-    for candidate in GTK_SEARCH_PATHS:
-        if not candidate:
-            continue
-        p = Path(candidate)
-        if (p / GTK_SENTINEL_DLL).exists():
-            src_dir = p
-            break
-    if src_dir is None:
-        raise SystemExit(
-            "GTK3 runtime not found. Install GTK3-Runtime Win64 or set "
-            "ZETTEL_GTK_PATH to its bin directory."
-        )
+    src_dir = find_gtk_dir()
     print(f">> Copying GTK DLLs from {src_dir}")
 
-    copied = 0
-    for src in src_dir.glob("*.dll"):
+    dlls = list(src_dir.glob("*.dll"))
+    for src in dlls:
         shutil.copy2(src, bundle_dir / src.name)
-        copied += 1
-    print(f">> {copied} GTK DLLs copied")
+    print(f">> {len(dlls)} GTK DLLs copied")
 
 
 def main() -> int:

@@ -1,69 +1,42 @@
 <script lang="ts">
+  import { push } from "svelte-spa-router";
   import { deleteCustomer, listCustomers } from "$lib/db/queries";
   import type { Customer } from "$lib/db/schema";
-  import {
-    Button,
-    Card,
-    Checkbox,
-    Input,
-    ConfirmDialog,
-    DropdownMenu,
-    DropdownItem,
-    DropdownSeparator,
-    SortableTh,
-    toast,
-    EmptyState,
-  } from "$lib/ui";
-  import { Plus, MoreHorizontal, Pencil, Trash2, Search } from "$lib/brand-icons";
-  import { push } from "svelte-spa-router";
-  import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
+  import { Button, Card, Checkbox, ConfirmDialog, SortableTh, toast, EmptyState } from "$lib/ui";
+  import { Plus } from "$lib/brand-icons";
+  import { applySort } from "$lib/utils/sort";
+  import RowActionsMenu from "./parts/entity/RowActionsMenu.svelte";
+  import SearchInput from "./parts/entity/SearchInput.svelte";
+  import { pluralize } from "./parts/entity/format";
+  import { createListSort } from "./parts/entity/list-sort.svelte";
+  import { createQueryState } from "./parts/entity/query-state.svelte";
 
   let search = $state("");
   let onlyFollowUp = $state(false);
-  let customers = $state<Customer[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
+
+  const customers = createQueryState<Customer[]>([], () => listCustomers(search));
+  $effect(() => {
+    customers.reload();
+  });
 
   type SortKey = "customerNumber" | "name" | "city" | "email";
-  let sort = $state<SortState<SortKey>>(loadSortState<SortKey>("customers", { key: "name", dir: "asc" }));
-  function setSort(key: SortKey, dir: SortState<SortKey>["dir"]) {
-    sort = { key: dir === null ? null : key, dir };
-    saveSortState("customers", sort);
-  }
-  const filtered = $derived(
-    applySort(customers, sort, {
-      customerNumber: (r) => r.customerNumber,
-      name: (r) => r.name,
-      city: (r) => r.city,
-      email: (r) => r.email,
-    }),
-  );
+  const sort = createListSort<SortKey>("customers", { key: "name", dir: "asc" });
+
+  const visibleCustomers = $derived.by(() => {
+    const matching = onlyFollowUp
+      ? customers.data.filter((c) => c.followUpDate != null)
+      : customers.data;
+    return applySort(matching, sort.state, {
+      customerNumber: (c) => c.customerNumber,
+      name: (c) => c.name,
+      city: (c) => c.city,
+      email: (c) => c.email,
+    });
+  });
+  const isFiltered = $derived(search !== "" || onlyFollowUp);
 
   let confirmOpen = $state(false);
   let toDelete = $state<Customer | null>(null);
-
-  async function reload() {
-    loading = true;
-    try {
-      const all = await listCustomers(search);
-      customers = onlyFollowUp ? all.filter((c) => c.followUpDate != null) : all;
-      error = null;
-    } catch (e) {
-      error = String(e);
-    } finally {
-      loading = false;
-    }
-  }
-
-  $effect(() => {
-    void search;
-    void onlyFollowUp;
-    reload();
-  });
-
-  function newCustomer() {
-    push("/customers/new");
-  }
 
   function editCustomer(c: Customer) {
     push(`/customers/${c.id}`);
@@ -80,7 +53,7 @@
       await deleteCustomer(toDelete.id);
       toast.success("Kunde gelöscht", `"${toDelete.name}" wurde entfernt.`);
       toDelete = null;
-      await reload();
+      await customers.reload();
     } catch (e) {
       toast.error("Löschen fehlgeschlagen", String(e));
     }
@@ -91,51 +64,50 @@
   <div>
     <h1 class="text-3xl font-semibold tracking-tight">Kunden</h1>
     <p class="text-sm text-muted-foreground mt-1">
-      {filtered.length} {filtered.length === 1 ? "Eintrag" : "Einträge"}
+      {visibleCustomers.length} {pluralize(visibleCustomers.length, "Eintrag", "Einträge")}
     </p>
   </div>
-  <Button onclick={newCustomer}>
+  <Button onclick={() => push("/customers/new")}>
     <Plus />
     Neuer Kunde
   </Button>
 </header>
 
 <div class="mb-4 flex flex-wrap items-end gap-3">
-  <div class="relative max-w-md flex-1 min-w-[200px]">
-    <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-    <Input
-      type="search"
-      placeholder="Suche (Name, Nummer, Ort, E-Mail)…"
-      bind:value={search}
-      class="pl-9"
-    />
-  </div>
+  <SearchInput
+    bind:value={search}
+    placeholder="Suche (Name, Nummer, Ort, E-Mail)…"
+    class="max-w-md flex-1 min-w-[200px]"
+  />
   <label class="flex items-center gap-2 text-sm pb-2 cursor-pointer">
     <Checkbox bind:checked={onlyFollowUp} />
     <span>Nur mit Wiedervorlage</span>
   </label>
 </div>
 
-{#if error}
-  <p class="text-sm text-destructive">Fehler: {error}</p>
-{:else if loading}
+{#if customers.error}
+  <p class="text-sm text-destructive">Fehler: {customers.error}</p>
+{:else if customers.loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if filtered.length === 0}
-  <EmptyState variant={search || onlyFollowUp ? "no-results" : "empty"} message={search || onlyFollowUp ? "Keine Treffer." : "Noch keine Kunden angelegt."} />
+{:else if visibleCustomers.length === 0}
+  <EmptyState
+    variant={isFiltered ? "no-results" : "empty"}
+    message={isFiltered ? "Keine Treffer." : "Noch keine Kunden angelegt."}
+  />
 {:else}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
         <tr>
-          <SortableTh column="customerNumber" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Nr.</SortableTh>
-          <SortableTh column="name" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Name</SortableTh>
-          <SortableTh column="city" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Ort</SortableTh>
-          <SortableTh column="email" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">E-Mail</SortableTh>
+          <SortableTh column="customerNumber" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Nr.</SortableTh>
+          <SortableTh column="name" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Name</SortableTh>
+          <SortableTh column="city" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Ort</SortableTh>
+          <SortableTh column="email" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">E-Mail</SortableTh>
           <th class="px-4 py-3 font-medium w-12"></th>
         </tr>
       </thead>
       <tbody class="stagger">
-        {#each filtered as c (c.id)}
+        {#each visibleCustomers as c (c.id)}
           <tr class="border-t hover:bg-muted/30 transition-colors">
             <td class="px-4 py-3 font-mono text-xs text-muted-foreground">{c.customerNumber}</td>
             <td class="px-4 py-3">
@@ -150,26 +122,7 @@
             <td class="px-4 py-3 text-muted-foreground">{c.city}</td>
             <td class="px-4 py-3 text-muted-foreground">{c.email ?? ""}</td>
             <td class="px-4 py-3 text-right">
-              <DropdownMenu>
-                {#snippet trigger()}
-                  <button
-                    type="button"
-                    class="inline-flex items-center justify-center size-8 rounded-md hover:bg-muted transition-colors"
-                    aria-label="Aktionen"
-                  >
-                    <MoreHorizontal class="size-4" />
-                  </button>
-                {/snippet}
-                <DropdownItem onSelect={() => editCustomer(c)}>
-                  <Pencil />
-                  Bearbeiten
-                </DropdownItem>
-                <DropdownSeparator />
-                <DropdownItem destructive onSelect={() => askDelete(c)}>
-                  <Trash2 />
-                  Löschen
-                </DropdownItem>
-              </DropdownMenu>
+              <RowActionsMenu onEdit={() => editCustomer(c)} onDelete={() => askDelete(c)} />
             </td>
           </tr>
         {/each}
