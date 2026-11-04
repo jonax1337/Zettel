@@ -1,4 +1,5 @@
-import { homeDir, join } from "@tauri-apps/api/path";
+import { invoke } from "@tauri-apps/api/core";
+import { join } from "@tauri-apps/api/path";
 import type { CustomerSnapshot, InvoiceItem, OfferItem, Settings } from "$lib/db/schema";
 import type { SkontoResult } from "$lib/utils/skonto";
 
@@ -8,9 +9,10 @@ function safeFilename(s: string): string {
   return s.replace(/[\\/:*?"<>|]+/g, "_");
 }
 
+/** PDFs go below the active DB's documents root, the folder backups collect from. */
 export async function documentOutputPath(folder: DocumentFolder, number: string): Promise<string> {
-  const home = await homeDir();
-  return join(home, "Documents", "Zettel", folder, `${safeFilename(number)}.pdf`);
+  const root = await invoke<string>("get_documents_root");
+  return join(root, folder, `${safeFilename(number)}.pdf`);
 }
 
 export function parseCustomerSnapshot(json: string): CustomerSnapshot {

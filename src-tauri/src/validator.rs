@@ -15,18 +15,28 @@
 //! process.
 
 use crate::paths::app_data_dir;
-use crate::process::background_command;
+use crate::process::{background_command, output_within, run_blocking};
 use crate::sidecar;
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
 const VALIDATOR_JAR: &str = "validator.jar";
 const SCENARIOS_FILE: &str = "scenarios.xml";
 const REPORT_SUFFIX: &str = "-report.xml";
 const SEVERITY_ERROR: &str = "error";
+const WORK_ROOT_DIR: &str = "zettel-validator";
+const EXTRACTED_XML_FILE: &str = "rechnung.xml";
+/// The JVM start plus the Schematron run take a few seconds; far longer
+/// means the validator hangs.
+const VALIDATOR_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// Distinguishes runs started in the same nanosecond.
+static RUN_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Serialize)]
 pub struct ValidationFinding {
@@ -41,7 +51,6 @@ pub struct ValidationReport {
     pub valid: bool,
     pub scenario: Option<String>,
     pub findings: Vec<ValidationFinding>,
-    pub raw_report_path: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -129,15 +138,18 @@ fn detect_java_at(java: &Path) -> Option<String> {
 
 #[tauri::command]
 pub async fn validator_status(app: AppHandle) -> Result<ValidatorStatus, String> {
-    let dir = resolve_validator_dir(&app);
-    let installed = dir.join(VALIDATOR_JAR).exists() && dir.join(SCENARIOS_FILE).exists();
-    let java = detect_java_at(&resolve_java(&app));
-    Ok(ValidatorStatus {
-        installed,
-        validator_dir: dir.to_string_lossy().into_owned(),
-        has_java: java.is_some(),
-        java_version: java,
+    run_blocking(move || {
+        let dir = resolve_validator_dir(&app);
+        let installed = dir.join(VALIDATOR_JAR).exists() && dir.join(SCENARIOS_FILE).exists();
+        let java = detect_java_at(&resolve_java(&app));
+        Ok(ValidatorStatus {
+            installed,
+            validator_dir: dir.to_string_lossy().into_owned(),
+            has_java: java.is_some(),
+            java_version: java,
+        })
     })
+    .await
 }
 
 #[tauri::command]
@@ -145,7 +157,26 @@ pub async fn validate_einvoice_pdf(
     app: AppHandle,
     pdf_path: String,
 ) -> Result<ValidationReport, String> {
-    let extract = sidecar::extract_xml_only(&app, &pdf_path)?;
+    run_blocking(move || validate_pdf(&app, &pdf_path)).await
+}
+
+#[tauri::command]
+pub async fn validate_einvoice_xml(
+    app: AppHandle,
+    xml_path: String,
+) -> Result<ValidationReport, String> {
+    run_blocking(move || {
+        let input = Path::new(&xml_path);
+        if !input.exists() {
+            return Err(format!("Eingabedatei nicht gefunden: {xml_path}"));
+        }
+        validate_in(&app, input, &RunDir::create()?)
+    })
+    .await
+}
+
+fn validate_pdf(app: &AppHandle, pdf_path: &str) -> Result<ValidationReport, String> {
+    let extract = sidecar::extract_xml_only(app, pdf_path)?;
     let found = extract.get("found").and_then(|v| v.as_bool()).unwrap_or(false);
     if !found {
         return Err(
@@ -157,21 +188,15 @@ pub async fn validate_einvoice_pdf(
         .and_then(|v| v.as_str())
         .ok_or("Sidecar lieferte kein XML zurück.")?;
 
-    let tmp_xml = std::env::temp_dir()
-        .join(format!("zettel-validate-{}.xml", std::process::id()));
-    fs::write(&tmp_xml, xml).map_err(|e| format!("tmp write: {e}"))?;
-
-    let result = validate_einvoice_xml(app, tmp_xml.to_string_lossy().into_owned()).await;
-    let _ = fs::remove_file(&tmp_xml);
-    result
+    let run_dir = RunDir::create()?;
+    let input = run_dir.0.join(EXTRACTED_XML_FILE);
+    fs::write(&input, xml).map_err(|e| format!("tmp write: {e}"))?;
+    validate_in(app, &input, &run_dir)
 }
 
-#[tauri::command]
-pub async fn validate_einvoice_xml(
-    app: AppHandle,
-    xml_path: String,
-) -> Result<ValidationReport, String> {
-    let dir = resolve_validator_dir(&app);
+/// Runs the validator on `input`, writing its report into `run_dir`.
+fn validate_in(app: &AppHandle, input: &Path, run_dir: &RunDir) -> Result<ValidationReport, String> {
+    let dir = resolve_validator_dir(app);
     let jar = dir.join(VALIDATOR_JAR);
     let scenarios = dir.join(SCENARIOS_FILE);
     if !jar.exists() || !scenarios.exists() {
@@ -181,21 +206,12 @@ pub async fn validate_einvoice_xml(
         ));
     }
 
-    let input = Path::new(&xml_path);
-    if !input.exists() {
-        return Err(format!("Eingabedatei nicht gefunden: {xml_path}"));
-    }
-
-    let work_dir = std::env::temp_dir().join("zettel-validator");
-    fs::create_dir_all(&work_dir).map_err(|e| format!("tmpdir: {e}"))?;
-    remove_reports(&work_dir)?;
-
     let run = ValidatorRun {
-        java: resolve_java(&app),
+        java: resolve_java(app),
         jar,
         scenarios,
         repository: dir,
-        work_dir,
+        work_dir: run_dir.0.clone(),
     };
     let stderr = run.execute(input)?;
 
@@ -203,9 +219,34 @@ pub async fn validate_einvoice_xml(
     let report_path = find_report(&run.work_dir, input)
         .ok_or_else(|| format!("Kein Report gefunden. stderr: {stderr}"))?;
     let xml = fs::read_to_string(&report_path).map_err(|e| format!("read report: {e}"))?;
-    let mut report = parse_report(&xml);
-    report.raw_report_path = report_path.to_string_lossy().into_owned();
-    Ok(report)
+    Ok(parse_report(&xml))
+}
+
+/// A work dir of its own per validation, so parallel runs never read each
+/// other's input or report. Removed with everything in it when dropped.
+struct RunDir(PathBuf);
+
+impl RunDir {
+    fn create() -> Result<Self, String> {
+        Self::create_in(&std::env::temp_dir().join(WORK_ROOT_DIR))
+    }
+
+    fn create_in(root: &Path) -> Result<Self, String> {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let run = RUN_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = root.join(format!("run-{}-{nanos}-{run}", std::process::id()));
+        fs::create_dir_all(&dir).map_err(|e| format!("tmpdir: {e}"))?;
+        Ok(Self(dir))
+    }
+}
+
+impl Drop for RunDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
 
 struct ValidatorRun {
@@ -229,7 +270,7 @@ impl ValidatorRun {
         let stdin_file =
             fs::File::open(&empty_stdin).map_err(|e| format!("empty stdin open: {e}"))?;
 
-        let output = background_command(&self.java)
+        let child = background_command(&self.java)
             .arg("-jar")
             .arg(&self.jar)
             .arg("-s")
@@ -240,25 +281,20 @@ impl ValidatorRun {
             .arg(&self.work_dir)
             .arg(input)
             .stdin(Stdio::from(stdin_file))
-            .output()
-            .map_err(|e| format!("Konnte Java nicht starten ({e}). Ist eine JRE installiert?"));
-        let _ = fs::remove_file(&empty_stdin);
-
-        Ok(String::from_utf8_lossy(&output?.stderr).into_owned())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Konnte Java nicht starten ({e}). Ist eine JRE installiert?"))?;
+        let output = output_within(child, VALIDATOR_TIMEOUT)
+            .map_err(|e| format!("Validator wait failed: {e}"))?
+            .ok_or_else(|| {
+                format!(
+                    "Die E-Rechnungs-Validierung hat nicht innerhalb von {} Sekunden geantwortet und wurde abgebrochen.",
+                    VALIDATOR_TIMEOUT.as_secs()
+                )
+            })?;
+        Ok(String::from_utf8_lossy(&output.stderr).into_owned())
     }
-}
-
-/// Deletes leftover reports so that `find_report`'s newest-file fallback can
-/// only ever pick up the report of the current run.
-fn remove_reports(dir: &Path) -> Result<(), String> {
-    let entries = fs::read_dir(dir).map_err(|e| format!("read tmpdir: {e}"))?;
-    for path in entries.flatten().map(|e| e.path()) {
-        if is_report_file(&path) {
-            fs::remove_file(&path)
-                .map_err(|e| format!("Alter Report {} nicht löschbar: {e}", path.display()))?;
-        }
-    }
-    Ok(())
 }
 
 fn is_report_file(path: &Path) -> bool {
@@ -311,7 +347,6 @@ fn parse_report(xml: &str) -> ValidationReport {
         valid,
         scenario,
         findings,
-        raw_report_path: String::new(),
     }
 }
 
@@ -494,17 +529,19 @@ mod tests {
     }
 
     #[test]
-    fn removing_stale_reports_keeps_the_fallback_from_returning_old_results() {
-        let dir = TempDir::new("reports");
-        fs::write(dir.path().join("old-report.xml"), "<old/>").unwrap();
-        fs::write(dir.path().join("empty-stdin"), "").unwrap();
-        let input = Path::new("current.xml");
-        assert!(find_report(dir.path(), input).is_some(), "fallback picks the newest report");
+    fn every_run_gets_a_fresh_work_dir_that_is_removed_afterwards() {
+        let root = TempDir::new("validator-runs");
+        let first = RunDir::create_in(root.path()).unwrap();
+        let second = RunDir::create_in(root.path()).unwrap();
+        assert_ne!(first.0, second.0);
+        fs::write(first.0.join("rechnung-report.xml"), "<first/>").unwrap();
+        assert!(find_report(&second.0, Path::new("rechnung.xml")).is_none());
 
-        remove_reports(dir.path()).unwrap();
+        let first_path = first.0.clone();
+        drop(first);
 
-        assert!(find_report(dir.path(), input).is_none());
-        assert!(dir.path().join("empty-stdin").exists());
+        assert!(!first_path.exists());
+        assert!(second.0.is_dir());
     }
 
     #[test]

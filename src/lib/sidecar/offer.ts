@@ -74,5 +74,10 @@ export async function generateOfferPdf(offerId: number): Promise<SidecarResponse
     company,
     outputPath,
   });
-  return renderDocumentPdf("generate_offer", payload, storePdfPath("offers", offerId));
+  return renderDocumentPdf(
+    "generate_offer",
+    payload,
+    storePdfPath("offers", offerId),
+    data.offer.pdfPath,
+  );
 }

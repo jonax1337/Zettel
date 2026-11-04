@@ -142,8 +142,11 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
     outputPath,
     correctsInvoice: await findCorrectedInvoice(invoice),
   });
-  return renderDocumentPdf("generate_invoice", payload, (response) =>
-    validateAndRecord(response, invoiceId),
+  return renderDocumentPdf(
+    "generate_invoice",
+    payload,
+    (response) => validateAndRecord(response, invoiceId),
+    invoice.pdfPath,
   );
 }
 

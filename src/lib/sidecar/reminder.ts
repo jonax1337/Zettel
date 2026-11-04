@@ -111,5 +111,10 @@ export async function generateReminderPdf(reminderId: number): Promise<SidecarRe
     outputPath: await documentOutputPath("Mahnungen", reminder.number),
   });
 
-  return renderDocumentPdf("generate_reminder", payload, storePdfPath("reminders", reminderId));
+  return renderDocumentPdf(
+    "generate_reminder",
+    payload,
+    storePdfPath("reminders", reminderId),
+    reminder.pdfPath,
+  );
 }

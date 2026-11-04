@@ -7,12 +7,13 @@ type PdfPathTable = "offers" | "reminders";
 
 /**
  * Keeps the previous PDF (if any) before the sidecar overwrites it, so every
- * generation stays available as a version (audit trail). A failed archive must
- * never block PDF generation.
+ * generation stays available as a version (audit trail). `storedPdfPath` may
+ * lie in an older documents root; its chain moves next to `outputPath`. A
+ * failed archive must never block PDF generation.
  */
-async function archivePreviousPdf(outputPath: string): Promise<void> {
+async function archivePreviousPdf(outputPath: string, storedPdfPath?: string | null): Promise<void> {
   try {
-    await invoke("archive_pdf_version", { path: outputPath });
+    await invoke("archive_pdf_version", { path: outputPath, previous: storedPdfPath });
   } catch (error) {
     console.warn(`Could not archive previous PDF version of ${outputPath}:`, error);
   }
@@ -23,8 +24,9 @@ export async function renderDocumentPdf(
   command: PdfCommand,
   payload: { outputPath: string },
   onRendered: (response: SidecarSuccess) => Promise<void>,
+  storedPdfPath?: string | null,
 ): Promise<SidecarResponse> {
-  await archivePreviousPdf(payload.outputPath);
+  await archivePreviousPdf(payload.outputPath, storedPdfPath);
   const response = await invoke<SidecarResponse>(command, { payload });
   if (response.success) {
     await onRendered(response);

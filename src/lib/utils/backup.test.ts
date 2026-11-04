@@ -6,7 +6,9 @@ const { calls, invoke, execute } = vi.hoisted(() => {
     calls,
     invoke: vi.fn(async (command: string) => {
       calls.push(command);
-      return command === "snapshot_db_path" ? "/tmp/snapshot.db" : "";
+      if (command === "snapshot_db_path") return "/tmp/snapshot.db";
+      if (command === "auto_backup_target") return "/docs/Zettel/Backups/target.zip";
+      return "";
     }),
     execute: vi.fn(async (sql: string) => {
       calls.push(sql);
@@ -17,7 +19,7 @@ const { calls, invoke, execute } = vi.hoisted(() => {
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("$lib/db/client", () => ({ execute }));
 
-const { writeBackupZip } = await import("./backup");
+const { backupTimestamp, writeBackupZip, writeSafetyBackup } = await import("./backup");
 const { CURRENT_DB_SCHEMA_VERSION } = await import("./schema-version");
 
 describe("writeBackupZip", () => {
@@ -44,5 +46,29 @@ describe("writeBackupZip", () => {
       dbSchemaVersion: CURRENT_DB_SCHEMA_VERSION,
       password: "geheim",
     });
+  });
+});
+
+describe("writeSafetyBackup", () => {
+  beforeEach(() => {
+    calls.length = 0;
+    invoke.mockClear();
+  });
+
+  it("writes an unencrypted backup named after the prefix and time into the backup folder", async () => {
+    const path = await writeSafetyBackup("pre-restore", new Date("2026-05-04T13:45:09.123Z"));
+
+    expect(invoke).toHaveBeenCalledWith("auto_backup_target", {
+      filename: "pre-restore-2026-05-04_13-45-09.zip",
+    });
+    expect(invoke).toHaveBeenCalledWith(
+      "bundle_backup",
+      expect.objectContaining({ targetZip: "/docs/Zettel/Backups/target.zip", password: null }),
+    );
+    expect(path).toBe("/docs/Zettel/Backups/target.zip");
+  });
+
+  it("formats timestamps that sort and are valid in file names", () => {
+    expect(backupTimestamp(new Date("2026-12-31T23:59:59.999Z"))).toBe("2026-12-31_23-59-59");
   });
 });

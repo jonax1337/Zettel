@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { execute } from "./client";
 
 export type WipeableTable =
@@ -75,51 +74,4 @@ export async function resetNumberingCounters(): Promise<void> {
        updated_at = unixepoch()
      WHERE id = 1`,
   );
-}
-
-async function withContext<T>(step: string, action: () => Promise<T>): Promise<T> {
-  try {
-    return await action();
-  } catch (e) {
-    throw new Error(`${step}: ${e}`);
-  }
-}
-
-/** `2026-05-04_13-45-09` */
-function backupTimestamp(): string {
-  return new Date()
-    .toISOString()
-    .replace(/[:.]/g, "-")
-    .replace("T", "_")
-    .slice(0, 19);
-}
-
-/**
- * Macht ein unverschlüsseltes Backup nach `~/Documents/Zettel/Backups/pre-wipe-<ts>.zip`
- * und gibt den Pfad zurück. Wirft bei Fehler.
- */
-export async function autoBackupBeforeWipe(
-  dbSchemaVersion: number,
-): Promise<string> {
-  const target = await withContext("auto_backup_target", () =>
-    invoke<string>("auto_backup_target", {
-      filename: `pre-wipe-${backupTimestamp()}.zip`,
-    }),
-  );
-  const snapshotPath = await withContext("snapshot_db_path", () =>
-    invoke<string>("snapshot_db_path"),
-  );
-  await withContext(`VACUUM INTO '${snapshotPath}'`, () =>
-    execute("VACUUM INTO ?", [snapshotPath]),
-  );
-  await withContext(`bundle_backup → '${target}'`, () =>
-    invoke<string>("bundle_backup", {
-      snapshotPath,
-      targetZip: target,
-      invoiceCount: null,
-      dbSchemaVersion,
-      password: null,
-    }),
-  );
-  return target;
 }

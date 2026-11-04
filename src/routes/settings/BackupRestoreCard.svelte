@@ -1,7 +1,8 @@
 <script lang="ts">
   import { open, save } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
-  import { writeBackupZip } from "$lib/utils/backup";
+  import { writeBackupZip, writeSafetyBackup } from "$lib/utils/backup";
+  import { relaunchApp } from "$lib/utils/relaunch";
   import {
     Button,
     Input,
@@ -26,6 +27,7 @@
   type RestoreOutcome = "done" | "needsPassword" | "failed";
 
   const BACKUP_FILE_FILTER = [{ name: "Zettel Backup", extensions: ["zip"] }];
+  const SAFETY_BACKUP_PREFIX = "pre-restore";
 
   let backupBusy = $state(false);
   let backupEncrypt = $state(false);
@@ -34,6 +36,8 @@
 
   let restoreBusy = $state(false);
   let confirmFullRestoreOpen = $state(false);
+  let confirmPartialRestoreOpen = $state(false);
+  let restartPending = $state(false);
   let pendingRestoreZip = $state<string | null>(null);
   let restoreSections = $state({ customers: true, invoices: true, settings: true });
   let restorePassword = $state("");
@@ -114,16 +118,30 @@
     }
     if (restoreIsFull) {
       confirmFullRestoreOpen = true;
-      return;
+    } else {
+      confirmPartialRestoreOpen = true;
     }
+  }
+
+  async function onConfirmPartialRestore() {
+    if (!pendingRestoreZip) return;
+    let safetyBackup = "";
     const outcome = await attemptRestore(async () => {
+      // Staging first: it rejects a wrong or missing password before any
+      // safety backup gets written.
       await stageRestore(restoreSections);
+      try {
+        safetyBackup = await writeSafetyBackup(SAFETY_BACKUP_PREFIX);
+      } catch (e) {
+        await invoke<void>("discard_pending_restore");
+        throw new Error(`Sicherheits-Backup fehlgeschlagen, nichts wurde verändert: ${e}`);
+      }
       await invoke<void>("apply_pending_partial_restore");
     });
     if (outcome === "done") {
       toast.success(
         "Wiederherstellung abgeschlossen",
-        "Die ausgewählten Bereiche wurden eingespielt.",
+        `Die ausgewählten Bereiche wurden eingespielt. Der vorherige Stand liegt in ${safetyBackup}.`,
       );
     }
   }
@@ -134,12 +152,22 @@
       await stageRestore(null);
     });
     if (outcome === "done") {
-      toast.success(
+      restartPending = true;
+      toast.action(
         "Wiederherstellung vorbereitet",
-        "Bitte die App neu starten — das Backup wird beim nächsten Start eingespielt.",
+        { label: "Jetzt neu starten", onClick: restartNow },
+        { description: "Das Backup wird beim nächsten Start der App eingespielt." },
       );
     } else if (outcome === "failed") {
       pendingRestoreZip = null;
+    }
+  }
+
+  async function restartNow() {
+    try {
+      await relaunchApp();
+    } catch (e) {
+      toast.error("Neustart fehlgeschlagen", `Bitte die App von Hand neu starten. ${e}`);
     }
   }
 </script>
@@ -148,11 +176,17 @@
   <CardHeader>
     <CardTitle>Backup & Wiederherstellung</CardTitle>
     <CardDescription>
-      Sichert die Datenbank und alle erzeugten Rechnungs-PDFs in eine ZIP-Datei.
-      Wiederhergestellte Backups werden beim nächsten App-Start eingespielt.
+      Sichert die Datenbank und alle PDFs (Rechnungen, Angebote, Mahnungen, Eingangsrechnungen)
+      in eine ZIP-Datei. Wiederhergestellte Backups werden beim nächsten App-Start eingespielt.
     </CardDescription>
   </CardHeader>
   <CardContent>
+    {#if restartPending}
+      <div class="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+        <span class="flex-1">Die Wiederherstellung ist vorbereitet und wird beim nächsten Start eingespielt.</span>
+        <Button type="button" onclick={restartNow}>Jetzt neu starten</Button>
+      </div>
+    {/if}
     <div class="mb-4 space-y-3">
       <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
         <Checkbox bind:checked={backupEncrypt} />
@@ -199,7 +233,7 @@
           </label>
           <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
             <Checkbox bind:checked={restoreSections.invoices} />
-            Rechnungen + PDFs <span class="text-muted-foreground">(inkl. Angebote, wiederkehrende Rechnungen)</span>
+            Rechnungen + PDFs <span class="text-muted-foreground">(inkl. Zahlungen, Mahnungen, Anhänge, Angebote, wiederkehrende Rechnungen)</span>
           </label>
           <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
             <Checkbox bind:checked={restoreSections.settings} />
@@ -234,7 +268,7 @@
           <span class="text-xs text-muted-foreground">
             {restoreIsFull
               ? "Volle Wiederherstellung — App-Neustart erforderlich."
-              : "Teil-Wiederherstellung — wird sofort eingespielt."}
+              : "Teil-Wiederherstellung — wird nach einem Sicherheits-Backup sofort eingespielt."}
           </span>
         </div>
       </div>
@@ -255,4 +289,13 @@
   confirmLabel="Wiederherstellen"
   cancelLabel="Abbrechen"
   onConfirm={onConfirmFullRestore}
+/>
+
+<ConfirmDialog
+  bind:open={confirmPartialRestoreOpen}
+  title="Bereiche wiederherstellen?"
+  description={`Die ausgewählten Bereiche werden durch den Stand aus dem Backup ersetzt — Änderungen seit dem Backup gehen in diesen Bereichen verloren. Vorher wird automatisch ein Sicherheits-Backup im Backup-Ordner angelegt.\n\nQuelle: ${pendingRestoreZip ?? ""}`}
+  confirmLabel="Wiederherstellen"
+  cancelLabel="Abbrechen"
+  onConfirm={onConfirmPartialRestore}
 />

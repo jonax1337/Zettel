@@ -25,6 +25,7 @@ import argparse
 import json
 import math
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -70,23 +71,36 @@ def app_data_dir() -> Path:
     return base / APP_IDENTIFIER
 
 
+def is_sandbox_active() -> bool:
+    return (app_data_dir() / "sandbox.flag").exists()
+
+
+def active_custom_tenant() -> dict | None:
+    """Aktiver Tenant mit DB-Pfad, None für den eingebauten Standard."""
+    cfg_path = app_data_dir() / "tenants.json"
+    if not cfg_path.exists():
+        return None
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    active = cfg.get("active")
+    if not active or active == "default":
+        return None
+    for t in cfg.get("tenants", []):
+        if t.get("id") == active and str(t.get("path", "")).strip():
+            return t
+    return None
+
+
 def resolve_db_path() -> Path:
     """Aktive DB: Sandbox > aktiver Tenant > Standard. Wie resolve_active_url()."""
-    d = app_data_dir()
-    if (d / "sandbox.flag").exists():
-        return d / "zettel-sandbox.db"
-    cfg_path = d / "tenants.json"
-    if cfg_path.exists():
-        try:
-            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-            active = cfg.get("active")
-            if active and active != "default":
-                for t in cfg.get("tenants", []):
-                    if t.get("id") == active and str(t.get("path", "")).strip():
-                        return Path(t["path"])
-        except (json.JSONDecodeError, OSError):
-            pass
-    return d / "zettel.db"
+    if is_sandbox_active():
+        return app_data_dir() / "zettel-sandbox.db"
+    tenant = active_custom_tenant()
+    if tenant:
+        return Path(tenant["path"])
+    return app_data_dir() / "zettel.db"
 
 
 @contextmanager
@@ -482,30 +496,130 @@ def safe_filename(s: str) -> str:
     return "".join(c if c not in '\\/:*?"<>|' else "_" for c in s)
 
 
-def archive_pdf_version(path: Path) -> str | None:
-    """Spiegel von fs_export.rs archive_pdf_version: bestehendes PDF vor dem
-    Überschreiben nach <dir>/Versionen/<stem>__<mtime>.pdf verschieben."""
-    if not path.is_file():
-        return None
-    versions_dir = path.parent / "Versionen"
-    versions_dir.mkdir(parents=True, exist_ok=True)
-    mtime = int(path.stat().st_mtime)
-    dest = versions_dir / f"{path.stem}__{mtime}.pdf"
+PDF_VERSIONS_DIR = "Versionen"
+PDF_VERSION_SEPARATOR = "__"
+
+
+def _first_free_pdf_path(directory: Path, base: str) -> Path:
+    dest = directory / f"{base}.pdf"
     n = 2
     while dest.exists():
-        dest = versions_dir / f"{path.stem}__{mtime}-{n}.pdf"
+        dest = directory / f"{base}-{n}.pdf"
         n += 1
-    path.rename(dest)
-    return str(dest)
+    return dest
+
+
+def _archive_into(source: Path, versions_dir: Path, archived_stem: str) -> Path:
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    dest = _first_free_pdf_path(versions_dir, archived_stem)
+    shutil.move(str(source), str(dest))
+    return dest
+
+
+def archive_pdf_version(path: Path, previous: Path | None = None) -> str | None:
+    """Spiegel von fs_export.rs archive_pdf_version: bestehendes PDF vor dem
+    Überschreiben nach <dir>/Versionen/<stem>__<mtime>.pdf verschieben. Liegt
+    das bisher gespeicherte PDF (`previous`) in einem anderen Ordner, wandern
+    es und seine Versionen mit, sonst fielen sie aus Versionsliste und Backup."""
+    versions_dir = path.parent / PDF_VERSIONS_DIR
+    archived = None
+    if path.is_file():
+        stem = f"{path.stem}{PDF_VERSION_SEPARATOR}{int(path.stat().st_mtime)}"
+        archived = str(_archive_into(path, versions_dir, stem))
+    if previous is not None:
+        _adopt_pdf_versions(previous, path)
+    return archived
+
+
+def _same_dir(a: Path, b: Path) -> bool:
+    try:
+        return a.samefile(b)
+    except OSError:
+        return a == b
+
+
+def _adopt_pdf_versions(previous: Path, target: Path) -> None:
+    """Spiegel von fs_export.rs adopt_pdf_versions."""
+    if _same_dir(previous.parent, target.parent):
+        return
+    versions_dir = target.parent / PDF_VERSIONS_DIR
+    moves = []
+    if previous.is_file():
+        moves.append((previous, f"{PDF_VERSION_SEPARATOR}{int(previous.stat().st_mtime)}"))
+    old_versions_dir = previous.parent / PDF_VERSIONS_DIR
+    prefix = f"{previous.stem}{PDF_VERSION_SEPARATOR}"
+    if previous.stem and old_versions_dir.is_dir():
+        for archived in old_versions_dir.iterdir():
+            if archived.is_file() and archived.name.startswith(prefix) and archived.suffix.lower() == ".pdf":
+                moves.append((archived, archived.stem[len(previous.stem):]))
+    for source, suffix in moves:
+        _archive_into(source, versions_dir, f"{target.stem}{suffix}")
+
+
+def _windows_documents_dir() -> Path | None:
+    """Known Folder FOLDERID_Documents — folgt einer OneDrive-Umleitung."""
+    import ctypes
+    from ctypes import wintypes
+
+    class GUID(ctypes.Structure):
+        _fields_ = [
+            ("Data1", wintypes.DWORD),
+            ("Data2", wintypes.WORD),
+            ("Data3", wintypes.WORD),
+            ("Data4", ctypes.c_ubyte * 8),
+        ]
+
+    folder_id = GUID(
+        0xFDD39AD0, 0x238F, 0x46AF, (ctypes.c_ubyte * 8)(0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7)
+    )
+    path_ptr = ctypes.c_wchar_p()
+    if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(folder_id), 0, None, ctypes.byref(path_ptr)) != 0:
+        return None
+    try:
+        return Path(path_ptr.value)
+    finally:
+        ctypes.windll.ole32.CoTaskMemFree(path_ptr)
+
+
+def _xdg_documents_dir() -> Path | None:
+    """XDG_DOCUMENTS_DIR aus user-dirs.dirs, wie das dirs-Crate."""
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    try:
+        lines = (config_home / "user-dirs.dirs").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        key, _, value = line.partition("=")
+        if key.strip() == "XDG_DOCUMENTS_DIR":
+            return Path(value.strip().strip('"').replace("$HOME", str(Path.home())))
+    return None
+
+
+def documents_dir() -> Path:
+    """Spiegel von paths.rs documents_dir()."""
+    if sys.platform == "win32":
+        found = _windows_documents_dir()
+    elif sys.platform == "darwin":
+        found = None
+    else:
+        found = _xdg_documents_dir()
+    return found or Path.home() / "Documents"
+
+
+def documents_root() -> Path:
+    """Spiegel von tenants.rs active_documents_root(): Sandbox und eigene
+    Tenants bekommen eigene Ordner — Nummernkreise sind pro DB unabhängig,
+    ein gemeinsamer Ordner würde fremde PDFs überschreiben."""
+    if is_sandbox_active():
+        return documents_dir() / "Zettel-Sandbox"
+    tenant = active_custom_tenant()
+    if tenant:
+        return documents_dir() / "Zettel" / "Mandanten" / safe_filename(tenant["id"])
+    return documents_dir() / "Zettel"
 
 
 def pdf_output_dir() -> Path:
-    """PDF-Zielordner. In der Sandbox wird bewusst getrennt:
-    ~/Documents/Zettel-Sandbox/Rechnungen — Sandbox-PDFs dürfen produktive
-    PDFs nie überschreiben (Nummernkreise sind pro DB unabhängig!)."""
-    if resolve_db_path().name == "zettel-sandbox.db":
-        return Path.home() / "Documents" / "Zettel-Sandbox" / "Rechnungen"
-    return Path.home() / "Documents" / "Zettel" / "Rechnungen"
+    return documents_root() / "Rechnungen"
 
 
 def generate_pdf_for(con, invoice_id: int) -> tuple[str, str]:
@@ -517,7 +631,7 @@ def generate_pdf_for(con, invoice_id: int) -> tuple[str, str]:
     out_dir = pdf_output_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / f"{safe_filename(inv['number'])}.pdf"
-    archive_pdf_version(output_path)
+    archive_pdf_version(output_path, Path(inv["pdf_path"]) if inv["pdf_path"] else None)
     payload = build_pdf_payload(inv, items, cust, settings, str(output_path))
     resp = call_sidecar("generate_invoice", payload)
     if not resp.get("success"):

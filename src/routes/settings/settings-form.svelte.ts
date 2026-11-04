@@ -1,4 +1,10 @@
-import { loadSettings, saveSettings } from "$lib/db/queries";
+import {
+  changedNumberCounters,
+  loadSettings,
+  saveNumberCounters,
+  saveSettings,
+  type NumberCounters,
+} from "$lib/db/queries";
 import type { Settings } from "$lib/db/schema";
 import { toast } from "$lib/ui/toast.svelte";
 
@@ -8,10 +14,14 @@ export class SettingsForm {
   loading = $state(true);
   saving = $state(false);
   error = $state<string | null>(null);
+  // Counters as loaded: only the ones edited here are written back, so a
+  // number drawn meanwhile is not overwritten.
+  #loadedCounters: NumberCounters | null = null;
 
   async load() {
     try {
       this.settings = await loadSettings();
+      this.#loadedCounters = { ...this.settings };
     } catch (e) {
       this.error = String(e);
     } finally {
@@ -21,11 +31,13 @@ export class SettingsForm {
 
   async submit(event: SubmitEvent) {
     event.preventDefault();
-    if (!this.settings) return;
+    if (!this.settings || !this.#loadedCounters) return;
     this.saving = true;
     this.error = null;
     try {
       await saveSettings(this.settings);
+      await saveNumberCounters(changedNumberCounters(this.#loadedCounters, this.settings));
+      this.#loadedCounters = { ...this.settings };
       toast.success("Einstellungen gespeichert");
     } catch (e) {
       this.error = String(e);

@@ -9,11 +9,16 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use crate::process::background_command;
+use crate::process::{background_command, output_within, run_blocking};
+
+/// Rendering a large invoice takes seconds; a frozen bundle's first start
+/// unpacks itself, which can take far longer on a slow disk.
+const SIDECAR_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// What to spawn and from where. `program` is the executable; if `script` is
 /// Some, it's passed as the first argument (dev mode runs `python main.py`).
@@ -103,9 +108,14 @@ fn run_sidecar(app: &AppHandle, request: &Value) -> Result<Value, String> {
         .map_err(|e| format!("Could not write to sidecar stdin: {e}"))?;
     drop(stdin);
 
-    let out = child
-        .wait_with_output()
-        .map_err(|e| format!("Sidecar wait failed: {e}"))?;
+    let out = output_within(child, SIDECAR_TIMEOUT)
+        .map_err(|e| format!("Sidecar wait failed: {e}"))?
+        .ok_or_else(|| {
+            format!(
+                "Der PDF-Dienst hat nicht innerhalb von {} Sekunden geantwortet und wurde beendet.",
+                SIDECAR_TIMEOUT.as_secs()
+            )
+        })?;
     parse_response(
         &String::from_utf8_lossy(&out.stdout),
         &String::from_utf8_lossy(&out.stderr),
@@ -136,44 +146,54 @@ fn call(app: &AppHandle, command: &str, payload: Option<Value>) -> Result<Value,
     run_sidecar(app, &build_request(command, payload))
 }
 
-fn call_with_pdf(app: &AppHandle, command: &str, pdf_path: &str) -> Result<Value, String> {
-    call(app, command, Some(json!({ "pdfPath": pdf_path })))
+fn pdf_payload(pdf_path: &str) -> Option<Value> {
+    Some(json!({ "pdfPath": pdf_path }))
+}
+
+/// For the async commands: the sidecar runs on a blocking thread.
+async fn call_off_runtime(
+    app: AppHandle,
+    command: &'static str,
+    payload: Option<Value>,
+) -> Result<Value, String> {
+    run_blocking(move || call(&app, command, payload)).await
 }
 
 #[tauri::command]
 pub async fn generate_invoice(app: AppHandle, payload: Value) -> Result<Value, String> {
-    call(&app, "generate_invoice", Some(payload))
+    call_off_runtime(app, "generate_invoice", Some(payload)).await
 }
 
 #[tauri::command]
 pub async fn generate_offer(app: AppHandle, payload: Value) -> Result<Value, String> {
-    call(&app, "generate_offer", Some(payload))
+    call_off_runtime(app, "generate_offer", Some(payload)).await
 }
 
 #[tauri::command]
 pub async fn generate_reminder(app: AppHandle, payload: Value) -> Result<Value, String> {
-    call(&app, "generate_reminder", Some(payload))
+    call_off_runtime(app, "generate_reminder", Some(payload)).await
 }
 
 #[tauri::command]
 pub async fn ping_sidecar(app: AppHandle) -> Result<Value, String> {
-    call(&app, "ping", None)
+    call_off_runtime(app, "ping", None).await
 }
 
 #[tauri::command]
 pub async fn extract_zugferd(app: AppHandle, pdf_path: String) -> Result<Value, String> {
-    call_with_pdf(&app, "extract_zugferd", &pdf_path)
+    call_off_runtime(app, "extract_zugferd", pdf_payload(&pdf_path)).await
 }
 
 #[tauri::command]
 pub async fn extract_text_pdf(app: AppHandle, pdf_path: String) -> Result<Value, String> {
-    call_with_pdf(&app, "extract_text_pdf", &pdf_path)
+    call_off_runtime(app, "extract_text_pdf", pdf_payload(&pdf_path)).await
 }
 
 /// Returns the raw Factur-X XML for a given PDF path, or `{found: false}`.
 /// Used by `validator::validate_einvoice_pdf` to feed the KoSIT validator.
+/// Blocks: call it from a blocking thread.
 pub fn extract_xml_only(app: &AppHandle, pdf_path: &str) -> Result<Value, String> {
-    call_with_pdf(app, "extract_xml_only", pdf_path)
+    call(app, "extract_xml_only", pdf_payload(pdf_path))
 }
 
 #[tauri::command]
@@ -182,11 +202,12 @@ pub async fn parse_bank_statement(
     path: String,
     format: String,
 ) -> Result<Value, String> {
-    call(
-        &app,
+    call_off_runtime(
+        app,
         "parse_bank_statement",
         Some(json!({ "path": path, "format": format })),
     )
+    .await
 }
 
 #[cfg(test)]
