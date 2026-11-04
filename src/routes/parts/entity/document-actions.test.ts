@@ -160,14 +160,18 @@ describe("createDocumentActions", () => {
       expect(open).not.toHaveBeenCalled();
     });
 
-    it("opens the path and surfaces a failure as PDF error", async () => {
+    it("reports a failure to open as its own error, not as a failed PDF generation", async () => {
       const actions = createDocumentActions({ reload: vi.fn() });
-      const open = vi.fn().mockRejectedValue(new Error("no handler"));
+      const open = vi.fn().mockRejectedValue(new Error("Not allowed to open path"));
 
       await actions.usePdfFile("/docs/RE-1.pdf", open);
 
       expect(open).toHaveBeenCalledWith("/docs/RE-1.pdf");
-      expect(actions.pdfError).toBe("Error: no handler");
+      expect(toast.error).toHaveBeenCalledWith(
+        "PDF konnte nicht geöffnet werden",
+        "Error: Not allowed to open path",
+      );
+      expect(actions.pdfError).toBeNull();
     });
   });
 });

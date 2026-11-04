@@ -90,7 +90,7 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
     try {
       await open(path);
     } catch (e) {
-      pdfError = String(e);
+      toast.error("PDF konnte nicht geöffnet werden", String(e));
     }
   }
 

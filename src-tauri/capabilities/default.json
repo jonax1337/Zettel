@@ -23,14 +23,18 @@
       "identifier": "opener:allow-open-path",
       "allow": [
         { "path": "$HOME/Documents/Zettel/**" },
-        { "path": "$DOCUMENT/Zettel/**" }
+        { "path": "$DOCUMENT/Zettel/**" },
+        { "path": "$HOME/Documents/Zettel-Sandbox/**" },
+        { "path": "$DOCUMENT/Zettel-Sandbox/**" }
       ]
     },
     {
       "identifier": "opener:allow-reveal-item-in-dir",
       "allow": [
         { "path": "$HOME/Documents/Zettel/**" },
-        { "path": "$DOCUMENT/Zettel/**" }
+        { "path": "$DOCUMENT/Zettel/**" },
+        { "path": "$HOME/Documents/Zettel-Sandbox/**" },
+        { "path": "$DOCUMENT/Zettel-Sandbox/**" }
       ]
     },
     "dialog:default",
