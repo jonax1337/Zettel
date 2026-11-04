@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { push } from "svelte-spa-router";
   import { listCustomers, loadSettings } from "$lib/db/queries";
   import {
@@ -12,7 +13,7 @@
   } from "$lib/db/invoices";
   import type { Customer, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
   import { computeEurTotalCent } from "$lib/utils/currency";
-  import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
+  import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { Button, Card, CardContent, DatePicker, Label, Select, Textarea, toast } from "$lib/ui";
   import { AlertTriangle, CalendarRange } from "$lib/brand-icons";
   import BackLink from "./parts/entity/BackLink.svelte";
@@ -20,6 +21,7 @@
   import LineItemsEditor from "./invoice/LineItemsEditor.svelte";
   import SkontoFields from "./invoice/SkontoFields.svelte";
   import SupplyKindField from "./invoice/SupplyKindField.svelte";
+  import { dueDateFromIssue, followDerivedDueDate } from "./invoice/due-date";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
   import { vatRateForNewItem } from "./parts/entity/vat";
   import { exchangeRateError, linePeriodError, servicePeriodError } from "./invoice/form-validation";
@@ -27,9 +29,15 @@
     lineItemFromStored,
     newLineItem,
     toLineItemInputs,
-    zeroVatRates,
     type LineItemForm,
   } from "./invoice/line-items";
+  import {
+    restoreVatRates,
+    reverseChargeAvailability,
+    reverseChargeBlockedReason,
+    zeroVatRatesRemembering,
+    type VatRateSnapshot,
+  } from "./invoice/reverse-charge";
   import { INVALID_ROUTE_ID_MESSAGE, parseRouteId } from "./invoice/route-id";
   import {
     defaultSkontoForm,
@@ -42,10 +50,10 @@
   type Props = {
     mode: "new" | "edit";
     params?: { id?: string };
+    querystring?: string;
   };
-  let { mode, params }: Props = $props();
+  let { mode, params, querystring }: Props = $props();
 
-  const DEFAULT_DUE_DAYS = 14;
   const PDF_LANGUAGE_ITEMS: { value: "de" | "en"; label: string }[] = [
     { value: "de", label: "Deutsch" },
     { value: "en", label: "Englisch" },
@@ -58,7 +66,6 @@
 
   let customers = $state<Customer[]>([]);
   let settings = $state<Settings | null>(null);
-  let referenceDataLoaded = $state(false);
   let id = $state<number | null>(null);
   let loaded = $state(false);
   const loading = $derived(mode === "edit" && !loaded);
@@ -73,7 +80,9 @@
   let deliveryDateIso = $state("");
   let servicePeriodStartIso = $state("");
   let servicePeriodEndIso = $state("");
-  let dueDateIso = $state(toIsoDate(addDaysUnix(nowUnix(), DEFAULT_DUE_DAYS)));
+  let dueDateIso = $state("");
+  // Last due date derived from issue date + payment terms; a due date that differs was chosen by the user.
+  let derivedDueDateIso = "";
   let notes = $state("");
   let paymentTerms = $state("");
   let reverseChargeType = $state<ReverseChargeType>("none");
@@ -85,8 +94,13 @@
   let skonto = $state<SkontoForm>(defaultSkontoForm());
   let pdfLanguage = $state<"de" | "en">("de");
 
+  // A stored invoice keeps the Kleinunternehmer status it was created with, whatever the settings say now.
+  let storedKleinunternehmer = $state<boolean | null>(null);
+  const vatRateSnapshot: VatRateSnapshot = new Map();
+
+  const isKleinunternehmer = $derived(storedKleinunternehmer ?? settings?.isKleinunternehmer ?? false);
   const isReverseCharge = $derived(reverseChargeType !== "none");
-  const vatExempt = $derived(!!settings?.isKleinunternehmer || isReverseCharge);
+  const vatExempt = $derived(isKleinunternehmer || isReverseCharge);
 
   const selectedCustomer = $derived(
     customerIdStr ? (customers.find((c) => String(c.id) === customerIdStr) ?? null) : null,
@@ -98,38 +112,37 @@
   // Reverse-Charge: sender must not be Kleinunternehmer. intra_eu requires both
   // VAT-IDs; third_country (export outside EU) only requires the sender's. The
   // EU/non-EU country judgement stays with the user.
-  const canReverseChargeThirdCountry = $derived(
-    !!settings && !settings.isKleinunternehmer && !!settings.vatId,
-  );
-  const canReverseChargeIntraEu = $derived(canReverseChargeThirdCountry && !!selectedCustomer?.vatId);
-
-  const reverseChargeBlockedReason = $derived.by(() => {
-    if (!settings) return "";
-    if (settings.isKleinunternehmer) return "Nicht verfügbar für Kleinunternehmer (§ 19 UStG).";
-    if (!settings.vatId) return "Eigene USt-IdNr. in den Einstellungen fehlt.";
-    if (reverseChargeType === "intra_eu") {
-      if (!selectedCustomer) return "Erst Kunden auswählen.";
-      if (!selectedCustomer.vatId) return "EU-Reverse-Charge: Kunde benötigt USt-IdNr.";
-    }
-    return "";
+  const reverseChargeInput = $derived({
+    senderIsKleinunternehmer: isKleinunternehmer,
+    senderVatId: settings?.vatId,
+    customer: selectedCustomer,
   });
+  const reverseChargeEnabled = $derived(reverseChargeAvailability(reverseChargeInput));
+  const reverseChargeItems = $derived(
+    REVERSE_CHARGE_ITEMS.map((item) => ({
+      ...item,
+      disabled: item.value !== "none" && !reverseChargeEnabled[item.value],
+    })),
+  );
+  const reverseChargeBlockedHint = $derived(settings ? reverseChargeBlockedReason(reverseChargeInput) : "");
 
   const totals = $derived(
-    settings
-      ? computeTotals(items, { isKleinunternehmer: settings.isKleinunternehmer, isReverseCharge })
-      : { subtotal: 0, vatAmount: 0, total: 0 },
+    settings ? computeTotals(items, { isKleinunternehmer, isReverseCharge }) : { subtotal: 0, vatAmount: 0, total: 0 },
   );
 
-  // Judged only once settings and customers are known; otherwise a stored
-  // reverse-charge type would be reset before the data it depends on arrives.
+  // Reverse charge forces 0 % VAT; the rates come back when it is switched off again.
   $effect(() => {
-    if (!referenceDataLoaded) return;
-    if (reverseChargeType === "intra_eu" && !canReverseChargeIntraEu) reverseChargeType = "none";
-    if (reverseChargeType === "third_country" && !canReverseChargeThirdCountry) reverseChargeType = "none";
+    if (isReverseCharge) zeroVatRatesRemembering(items, vatRateSnapshot);
+    else if (vatRateSnapshot.size > 0) restoreVatRates(items, vatRateSnapshot);
   });
 
   $effect(() => {
-    if (isReverseCharge) zeroVatRates(items);
+    if (!settings || loading) return;
+    const nextDerived = dueDateFromIssue(issueDateIso, settings.defaultPaymentTermsDays);
+    untrack(() => {
+      dueDateIso = followDerivedDueDate(dueDateIso, derivedDueDateIso, nextDerived);
+      derivedDueDateIso = nextDerived;
+    });
   });
 
   $effect(() => {
@@ -137,8 +150,7 @@
       .then(([loadedSettings, loadedCustomers]) => {
         settings = loadedSettings;
         customers = loadedCustomers;
-        referenceDataLoaded = true;
-        if (mode === "new") applyNewInvoiceDefaults(loadedSettings);
+        if (mode === "new") applyNewInvoiceDefaults(loadedSettings, loadedCustomers);
       })
       .catch((e) => (error = String(e)));
   });
@@ -162,7 +174,13 @@
       .finally(() => (loaded = true));
   });
 
-  function applyNewInvoiceDefaults(s: Settings) {
+  function preselectedCustomerId(availableCustomers: Customer[]): string {
+    const requested = new URLSearchParams(querystring ?? "").get("customerId");
+    return availableCustomers.some((c) => String(c.id) === requested) ? (requested ?? "") : "";
+  }
+
+  function applyNewInvoiceDefaults(s: Settings, availableCustomers: Customer[]) {
+    customerIdStr = preselectedCustomerId(availableCustomers);
     paymentTerms = `Zahlbar innerhalb von ${s.defaultPaymentTermsDays} Tagen ohne Abzug.`;
     for (const item of items) item.vatRate = vatRateForNewItem(s.isKleinunternehmer);
     skonto = skontoFormFromSettings(s);
@@ -170,6 +188,7 @@
   }
 
   function applyStoredInvoice(invoice: Invoice, storedItems: InvoiceItem[]) {
+    storedKleinunternehmer = invoice.isKleinunternehmer;
     customerIdStr = String(invoice.customerId);
     issueDateIso = toIsoDate(invoice.issueDate);
     deliveryDateIso = invoice.deliveryDate ? toIsoDate(invoice.deliveryDate) : "";
@@ -193,7 +212,7 @@
 
   function reverseChargeError(): string | null {
     if (reverseChargeType === "none") return null;
-    if (settings?.isKleinunternehmer) return "Reverse-Charge ist für Kleinunternehmer nicht zulässig.";
+    if (isKleinunternehmer) return "Reverse-Charge ist für Kleinunternehmer nicht zulässig.";
     if (reverseChargeType === "intra_eu" && !selectedCustomer?.vatId) {
       return "EU-Reverse-Charge erfordert eine USt-IdNr. des Kunden.";
     }
@@ -359,13 +378,13 @@
             {/if}
           </div>
           <CurrencyFields bind:currency bind:exchangeRate totalCent={totals.total} />
-          {#if settings && !settings.isKleinunternehmer && !isCreditNote}
+          {#if settings && !isKleinunternehmer && !isCreditNote}
             <div class="col-span-2 flex flex-col gap-1.5">
               <Label>Reverse-Charge</Label>
               <Select
                 bind:value={reverseChargeType}
-                items={REVERSE_CHARGE_ITEMS}
-                disabled={!canReverseChargeThirdCountry}
+                items={reverseChargeItems}
+                disabled={!reverseChargeEnabled.third_country}
               />
               <p class="text-xs text-muted-foreground">
                 {#if reverseChargeType === "intra_eu"}
@@ -376,8 +395,8 @@
                   Inlandsumsatz oder regulärer Umsatzsteuerausweis.
                 {/if}
               </p>
-              {#if reverseChargeBlockedReason}
-                <p class="text-xs text-warning">{reverseChargeBlockedReason}</p>
+              {#if reverseChargeBlockedHint}
+                <p class="text-xs text-warning">{reverseChargeBlockedHint}</p>
               {/if}
             </div>
             {#if reverseChargeType !== "none"}
