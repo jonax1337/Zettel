@@ -1,14 +1,16 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { link, push } from "svelte-spa-router";
   import {
     listReminders,
     listOverdueInvoices,
     levelLabel,
+    remindableAmountCents,
     type ReminderListRow,
     type OverdueInvoice,
   } from "$lib/db/reminders";
   import type { ReminderLevel } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
+  import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
   import { applySort } from "$lib/utils/sort";
   import { Button, Card, Badge, SortableTh, EmptyState } from "$lib/ui";
@@ -71,7 +73,7 @@
             <tr class="text-xs uppercase tracking-wider text-muted-foreground">
               <th class="px-4 py-3 font-medium whitespace-nowrap">Rechnung</th>
               <th class="px-4 py-3 font-medium min-w-32">Kunde</th>
-              <th class="px-4 py-3 font-medium text-right whitespace-nowrap">Betrag</th>
+              <th class="px-4 py-3 font-medium text-right whitespace-nowrap">Offen</th>
               <th class="hidden @3xl:table-cell px-4 py-3 font-medium whitespace-nowrap">Fällig</th>
               <th class="px-4 py-3 font-medium whitespace-nowrap">Tage</th>
               <th class="hidden @4xl:table-cell px-4 py-3 font-medium whitespace-nowrap">Bestehend</th>
@@ -82,9 +84,11 @@
             {#each overview.data.overdue as o (o.invoice.id)}
               {@const nextLevel = suggestNextLevel(o.existingReminderLevels)}
               <tr class="border-t hover:bg-muted/30 transition-colors">
-                <td class="px-4 py-3 font-mono text-xs whitespace-nowrap">{o.invoice.number}</td>
+                <td class="px-4 py-3 font-mono text-xs whitespace-nowrap">
+                  <a href={`/invoices/${o.invoice.id}`} use:link class="hover:underline">{o.invoice.number}</a>
+                </td>
                 <td class="px-4 py-3 min-w-32"><span class="line-clamp-2" title={o.customerName}>{o.customerName}</span></td>
-                <td class="px-4 py-3 text-right font-mono whitespace-nowrap">{centsToEur(o.invoice.total)}</td>
+                <td class="px-4 py-3 text-right font-mono whitespace-nowrap">{formatMoney(remindableAmountCents(o.invoice), o.invoice.currency)}</td>
                 <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDate(o.invoice.dueDate)}</td>
                 <td class="px-4 py-3 whitespace-nowrap">
                   <Badge variant={o.daysOverdue > SEVERE_OVERDUE_DAYS ? "destructive" : "warning"}>
