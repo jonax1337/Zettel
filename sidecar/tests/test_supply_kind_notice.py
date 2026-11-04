@@ -108,3 +108,23 @@ class TestOfferHint:
     def test_english_services(self, payloads):
         html = _render_offer(payloads, supplyKind="services", pdfLanguage="en")
         assert "VAT to be paid by the recipient (reverse charge)" in html
+
+    def test_third_country_goods_announces_export(self, payloads):
+        html = _render_offer(payloads, reverseChargeType="third_country", supplyKind="goods")
+        assert "steuerfreie Ausfuhrlieferung" in html
+        assert "innergemeinschaftliche" not in html
+
+    def test_third_country_services_announces_place_of_supply_outside_eu(self, payloads):
+        html = _render_offer(payloads, reverseChargeType="third_country", supplyKind="services")
+        assert "Leistungsort außerhalb der EU" in html
+        assert "Steuerschuldnerschaft" not in html
+
+    def test_english_third_country(self, payloads):
+        goods = _render_offer(payloads, reverseChargeType="third_country", supplyKind="goods", pdfLanguage="en")
+        services = _render_offer(payloads, reverseChargeType="third_country", supplyKind="services", pdfLanguage="en")
+        assert "VAT-exempt export" in goods
+        assert "place of supply outside the EU" in services
+
+    def test_offer_without_type_keeps_intra_eu_hint(self, payloads):
+        html = _render_offer(payloads, supplyKind="goods")
+        assert "steuerfreie innergemeinschaftliche Lieferung" in html
