@@ -15,9 +15,8 @@
     toast,
   } from "$lib/ui";
   import { AlertTriangle } from "$lib/brand-icons";
-  import { CURRENT_DB_SCHEMA_VERSION } from "$lib/utils/schema-version";
+  import { writeSafetyBackup } from "$lib/utils/backup";
   import {
-    autoBackupBeforeWipe,
     resetNumberingCounters,
     wipeAllBusinessData,
     wipeTables,
@@ -34,6 +33,7 @@
     type DangerAction,
   } from "./danger-actions";
 
+  const SAFETY_BACKUP_PREFIX = "pre-wipe";
   const wipeableTables = Object.entries(WIPEABLE_TABLE_LABELS) as [WipeableTable, string][];
 
   let selectedTables = $state<Set<WipeableTable>>(new Set());
@@ -81,7 +81,7 @@
     busy = true;
     let phase: string = "backup";
     try {
-      const backupPath = await autoBackupBeforeWipe(CURRENT_DB_SCHEMA_VERSION);
+      const backupPath = await writeSafetyBackup(SAFETY_BACKUP_PREFIX);
       toast.success("Sicherheits-Backup angelegt", backupPath);
       phase = action.kind;
       toast.success(await performDangerAction(action));
@@ -108,7 +108,8 @@
       </CardTitle>
       <CardDescription>
         Irreversible Aktionen. Vor jeder Ausführung wird automatisch ein unverschlüsseltes
-        Backup nach <code>~/Dokumente/Zettel/Backups/pre-wipe-…zip</code> geschrieben.
+        Backup <code>pre-wipe-…zip</code> in den Backup-Ordner der aktiven Datenbank geschrieben
+        (z. B. <code>Dokumente/Zettel/Backups/</code>).
       </CardDescription>
     </CardHeader>
     <CardContent class="space-y-6">
@@ -190,7 +191,7 @@
       </p>
       <div class="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
         <strong>Irreversibel.</strong> Vor der Ausführung wird ein unverschlüsseltes
-        Backup unter <code>Dokumente/Zettel/Backups/</code> (oder dem App-Datenordner als Fallback) angelegt — damit bleibt
+        Backup im Backup-Ordner der aktiven Datenbank (oder dem App-Datenordner als Fallback) angelegt — damit bleibt
         ein Rettungsanker, falls du dich vertippt hast.
       </div>
       <div class="space-y-1.5">
