@@ -30,4 +30,4 @@ export { default as EmptyState } from "./EmptyState.svelte";
 export { default as PageHeader } from "./PageHeader.svelte";
 export { default as QueryBoundary } from "./QueryBoundary.svelte";
 export { default as Toaster } from "./Toaster.svelte";
-export { toast } from "./toast.svelte";
+export { toast, PERSISTENT_TOAST } from "./toast.svelte";

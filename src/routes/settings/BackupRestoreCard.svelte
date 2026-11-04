@@ -15,6 +15,7 @@
     ConfirmDialog,
     Checkbox,
     toast,
+    PERSISTENT_TOAST,
   } from "$lib/ui";
   import { Download, Upload } from "$lib/brand-icons";
   import {
@@ -156,7 +157,10 @@
       toast.action(
         "Wiederherstellung vorbereitet",
         { label: "Jetzt neu starten", onClick: restartNow },
-        { description: "Das Backup wird beim nächsten Start der App eingespielt." },
+        {
+          description: "Das Backup wird beim nächsten Start der App eingespielt.",
+          duration: PERSISTENT_TOAST,
+        },
       );
     } else if (outcome === "failed") {
       pendingRestoreZip = null;

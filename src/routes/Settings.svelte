@@ -1,6 +1,6 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
-  import { Card, CardContent, Button, PageHeader, toast } from "$lib/ui";
+  import { Card, CardContent, Button, PageHeader, toast, PERSISTENT_TOAST } from "$lib/ui";
   import {
     Building2,
     FileText,
@@ -75,7 +75,7 @@
             label: "Installieren",
             onClick: () => result.install(),
           },
-          { description: "Klick zum Herunterladen und Neustarten." },
+          { description: "Klick zum Herunterladen und Neustarten.", duration: PERSISTENT_TOAST },
         );
       } else {
         toast.success("Bereits aktuell.", `Installierte Version: v${appVersion}`);

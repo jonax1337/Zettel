@@ -35,7 +35,7 @@
   import NotFound from "./routes/NotFound.svelte";
   import { onMount } from "svelte";
   import { checkForUpdate, isTauri } from "$lib/updater";
-  import { toast } from "$lib/ui";
+  import { toast, PERSISTENT_TOAST } from "$lib/ui";
 
   const UPDATE_CHECK_DELAY_MS = 10_000;
 
@@ -46,7 +46,7 @@
       toast.action(
         `Update v${result.version} verfügbar`,
         { label: "Installieren", onClick: () => result.install() },
-        { description: "Klick zum Herunterladen und Neustarten." },
+        { description: "Klick zum Herunterladen und Neustarten.", duration: PERSISTENT_TOAST },
       );
     } catch {
       // Silent: offline, dev build without pubkey, etc.
