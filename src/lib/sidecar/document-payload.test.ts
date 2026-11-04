@@ -76,4 +76,27 @@ describe("buildReminderPayload", () => {
 
     expect(payload.invoice).toMatchObject({ invoiceNumber: "RE-1", currency: "GBP" });
   });
+
+  it("passes fee, interest and total as stored, all in the invoice currency", () => {
+    const payload = buildReminderPayload({
+      reminder: {
+        ...reminder,
+        interestCents: 250,
+        originalTotalCents: 100000,
+        totalDueCents: 100750,
+      } as Reminder,
+      invoice: { currency: "USD" } as Invoice,
+      snapshot,
+      company: COMPANY,
+      outputPath: "m.pdf",
+    });
+
+    expect(payload.reminder).toMatchObject({
+      feeCents: 500,
+      interestCents: 250,
+      originalTotalCents: 100000,
+      totalDueCents: 100750,
+    });
+    expect(payload.invoice.currency).toBe("USD");
+  });
 });

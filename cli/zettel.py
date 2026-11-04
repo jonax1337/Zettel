@@ -364,7 +364,7 @@ def skonto_of(inv: dict) -> dict | None:
     return {
         "percent": percent,
         "days": days,
-        "discountCent": inv["total"] * js_round(percent * 100) // 10000,
+        "discountCent": (inv["total"] * js_round(percent * 100) + 5000) // 10000,
         "deadlineUnix": add_days_unix(inv["issue_date"] or now_unix(), days),
     }
 

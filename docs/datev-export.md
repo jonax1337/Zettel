@@ -23,9 +23,16 @@ Entwürfe und stornierte Rechnungen bleiben draußen.
 | Erlöse 19 % USt | 8400 | 4400 |
 | Erlöse 7 % USt | 8300 | 4300 |
 | Steuerfreie Umsätze (§ 19 UStG) | 8200 | 4200 |
-| Steuerfreie innergem. Lieferung (Reverse-Charge) | 8336 | 4125 |
+| Steuerfreie innergem. Lieferung (§ 4 Nr. 1b UStG) | 8125 | 4125 |
+| Im anderen EU-Land steuerpflichtige sonstige Leistung (§ 13b UStG) | 8336 | 4336 |
+| Steuerfreie Ausfuhrlieferung (§ 4 Nr. 1a UStG) | 8120 | 4120 |
+| Im Drittland steuerbare sonstige Leistung | 8338 | 4338 |
 
-Der Steuerberater kann beim Import problemlos auf eigene Konten umbuchen.
+Die vier Reverse-Charge-Konten werden nach Art des Reverse-Charge
+(innergemeinschaftlich bzw. Drittland) und Leistungsart der Rechnung
+(Lieferung bzw. sonstige Leistung) gewählt; Gutschriften nutzen dasselbe Konto
+wie ihre Rechnung. Das sind die Konten der DATEV-Standardkontenrahmen — der
+Steuerberater kann sie beim Import problemlos auf eigene Konten umbuchen.
 
 ## Was eine Rechnung in DATEV-Zeilen wird
 

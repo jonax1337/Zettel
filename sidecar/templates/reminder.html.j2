@@ -1,9 +1,6 @@
 <!doctype html>
 {% from '_partials.j2' import masthead, addressee, meta_row %}
 {% set currency = invoice.currency or 'EUR' %}
-{# Fee and interest are EUR settings, so for other invoice currencies they are
-   stated in EUR next to the amount instead of being added to it. #}
-{% set mixed_currency = currency | upper != 'EUR' %}
 <html lang="de">
 <head>
   <meta charset="utf-8" />
@@ -59,24 +56,19 @@
         </tr>
         {% if reminder.feeCents and reminder.feeCents > 0 %}
         <tr>
-          <td>Mahngebühr{% if mixed_currency %} (in EUR){% endif %}</td>
-          <td class="num">{{ reminder.feeCents | eur }}</td>
+          <td>Mahngebühr</td>
+          <td class="num">{{ reminder.feeCents | eur(currency) }}</td>
         </tr>
         {% endif %}
         {% if reminder.interestCents and reminder.interestCents > 0 %}
         <tr>
-          <td>Verzugszinsen{% if mixed_currency %} (in EUR){% endif %}</td>
-          <td class="num">{{ reminder.interestCents | eur }}</td>
+          <td>Verzugszinsen</td>
+          <td class="num">{{ reminder.interestCents | eur(currency) }}</td>
         </tr>
         {% endif %}
         <tr class="grand">
           <td>Zu zahlender Gesamtbetrag</td>
-          {% if mixed_currency %}
-          {% set extras_cents = (reminder.feeCents or 0) + (reminder.interestCents or 0) %}
-          <td class="num">{{ reminder.originalTotalCents | eur(currency) }}{% if extras_cents > 0 %} zzgl. {{ extras_cents | eur }}{% endif %}</td>
-          {% else %}
-          <td class="num">{{ reminder.totalDueCents | eur }}</td>
-          {% endif %}
+          <td class="num">{{ reminder.totalDueCents | eur(currency) }}</td>
         </tr>
       </tbody>
     </table>

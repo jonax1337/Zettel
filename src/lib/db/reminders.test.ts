@@ -1,18 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { execute, insert, select, getInvoice, drawNextNumber } = vi.hoisted(() => ({
+const { execute, insert, select, getInvoice, drawNextNumber, loadSettings } = vi.hoisted(() => ({
   execute: vi.fn(),
   insert: vi.fn(),
   select: vi.fn(),
   getInvoice: vi.fn(),
   drawNextNumber: vi.fn(),
+  loadSettings: vi.fn(),
 }));
 vi.mock("./client", () => ({ execute, insert, select }));
 vi.mock("./invoices", () => ({ getInvoice }));
 vi.mock("./numbering", () => ({ drawNextNumber }));
-vi.mock("./queries", () => ({ loadSettings: vi.fn() }));
+vi.mock("./queries", () => ({ loadSettings }));
 
 import {
+  buildReminderDraft,
   createReminder,
   levelLabel,
   listOverdueInvoices,
@@ -163,6 +165,39 @@ describe("createReminder", () => {
 
     await expect(createReminder(draft)).rejects.toThrow("storniert");
     expect(drawNextNumber).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildReminderDraft", () => {
+  const settings = {
+    reminderFeeL1Cents: 500,
+    reminderDaysL1: 7,
+    reminderTextL1: "Bitte zahlen",
+  };
+
+  beforeEach(() => {
+    loadSettings.mockResolvedValue(settings);
+  });
+
+  it("takes the EUR fee setting unchanged for a EUR invoice", async () => {
+    getInvoice.mockResolvedValue(remindableInvoice({ currency: "EUR", exchangeRate: null }));
+
+    expect((await buildReminderDraft(3, 1)).feeCents).toBe(500);
+  });
+
+  it("converts the EUR fee setting into the invoice currency with the invoice's rate", async () => {
+    getInvoice.mockResolvedValue(remindableInvoice({ currency: "USD", exchangeRate: "1.0832" }));
+
+    const draft = await buildReminderDraft(3, 1);
+
+    expect(draft.feeCents).toBe(542);
+    expect(draft.interestCents).toBe(0);
+  });
+
+  it("leaves the fee empty for a foreign-currency invoice without a usable rate", async () => {
+    getInvoice.mockResolvedValue(remindableInvoice({ currency: "USD", exchangeRate: null }));
+
+    expect((await buildReminderDraft(3, 1)).feeCents).toBe(0);
   });
 });
 
