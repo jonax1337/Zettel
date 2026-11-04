@@ -157,12 +157,15 @@ function sum(values: number[]): number {
 
 // ----- Booking-row construction -----
 
+type SollHaben = "S" | "H";
+
 type Booking = {
+  /** Signed gross; a negative amount (e.g. a discount line on its own VAT rate) reverses the direction. */
   amountCents: number;
   debit: number;
   credit: number;
-  /** "S" = standard Forderung. "H" flips the booking direction for credit notes. */
-  sollHaben: "S" | "H";
+  /** Direction of a positive amount: "S" = standard, "H" for credit notes / cancelled expenses. */
+  sollHaben: SollHaben;
   belegdatum: Date;
   belegfeld1: string;
   buchungstext: string;
@@ -424,10 +427,16 @@ function buildHeaderLine(opts: DatevExportOpts, now: Date): string {
   return fields.join(";");
 }
 
+/** DATEV amounts carry no sign, so a negative booking is expressed by flipping Soll/Haben. */
+function effectiveSollHaben(b: Booking): SollHaben {
+  if (b.amountCents >= 0) return b.sollHaben;
+  return b.sollHaben === "S" ? "H" : "S";
+}
+
 function rowFor(b: Booking): string {
   const fields: string[] = new Array(COLUMN_HEADERS.length).fill("");
   fields[COLUMN.amount] = centsToDatev(b.amountCents);
-  fields[COLUMN.sollHaben] = quote(b.sollHaben);
+  fields[COLUMN.sollHaben] = quote(effectiveSollHaben(b));
   fields[COLUMN.currency] = quote("EUR");
   fields[COLUMN.account] = String(b.debit);
   fields[COLUMN.contraAccount] = String(b.credit);
@@ -443,11 +452,26 @@ export type DatevBatchInput = {
   expenses?: DatevExpenseInput[];
 };
 
+/**
+ * Belegdatum is exported as DDMM without a year; DATEV resolves it against the
+ * Wirtschaftsjahr, so one batch must stay inside a single Wirtschaftsjahr.
+ */
+export function datevRangeError(
+  opts: Pick<DatevExportOpts, "wjBeginn" | "dateFrom" | "dateTo">,
+): string | null {
+  const wjEnd = new Date(opts.wjBeginn);
+  wjEnd.setFullYear(wjEnd.getFullYear() + 1);
+  if (opts.dateFrom >= opts.wjBeginn && opts.dateTo < wjEnd) return null;
+  return "Der Zeitraum umfasst mehr als ein Wirtschaftsjahr. Das DATEV-Belegdatum enthält kein Jahr — bitte jedes Jahr einzeln exportieren.";
+}
+
 export function buildDatevCsv(
   inputs: DatevInvoiceInput[] | DatevBatchInput,
   opts: DatevExportOpts,
   now: Date = new Date(),
 ): string {
+  const rangeError = datevRangeError(opts);
+  if (rangeError) throw new Error(rangeError);
   const batch: DatevBatchInput = Array.isArray(inputs) ? { invoices: inputs } : inputs;
   const headerLine = buildHeaderLine(opts, now);
   const columnLine = COLUMN_HEADERS.map(quote).join(";");

@@ -21,6 +21,7 @@
   import {
     ACCOUNT_MAPS,
     buildDatevCsv,
+    datevRangeError,
     defaultDatevFilename,
     type Skr,
   } from "$lib/export/datev";
@@ -85,6 +86,15 @@
     try {
       const from = fromIsoDate(dateFromIso);
       const to = endOfDayUnix(fromIsoDate(dateToIso));
+      const rangeError = datevRangeError({
+        wjBeginn: fiscalYearStart(from),
+        dateFrom: new Date(from * 1000),
+        dateTo: new Date(to * 1000),
+      });
+      if (rangeError) {
+        toast.error("Zeitraum zu groß", rangeError);
+        return;
+      }
       const documents = await loadDocuments(from, to);
       if (documents.invoices.length + documents.expenses.length === 0) {
         toast.error(

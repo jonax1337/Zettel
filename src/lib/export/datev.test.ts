@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Invoice, InvoiceItem } from "$lib/db/schema";
 import {
   buildDatevCsv,
+  datevRangeError,
   defaultDatevFilename,
   SKR03,
   SKR04,
@@ -118,5 +119,78 @@ describe("buildDatevCsv (bookings)", () => {
     ]);
     const rows = bookingRows(buildDatevCsv([input], opts, now));
     expect(rows.map((r) => r[COLUMN_AMOUNT])).toEqual(["0,72", "0,08", "4,25"]);
+  });
+
+  const COLUMN_SOLL_HABEN = 1;
+
+  it("books a credit line on its own VAT rate with flipped Soll/Haben", () => {
+    const input = invoiceInput({}, [
+      { lineTotal: 10000, vatRate: 19 },
+      { lineTotal: -2000, vatRate: 7 },
+    ]);
+    const rows = bookingRows(buildDatevCsv([input], opts, now));
+    expect(rows.map((r) => [r[COLUMN_AMOUNT], r[COLUMN_SOLL_HABEN]])).toEqual([
+      ["21,40", '"H"'],
+      ["119,00", '"S"'],
+    ]);
+  });
+
+  it("books a positive group of a credit note as Haben and its negative group as Soll", () => {
+    const input = invoiceInput({ isCreditNote: true }, [
+      { lineTotal: 10000, vatRate: 19 },
+      { lineTotal: -2000, vatRate: 7 },
+    ]);
+    const rows = bookingRows(buildDatevCsv([input], opts, now));
+    expect(rows.map((r) => r[COLUMN_SOLL_HABEN])).toEqual(['"S"', '"H"']);
+  });
+
+  it("flips a negative expense group against the Soll/Haben of its document", () => {
+    const expense = {
+      expense: {
+        number: "ER-1",
+        internalNumber: "EX-2026-0001",
+        issueDate,
+        isReverseCharge: false,
+        status: "open",
+      },
+      items: [
+        { lineTotal: 10000, vatRate: 19, datevAccount: null },
+        { lineTotal: -1000, vatRate: 7, datevAccount: null },
+      ],
+      vendorName: "Lieferant",
+      vendorVatId: null,
+    } as never;
+    const rows = bookingRows(buildDatevCsv({ expenses: [expense] }, opts, now));
+    expect(rows.map((r) => [r[COLUMN_AMOUNT], r[COLUMN_SOLL_HABEN]])).toEqual([
+      ["10,70", '"H"'],
+      ["119,00", '"S"'],
+    ]);
+  });
+});
+
+describe("datevRangeError", () => {
+  const wjBeginn = new Date(2026, 0, 1);
+
+  it("accepts a range inside the Wirtschaftsjahr", () => {
+    expect(
+      datevRangeError({ wjBeginn, dateFrom: new Date(2026, 0, 1), dateTo: new Date(2026, 11, 31, 23, 59, 59) }),
+    ).toBeNull();
+  });
+
+  it("rejects a range running into the next year", () => {
+    expect(
+      datevRangeError({ wjBeginn, dateFrom: new Date(2026, 10, 1), dateTo: new Date(2027, 0, 15) }),
+    ).toContain("mehr als ein Wirtschaftsjahr");
+  });
+
+  it("rejects a range starting before the Wirtschaftsjahr", () => {
+    expect(
+      datevRangeError({ wjBeginn, dateFrom: new Date(2025, 11, 20), dateTo: new Date(2026, 0, 15) }),
+    ).not.toBeNull();
+  });
+
+  it("makes buildDatevCsv refuse a two-year range", () => {
+    const twoYears = { ...opts, dateTo: new Date(2027, 2, 31) };
+    expect(() => buildDatevCsv([], twoYears)).toThrow("Wirtschaftsjahr");
   });
 });
