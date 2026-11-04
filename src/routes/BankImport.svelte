@@ -1,11 +1,13 @@
 <script lang="ts">
+  import { link } from "svelte-spa-router";
   import { open } from "@tauri-apps/plugin-dialog";
   import { parseBankStatement } from "$lib/sidecar/bank";
   import { matchBookings, openBalance, type MatchCandidate } from "$lib/bank/match";
-  import { listInvoices } from "$lib/db/invoices";
+  import { listInvoices, type InvoiceListRow } from "$lib/db/invoices";
   import { addPayment } from "$lib/db/invoice-payments";
   import { nowUnix } from "$lib/utils/date";
   import { centsToEur } from "$lib/utils/money";
+  import { formatMoney } from "$lib/utils/currency";
   import {
     Button,
     Card,
@@ -15,6 +17,7 @@
     CardDescription,
     Badge,
     Checkbox,
+    Select,
     toast,
   } from "$lib/ui";
   import type { BadgeVariant } from "$lib/ui/Badge.svelte";
@@ -23,10 +26,21 @@
   import {
     canApply,
     paymentFor,
+    pickedMatch,
     toImportRows,
     type ImportRow,
     type StatementFormat,
   } from "./parts/bank/import-rows";
+  import {
+    assignManualInvoice,
+    candidateLabel,
+    classifyPaymentResult,
+    formatBookingDate,
+    invoicePickerLabel,
+    payableInvoices,
+    summarizeOutcomes,
+    type ApplyOutcome,
+  } from "./parts/bank/import-view";
 
   const CONFIDENCE_BADGE: Record<MatchCandidate["confidence"], BadgeVariant> = {
     high: "success",
@@ -41,6 +55,8 @@
 
   let detectedFormat = $state<StatementFormat | null>(null);
   let rows = $state<ImportRow[]>([]);
+  let invoices = $state<InvoiceListRow[]>([]);
+  let outcomes = $state<ApplyOutcome[] | null>(null);
 
   const willApplyCount = $derived(rows.filter((r) => r.included).length);
 
@@ -60,6 +76,7 @@
     parsing = true;
     error = null;
     rows = [];
+    outcomes = null;
     detectedFormat = null;
     try {
       const result = await parseBankStatement(path, "auto");
@@ -69,7 +86,8 @@
         return;
       }
       detectedFormat = result.format;
-      const matches = matchBookings(result.bookings, await listInvoices({}));
+      invoices = await listInvoices({});
+      const matches = matchBookings(result.bookings, invoices);
       rows = toImportRows(matches);
       toast.success(
         `${matches.length} ${pluralize(matches.length, "Buchung", "Buchungen")} eingelesen`,
@@ -83,15 +101,33 @@
     }
   }
 
-  function reportApplied(applied: number, errors: string[]) {
-    if (errors.length === 0) {
-      toast.success(`${applied} ${pluralize(applied, "Zahlung", "Zahlungen")} zugeordnet`);
-      return;
+  function pickerItems(row: ImportRow) {
+    return payableInvoices(invoices, row.match.booking.currency).map((invoice) => ({
+      value: String(invoice.id),
+      label: invoicePickerLabel(invoice),
+    }));
+  }
+
+  function assignInvoice(row: ImportRow, invoiceId: string) {
+    const invoice = invoices.find((i) => String(i.id) === invoiceId);
+    if (invoice) assignManualInvoice(row, invoice);
+  }
+
+  async function applyRow(row: ImportRow, format: StatementFormat): Promise<ApplyOutcome | null> {
+    const payment = paymentFor(row, format, nowUnix());
+    const invoice = pickedMatch(row)?.invoice;
+    if (!payment || !invoice) return null;
+    const booked = {
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.number,
+      amountCent: payment.amountCent,
+      currency: invoice.currency,
+    };
+    try {
+      return { kind: classifyPaymentResult(await addPayment(payment)), ...booked };
+    } catch (e) {
+      return { kind: "failed", ...booked, message: String(e) };
     }
-    toast.warning(
-      `${applied} zugeordnet, ${errors.length} fehlgeschlagen`,
-      `Fehlgeschlagene Buchungen bleiben zum erneuten Versuch in der Liste. ${errors[0]}`,
-    );
   }
 
   /** Records every ticked booking; rows that fail stay in the list so they can be retried. */
@@ -100,22 +136,21 @@
     applying = true;
     try {
       const failedRows: ImportRow[] = [];
-      const errors: string[] = [];
-      let applied = 0;
+      const results: ApplyOutcome[] = [];
       for (const row of rows) {
-        const payment = paymentFor(row, format, nowUnix());
-        if (!payment) continue;
-        try {
-          await addPayment(payment);
-          applied += 1;
-        } catch (e) {
-          failedRows.push(row);
-          errors.push(String(e));
-        }
+        const result = await applyRow(row, format);
+        if (!result) continue;
+        results.push(result);
+        if (result.kind === "failed") failedRows.push(row);
       }
-      reportApplied(applied, errors);
+      outcomes = results;
       rows = failedRows;
       if (failedRows.length === 0) detectedFormat = null;
+      if (results.some((r) => r.kind === "failed")) {
+        toast.warning("Nicht alle Buchungen zugeordnet", summarizeOutcomes(results));
+      } else {
+        toast.success(summarizeOutcomes(results));
+      }
     } finally {
       applying = false;
     }
@@ -160,6 +195,45 @@
   </CardContent>
 </Card>
 
+{#if outcomes}
+  <Card class="mb-6">
+    <CardHeader>
+      <CardTitle class="flex items-center gap-2">
+        <CheckCircle2 class="size-4 text-primary" />
+        {summarizeOutcomes(outcomes)}
+      </CardTitle>
+      {#if outcomes.some((o) => o.kind === "failed")}
+        <CardDescription>
+          Fehlgeschlagene Buchungen stehen unten zum erneuten Versuch bereit.
+        </CardDescription>
+      {/if}
+    </CardHeader>
+    <CardContent>
+      <ul class="flex flex-col gap-1.5 text-sm">
+        {#each outcomes as outcome, idx (idx)}
+          <li class="flex flex-wrap items-center gap-2">
+            {#if outcome.kind === "failed"}
+              <Badge variant="destructive" class="text-[9px] uppercase">Fehlgeschlagen</Badge>
+              <span class="font-mono">{outcome.invoiceNumber}</span>
+              <span class="text-xs text-destructive">{outcome.message}</span>
+            {:else}
+              <Badge variant={outcome.kind === "applied" ? "success" : "outline"} class="text-[9px] uppercase">
+                {outcome.kind === "applied" ? "Gebucht" : "Duplikat"}
+              </Badge>
+              <a href={`/invoices/${outcome.invoiceId}`} use:link class="font-mono hover:underline">
+                {outcome.invoiceNumber}
+              </a>
+            {/if}
+            <span class="ml-auto text-muted-foreground tabular-nums">
+              {formatMoney(outcome.amountCent, outcome.currency)}
+            </span>
+          </li>
+        {/each}
+      </ul>
+    </CardContent>
+  </Card>
+{/if}
+
 {#if rows.length > 0 && detectedFormat}
   {@const format = detectedFormat}
   <Card class="overflow-hidden py-0">
@@ -184,7 +258,7 @@
               {/if}
             </td>
             <td class="px-4 py-3 text-muted-foreground tabular-nums text-xs">
-              {booking.valutaDate}
+              {formatBookingDate(booking.valutaDate)}
             </td>
             <td class="px-4 py-3 text-right font-mono tabular-nums {booking.amountCent < 0 ? 'text-muted-foreground' : 'font-medium'}">
               {centsToEur(booking.amountCent)}
@@ -194,12 +268,14 @@
             <td class="px-4 py-3">
               {#if booking.amountCent <= 0}
                 <span class="text-xs text-muted-foreground">Geldausgang — ignoriert</span>
-              {:else if row.match.candidates.length === 0}
-                <span class="text-xs text-muted-foreground inline-flex items-center gap-1">
-                  <AlertCircle class="size-3" /> Kein Treffer
-                </span>
               {:else}
+                {@const items = pickerItems(row)}
                 <div class="flex flex-col gap-1">
+                  {#if row.match.candidates.length === 0}
+                    <span class="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <AlertCircle class="size-3" /> Kein Treffer
+                    </span>
+                  {/if}
                   {#each row.match.candidates as candidate, candidateIdx (candidateIdx)}
                     {@const picked = row.pickedCandidate === candidateIdx}
                     <button
@@ -213,15 +289,27 @@
                         <CheckCircle2 class="size-3.5 text-primary shrink-0" />
                       {/if}
                       <Badge variant={CONFIDENCE_BADGE[candidate.confidence]} class="text-[9px] uppercase">
-                        {candidate.confidence}
+                        {candidateLabel(candidate)}
                       </Badge>
                       <span class="font-mono">{candidate.invoice.number}</span>
                       <span class="text-muted-foreground truncate">· {candidate.invoice.customerName}</span>
                       <span class="ml-auto text-muted-foreground tabular-nums">
-                        {centsToEur(openBalance(candidate.invoice))} offen
+                        {formatMoney(openBalance(candidate.invoice), candidate.invoice.currency)} offen
                       </span>
                     </button>
+                    <p class="px-2 -mt-0.5 text-[11px] text-muted-foreground">{candidate.reason}</p>
                   {/each}
+                  {#if items.length > 0}
+                    <Select
+                      {items}
+                      placeholder="Andere Rechnung wählen…"
+                      onValueChange={(invoiceId) => assignInvoice(row, invoiceId)}
+                    />
+                  {:else}
+                    <span class="text-[11px] text-muted-foreground">
+                      Keine offene Rechnung in {booking.currency} zum Zuordnen.
+                    </span>
+                  {/if}
                 </div>
               {/if}
             </td>
@@ -240,4 +328,9 @@
       „Teilbezahlt" oder „Bezahlt" gesetzt.
     </p>
   </div>
+  <p class="mt-3 text-xs text-muted-foreground">
+    Vorgeschlagen werden nur offene und teilbezahlte Rechnungen — Entwürfe, bereits bezahlte,
+    stornierte Rechnungen und Gutschriften sind ausgeschlossen. Passt kein Vorschlag, lässt sich die
+    Rechnung über „Andere Rechnung wählen" manuell zuordnen.
+  </p>
 {/if}
