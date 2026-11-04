@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { link, push } from "svelte-spa-router";
+  import { push } from "svelte-spa-router";
   import { untrack } from "svelte";
-  import { listVendors } from "$lib/db/queries";
+  import { listVendors, type VendorInput } from "$lib/db/queries";
   import {
     cancelExpense,
     computeTotals,
@@ -9,6 +9,7 @@
     deleteExpense,
     getExpense,
     listCategories,
+    listExpenses,
     markExpensePaid,
     recordExpenseValidation,
     updateExpense,
@@ -17,7 +18,7 @@
   import type { CatalogItem, Expense, ExpenseCategory, Vendor } from "$lib/db/schema";
   import { listCategories as listCuratedCategories } from "$lib/db/expense-categories";
   import { importExpensePdf } from "$lib/sidecar/extract";
-  import { fromIsoDate, toIsoDate } from "$lib/utils/date";
+  import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
   import {
     Button,
@@ -39,8 +40,13 @@
   import { fetchEditTarget, parseId } from "./parts/entity/edit-target";
   import { centsToPriceText } from "./parts/entity/format";
   import { vatRateForNewItem } from "./parts/entity/vat";
+  import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
+  import { paidDateWarning } from "./invoice/date-warnings";
   import ExpenseItemsTable from "./parts/expense/ExpenseItemsTable.svelte";
   import PdfDropZone from "./parts/expense/PdfDropZone.svelte";
+  import VendorQuickCreateDialog from "./parts/expense/VendorQuickCreateDialog.svelte";
+  import { findDuplicateExpense, type ComparableExpense } from "./parts/expense/duplicate-check";
+  import { vendorDraftFromOutcome } from "./parts/expense/vendor-draft";
   import {
     applyInvoiceExtract,
     applyTextExtract,
@@ -59,6 +65,7 @@
     type PdfReadOutcome,
   } from "./parts/expense/pdf-import";
   import { vendorFileSlug } from "./parts/expense/vendor-match";
+  import { centsToEur } from "$lib/utils/money";
 
   type Props = {
     mode: "new" | "edit";
@@ -77,12 +84,23 @@
   let saving = $state(false);
   let error = $state<string | null>(null);
 
+  type AfterSave = "leave" | "again";
+
   const form = $state<ExpenseFormState>(emptyExpenseForm());
   let pdfPath = $state<string | null>(null);
+  // Copied into the document folder only on save, so abandoning the form leaves no stray file.
+  let pendingPdfSource = $state<string | null>(null);
 
   let confirmDeleteOpen = $state(false);
   let confirmCancelOpen = $state(false);
   let catalogPickerOpen = $state(false);
+  let vendorDialogOpen = $state(false);
+  let vendorDraft = $state<VendorInput | null>(null);
+  let paidDialogOpen = $state(false);
+  let paidDate = $state(toIsoDate(nowUnix()));
+  let confirmDuplicateOpen = $state(false);
+  let duplicateOf = $state<ComparableExpense | null>(null);
+  let afterDuplicateConfirm = $state<AfterSave>("leave");
 
   let importing = $state(false);
   let importedNote = $state<string | null>(null);
@@ -99,6 +117,33 @@
   const vendorItems = $derived(
     vendors.map((v) => ({ value: String(v.id), label: `${v.vendorNumber} — ${v.name}` })),
   );
+  const canAttachPdf = $derived(mode === "new" || (editable && existing !== null));
+  const pdfZoneHint = $derived(
+    mode === "new"
+      ? undefined
+      : pdfPath
+        ? `Aktuell: ${pdfPath} — eine neue PDF ersetzt sie beim Speichern.`
+        : "Noch keine PDF hinterlegt.",
+  );
+  const paidWarning = $derived(
+    paidDate && existing
+      ? paidDateWarning(fromIsoDate(paidDate), { sentAt: null, issueDate: existing.issueDate }, nowUnix())
+      : null,
+  );
+  const duplicateDescription = $derived(
+    duplicateOf
+      ? `Für diesen Lieferanten gibt es bereits ${duplicateOf.internalNumber}${duplicateOf.number ? ` (Beleg-Nr. ${duplicateOf.number})` : ""} über ${centsToEur(duplicateOf.total)}. Trotzdem speichern?`
+      : "",
+  );
+
+  async function selectCreatedVendor(vendorId: number) {
+    try {
+      vendors = await listVendors();
+      form.vendorId = String(vendorId);
+    } catch (e) {
+      toast.error("Lieferanten konnten nicht geladen werden", String(e));
+    }
+  }
 
   $effect(() => {
     Promise.all([listVendors(), listCategories(), listCuratedCategories()])
@@ -175,16 +220,16 @@
   }
 
   function applyReadOutcome(outcome: PdfReadOutcome) {
+    zugferdExtracted = outcome.kind === "zugferd";
     if (outcome.kind === "zugferd") {
-      zugferdExtracted = true;
       applyInvoiceExtract(form, outcome.data, outcome.vendor);
     } else if (outcome.kind === "text") {
       applyTextExtract(form, outcome.data, outcome.vendor);
     }
   }
 
-  function announceImport(outcome: PdfReadOutcome, storedAt: string) {
-    const storedNote = `PDF abgelegt unter ${storedAt}`;
+  function announceImport(outcome: PdfReadOutcome) {
+    const storedNote = "Die PDF wird beim Speichern abgelegt";
     switch (outcome.kind) {
       case "zugferd":
         announceZugferdImport(outcome.vendor, storedNote);
@@ -220,8 +265,13 @@
     }
     toast.action(
       "ZUGFeRD übernommen",
-      { label: "Lieferant anlegen", onClick: () => push("/vendors/new") },
-      { description: "Kein passender Lieferant — bitte vorher anlegen oder oben auswählen." },
+      {
+        label: "Lieferant anlegen",
+        onClick: () => {
+          vendorDialogOpen = true;
+        },
+      },
+      { description: "Kein passender Lieferant — bitte anlegen oder oben auswählen." },
     );
     importedNote = `${storedNote}. Lieferant fehlt.`;
   }
@@ -233,16 +283,29 @@
     try {
       const outcome = await readExpensePdf(srcPath, vendors);
       applyReadOutcome(outcome);
-      const vendor = outcome.kind === "zugferd" || outcome.kind === "text" ? outcome.vendor : null;
-      const storedAt = await importExpensePdf(srcPath, vendorFileSlug(vendor));
-      pdfPath = storedAt;
-      validation = outcome.kind === "zugferd" ? await validateImportedPdf(storedAt) : null;
-      announceImport(outcome, storedAt);
+      const matchedVendor = outcome.kind === "zugferd" || outcome.kind === "text" ? outcome.vendor : null;
+      pendingPdfSource = srcPath;
+      vendorDraft = matchedVendor ? null : vendorDraftFromOutcome(outcome);
+      validation = outcome.kind === "zugferd" ? await validateImportedPdf(srcPath) : null;
+      announceImport(outcome);
     } catch (e) {
       toast.error("Import fehlgeschlagen", String(e));
     } finally {
       importing = false;
     }
+  }
+
+  function attachPdf(srcPath: string) {
+    pendingPdfSource = srcPath;
+    importedNote = "Die neue PDF wird beim Speichern abgelegt.";
+  }
+
+  async function storePendingPdf(vendorId: number) {
+    if (!pendingPdfSource) return;
+    const vendor = vendors.find((v) => v.id === vendorId) ?? null;
+    pdfPath = await importExpensePdf(pendingPdfSource, vendorFileSlug(vendor));
+    // A failed save below must not copy the PDF a second time on retry.
+    pendingPdfSource = null;
   }
 
   function buildInput(vendorId: number): ExpenseFormInput {
@@ -279,26 +342,84 @@
     }
   }
 
-  async function onSubmit(e: SubmitEvent) {
-    e.preventDefault();
-    if (!editable) return;
+  async function saveExpense(): Promise<number | null> {
+    const vendorId = parseId(form.vendorId);
+    if (vendorId === null) {
+      error = "Bitte Lieferant auswählen.";
+      return null;
+    }
+    saving = true;
+    error = null;
+    try {
+      await storePendingPdf(vendorId);
+      const savedId = await persist(buildInput(vendorId));
+      if (savedId !== null && validation) await recordValidation(savedId, validation);
+      return savedId;
+    } catch (err) {
+      error = String(err);
+      toast.error("Speichern fehlgeschlagen", String(err));
+      return null;
+    } finally {
+      saving = false;
+    }
+  }
+
+  function resetForNextExpense() {
+    Object.assign(form, emptyExpenseForm());
+    pdfPath = null;
+    pendingPdfSource = null;
+    zugferdExtracted = false;
+    validation = null;
+    importedNote = null;
+    vendorDraft = null;
+    error = null;
+  }
+
+  async function saveAndContinue(next: AfterSave) {
+    const savedId = await saveExpense();
+    if (savedId === null) return;
+    if (next === "again") resetForNextExpense();
+    else push("/expenses");
+  }
+
+  /** A lookup failure must not block saving, so it counts as "no duplicate". */
+  async function findDuplicate(vendorId: number): Promise<ComparableExpense | null> {
+    const number = form.vendorNumber.trim() || null;
+    const unchanged = existing?.vendorId === vendorId && existing.number === number;
+    if (unchanged) return null;
+    try {
+      return findDuplicateExpense(await listExpenses({ vendorId }), {
+        id,
+        vendorId,
+        number,
+        issueDate: fromIsoDate(form.issueDateIso),
+        total: totals.total,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  async function requestSave(next: AfterSave) {
+    if (!editable || saving) return;
     const vendorId = parseId(form.vendorId);
     if (vendorId === null) {
       error = "Bitte Lieferant auswählen.";
       return;
     }
-    saving = true;
-    error = null;
-    try {
-      const savedId = await persist(buildInput(vendorId));
-      if (savedId !== null && validation) await recordValidation(savedId, validation);
-      push("/expenses");
-    } catch (err) {
-      error = String(err);
-      toast.error("Speichern fehlgeschlagen", String(err));
-    } finally {
-      saving = false;
+    const duplicate = await findDuplicate(vendorId);
+    if (duplicate) {
+      duplicateOf = duplicate;
+      afterDuplicateConfirm = next;
+      confirmDuplicateOpen = true;
+      return;
     }
+    await saveAndContinue(next);
+  }
+
+  function onSubmit(e: SubmitEvent) {
+    e.preventDefault();
+    return requestSave("leave");
   }
 
   async function updateStatusAndLeave(
@@ -316,8 +437,22 @@
     }
   }
 
-  const onMarkPaid = () =>
-    updateStatusAndLeave((expenseId) => markExpensePaid(expenseId), "Als bezahlt markiert", "Fehler");
+  function openPaidDialog() {
+    paidDate = toIsoDate(nowUnix());
+    paidDialogOpen = true;
+  }
+
+  /** Pending edits are saved first; otherwise leaving the page would silently drop them. */
+  async function confirmPaid() {
+    paidDialogOpen = false;
+    if ((await saveExpense()) === null) return;
+    const paidAt = fromIsoDate(paidDate);
+    await updateStatusAndLeave(
+      (expenseId) => markExpensePaid(expenseId, paidAt),
+      "Als bezahlt markiert",
+      "Fehler",
+    );
+  }
   const onCancel = () => updateStatusAndLeave(cancelExpense, "Storniert", "Fehler");
   const onDelete = () => updateStatusAndLeave(deleteExpense, "Gelöscht", "Löschen fehlgeschlagen");
 </script>
@@ -339,7 +474,7 @@
   </div>
   {#if existing?.status === "open"}
     <div class="flex items-center gap-2">
-      <Button type="button" variant="outline" onclick={onMarkPaid}>
+      <Button type="button" variant="outline" onclick={openPaidDialog} disabled={saving}>
         <Check />
         Bezahlt
       </Button>
@@ -354,12 +489,21 @@
 {#if loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else}
-  {#if mode === "new"}
-    <PdfDropZone {importing} onFile={handleImport} />
+  {#if canAttachPdf}
+    {#if mode === "new"}
+      <PdfDropZone {importing} onFile={handleImport} />
+    {:else}
+      <PdfDropZone
+        {importing}
+        onFile={attachPdf}
+        hint={pdfZoneHint}
+        busyLabel="PDF wird vorbereitet…"
+      />
+    {/if}
     {#if importedNote}
       <p class="mb-4 text-xs text-muted-foreground">{importedNote}</p>
     {/if}
-    {#if validation}
+    {#if validation && mode === "new"}
       <div class="mb-4 flex items-center gap-2">
         <ValidationBadge status={validation.status} findingsCount={validation.findingsCount} />
         {#if validation.status === "invalid"}
@@ -377,10 +521,12 @@
           <div class="col-span-2 flex flex-col gap-1.5">
             <Label>Lieferant <span class="text-destructive">*</span></Label>
             <Select bind:value={form.vendorId} items={vendorItems} placeholder="Lieferant wählen…" />
-            {#if vendors.length === 0}
+            {#if editable}
               <p class="text-xs text-muted-foreground">
-                Noch keine Lieferanten —
-                <a href="/vendors/new" use:link class="underline">jetzt anlegen</a>.
+                {vendors.length === 0 ? "Noch keine Lieferanten —" : "Nicht dabei?"}
+                <button type="button" class="underline" onclick={() => (vendorDialogOpen = true)}>
+                  Lieferant anlegen
+                </button>
               </p>
             {/if}
           </div>
@@ -436,6 +582,11 @@
         <Button type="submit" disabled={saving}>
           {saving ? "Speichere…" : mode === "new" ? "Erfassen" : "Speichern"}
         </Button>
+        {#if mode === "new"}
+          <Button type="button" variant="outline" disabled={saving} onclick={() => requestSave("again")}>
+            Speichern & weitere erfassen
+          </Button>
+        {/if}
       {/if}
       <Button type="button" onclick={() => push("/expenses")} variant="ghost">
         {editable ? "Abbrechen" : "Zurück"}
@@ -477,3 +628,26 @@
 />
 
 <CatalogPicker bind:open={catalogPickerOpen} onPick={addFromCatalog} />
+
+<VendorQuickCreateDialog bind:open={vendorDialogOpen} prefill={vendorDraft} onCreated={selectCreatedVendor} />
+
+<DateConfirmDialog
+  bind:open={paidDialogOpen}
+  bind:date={paidDate}
+  title="Als bezahlt markieren"
+  description="Zahldatum für Statistik und DATEV-Export. Offene Änderungen werden vorher gespeichert."
+  dateInputId="expense-paid-date"
+  dateLabel="Zahldatum"
+  hint="Standard ist heute. Bei Nacherfassung das echte Zahldatum eintragen."
+  confirmLabel="Bestätigen"
+  warning={paidWarning}
+  onConfirm={confirmPaid}
+/>
+
+<ConfirmDialog
+  bind:open={confirmDuplicateOpen}
+  title="Mögliche Dublette"
+  description={duplicateDescription}
+  confirmLabel="Trotzdem speichern"
+  onConfirm={() => saveAndContinue(afterDuplicateConfirm)}
+/>

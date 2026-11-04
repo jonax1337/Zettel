@@ -9,6 +9,11 @@
   import type { Vendor } from "$lib/db/schema";
   import { Button, Input, Textarea, Label, Card, CardContent, toast } from "$lib/ui";
   import BackLink from "./parts/entity/BackLink.svelte";
+  import {
+    INVALID_COUNTRY_MESSAGE,
+    ISO_COUNTRY_CODE_LENGTH,
+    normalizeCountryCode,
+  } from "./parts/entity/country";
   import { fetchEditTarget } from "./parts/entity/edit-target";
 
   type Props = {
@@ -89,6 +94,13 @@
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
+    const country = normalizeCountryCode(form.country);
+    if (!country) {
+      error = INVALID_COUNTRY_MESSAGE;
+      toast.error("Land ungültig", error);
+      return;
+    }
+    form.country = country;
     saving = true;
     error = null;
     try {
@@ -142,7 +154,7 @@
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>Land</Label>
-            <Input bind:value={form.country} />
+            <Input bind:value={form.country} required maxlength={ISO_COUNTRY_CODE_LENGTH} placeholder="DE" />
           </div>
         </section>
 
