@@ -37,7 +37,7 @@ use crate::tenants;
 /// `CURRENT_DB_SCHEMA_VERSION` in `src/routes/settings/{Advanced,Data}.svelte`
 /// and the highest migration version in `lib.rs` (a test in `lib.rs` checks
 /// the latter).
-pub(crate) const CURRENT_SCHEMA: u32 = 27;
+pub(crate) const CURRENT_SCHEMA: u32 = 28;
 
 const MANIFEST_NAME: &str = "manifest.json";
 const DB_ENTRY: &str = "zettel.db";
