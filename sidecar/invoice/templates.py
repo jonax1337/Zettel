@@ -71,6 +71,7 @@ def build_env() -> Environment:
         # Always autoescape — our templates are .xml.j2 / .html.j2, and
         # select_autoescape() only inspects the *last* extension, missing both.
         autoescape=True,
+        finalize=lambda v: "" if v is None else v,
         trim_blocks=True,
         lstrip_blocks=True,
     )

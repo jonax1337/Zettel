@@ -44,22 +44,23 @@ describe("buildDatevCsv (empty)", () => {
   });
 
   it("includes consultant and client numbers in header", () => {
-    expect(csv).toContain(";1001;");
-    expect(csv).toContain(";1;");
+    const fields = csv.replace(UTF8_BOM, "").split("\r\n")[0].split(";");
+    expect(fields[10]).toBe("1001");
+    expect(fields[11]).toBe("1");
   });
 });
 
-describe("SKR03 vs SKR04 differ", () => {
-  it("have distinct revenue accounts", () => {
-    expect(SKR03.revenue19).not.toBe(SKR04.revenue19);
+describe("SKR03 vs SKR04 revenue accounts", () => {
+  it("map 19 % revenue to 8400 (SKR03) and 4400 (SKR04)", () => {
+    expect(SKR03.revenue19).toBe(8400);
+    expect(SKR04.revenue19).toBe(4400);
   });
 });
 
 describe("defaultDatevFilename", () => {
-  it("matches the DATEV import convention", () => {
-    const name = defaultDatevFilename(new Date(2026, 4, 17, 14, 32));
-    expect(name).toMatch(/^EXTF_Buchungsstapel_\d{8}_\d{4}\.csv$/);
-    expect(name).toContain("20260517");
+  it("embeds local date and HHMM", () => {
+    expect(defaultDatevFilename(new Date(2026, 4, 17, 14, 32))).toBe("EXTF_Buchungsstapel_20260517_1432.csv");
+    expect(defaultDatevFilename(new Date(2026, 0, 5, 9, 7))).toBe("EXTF_Buchungsstapel_20260105_0907.csv");
   });
 });
 

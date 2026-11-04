@@ -57,7 +57,7 @@ def test_t_interpolation_safe_against_missing_kwargs():
     # missing kwargs return the raw template instead of crashing — caller's bug,
     # not the user's.
     out = t("skonto_inline", language="de", date="22.05.2026")
-    assert "{percent}" in out or "Skonto" in out
+    assert out == _DE["skonto_inline"]
 
 
 _PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")

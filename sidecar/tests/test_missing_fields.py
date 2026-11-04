@@ -95,25 +95,20 @@ def test_missing_top_level_section_raises_keyerror(delete_path):
         render_zugferd_xml(payload)
 
 
-def test_missing_invoice_number_slips_through_validator(tmp_path):
-    """SURPRISING FINDING: an empty <ram:ID> element on the invoice passes
-    both XSD and Schematron — KoSIT does not enforce non-empty BT-1.
-    Therefore the UI MUST validate invoice.number is non-empty before save."""
-    if not _validator_available():
-        pytest.skip("validator missing")
+@pytest.mark.parametrize("section,field,tag", [
+    ("invoice", "number", "ram:ID"),
+    ("customer", "city", "ram:CityName"),
+])
+def test_missing_value_does_not_render_as_literal_none(section, field, tag):
     payload = _load_payload()
-    payload["invoice"]["number"] = None
+    payload[section][field] = None
     xml = render_zugferd_xml(payload)
-    result = _validate(xml, tmp_path)
-    assert result["valid"], (
-        "behavior changed — KoSIT now catches empty invoice number. "
-        "Good news: we can relax the UI check. Update the comment in "
-        "CustomerEdit/InvoiceEdit when this happens."
-    )
+    assert f"<{tag}>None</{tag}>" not in xml
 
 
-def test_missing_issue_date_fails_xsd(tmp_path):
-    """Issue date drops to empty <udt:DateTimeString>, XSD pattern-fails."""
+def test_missing_issue_date_fails_br_03(tmp_path):
+    """Issue date drops to an empty <udt:DateTimeString>. The XSD lets it pass;
+    Schematron rejects it (BR-03, CII-DT-097)."""
     if not _validator_available():
         pytest.skip("validator missing")
     payload = _load_payload()
@@ -121,6 +116,7 @@ def test_missing_issue_date_fails_xsd(tmp_path):
     xml = render_zugferd_xml(payload)
     result = _validate(xml, tmp_path)
     assert not result["valid"]
+    assert any("BR-03" in e for e in result["errors"]), result["errors"]
 
 
 # ---------- (2) Schematron-level: missing semantic fields ----------
@@ -160,11 +156,18 @@ def test_kleinunternehmer_without_vatid_still_passes(tmp_path):
     assert result["valid"], f"KU fallback should pass, got: {result['errors']}"
 
 
-def test_missing_customer_country_slips_through_due_to_template_default(tmp_path):
-    """SURPRISING FINDING: the template emits country="DE" as a fallback
-    when customer.country is None, so the validator never sees the gap.
-    The UI MUST enforce customer.country at form-level — KoSIT silently
-    accepts our default which may be wrong for foreign buyers."""
+def test_missing_customer_country_renders_de_fallback():
+    payload = _load_payload()
+    payload["customer"]["country"] = None
+    xml = render_zugferd_xml(payload)
+    buyer = ET.fromstring(xml).find(".//{*}BuyerTradeParty")
+    assert buyer.find(".//{*}CountryID").text == "DE"
+
+
+def test_missing_customer_country_is_accepted_via_de_fallback(tmp_path):
+    """The template emits CountryID DE (element text) when customer.country is
+    None, so the validator never sees the gap. The UI must enforce
+    customer.country at form level — DE may be wrong for foreign buyers."""
     if not _validator_available():
         pytest.skip("validator missing")
     payload = _load_payload()
@@ -174,21 +177,9 @@ def test_missing_customer_country_slips_through_due_to_template_default(tmp_path
     assert result["valid"], "validator no longer accepts the fallback — UI check can relax"
 
 
-def test_missing_customer_city_slips_through_as_empty_tag(tmp_path):
-    """SURPRISING FINDING: KoSIT accepts empty <ram:CityName/> tags — the
-    Schematron rule is `cbc:CityName != ''` only on UBL, not on CII.
-    Reinforces that the UI must enforce customer.city before save."""
-    if not _validator_available():
-        pytest.skip("validator missing")
-    payload = _load_payload()
-    payload["customer"]["city"] = None
-    xml = render_zugferd_xml(payload)
-    result = _validate(xml, tmp_path)
-    assert result["valid"], "validator now enforces non-empty city — UI check can relax"
-
-
 def test_empty_items_list_renders_but_validator_rejects(tmp_path):
-    """Invoice without line items violates BR-16 (at least one line)."""
+    """Invoice without line items violates BR-16 (at least one line); the
+    XSD may reject the missing line-item element before Schematron runs."""
     if not _validator_available():
         pytest.skip("validator missing")
     payload = _load_payload()
@@ -198,3 +189,4 @@ def test_empty_items_list_renders_but_validator_rejects(tmp_path):
     # XML produced will be rejected at validation time.
     result = _validate(xml, tmp_path)
     assert not result["valid"]
+    assert result["step_xsd"] is False or any("BR-16" in e for e in result["errors"]), result
