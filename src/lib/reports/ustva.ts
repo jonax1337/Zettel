@@ -16,6 +16,9 @@
  *  - 84: §13b-Bezug von Leistungen eines Drittland-Unternehmers (§ 13b Abs. 2 Nr. 1, eingehend)
  *  - 66: Abziehbare Vorsteuer (aus Eingangsrechnungen)
  *
+ * Bemessungsgrundlagen (81, 86, 41, 21, 43, 45, 46, 84) sind wie in ELSTER auf volle
+ * Euro abgeschnitten, Steuerbeträge (66) behalten die Cent.
+ *
  * Für 46/84 wird nur die Bemessungsgrundlage geliefert; die geschuldete Steuer
  * (47/85) und die gleich hohe Vorsteuer (67) ergänzt der Anwender selbst.
  *
@@ -27,6 +30,7 @@ import { periodForQuarter, type Quarter } from "$lib/dashboard/period";
 import { select } from "$lib/db/client";
 import type { Settings } from "$lib/db/schema";
 import { CSV_LINE_BREAK, escapeCsvField, UTF8_BOM } from "$lib/utils/csv";
+import { centsToEur } from "$lib/utils/money";
 import {
   apportion,
   cashBasisNetByRate,
@@ -52,8 +56,30 @@ export type UstvaRow = {
   kz: string;
   label: string;
   amount: number; // cents
+  /** ELSTER takes Bemessungsgrundlagen as whole euros (truncated); tax amounts carry cents. */
+  wholeEuros: boolean;
   computedFrom: string;
 };
+
+const CENTS_PER_EURO = 100;
+
+/** Truncates towards zero to whole euros, as ELSTER expects for Bemessungsgrundlagen. */
+export function truncateToWholeEuros(cents: number): number {
+  return Math.trunc(cents / CENTS_PER_EURO) * CENTS_PER_EURO || 0;
+}
+
+function baseRow(kz: string, label: string, cents: number, computedFrom: string): UstvaRow {
+  return { kz, label, amount: truncateToWholeEuros(cents), wholeEuros: true, computedFrom };
+}
+
+export function formatUstvaAmount(row: UstvaRow): string {
+  if (!row.wholeEuros) return centsToEur(row.amount);
+  return (row.amount / CENTS_PER_EURO).toLocaleString("de-DE", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  });
+}
 
 export type UstvaReport = {
   year: number;
@@ -136,13 +162,14 @@ function eurGroupsOfInvoice(groups: InvoiceGroupRow[]): VatGroupRow[] {
 
 /**
  * Vorsteuer aus Eingangsrechnungen ohne Reverse-Charge. Stornierte
- * Eingangsrechnungen fehlen absichtlich (Status-Filter open/paid).
+ * Eingangsrechnungen fehlen absichtlich (Status-Filter open/paid). Nutzt die beim
+ * Speichern berechnete `vat_amount` (Rundung je Position wie in der App); eine
+ * SQL-ROUND-Neuberechnung rundet negative Halbcent-Werte von Null weg.
  */
 async function loadDeductibleInputVat(from: number, to: number): Promise<number> {
   const rows = await select<{ vat: number | null }>(
-    `SELECT SUM(ROUND(ii.line_total * ii.vat_rate / 100.0)) AS vat
+    `SELECT SUM(e.vat_amount) AS vat
      FROM expenses e
-     JOIN expense_items ii ON ii.expense_id = e.id
      WHERE e.status IN ('open','paid')
        AND e.is_reverse_charge = 0
        AND e.issue_date >= ? AND e.issue_date <= ?`,
@@ -272,62 +299,59 @@ export async function buildUstvaReport(
   const purchases = sumReverseChargePurchases(reverseChargePurchases);
 
   const rows: UstvaRow[] = [
-    {
-      kz: "81",
-      label: "Lieferungen und Leistungen zu 19 %",
-      amount: domestic.net19,
-      computedFrom: domestic.computedFrom(STANDARD_VAT_RATE),
-    },
-    {
-      kz: "86",
-      label: "Lieferungen und Leistungen zu 7 %",
-      amount: domestic.net7,
-      computedFrom: domestic.computedFrom(REDUCED_VAT_RATE),
-    },
-    {
-      kz: "41",
-      label: "Innergemeinschaftliche Lieferungen (steuerfrei)",
-      amount: outgoing.netIntraEuGoods,
-      computedFrom: "Rechnungen mit Reverse-Charge intra_eu als Lieferung (Netto, Rechnungsdatum).",
-    },
-    {
-      kz: "21",
-      label: "Nicht steuerbare sonstige Leistungen im EU-Ausland (§ 18b S. 1 Nr. 2 UStG)",
-      amount: outgoing.netIntraEuServices,
-      computedFrom:
-        "Rechnungen mit Reverse-Charge intra_eu als sonstige Leistung (Netto, Rechnungsdatum).",
-    },
-    {
-      kz: "43",
-      label: "Steuerfreie Ausfuhrlieferungen (§ 4 Nr. 1a UStG)",
-      amount: outgoing.netExportGoods,
-      computedFrom: "Rechnungen mit Reverse-Charge Drittland als Lieferung (Netto, Rechnungsdatum).",
-    },
-    {
-      kz: "45",
-      label: "Übrige nicht steuerbare Umsätze (Leistungsort nicht im Inland)",
-      amount: outgoing.netThirdCountryServices,
-      computedFrom:
-        "Rechnungen mit Reverse-Charge Drittland als sonstige Leistung (Netto, Rechnungsdatum).",
-    },
-    {
-      kz: "46",
-      label: "§13b-Leistungen eines EU-Unternehmers (Bemessungsgrundlage)",
-      amount: purchases.netIntraEu,
-      computedFrom:
-        "Eingangsrechnungen mit Reverse-Charge intra_eu (Netto). Steuer in KZ 47 und Vorsteuer in KZ 67 selbst ergänzen.",
-    },
-    {
-      kz: "84",
-      label: "§13b-Leistungen eines Drittland-Unternehmers (Bemessungsgrundlage)",
-      amount: purchases.netThirdCountry,
-      computedFrom:
-        "Eingangsrechnungen mit Reverse-Charge Drittland (Netto). Steuer in KZ 85 und Vorsteuer in KZ 67 selbst ergänzen.",
-    },
+    baseRow(
+      "81",
+      "Lieferungen und Leistungen zu 19 %",
+      domestic.net19,
+      domestic.computedFrom(STANDARD_VAT_RATE),
+    ),
+    baseRow(
+      "86",
+      "Lieferungen und Leistungen zu 7 %",
+      domestic.net7,
+      domestic.computedFrom(REDUCED_VAT_RATE),
+    ),
+    baseRow(
+      "41",
+      "Innergemeinschaftliche Lieferungen (steuerfrei)",
+      outgoing.netIntraEuGoods,
+      "Rechnungen mit Reverse-Charge intra_eu als Lieferung (Netto, Rechnungsdatum).",
+    ),
+    baseRow(
+      "21",
+      "Nicht steuerbare sonstige Leistungen im EU-Ausland (§ 18b S. 1 Nr. 2 UStG)",
+      outgoing.netIntraEuServices,
+      "Rechnungen mit Reverse-Charge intra_eu als sonstige Leistung (Netto, Rechnungsdatum).",
+    ),
+    baseRow(
+      "43",
+      "Steuerfreie Ausfuhrlieferungen (§ 4 Nr. 1a UStG)",
+      outgoing.netExportGoods,
+      "Rechnungen mit Reverse-Charge Drittland als Lieferung (Netto, Rechnungsdatum).",
+    ),
+    baseRow(
+      "45",
+      "Übrige nicht steuerbare Umsätze (Leistungsort nicht im Inland)",
+      outgoing.netThirdCountryServices,
+      "Rechnungen mit Reverse-Charge Drittland als sonstige Leistung (Netto, Rechnungsdatum).",
+    ),
+    baseRow(
+      "46",
+      "§13b-Leistungen eines EU-Unternehmers (Bemessungsgrundlage)",
+      purchases.netIntraEu,
+      "Eingangsrechnungen mit Reverse-Charge intra_eu (Netto). Steuer in KZ 47 und Vorsteuer in KZ 67 selbst ergänzen.",
+    ),
+    baseRow(
+      "84",
+      "§13b-Leistungen eines Drittland-Unternehmers (Bemessungsgrundlage)",
+      purchases.netThirdCountry,
+      "Eingangsrechnungen mit Reverse-Charge Drittland (Netto). Steuer in KZ 85 und Vorsteuer in KZ 67 selbst ergänzen.",
+    ),
     {
       kz: "66",
       label: "Abziehbare Vorsteuer (aus Eingangsrechnungen)",
       amount: inputVat,
+      wholeEuros: false,
       computedFrom: "Vorsteuer aus Eingangsrechnungen ohne §13b (Status offen/bezahlt).",
     },
   ];
@@ -339,7 +363,7 @@ export function ustvaToCsv(report: UstvaReport): string {
   // Excel-freundliches CSV: UTF-8-BOM, Semikolon, Komma als Dezimaltrenner.
   const lines = ["Kennzahl;Beschreibung;Betrag (EUR);Berechnet aus"];
   for (const r of report.rows) {
-    const euros = (r.amount / 100).toFixed(2).replace(".", ",");
+    const euros = (r.amount / CENTS_PER_EURO).toFixed(r.wholeEuros ? 0 : 2).replace(".", ",");
     lines.push(`${r.kz};${escapeCsvField(r.label)};${euros};${escapeCsvField(r.computedFrom)}`);
   }
   return UTF8_BOM + lines.join(CSV_LINE_BREAK) + CSV_LINE_BREAK;
