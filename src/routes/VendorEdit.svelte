@@ -5,7 +5,7 @@
     updateVendor,
     type VendorInput,
   } from "$lib/db/queries";
-  import { Input, Label } from "$lib/ui";
+  import { IbanInput, Input, Label } from "$lib/ui";
   import { INVALID_COUNTRY_MESSAGE, normalizeCountryCode } from "./parts/entity/country";
   import { createEntityForm } from "./parts/entity/entity-form.svelte";
   import EntityFormShell from "./parts/entity/EntityFormShell.svelte";
@@ -83,7 +83,7 @@
     </div>
     <div class="flex flex-col gap-1.5">
       <Label>IBAN</Label>
-      <Input bind:value={form.bankIban} />
+      <IbanInput bind:value={form.bankIban} />
     </div>
     <div class="flex flex-col gap-1.5">
       <Label>BIC</Label>

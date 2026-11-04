@@ -8,6 +8,7 @@ import pytest
 from invoice import pdf
 from invoice.templates import build_env
 
+IBAN_GROUPED = "".join(f'<span class="iban-g">{g}</span>' for g in ("DE89", "3704", "0044", "0532", "0130", "00"))
 KU_NOTE = "Gem. § 19 UStG wird keine Umsatzsteuer berechnet."
 
 
@@ -218,7 +219,7 @@ class TestInvoiceHtml:
     def test_footer_company_data(self, payloads):
         html = _invoice(payloads)
         footer = html.split('<footer class="doc-footer">')[1]
-        assert "DE89370400440532013000" in footer and "COBADEFFXXX" in footer
+        assert IBAN_GROUPED in footer and "COBADEFFXXX" in footer
         assert "DE123456789" in footer and "12/345/67890" in footer
 
     def test_logo_rendered_only_when_present(self, payloads):
@@ -292,7 +293,7 @@ class TestReminderHtml:
 
     def test_bank_block_and_payment_reference(self, payloads):
         html = _reminder(payloads)
-        assert "IBAN: DE89370400440532013000" in html
+        assert "IBAN: " + IBAN_GROUPED in html
         assert "BIC: COBADEFFXXX" in html
         assert "Verwendungszweck: RE-2026-0007" in html
 
@@ -306,3 +307,13 @@ class TestReminderHtml:
 
     def test_no_none_literal(self, payloads):
         assert "None" not in re.sub(r"<[^>]+>", " ", _reminder(payloads))
+
+
+def test_iban_filter_groups_by_four_without_space_characters():
+    from invoice.templates import fmt_iban
+
+    for raw in ("de89370400440532013000", "DE89 3704-0044 0532 0130 00"):
+        out = str(fmt_iban(raw))
+        assert out == IBAN_GROUPED
+        assert " " not in out.replace('<span class="iban-g">', "")
+    assert str(fmt_iban(None)) == ""
