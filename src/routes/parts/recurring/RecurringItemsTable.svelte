@@ -79,6 +79,7 @@
                     type="button"
                     class="{detailButtonClass} hover:text-destructive"
                     title="Detail entfernen"
+                    aria-label="Detail entfernen"
                     onclick={() => hideDetail(item)}
                   >
                     <X class="size-3" /> <span class="sr-only @2xl:not-sr-only">Detail entfernen</span>
@@ -88,6 +89,7 @@
                     type="button"
                     class="{detailButtonClass} hover:text-foreground"
                     title="Detail-Beschreibung hinzufügen"
+                    aria-label="Detail-Beschreibung hinzufügen"
                     onclick={() => (item.showDetail = true)}
                   >
                     <FileText class="size-3" /> <span class="sr-only @2xl:not-sr-only">Detail-Beschreibung</span>

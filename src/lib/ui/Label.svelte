@@ -11,16 +11,29 @@
   const ownId = nextControlId("label");
 
   // An explicit `for` or a control wrapped inside the label already associates them.
+  // Controls rendered after the label (conditional or async siblings) are picked up by the observer.
   $effect(() => {
-    if (!labelEl || htmlFor || labelEl.querySelector("input, select, textarea")) return;
-    const control = findLabelTarget(labelEl);
-    if (!control) return;
-    if (needsAriaLabelledby(control)) {
-      control.setAttribute("aria-labelledby", id ?? ownId);
-      return;
+    const label = labelEl;
+    if (!label || htmlFor || label.querySelector("input, select, textarea")) return;
+
+    function associate(target: HTMLLabelElement): boolean {
+      const control = findLabelTarget(target);
+      if (!control) return false;
+      if (needsAriaLabelledby(control)) {
+        control.setAttribute("aria-labelledby", id ?? ownId);
+        return true;
+      }
+      if (!control.id) control.id = nextControlId("field");
+      target.htmlFor = control.id;
+      return true;
     }
-    if (!control.id) control.id = nextControlId("field");
-    labelEl.htmlFor = control.id;
+
+    if (associate(label) || !label.parentElement) return;
+    const observer = new MutationObserver(() => {
+      if (associate(label)) observer.disconnect();
+    });
+    observer.observe(label.parentElement, { childList: true, subtree: true });
+    return () => observer.disconnect();
   });
 </script>
 
