@@ -102,14 +102,34 @@ describe("expireDueOffers", () => {
 describe("openOffersStats", () => {
   it("counts offers expiring today as expiring soon, up to a week ahead", async () => {
     select
-      .mockResolvedValueOnce([{ c: 3, t: 30000 }])
+      .mockResolvedValueOnce([
+        { total: 10000, currency: "EUR", exchange_rate: null },
+        { total: 10000, currency: null, exchange_rate: null },
+        { total: 10000, currency: "EUR", exchange_rate: null },
+      ])
       .mockResolvedValueOnce([{ c: 1 }]);
 
     const stats = await openOffersStats();
 
     const [, binds] = select.mock.calls[1];
     expect(binds).toEqual([START_OF_TODAY, START_OF_TODAY + 7 * DAY]);
-    expect(stats).toEqual({ count: 3, total: 30000, expiringSoonCount: 1 });
+    expect(stats).toEqual({ count: 3, total: 30000, unconvertedCount: 0, expiringSoonCount: 1 });
+  });
+
+  it("sums foreign-currency offers in EUR and skips those without a usable rate", async () => {
+    select
+      .mockResolvedValueOnce([
+        { total: 10000, currency: "EUR", exchange_rate: null },
+        { total: 10800, currency: "USD", exchange_rate: "1.08" },
+        { total: 5000, currency: "USD", exchange_rate: null },
+      ])
+      .mockResolvedValueOnce([{ c: 0 }]);
+
+    const stats = await openOffersStats();
+
+    expect(stats.count).toBe(3);
+    expect(stats.total).toBe(20000);
+    expect(stats.unconvertedCount).toBe(1);
   });
 });
 

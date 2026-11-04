@@ -9,6 +9,7 @@ import type {
   OfferItem,
   OfferStatus,
 } from "./schema";
+import { computeEurTotalCent } from "$lib/utils/currency";
 import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
 import { computeLineTotal, computeTotals } from "$lib/utils/totals";
 
@@ -490,19 +491,31 @@ export async function convertToInvoice(
 export async function openOffersStats(): Promise<{
   count: number;
   total: number;
+  /** Open offers left out of `total` because they have no usable exchange rate. */
+  unconvertedCount: number;
   expiringSoonCount: number;
 }> {
   const today = startOfTodayUnix();
-  const [open] = await select<{ c: number; t: number }>(
-    `SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS t FROM offers WHERE status IN ${OPEN_STATUSES_SQL}`,
+  const openOffers = await select<{ total: number; currency: string | null; exchange_rate: string | null }>(
+    `SELECT total, currency, exchange_rate FROM offers WHERE status IN ${OPEN_STATUSES_SQL}`,
   );
+  // Foreign-currency offers count in EUR at their stored rate; without a usable rate they add nothing
+  // rather than mixing currencies into one sum.
+  let totalEur = 0;
+  let unconvertedCount = 0;
+  for (const o of openOffers) {
+    const eur = computeEurTotalCent(o.currency ?? DEFAULT_CURRENCY, o.total, o.exchange_rate);
+    if (eur === null) unconvertedCount += 1;
+    else totalEur += eur;
+  }
   const [soonRow] = await select<{ c: number }>(
     `SELECT COUNT(*) AS c FROM offers WHERE status IN ${OPEN_STATUSES_SQL} AND valid_until BETWEEN ? AND ?`,
     [today, addDaysUnix(today, EXPIRING_SOON_DAYS)],
   );
   return {
-    count: open?.c ?? 0,
-    total: open?.t ?? 0,
+    count: openOffers.length,
+    total: totalEur,
+    unconvertedCount,
     expiringSoonCount: soonRow?.c ?? 0,
   };
 }

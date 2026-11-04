@@ -283,7 +283,7 @@ def skonto_of(inv: dict) -> dict | None:
     return {
         "percent": percent,
         "days": days,
-        "discountCent": math.floor(inv["total"] * percent / 100),
+        "discountCent": inv["total"] * js_round(percent * 100) // 10000,
         "deadlineUnix": add_days_unix(inv["issue_date"] or now_unix(), days),
     }
 
@@ -731,18 +731,34 @@ def cmd_invoice_paid(args) -> None:
     print(f"Als bezahlt markiert: {inv['number']} ({fmt_eur(abs(inv['total']))})")
 
 
+# Spiegel von REVENUE_AMOUNT_SQL / OPEN_BALANCE_SQL in src/lib/dashboard/queries.ts:
+# Fremdwährung zählt über den eingefrorenen EUR-Gegenwert, der gezahlte Anteil wird
+# proportional umgerechnet (ganzzahlig, half-up).
+REVENUE_AMOUNT_SQL = "COALESCE(eur_total_cent, total)"
+OPEN_BALANCE_SQL = """(CASE
+  WHEN eur_total_cent IS NULL OR total = 0 THEN total - COALESCE(amount_paid_cent, 0)
+  ELSE eur_total_cent - (2 * eur_total_cent * COALESCE(amount_paid_cent, 0) + total) / (2 * total)
+END)"""
+
+
+def compute_stats(con, year: int) -> tuple[int, int, int]:
+    """(Umsatz des Jahres, Anzahl offener Rechnungen, offener Saldo) in EUR-Cent."""
+    revenue = con.execute(
+        f"SELECT COALESCE(SUM({REVENUE_AMOUNT_SQL}),0) FROM invoices "
+        "WHERE status NOT IN ('cancelled','draft') "
+        "AND strftime('%Y', issue_date, 'unixepoch', 'localtime') = ?",
+        (str(year),),
+    ).fetchone()[0]
+    open_count, open_total = con.execute(
+        f"SELECT COUNT(*), COALESCE(SUM({OPEN_BALANCE_SQL}),0) FROM invoices WHERE status IN ('sent','partial')"
+    ).fetchone()
+    return revenue, open_count, open_total
+
+
 def cmd_stats(_args) -> None:
     year = datetime.now().year
     with connect() as con:
-        revenue = con.execute(
-            "SELECT COALESCE(SUM(total),0) FROM invoices "
-            "WHERE status NOT IN ('cancelled','draft') "
-            "AND strftime('%Y', issue_date, 'unixepoch', 'localtime') = ?",
-            (str(year),),
-        ).fetchone()[0]
-        open_count, open_total = con.execute(
-            "SELECT COUNT(*), COALESCE(SUM(total),0) FROM invoices WHERE status IN ('sent','partial')"
-        ).fetchone()
+        revenue, open_count, open_total = compute_stats(con, year)
     print(f"Umsatz {year} (ohne Entwurf/Storno): {fmt_eur(revenue)}")
     print(f"Offene Forderungen: {open_count} · {fmt_eur(open_total)}")
 

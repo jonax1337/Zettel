@@ -12,13 +12,13 @@
   } from "$lib/ui";
   import {
     buildUstvaReport,
+    formatUstvaAmount,
     ustvaToCsv,
     VAT_ACCOUNTING_LABELS,
     type Quarter,
     type UstvaReport,
   } from "$lib/reports/ustva";
   import { loadSettings } from "$lib/db/queries";
-  import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
   import { Download, AlertTriangle } from "$lib/brand-icons";
   import { createQueryState } from "./parts/entity/query-state.svelte";
@@ -77,7 +77,8 @@
   <h1 class="text-3xl font-semibold tracking-tight">UStVA-Vorbereitung</h1>
   <p class="text-sm text-muted-foreground mt-1">
     Quartalsweise Aggregation der wichtigsten Kennzahlen für die Umsatzsteuer-Voranmeldung.
-    Werte zum Abtippen in ELSTER — kein direkter Upload.
+    Werte zum Abtippen in ELSTER — kein direkter Upload. Bemessungsgrundlagen sind wie in
+    ELSTER auf volle Euro abgeschnitten, Steuerbeträge mit Cent.
   </p>
 </header>
 
@@ -137,7 +138,7 @@
                 <div class="text-xs text-muted-foreground mt-0.5">{row.computedFrom}</div>
               </td>
               <td class="px-4 py-3 text-right font-mono tabular-nums">
-                {centsToEur(row.amount)}
+                {formatUstvaAmount(row)}
               </td>
             </tr>
           {/each}

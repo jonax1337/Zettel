@@ -255,6 +255,13 @@ class TestSkonto:
         assert cli.skonto_of(self.invoice(total=1010, skonto_percent=2.5))["discountCent"] == 25
 
     @pytest.mark.parametrize(
+        "total, percent, expected",
+        [(3000, 2.3, 69), (10000, 1.1, 110), (5800, 2.5, 145), (1000, 0.7, 7), (11900, 3.5, 416)],
+    )
+    def test_fractional_percent_is_exact(self, cli, total, percent, expected):
+        assert cli.skonto_of(self.invoice(total=total, skonto_percent=percent))["discountCent"] == expected
+
+    @pytest.mark.parametrize(
         "overrides",
         [
             {"skonto_percent": None},
@@ -268,6 +275,54 @@ class TestSkonto:
     )
     def test_inactive_skonto_yields_nothing(self, cli, overrides):
         assert cli.skonto_of(self.invoice(**overrides)) is None
+
+
+class TestStats:
+    YEAR = 2026
+    ISSUED = local_timestamp(2026, 3, 1)
+
+    @staticmethod
+    def add(con, **values):
+        row = {"status": "sent", "issue_date": TestStats.ISSUED, "total": 0, "amount_paid_cent": 0, **values}
+        con.execute(
+            "INSERT INTO invoices (status, issue_date, total, amount_paid_cent, eur_total_cent) "
+            "VALUES (:status, :issue_date, :total, :amount_paid_cent, :eur_total_cent)",
+            {"eur_total_cent": None, **row},
+        )
+
+    def test_open_balance_subtracts_payments(self, cli, con):
+        self.add(con, status="partial", total=10_000, amount_paid_cent=4_000)
+        self.add(con, status="sent", total=5_000)
+        self.add(con, status="paid", total=7_000, amount_paid_cent=7_000)
+
+        revenue, open_count, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert (open_count, open_total) == (2, 11_000)
+        assert revenue == 22_000
+
+    def test_foreign_currency_counts_in_eur(self, cli, con):
+        self.add(con, total=11_900, eur_total_cent=11_000)
+
+        revenue, _, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert revenue == 11_000
+        assert open_total == 11_000
+
+    def test_foreign_currency_open_balance_converts_the_paid_share(self, cli, con):
+        self.add(con, status="partial", total=10_000, amount_paid_cent=2_500, eur_total_cent=9_200)
+
+        _, _, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert open_total == 9_200 - 2_300
+
+    def test_drafts_cancelled_and_other_years_do_not_count_as_revenue(self, cli, con):
+        self.add(con, status="draft", total=1_000)
+        self.add(con, status="cancelled", total=2_000)
+        self.add(con, status="paid", total=4_000, issue_date=local_timestamp(2025, 6, 1))
+
+        revenue, open_count, _ = cli.compute_stats(con, self.YEAR)
+
+        assert (revenue, open_count) == (0, 0)
 
 
 class TestDraftDueDate:

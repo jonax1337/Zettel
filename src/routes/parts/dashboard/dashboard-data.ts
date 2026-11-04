@@ -20,7 +20,12 @@ import type { FollowUpGroup } from "$lib/dashboard/follow-up";
 
 const TOP_CUSTOMER_COUNT = 5;
 
-export type OfferStats = { count: number; total: number; expiringSoonCount: number };
+export type OfferStats = {
+  count: number;
+  total: number;
+  unconvertedCount: number;
+  expiringSoonCount: number;
+};
 
 export type DashboardData = {
   customerCount: number;

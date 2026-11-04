@@ -20,55 +20,61 @@ describe("estimateIncomeTax — Tarif 2024", () => {
     expect(estimateIncomeTax(1_000_000, "single", 0, Y).est).toBe(0);
   });
 
-  it("ESt = 0 bei genau Grundfreibetrag 11.604 €", () => {
-    expect(estimateIncomeTax(1_160_400, "single", 0, Y).est).toBe(0);
+  it("ESt = 0 bei genau Grundfreibetrag 11.784 €", () => {
+    expect(estimateIncomeTax(1_178_400, "single", 0, Y).est).toBe(0);
   });
 
-  it("Zone 2 — 15.000 € → 581 € ESt", () => {
-    // y = 0.3396; (922.98*0.3396 + 1400) * 0.3396 = 581.8855... → 581
-    expect(estimateIncomeTax(1_500_000, "single", 0, Y).est).toBe(58_100);
+  it("ESt > 0 knapp über dem Grundfreibetrag (11.785 € → 0 €, 11.800 € → 2 €)", () => {
+    // 11.785: y = 0.0001 -> 0.14 -> 0; 11.800: y = 0.0016 -> (954.8*0.0016+1400)*0.0016 = 2.24 -> 2
+    expect(estimateIncomeTax(1_178_500, "single", 0, Y).est).toBe(0);
+    expect(estimateIncomeTax(1_180_000, "single", 0, Y).est).toBe(200);
   });
 
-  it("Zone 3 — 50.000 € → 10.906 € ESt", () => {
-    // z = 3.2995; (181.19*3.2995 + 2397)*3.2995 + 1025.38 = 10906.85... → 10906
-    expect(estimateIncomeTax(5_000_000, "single", 0, Y).est).toBe(1_090_600);
+  it("Zone 2 — 15.000 € → 548 € ESt", () => {
+    // y = 0.3216; (954.80*0.3216 + 1400) * 0.3216 = 548.x → 548
+    expect(estimateIncomeTax(1_500_000, "single", 0, Y).est).toBe(54_800);
   });
 
-  it("Zone 4 — 100.000 € → 31.397 € ESt", () => {
-    // 0.42*100000 - 10602.13 = 31397.87 → 31397
-    expect(estimateIncomeTax(10_000_000, "single", 0, Y).est).toBe(3_139_700);
+  it("Zone 3 — 50.000 € → 10.872 € ESt", () => {
+    // z = 3.2995; (181.19*3.2995 + 2397)*3.2995 + 991.21 = 10872.x → 10872
+    expect(estimateIncomeTax(5_000_000, "single", 0, Y).est).toBe(1_087_200);
   });
 
-  it("Zone 5 — 300.000 € → 116.063 € ESt", () => {
-    // 0.45*300000 - 18936.88 = 116063.12 → 116063
-    expect(estimateIncomeTax(30_000_000, "single", 0, Y).est).toBe(11_606_300);
+  it("Zone 4 — 100.000 € → 31.363 € ESt", () => {
+    // 0.42*100000 - 10636.31 = 31363.69 → 31363
+    expect(estimateIncomeTax(10_000_000, "single", 0, Y).est).toBe(3_136_300);
+  });
+
+  it("Zone 5 — 300.000 € → 116.028 € ESt", () => {
+    // 0.45*300000 - 18971.06 = 116028.94 → 116028
+    expect(estimateIncomeTax(30_000_000, "single", 0, Y).est).toBe(11_602_800);
   });
 
   it("Splittingtarif 100k = 2 × ESt(50k single)", () => {
-    expect(estimateIncomeTax(10_000_000, "married", 0, Y).est).toBe(2_181_200);
+    expect(estimateIncomeTax(10_000_000, "married", 0, Y).est).toBe(2_174_400);
   });
 
-  it("Splitting-Freibetrag doppelt = 23.208 € → 0 €", () => {
-    expect(estimateIncomeTax(2_320_800, "married", 0, Y).est).toBe(0);
+  it("Splitting-Freibetrag doppelt = 23.568 € → 0 €", () => {
+    expect(estimateIncomeTax(2_356_800, "married", 0, Y).est).toBe(0);
   });
 
-  it("Soli = 0 unter Freigrenze (ESt 10.906 € < 18.130 €)", () => {
+  it("Soli = 0 unter Freigrenze (ESt 10.872 € < 18.130 €)", () => {
     expect(estimateIncomeTax(5_000_000, "single", 0, Y).soli).toBe(0);
   });
 
-  it("Soli in Milderungszone (100k single, ESt 31.397)", () => {
-    // milderung = 0.119 * (31397 - 18130) = 1578.77 → 1578
-    expect(estimateIncomeTax(10_000_000, "single", 0, Y).soli).toBe(157_800);
+  it("Soli in Milderungszone (100k single, ESt 31.363)", () => {
+    // milderung = 0.119 * (31363 - 18130) = 1574.7 → 1574
+    expect(estimateIncomeTax(10_000_000, "single", 0, Y).soli).toBe(157_400);
   });
 
   it("Soli voller Satz (300k single)", () => {
-    // 0.055 * 116063 = 6383.46 → 6383, kleiner als Milderungs-Variante
-    expect(estimateIncomeTax(30_000_000, "single", 0, Y).soli).toBe(638_300);
+    // 0.055 * 116028 = 6381.5 → 6381, kleiner als Milderungs-Variante
+    expect(estimateIncomeTax(30_000_000, "single", 0, Y).soli).toBe(638_100);
   });
 
   it("KiSt 9 % auf ESt", () => {
     const r = estimateIncomeTax(5_000_000, "single", 0.09, Y);
-    expect(r.kist).toBe(Math.floor(10_906 * 0.09) * 100);
+    expect(r.kist).toBe(Math.floor(10_872 * 0.09) * 100);
   });
 
   it("tarifYear echoed", () => {

@@ -159,6 +159,8 @@
     {#snippet caption()}
       {settled?.offerStats.count ?? 0} {pluralize(settled?.offerStats.count ?? 0, "Angebot", "Angebote")}{#if settled && settled.offerStats.expiringSoonCount > 0}
         <span class="text-warning"> · {settled.offerStats.expiringSoonCount} läuft bald ab</span>
+      {/if}{#if settled && settled.offerStats.unconvertedCount > 0}
+        <span class="text-warning"> · {settled.offerStats.unconvertedCount} ohne Wechselkurs nicht in der Summe</span>
       {/if}
     {/snippet}
   </KpiCard>
