@@ -45,8 +45,11 @@ _DE = {
     # Totals
     "totals_subtotal": "Zwischensumme",
     "totals_vat": "Umsatzsteuer",
+    "totals_net_at_rate": "Nettobetrag {rate} %",
+    "totals_vat_at_rate": "Umsatzsteuer {rate} %",
     "totals_grand": "Gesamtbetrag",
     "totals_already_paid": "Bereits gezahlt",
+    "totals_already_refunded": "Bereits erstattet",
     "totals_remaining": "Noch offen",
 
     # Blocks
@@ -113,8 +116,11 @@ _EN = {
 
     "totals_subtotal": "Subtotal",
     "totals_vat": "VAT",
+    "totals_net_at_rate": "Net amount {rate}%",
+    "totals_vat_at_rate": "VAT {rate}%",
     "totals_grand": "Total",
     "totals_already_paid": "Already paid",
+    "totals_already_refunded": "Already refunded",
     "totals_remaining": "Remaining",
 
     "block_refund_title": "Refund",

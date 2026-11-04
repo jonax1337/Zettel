@@ -120,23 +120,36 @@
         <td>{{ invoice.subtotal | eur(invoice.currency) }}</td>
       </tr>
       {% if not invoice.isKleinunternehmer and not invoice.isReverseCharge %}
-        <tr>
-          <th>{{ t('totals_vat', lang) }}</th>
-          <td>{{ invoice.vatAmount | eur(invoice.currency) }}</td>
-        </tr>
+        {% for group in vat_groups %}
+          {% if vat_groups | length > 1 %}
+          <tr>
+            <th>{{ t('totals_net_at_rate', lang, rate=group.rate | rate) }}</th>
+            <td>{{ group.basis | eur(invoice.currency) }}</td>
+          </tr>
+          {% endif %}
+          <tr>
+            <th>{{ t('totals_vat_at_rate', lang, rate=group.rate | rate) }}</th>
+            <td>{{ group.tax | eur(invoice.currency) }}</td>
+          </tr>
+        {% endfor %}
       {% endif %}
       <tr class="grand">
         <th>{{ t('totals_grand', lang) }}</th>
         <td>{{ invoice.total | eur(invoice.currency) }}</td>
       </tr>
-      {% if invoice.amountPaidCent and invoice.amountPaidCent > 0 %}
+      {% if paid_cent %}
       <tr class="paid-line">
+        {% if invoice.isCreditNote %}
+        <th>{{ t('totals_already_refunded', lang) }}</th>
+        <td>{{ paid_cent | eur(invoice.currency) }}</td>
+        {% else %}
         <th>{{ t('totals_already_paid', lang) }}</th>
-        <td>− {{ invoice.amountPaidCent | eur(invoice.currency) }}</td>
+        <td>− {{ paid_cent | eur(invoice.currency) }}</td>
+        {% endif %}
       </tr>
       <tr class="grand">
         <th>{{ t('totals_remaining', lang) }}</th>
-        <td>{{ (invoice.total - invoice.amountPaidCent) | eur(invoice.currency) }}</td>
+        <td>{{ open_cent | eur(invoice.currency) }}</td>
       </tr>
       {% endif %}
     </table>
