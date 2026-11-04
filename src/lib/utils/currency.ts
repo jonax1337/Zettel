@@ -76,13 +76,40 @@ export function parseExchangeRateScaled(input: string): bigint | null {
  * position, keeps the cumulative error to at most ±1 cent.
  */
 export function toEurCents(totalCents: number, rateScaled: bigint): number {
-  const total = BigInt(totalCents);
-  const negative = total < 0n;
-  const numerator = (negative ? -total : total) * RATE_SCALE;
-  const quotient = numerator / rateScaled;
-  const remainder = numerator % rateScaled;
-  const rounded = remainder * 2n >= rateScaled ? quotient + 1n : quotient;
+  return scaleCentsHalfUp(totalCents, RATE_SCALE, rateScaled);
+}
+
+/**
+ * Convert EUR cents to foreign-currency cents, the inverse of `toEurCents`
+ * ("1 EUR = X <FOREIGN>"). Same rounding: half-up on the absolute value.
+ */
+export function fromEurCents(eurCents: number, rateScaled: bigint): number {
+  return scaleCentsHalfUp(eurCents, rateScaled, RATE_SCALE);
+}
+
+/** `cents * numerator / denominator`, half-up on the absolute value with the sign re-applied. */
+function scaleCentsHalfUp(cents: number, numerator: bigint, denominator: bigint): number {
+  const amount = BigInt(cents);
+  const negative = amount < 0n;
+  const scaled = (negative ? -amount : amount) * numerator;
+  const quotient = scaled / denominator;
+  const remainder = scaled % denominator;
+  const rounded = remainder * 2n >= denominator ? quotient + 1n : quotient;
   return Number(negative ? -rounded : rounded);
+}
+
+/**
+ * Express an EUR amount (e.g. a default reminder fee from the settings) in the
+ * invoice currency. Returns null for a foreign currency without a usable rate.
+ */
+export function eurCentsToCurrency(
+  eurCents: number,
+  currency: string,
+  exchangeRate: string | null | undefined,
+): number | null {
+  if (currency === "EUR") return eurCents;
+  const scaled = exchangeRate ? parseExchangeRateScaled(exchangeRate) : null;
+  return scaled ? fromEurCents(eurCents, scaled) : null;
 }
 
 /**

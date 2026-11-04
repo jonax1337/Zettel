@@ -15,6 +15,7 @@ import type {
   Settings,
 } from "./schema";
 import { parseSnapshot } from "./snapshot-json";
+import { eurCentsToCurrency } from "$lib/utils/currency";
 import { addDaysUnix, nowUnix, SECONDS_PER_DAY } from "$lib/utils/date";
 
 const DEFAULT_COUNTRY = "DE";
@@ -231,12 +232,14 @@ export async function buildReminderDraft(
   const settings = await loadSettings();
   const defaults = levelDefaults(settings, level);
   const now = nowUnix();
+  // The fee setting is in EUR, the reminder is in the invoice currency; without a usable rate the user enters the fee.
+  const feeCents = eurCentsToCurrency(defaults.feeCents, data.invoice.currency, data.invoice.exchangeRate) ?? 0;
   return {
     invoiceId,
     level,
     issueDate: now,
     dueDate: addDaysUnix(now, defaults.days),
-    feeCents: defaults.feeCents,
+    feeCents,
     interestCents: 0,
     bodyText: defaults.text,
     notes: null,

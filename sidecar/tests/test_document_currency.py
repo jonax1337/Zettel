@@ -80,10 +80,12 @@ class TestReminderCurrency:
         assert "Offener Rechnungsbetrag 1.000,00 $" in text
         assert "€" not in text
 
-    def test_usd_reminder_keeps_eur_fees_apart_from_the_amount(self):
+    def test_usd_reminder_states_fee_interest_and_one_total_in_the_invoice_currency(self):
         text = _text(render_reminder_html(_reminder("USD", fee=500, interest=250)))
 
-        assert "Mahngebühr (in EUR) 5,00 €" in text
-        assert "Verzugszinsen (in EUR) 2,50 €" in text
-        assert "Zu zahlender Gesamtbetrag 1.000,00 $ zzgl. 7,50 €" in text
-        assert "1.007,50" not in text
+        assert "Mahngebühr 5,00 $" in text
+        assert "Verzugszinsen 2,50 $" in text
+        assert "Zu zahlender Gesamtbetrag 1.007,50 $" in text
+        assert "€" not in text
+        assert "zzgl." not in text
+        assert "(in EUR)" not in text
