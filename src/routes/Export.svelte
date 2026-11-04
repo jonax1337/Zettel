@@ -12,6 +12,7 @@
     Select,
     Checkbox,
     DatePicker,
+    PageHeader,
     toast,
   } from "$lib/ui";
   import { loadInvoicesForExport } from "$lib/db/invoices";
@@ -162,13 +163,10 @@
   }
 </script>
 
-<header class="mb-6">
-  <h1 class="text-3xl font-semibold tracking-tight">Export</h1>
-  <p class="text-sm text-muted-foreground mt-1">
-    DATEV-konformer Buchungsstapel für deinen Steuerberater. Exportiert Rechnungen
-    (Erlöse) und/oder Eingangsrechnungen (Aufwände) inklusive Stornos.
-  </p>
-</header>
+<PageHeader
+  title="Export"
+  subtitle="DATEV-konformer Buchungsstapel für deinen Steuerberater. Exportiert Rechnungen (Erlöse) und/oder Eingangsrechnungen (Aufwände) inklusive Stornos."
+/>
 
 <div class="space-y-6">
   <Card>

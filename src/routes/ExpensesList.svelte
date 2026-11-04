@@ -16,13 +16,14 @@
   import {
     Button,
     Card,
-    Badge,
     Checkbox,
-    SortableTh,
     BulkActionBar,
     ConfirmDialog,
     toast,
     EmptyState,
+    PageHeader,
+    QueryBoundary,
+    StatusBadge,
   } from "$lib/ui";
   import { Plus, CheckCircle2, Trash2 } from "$lib/brand-icons";
   import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
@@ -33,11 +34,8 @@
   import { pluralize } from "./parts/entity/format";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
-  import {
-    EXPENSE_STATUS_FILTER_ORDER,
-    EXPENSE_STATUS_LABEL,
-    EXPENSE_STATUS_VARIANT,
-  } from "./parts/expense/expense-status";
+  import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
+  import { EXPENSE_STATUS, EXPENSE_STATUS_FILTER_ORDER } from "./parts/expense/expense-status";
 
   const VENDOR_COUNTERPARTY = { label: "Lieferant", allLabel: "Alle Lieferanten" };
 
@@ -70,14 +68,19 @@
       .catch((e) => toast.error("Jahre konnten nicht geladen werden", String(e)));
   });
 
-  const statusItems = statusFilterItems(
-    Object.fromEntries(
-      EXPENSE_STATUS_FILTER_ORDER.map((s) => [s, EXPENSE_STATUS_LABEL[s]]),
-    ) as Record<ExpenseStatus, string>,
-  );
+  const statusItems = statusFilterItems(EXPENSE_STATUS, EXPENSE_STATUS_FILTER_ORDER);
 
   type SortKey = "internalNumber" | "number" | "issueDate" | "vendor" | "total" | "status" | "dueDate";
   const sort = createListSort<SortKey>("expenses", { key: "issueDate", dir: "desc" });
+  const columns: SortColumn<SortKey>[] = [
+    { key: "internalNumber", label: "Interne Nr.", class: "whitespace-nowrap" },
+    { key: "number", label: "Beleg-Nr.", class: "hidden @3xl:table-cell whitespace-nowrap" },
+    { key: "issueDate", label: "Datum", class: "whitespace-nowrap" },
+    { key: "vendor", label: "Lieferant", class: "min-w-32" },
+    { key: "total", label: "Brutto", align: "right", class: "text-right whitespace-nowrap" },
+    { key: "status", label: "Status", class: "whitespace-nowrap" },
+    { key: "dueDate", label: "Fällig", class: "hidden @3xl:table-cell whitespace-nowrap" },
+  ];
   const sortedExpenses = $derived(
     applySort(expenses.data, sort.state, {
       internalNumber: (r) => r.internalNumber,
@@ -128,18 +131,17 @@
   }
 </script>
 
-<header class="mb-6 flex items-end justify-between gap-4">
-  <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Eingangsrechnungen</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      {expenses.data.length} {pluralize(expenses.data.length, "Beleg", "Belege")}
-    </p>
-  </div>
-  <Button onclick={() => push("/expenses/new")}>
-    <Plus />
-    Neue Eingangsrechnung
-  </Button>
-</header>
+<PageHeader
+  title="Eingangsrechnungen"
+  subtitle="{expenses.data.length} {pluralize(expenses.data.length, "Beleg", "Belege")}"
+>
+  {#snippet actions()}
+    <Button onclick={() => push("/expenses/new")}>
+      <Plus />
+      Neue Eingangsrechnung
+    </Button>
+  {/snippet}
+</PageHeader>
 
 <div class="mb-5">
   <DocumentListFilters
@@ -154,33 +156,13 @@
   />
 </div>
 
-{#if expenses.error}
-  <p class="text-sm text-destructive">Fehler: {expenses.error}</p>
-{:else if expenses.loading}
-  <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if expenses.data.length === 0}
-  <EmptyState variant={search ? "no-results" : "empty"} message="Keine Eingangsrechnungen gefunden." />
-{:else}
+<QueryBoundary query={expenses} isEmpty={expenses.data.length === 0}>
+  {#snippet empty()}
+    <EmptyState variant={search ? "no-results" : "empty"} message="Keine Eingangsrechnungen gefunden." />
+  {/snippet}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
-      <thead class="bg-muted/40 text-left">
-        <tr>
-          <th class="px-3 @3xl:px-4 py-3 w-10">
-            <Checkbox
-              checked={selection.allSelected}
-              onCheckedChange={selection.toggleAll}
-              aria-label="Alle auswählen"
-            />
-          </th>
-          <SortableTh column="internalNumber" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Interne Nr.</SortableTh>
-          <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 whitespace-nowrap">Beleg-Nr.</SortableTh>
-          <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Datum</SortableTh>
-          <SortableTh column="vendor" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 min-w-32">Lieferant</SortableTh>
-          <SortableTh column="total" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-3 @3xl:px-4 py-3 text-right whitespace-nowrap">Brutto</SortableTh>
-          <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Status</SortableTh>
-          <SortableTh column="dueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 whitespace-nowrap">Fällig</SortableTh>
-        </tr>
-      </thead>
+      <SortableHeaderRow {sort} {columns} cellClass="px-3 @3xl:px-4 py-3" {selection} />
       <tbody class="stagger">
         {#each sortedExpenses as e (e.id)}
           <tr
@@ -200,7 +182,7 @@
             <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={e.vendorName}>{e.vendorName}</span></td>
             <td class="px-3 @3xl:px-4 py-3 text-right font-mono whitespace-nowrap">{centsToEur(e.total)}</td>
             <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
-              <Badge variant={EXPENSE_STATUS_VARIANT[e.status]}>{EXPENSE_STATUS_LABEL[e.status]}</Badge>
+              <StatusBadge status={e.status} table={EXPENSE_STATUS} />
             </td>
             <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
               {e.dueDate ? formatDate(e.dueDate) : "—"}
@@ -210,7 +192,7 @@
       </tbody>
     </table>
   </Card>
-{/if}
+</QueryBoundary>
 
 <BulkActionBar count={selection.selected.length} label={selectionLabel} onClear={selection.clear}>
   {#if canBulkMarkPaid}

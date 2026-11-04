@@ -1,18 +1,12 @@
 import type { OfferStatus } from "$lib/db/schema";
-import type { StatusVariant } from "../invoice/status";
+import { statusMeta, type StatusTable } from "$lib/ui/status-meta";
 
-export const OFFER_STATUS_LABEL: Record<OfferStatus, string> = {
-  draft: "Entwurf",
-  sent: "Versendet",
-  accepted: "Angenommen",
-  rejected: "Abgelehnt",
-  expired: "Abgelaufen",
+export const OFFER_STATUS: StatusTable<OfferStatus> = {
+  draft: { label: "Entwurf", variant: "secondary" },
+  sent: { label: "Versendet", variant: "warning" },
+  accepted: { label: "Angenommen", variant: "success" },
+  rejected: { label: "Abgelehnt", variant: "destructive" },
+  expired: { label: "Abgelaufen", variant: "outline" },
 };
 
-export const OFFER_STATUS_VARIANT: Record<OfferStatus, StatusVariant> = {
-  draft: "secondary",
-  sent: "warning",
-  accepted: "success",
-  rejected: "destructive",
-  expired: "outline",
-};
+export const { label: OFFER_STATUS_LABEL, variant: OFFER_STATUS_VARIANT } = statusMeta(OFFER_STATUS);

@@ -18,6 +18,7 @@
     Badge,
     Checkbox,
     Select,
+    PageHeader,
     toast,
   } from "$lib/ui";
   import type { BadgeVariant } from "$lib/ui/Badge.svelte";
@@ -157,16 +158,10 @@
   }
 </script>
 
-<header class="mb-6 flex items-end justify-between gap-4">
-  <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Bank-Import</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      Kontoauszug im CAMT.053 (XML) oder MT940 (SWIFT) hochladen, Buchungen
-      bestehenden Rechnungen zuordnen. Keine Online-Banking-Anbindung — reine
-      Datei-Verarbeitung lokal.
-    </p>
-  </div>
-</header>
+<PageHeader
+  title="Bank-Import"
+  subtitle="Kontoauszug im CAMT.053 (XML) oder MT940 (SWIFT) hochladen, Buchungen bestehenden Rechnungen zuordnen. Keine Online-Banking-Anbindung — reine Datei-Verarbeitung lokal."
+/>
 
 <Card class="mb-6">
   <CardHeader>

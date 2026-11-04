@@ -2,6 +2,7 @@
   import { push } from "svelte-spa-router";
   import { ArrowLeft } from "$lib/brand-icons";
   import type { Snippet } from "svelte";
+  import { PageHeader } from "$lib/ui";
 
   interface Props {
     title: string;
@@ -22,18 +23,12 @@
   Einstellungen
 </button>
 
-<header class="mb-6 flex items-end justify-between gap-4">
-  <div>
-    <h1 class="text-3xl font-semibold tracking-tight">{title}</h1>
-    {#if description}
-      <p class="text-sm text-muted-foreground mt-1">{description}</p>
-    {/if}
+{#snippet actionsRow()}
+  <div class="flex items-center gap-2">
+    {@render actions?.()}
   </div>
-  {#if actions}
-    <div class="flex items-center gap-2">
-      {@render actions()}
-    </div>
-  {/if}
-</header>
+{/snippet}
+
+<PageHeader {title} subtitle={description} actions={actions ? actionsRow : undefined} />
 
 {@render children()}

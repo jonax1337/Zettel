@@ -8,6 +8,7 @@
     CardDescription,
     Label,
     Select,
+    PageHeader,
     toast,
   } from "$lib/ui";
   import {
@@ -73,14 +74,10 @@
   }
 </script>
 
-<header class="mb-6">
-  <h1 class="text-3xl font-semibold tracking-tight">UStVA-Vorbereitung</h1>
-  <p class="text-sm text-muted-foreground mt-1">
-    Quartalsweise Aggregation der wichtigsten Kennzahlen für die Umsatzsteuer-Voranmeldung.
-    Werte zum Abtippen in ELSTER — kein direkter Upload. Bemessungsgrundlagen sind wie in
-    ELSTER auf volle Euro abgeschnitten, Steuerbeträge mit Cent.
-  </p>
-</header>
+<PageHeader
+  title="UStVA-Vorbereitung"
+  subtitle="Quartalsweise Aggregation der wichtigsten Kennzahlen für die Umsatzsteuer-Voranmeldung. Werte zum Abtippen in ELSTER — kein direkter Upload. Bemessungsgrundlagen sind wie in ELSTER auf volle Euro abgeschnitten, Steuerbeträge mit Cent."
+/>
 
 <div class="mb-6 rounded-md border border-warning/40 bg-warning/5 p-3 flex items-start gap-3">
   <AlertTriangle class="size-5 text-warning shrink-0 mt-0.5" />
