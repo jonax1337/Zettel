@@ -12,10 +12,11 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
+use tauri::AppHandle;
 
-use crate::paths::DOCUMENTS_SUBDIR;
+use crate::tenants::active_documents_root_for;
 
-const INCOMING_INVOICES_DIR: &str = "Eingangsrechnungen";
+pub(crate) const INCOMING_INVOICES_DIR: &str = "Eingangsrechnungen";
 const VERSIONS_DIR: &str = "Versionen";
 /// Separates the PDF's own name from the mtime in archived file names.
 const VERSION_SEPARATOR: &str = "__";
@@ -34,19 +35,17 @@ pub async fn save_text_file(path: String, content: String) -> Result<String, Str
     Ok(path_string(&target))
 }
 
-/// Copy an incoming PDF into the user's Zettel/Eingangsrechnungen/ folder.
+/// Copy an incoming PDF into the active DB's Eingangsrechnungen/ folder.
 /// Returns the final destination path. On filename collisions, appends `-2`,
 /// `-3`, etc. — never overwrites an existing file. `vendor_slug` is an
 /// optional sub-folder for organization.
 #[tauri::command]
 pub async fn import_expense_pdf(
+    app: AppHandle,
     src_path: String,
     vendor_slug: Option<String>,
 ) -> Result<String, String> {
-    let documents = dirs::document_dir()
-        .or_else(dirs::home_dir)
-        .ok_or_else(|| "Kein Documents-Verzeichnis ermittelbar.".to_string())?;
-    let incoming_root = documents.join(DOCUMENTS_SUBDIR).join(INCOMING_INVOICES_DIR);
+    let incoming_root = active_documents_root_for(&app)?.join(INCOMING_INVOICES_DIR);
     let destination = import_pdf(Path::new(&src_path), &incoming_root, vendor_slug.as_deref())?;
     Ok(path_string(&destination))
 }
@@ -112,7 +111,7 @@ pub async fn list_pdf_versions(path: String) -> Result<Vec<PdfVersion>, String> 
     pdf_versions(Path::new(&path))
 }
 
-fn pdf_versions(src: &Path) -> Result<Vec<PdfVersion>, String> {
+pub(crate) fn pdf_versions(src: &Path) -> Result<Vec<PdfVersion>, String> {
     let dir = parent_dir(src)?;
     let mut versions = Vec::new();
     if src.is_file() {
@@ -195,7 +194,8 @@ fn path_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn sanitize_segment(s: &str) -> String {
+/// `s` made safe as a single path segment.
+pub(crate) fn sanitize_segment(s: &str) -> String {
     s.chars()
         .map(|c| match c {
             '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',

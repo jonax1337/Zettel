@@ -144,6 +144,7 @@ pub fn run() {
             sandbox::is_sandbox,
             sandbox::set_sandbox,
             tenants::get_active_db_url,
+            tenants::get_documents_root,
             tenants::list_tenants,
             tenants::add_tenant,
             tenants::set_active_tenant,

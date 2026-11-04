@@ -4,13 +4,14 @@
 //!
 //! Flow:
 //!   • **Create** — frontend has SQLite emit a consistent snapshot via
-//!     `VACUUM INTO`; this command zips the snapshot together with PDFs from
-//!     `~/Documents/Zettel/Rechnungen/` plus a `manifest.json` and deletes
-//!     the snapshot afterwards.
+//!     `VACUUM INTO`; this command zips the snapshot together with the PDF
+//!     folders of the active documents root (see
+//!     `tenants::active_documents_root`), the PDFs the snapshot references
+//!     elsewhere, and a `manifest.json`, and deletes the snapshot afterwards.
 //!   • **Stage restore** — extract the ZIP into a pending directory and write
-//!     a marker file plus the restore mode and the DB file active right now
-//!     (default, sandbox or custom tenant). The DB is locked while the app
-//!     runs, so a full restore is applied on next startup.
+//!     a marker file plus the restore mode, the DB file and the documents
+//!     root active right now (default, sandbox or custom tenant). The DB is
+//!     locked while the app runs, so a full restore is applied on next startup.
 //!   • **Apply pending** — called once during `run()` BEFORE the SQL plugin
 //!     initializes; if the marker file exists it moves staged files into
 //!     place and removes the pending dir.
@@ -21,7 +22,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::OptionalExtension;
+use rusqlite::{OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use walkdir::WalkDir;
@@ -29,11 +30,11 @@ use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
 use crate::crypto;
+use crate::fs_export::{pdf_versions, INCOMING_INVOICES_DIR};
 use crate::paths::{
-    app_config_dir, app_config_dir_static, app_data_dir, app_data_dir_static,
-    documents_zettel_dir, documents_zettel_dir_static,
+    app_config_dir, app_config_dir_static, app_data_dir, app_data_dir_static, documents_dir,
 };
-use crate::tenants;
+use crate::tenants::{self, active_documents_root_for};
 
 /// Newest DB schema this app can restore. Must stay in sync with
 /// `CURRENT_DB_SCHEMA_VERSION` in `src/lib/utils/schema-version.ts` and the
@@ -43,9 +44,15 @@ pub(crate) const CURRENT_SCHEMA: u32 = 27;
 
 const MANIFEST_NAME: &str = "manifest.json";
 const DB_ENTRY: &str = "zettel.db";
-const PDF_DIR_ENTRY: &str = "Rechnungen";
-const OFFER_PDF_DIR_ENTRY: &str = "Angebote";
-const PDF_SUBDIRS: [&str; 2] = [PDF_DIR_ENTRY, OFFER_PDF_DIR_ENTRY];
+/// Tables whose `pdf_path` points at a PDF, and the folder of the documents
+/// root that holds such PDFs (the same names serve as ZIP folders).
+const PDF_SOURCES: [(&str, &str); 4] = [
+    ("invoices", "Rechnungen"),
+    ("offers", "Angebote"),
+    ("reminders", "Mahnungen"),
+    ("expenses", INCOMING_INVOICES_DIR),
+];
+const BACKUPS_DIR: &str = "Backups";
 const PENDING_DIR: &str = "pending_restore";
 const PENDING_MARKER: &str = "RESTORE_PENDING";
 const RESTORE_MODE_FILE: &str = "restore_mode.json";
@@ -144,6 +151,11 @@ struct StagedRestore {
     /// older app versions.
     #[serde(default)]
     target_db: Option<PathBuf>,
+    /// Where the restored PDFs go: the documents root of that same DB, kept
+    /// for the same reason. Absent in older files and when no documents
+    /// folder could be resolved at staging.
+    #[serde(default)]
+    documents_root: Option<PathBuf>,
 }
 
 impl StagedRestore {
@@ -151,6 +163,12 @@ impl StagedRestore {
         self.target_db
             .clone()
             .unwrap_or_else(|| tenants::active_db_file(data_dir, config_dir))
+    }
+
+    fn resolve_documents_root(&self, data_dir: &Path, documents_dir: Option<&Path>) -> Option<PathBuf> {
+        self.documents_root.clone().or_else(|| {
+            documents_dir.map(|documents| tenants::active_documents_root(data_dir, documents))
+        })
     }
 }
 
@@ -201,16 +219,16 @@ impl Drop for TempFile {
 
 #[tauri::command]
 pub async fn auto_backup_target(app: AppHandle, filename: String) -> Result<String, String> {
-    // Bevorzugt <Documents>/Zettel/Backups/. Wenn Documents nicht erreichbar
-    // ist (OneDrive offline, Known-Folder leer, OS error 2 …), fallback in
-    // den App-Data-Dir — der existiert immer (App läuft ja daraus).
-    let preferred = documents_zettel_dir(&app).map(|d| d.join("Backups"));
+    // Bevorzugt <Dokumente-Root der aktiven DB>/Backups/. Wenn Documents nicht
+    // erreichbar ist (OneDrive offline, Known-Folder leer, OS error 2 …),
+    // fallback in den App-Data-Dir — der existiert immer (App läuft ja daraus).
+    let preferred = active_documents_root_for(&app).map(|d| d.join(BACKUPS_DIR));
     if let Ok(dir) = preferred {
         if fs::create_dir_all(&dir).is_ok() {
             return Ok(path_string(&dir.join(&filename)));
         }
     }
-    let fallback = app_data_dir(&app)?.join("Backups");
+    let fallback = app_data_dir(&app)?.join(BACKUPS_DIR);
     fs::create_dir_all(&fallback).map_err(|e| e.to_string())?;
     Ok(path_string(&fallback.join(filename)))
 }
@@ -246,7 +264,7 @@ pub async fn bundle_backup(
     }
     let target = PathBuf::from(&target_zip);
     let manifest = BackupManifest::new(db_schema_version, invoice_count);
-    let documents_root = documents_zettel_dir(&app)?;
+    let documents_root = active_documents_root_for(&app)?;
 
     write_backup_file(&target, &snapshot, &manifest, &documents_root, password)?;
     let _ = fs::remove_file(&snapshot);
@@ -300,20 +318,89 @@ fn write_backup_zip(
     zip.write_all(manifest_json.as_bytes()).map_err(|e| e.to_string())?;
 
     add_file(&mut zip, DB_ENTRY, snapshot, options)?;
-
-    for sub in PDF_SUBDIRS {
-        let pdf_root = documents_root.join(sub);
-        if !pdf_root.is_dir() {
-            continue;
-        }
-        for (path, relative) in files_below(&pdf_root)? {
-            let entry_name = format!("{sub}/{}", relative.to_string_lossy().replace('\\', "/"));
-            add_file(&mut zip, &entry_name, &path, options)?;
-        }
+    for (entry_name, path) in backup_pdf_entries(snapshot, documents_root)? {
+        add_file(&mut zip, &entry_name, &path, options)?;
     }
 
     zip.finish().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn pdf_dirs() -> impl Iterator<Item = &'static str> {
+    PDF_SOURCES.into_iter().map(|(_, dir)| dir)
+}
+
+/// Every PDF the backup carries, as (ZIP entry, file): the PDF folders of
+/// `documents_root`, then the PDFs (with their archived versions) that the
+/// snapshot references elsewhere, e.g. written before the documents root
+/// moved. Those keep their layout below their PDF folder, so a restore puts
+/// them into the documents root. On a name clash the documents root wins.
+fn backup_pdf_entries(
+    snapshot: &Path,
+    documents_root: &Path,
+) -> Result<Vec<(String, PathBuf)>, String> {
+    let mut entries = Vec::new();
+    let mut entry_names = HashSet::new();
+    let mut push = |entry_name: String, path: PathBuf| {
+        if entry_names.insert(entry_name.clone()) {
+            entries.push((entry_name, path));
+        }
+    };
+
+    for dir in pdf_dirs() {
+        let pdf_root = documents_root.join(dir);
+        if !pdf_root.is_dir() {
+            continue;
+        }
+        for (path, relative) in files_below(&pdf_root)? {
+            push(zip_entry_name(dir, &relative), path);
+        }
+    }
+    for (pdf, dir) in referenced_pdfs(snapshot)? {
+        let base = pdf_folder_of(&pdf, dir).or_else(|| pdf.parent()).unwrap_or(&pdf).to_path_buf();
+        for version in pdf_versions(&pdf)? {
+            let path = PathBuf::from(version.path);
+            if let Ok(relative) = path.strip_prefix(&base) {
+                push(zip_entry_name(dir, relative), path.clone());
+            }
+        }
+    }
+    Ok(entries)
+}
+
+fn zip_entry_name(dir: &str, relative: &Path) -> String {
+    format!("{dir}/{}", relative.to_string_lossy().replace('\\', "/"))
+}
+
+/// The nearest folder above `pdf` named `dir`.
+fn pdf_folder_of<'a>(pdf: &'a Path, dir: &str) -> Option<&'a Path> {
+    pdf.ancestors()
+        .skip(1)
+        .find(|ancestor| ancestor.file_name().is_some_and(|name| name == dir))
+}
+
+/// Every `pdf_path` stored in the snapshot, with the PDF folder it belongs to.
+fn referenced_pdfs(snapshot: &Path) -> Result<Vec<(PathBuf, &'static str)>, String> {
+    let conn = rusqlite::Connection::open_with_flags(snapshot, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("{}: {e}", snapshot.display()))?;
+    let mut pdfs = Vec::new();
+    for (table, dir) in PDF_SOURCES {
+        if !table_columns(&conn, "main", table)?.iter().any(|c| c == "pdf_path") {
+            continue;
+        }
+        let paths = conn
+            .prepare(&format!(
+                "SELECT pdf_path FROM {table} WHERE pdf_path IS NOT NULL AND pdf_path <> ''"
+            ))
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(|e| format!("{table}.pdf_path: {e}"))?;
+        pdfs.extend(paths.into_iter().map(|path| (PathBuf::from(path), dir)));
+    }
+    Ok(pdfs)
 }
 
 fn add_file(
@@ -353,13 +440,13 @@ fn files_below(root: &Path) -> Result<Vec<(PathBuf, PathBuf)>, String> {
     Ok(files)
 }
 
-/// Copies the invoice and offer PDF folders from `from_root` into `to_root`,
-/// overwriting files that already exist. A file that cannot be copied (e.g.
-/// locked by a PDF viewer) does not stop the others: the staged copies are
-/// deleted afterwards, so every skipped file would be lost.
+/// Copies the PDF folders from `from_root` into `to_root`, overwriting files
+/// that already exist. A file that cannot be copied (e.g. locked by a PDF
+/// viewer) does not stop the others: the staged copies are deleted
+/// afterwards, so every skipped file would be lost.
 fn copy_pdf_dirs(from_root: &Path, to_root: &Path) -> Result<(), String> {
     let mut failures = Vec::new();
-    for sub in PDF_SUBDIRS {
+    for sub in pdf_dirs() {
         let source_root = from_root.join(sub);
         if !source_root.is_dir() {
             continue;
@@ -401,6 +488,9 @@ pub async fn stage_restore(
     let staged = StagedRestore {
         mode: RestoreMode::from_sections(sections),
         target_db: Some(tenants::active_db_file(&data_dir, &app_config_dir(&app)?)),
+        documents_root: active_documents_root_for(&app)
+            .inspect_err(|e| eprintln!("[backup] documents dir unavailable at staging: {e}"))
+            .ok(),
     };
 
     let decrypted = if is_encrypted_file(&source)? {
@@ -506,7 +596,8 @@ fn extract_backup(zip_path: &Path, pending_root: &Path) -> Result<(), String> {
 }
 
 fn read_staged_restore(data_dir: &Path) -> StagedRestore {
-    let assume_full = StagedRestore { mode: RestoreMode::Full, target_db: None };
+    let assume_full =
+        StagedRestore { mode: RestoreMode::Full, target_db: None, documents_root: None };
     let Ok(json) = fs::read_to_string(data_dir.join(RESTORE_MODE_FILE)) else {
         return assume_full;
     };
@@ -539,9 +630,11 @@ pub fn apply_pending_restore_blocking() {
         eprintln!("[backup] could not resolve app data/config dir");
         return;
     };
-    apply_pending_full_restore(&data_dir, &config_dir, documents_zettel_dir_static().as_deref());
+    apply_pending_full_restore(&data_dir, &config_dir, documents_dir().as_deref());
 }
 
+/// `documents_dir` is the user's documents folder, only consulted when the
+/// staged restore did not record a documents root.
 fn apply_pending_full_restore(data_dir: &Path, config_dir: &Path, documents_dir: Option<&Path>) {
     if !data_dir.join(PENDING_MARKER).exists() {
         return;
@@ -564,10 +657,13 @@ fn apply_pending_full_restore(data_dir: &Path, config_dir: &Path, documents_dir:
             eprintln!("[backup] could not place restored DB at {}: {e}", target.display());
         }
     }
-    if let Some(documents_dir) = documents_dir {
-        if let Err(e) = copy_pdf_dirs(&pending_root, documents_dir) {
-            eprintln!("[backup] could not restore PDFs: {e}");
+    match staged.resolve_documents_root(data_dir, documents_dir) {
+        Some(documents_root) => {
+            if let Err(e) = copy_pdf_dirs(&pending_root, &documents_root) {
+                eprintln!("[backup] could not restore PDFs: {e}");
+            }
         }
+        None => eprintln!("[backup] documents dir unavailable, PDFs not restored"),
     }
     clear_pending(data_dir);
 }
@@ -641,10 +737,7 @@ fn remove_if_present(path: &Path) -> io::Result<()> {
 pub async fn apply_pending_partial_restore(app: AppHandle) -> Result<(), String> {
     let data_dir = app_data_dir(&app)?;
     let config_dir = app_config_dir(&app)?;
-    let documents_dir = documents_zettel_dir(&app)
-        .inspect_err(|e| eprintln!("[backup] documents dir unavailable, PDFs not restored: {e}"))
-        .ok();
-    apply_partial_restore(&data_dir, &config_dir, documents_dir.as_deref())
+    apply_partial_restore(&data_dir, &config_dir, documents_dir().as_deref())
 }
 
 /// Clears the staged files after every attempt, failed ones included: the
@@ -665,7 +758,9 @@ fn apply_partial_restore(
     };
 
     let target = staged.resolve_target(data_dir, config_dir);
-    let restored = restore_staged_sections(&pending_root, &target, sections, documents_dir);
+    let documents_root = staged.resolve_documents_root(data_dir, documents_dir);
+    let restored =
+        restore_staged_sections(&pending_root, &target, sections, documents_root.as_deref());
     clear_pending(data_dir);
     restored
 }
@@ -674,7 +769,7 @@ fn restore_staged_sections(
     pending_root: &Path,
     live_db: &Path,
     sections: PartialRestoreSections,
-    documents_dir: Option<&Path>,
+    documents_root: Option<&Path>,
 ) -> Result<(), String> {
     let staged_db = pending_root.join(DB_ENTRY);
     if !staged_db.is_file() {
@@ -682,10 +777,16 @@ fn restore_staged_sections(
     }
     restore_sections(live_db, &staged_db, sections)?;
 
-    if let (true, Some(documents_dir)) = (sections.invoices, documents_dir) {
-        if let Err(e) = copy_pdf_dirs(pending_root, documents_dir) {
-            eprintln!("[backup] could not restore PDFs: {e}");
+    if !sections.invoices {
+        return Ok(());
+    }
+    match documents_root {
+        Some(documents_root) => {
+            if let Err(e) = copy_pdf_dirs(pending_root, documents_root) {
+                eprintln!("[backup] could not restore PDFs: {e}");
+            }
         }
+        None => eprintln!("[backup] documents dir unavailable, PDFs not restored"),
     }
     Ok(())
 }
@@ -944,7 +1045,8 @@ mod tests {
         fn stage(&self, mode: RestoreMode, target_db: Option<PathBuf>) -> PathBuf {
             let pending = self.data.join(PENDING_DIR);
             fs::create_dir_all(&pending).unwrap();
-            write_staged_restore(&self.data, &StagedRestore { mode, target_db }).unwrap();
+            let staged = StagedRestore { mode, target_db, documents_root: None };
+            write_staged_restore(&self.data, &staged).unwrap();
             pending
         }
     }
@@ -1234,7 +1336,7 @@ mod tests {
         fs::create_dir_all(documents.join("Rechnungen/2026")).unwrap();
         fs::write(documents.join("Rechnungen/2026/RE-1.pdf"), b"pdf-bytes").unwrap();
         let snapshot = dir.path().join("snapshot.db");
-        fs::write(&snapshot, b"db-bytes").unwrap();
+        create_snapshot(&snapshot, &[]);
         let zip_path = dir.path().join("backup.zip");
 
         let manifest = BackupManifest::new(CURRENT_SCHEMA, Some(1));
@@ -1242,8 +1344,137 @@ mod tests {
         let pending = dir.path().join("pending");
         extract_backup(&zip_path, &pending).unwrap();
 
-        assert_eq!(fs::read(pending.join(DB_ENTRY)).unwrap(), b"db-bytes");
+        assert_eq!(fs::read(pending.join(DB_ENTRY)).unwrap(), fs::read(&snapshot).unwrap());
         assert_eq!(fs::read(pending.join("Rechnungen/2026/RE-1.pdf")).unwrap(), b"pdf-bytes");
+    }
+
+    /// Snapshot DB whose tables reference the given PDFs as (table, pdf_path).
+    fn create_snapshot(path: &Path, pdf_paths: &[(&str, &Path)]) {
+        let conn = open_current_db(path);
+        for (table, _) in PDF_SOURCES {
+            conn.execute_batch(&format!("CREATE TABLE {table} (id INTEGER PRIMARY KEY, pdf_path TEXT);"))
+                .unwrap();
+        }
+        for (table, pdf) in pdf_paths {
+            conn.execute(
+                &format!("INSERT INTO {table} (pdf_path) VALUES (?1)"),
+                [pdf.to_string_lossy()],
+            )
+            .unwrap();
+        }
+    }
+
+    fn write_file(path: &Path, content: &[u8]) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, content).unwrap();
+    }
+
+    fn zip_entries(zip_path: &Path) -> Vec<String> {
+        let mut archive = ZipArchive::new(File::open(zip_path).unwrap()).unwrap();
+        (0..archive.len())
+            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn backup_and_restore_cover_reminder_and_incoming_invoice_pdfs() {
+        let dir = TempDir::new("all-pdf-folders");
+        let documents = dir.path().join("documents");
+        for (folder, file) in [
+            ("Rechnungen", "RE-1.pdf"),
+            ("Angebote", "AN-1.pdf"),
+            ("Mahnungen", "MA-1.pdf"),
+            ("Eingangsrechnungen", "Acme/ER-1.pdf"),
+        ] {
+            write_file(&documents.join(folder).join(file), folder.as_bytes());
+        }
+        let snapshot = dir.path().join("snapshot.db");
+        create_snapshot(&snapshot, &[]);
+        let zip_path = dir.path().join("backup.zip");
+        let manifest = BackupManifest::new(CURRENT_SCHEMA, None);
+
+        write_backup_zip(&zip_path, &snapshot, &manifest, &documents).unwrap();
+        let pending = dir.path().join("pending");
+        extract_backup(&zip_path, &pending).unwrap();
+        let restored = dir.path().join("restored");
+        copy_pdf_dirs(&pending, &restored).unwrap();
+
+        assert_eq!(fs::read(restored.join("Mahnungen/MA-1.pdf")).unwrap(), b"Mahnungen");
+        assert_eq!(
+            fs::read(restored.join("Eingangsrechnungen/Acme/ER-1.pdf")).unwrap(),
+            b"Eingangsrechnungen"
+        );
+    }
+
+    #[test]
+    fn backup_includes_referenced_pdfs_outside_the_documents_root_with_their_versions() {
+        let dir = TempDir::new("legacy-pdfs");
+        let legacy_invoice = dir.path().join("home/Documents/Zettel/Rechnungen/RE-1.pdf");
+        write_file(&legacy_invoice, b"legacy");
+        write_file(
+            &dir.path().join("home/Documents/Zettel/Rechnungen/Versionen/RE-1__100.pdf"),
+            b"legacy-v1",
+        );
+        let loose_expense = dir.path().join("downloads/beleg.pdf");
+        write_file(&loose_expense, b"expense");
+        let snapshot = dir.path().join("snapshot.db");
+        create_snapshot(&snapshot, &[("invoices", &legacy_invoice), ("expenses", &loose_expense)]);
+        let documents_root = dir.path().join("onedrive/Dokumente/Zettel");
+        let zip_path = dir.path().join("backup.zip");
+        let manifest = BackupManifest::new(CURRENT_SCHEMA, None);
+
+        write_backup_zip(&zip_path, &snapshot, &manifest, &documents_root).unwrap();
+        let pending = dir.path().join("pending");
+        extract_backup(&zip_path, &pending).unwrap();
+
+        assert_eq!(fs::read(pending.join("Rechnungen/RE-1.pdf")).unwrap(), b"legacy");
+        assert_eq!(
+            fs::read(pending.join("Rechnungen/Versionen/RE-1__100.pdf")).unwrap(),
+            b"legacy-v1"
+        );
+        assert_eq!(fs::read(pending.join("Eingangsrechnungen/beleg.pdf")).unwrap(), b"expense");
+    }
+
+    #[test]
+    fn a_referenced_pdf_inside_the_documents_root_is_stored_once() {
+        let dir = TempDir::new("pdf-dedup");
+        let documents_root = dir.path().join("Zettel");
+        let invoice = documents_root.join("Rechnungen/RE-1.pdf");
+        write_file(&invoice, b"current");
+        let legacy = dir.path().join("old/Zettel/Rechnungen/RE-1.pdf");
+        write_file(&legacy, b"stale");
+        let snapshot = dir.path().join("snapshot.db");
+        create_snapshot(&snapshot, &[("invoices", &invoice), ("offers", &legacy)]);
+        let zip_path = dir.path().join("backup.zip");
+        let manifest = BackupManifest::new(CURRENT_SCHEMA, None);
+
+        write_backup_zip(&zip_path, &snapshot, &manifest, &documents_root).unwrap();
+
+        let entries = zip_entries(&zip_path);
+        assert_eq!(entries.iter().filter(|e| *e == "Rechnungen/RE-1.pdf").count(), 1);
+        let pending = dir.path().join("pending");
+        extract_backup(&zip_path, &pending).unwrap();
+        assert_eq!(fs::read(pending.join("Rechnungen/RE-1.pdf")).unwrap(), b"current");
+    }
+
+    #[test]
+    fn full_restore_puts_pdfs_into_the_documents_root_recorded_at_staging() {
+        let dirs = AppDirs::new("full-restore-docs-root");
+        let sandbox_root = dirs.documents.join("Zettel-Sandbox");
+        let pending = dirs.data.join(PENDING_DIR);
+        fs::create_dir_all(pending.join("Rechnungen")).unwrap();
+        fs::write(pending.join("Rechnungen/RE-1.pdf"), b"sandbox").unwrap();
+        let staged = StagedRestore {
+            mode: RestoreMode::Full,
+            target_db: Some(dirs.config.join("zettel-sandbox.db")),
+            documents_root: Some(sandbox_root.clone()),
+        };
+        write_staged_restore(&dirs.data, &staged).unwrap();
+
+        apply_pending_full_restore(&dirs.data, &dirs.config, Some(&dirs.documents));
+
+        assert_eq!(fs::read(sandbox_root.join("Rechnungen/RE-1.pdf")).unwrap(), b"sandbox");
+        assert!(!dirs.documents.join("Zettel/Rechnungen/RE-1.pdf").exists());
     }
 
     #[test]
@@ -1338,7 +1569,7 @@ mod tests {
 
         assert_eq!(fs::read(&live).unwrap(), b"restored");
         assert_eq!(fs::read(dirs.config.join("zettel.db.bak")).unwrap(), b"old");
-        assert_eq!(fs::read(dirs.documents.join("Angebote/AN-1.pdf")).unwrap(), b"offer");
+        assert_eq!(fs::read(dirs.documents.join("Zettel/Angebote/AN-1.pdf")).unwrap(), b"offer");
         assert!(!pending.exists());
         assert!(!dirs.data.join(PENDING_MARKER).exists());
         assert!(!dirs.data.join(RESTORE_MODE_FILE).exists());
@@ -1400,7 +1631,11 @@ mod tests {
 
         let staged = read_staged_restore(&dirs.data);
 
-        let expected = StagedRestore { mode: partial(sections(true, false, false)), target_db: None };
+        let expected = StagedRestore {
+            mode: partial(sections(true, false, false)),
+            target_db: None,
+            documents_root: None,
+        };
         assert_eq!(staged, expected);
     }
 
@@ -1506,7 +1741,7 @@ mod tests {
         let target = dir.path().join("auto-mon.zip");
         fs::write(&target, b"last week").unwrap();
         let snapshot = dir.path().join("snapshot.db");
-        fs::write(&snapshot, b"db-bytes").unwrap();
+        create_snapshot(&snapshot, &[]);
         let manifest = BackupManifest::new(CURRENT_SCHEMA, None);
 
         write_backup_file(&target, &snapshot, &manifest, dir.path(), None).unwrap();

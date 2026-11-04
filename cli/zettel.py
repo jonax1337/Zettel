@@ -70,23 +70,36 @@ def app_data_dir() -> Path:
     return base / APP_IDENTIFIER
 
 
+def is_sandbox_active() -> bool:
+    return (app_data_dir() / "sandbox.flag").exists()
+
+
+def active_custom_tenant() -> dict | None:
+    """Aktiver Tenant mit DB-Pfad, None für den eingebauten Standard."""
+    cfg_path = app_data_dir() / "tenants.json"
+    if not cfg_path.exists():
+        return None
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    active = cfg.get("active")
+    if not active or active == "default":
+        return None
+    for t in cfg.get("tenants", []):
+        if t.get("id") == active and str(t.get("path", "")).strip():
+            return t
+    return None
+
+
 def resolve_db_path() -> Path:
     """Aktive DB: Sandbox > aktiver Tenant > Standard. Wie resolve_active_url()."""
-    d = app_data_dir()
-    if (d / "sandbox.flag").exists():
-        return d / "zettel-sandbox.db"
-    cfg_path = d / "tenants.json"
-    if cfg_path.exists():
-        try:
-            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-            active = cfg.get("active")
-            if active and active != "default":
-                for t in cfg.get("tenants", []):
-                    if t.get("id") == active and str(t.get("path", "")).strip():
-                        return Path(t["path"])
-        except (json.JSONDecodeError, OSError):
-            pass
-    return d / "zettel.db"
+    if is_sandbox_active():
+        return app_data_dir() / "zettel-sandbox.db"
+    tenant = active_custom_tenant()
+    if tenant:
+        return Path(tenant["path"])
+    return app_data_dir() / "zettel.db"
 
 
 @contextmanager
@@ -499,13 +512,70 @@ def archive_pdf_version(path: Path) -> str | None:
     return str(dest)
 
 
+def _windows_documents_dir() -> Path | None:
+    """Known Folder FOLDERID_Documents — folgt einer OneDrive-Umleitung."""
+    import ctypes
+    from ctypes import wintypes
+
+    class GUID(ctypes.Structure):
+        _fields_ = [
+            ("Data1", wintypes.DWORD),
+            ("Data2", wintypes.WORD),
+            ("Data3", wintypes.WORD),
+            ("Data4", ctypes.c_ubyte * 8),
+        ]
+
+    folder_id = GUID(
+        0xFDD39AD0, 0x238F, 0x46AF, (ctypes.c_ubyte * 8)(0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7)
+    )
+    path_ptr = ctypes.c_wchar_p()
+    if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(folder_id), 0, None, ctypes.byref(path_ptr)) != 0:
+        return None
+    try:
+        return Path(path_ptr.value)
+    finally:
+        ctypes.windll.ole32.CoTaskMemFree(path_ptr)
+
+
+def _xdg_documents_dir() -> Path | None:
+    """XDG_DOCUMENTS_DIR aus user-dirs.dirs, wie das dirs-Crate."""
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    try:
+        lines = (config_home / "user-dirs.dirs").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        key, _, value = line.partition("=")
+        if key.strip() == "XDG_DOCUMENTS_DIR":
+            return Path(value.strip().strip('"').replace("$HOME", str(Path.home())))
+    return None
+
+
+def documents_dir() -> Path:
+    """Spiegel von paths.rs documents_dir()."""
+    if sys.platform == "win32":
+        found = _windows_documents_dir()
+    elif sys.platform == "darwin":
+        found = None
+    else:
+        found = _xdg_documents_dir()
+    return found or Path.home() / "Documents"
+
+
+def documents_root() -> Path:
+    """Spiegel von tenants.rs active_documents_root(): Sandbox und eigene
+    Tenants bekommen eigene Ordner — Nummernkreise sind pro DB unabhängig,
+    ein gemeinsamer Ordner würde fremde PDFs überschreiben."""
+    if is_sandbox_active():
+        return documents_dir() / "Zettel-Sandbox"
+    tenant = active_custom_tenant()
+    if tenant:
+        return documents_dir() / "Zettel" / "Mandanten" / safe_filename(tenant["id"])
+    return documents_dir() / "Zettel"
+
+
 def pdf_output_dir() -> Path:
-    """PDF-Zielordner. In der Sandbox wird bewusst getrennt:
-    ~/Documents/Zettel-Sandbox/Rechnungen — Sandbox-PDFs dürfen produktive
-    PDFs nie überschreiben (Nummernkreise sind pro DB unabhängig!)."""
-    if resolve_db_path().name == "zettel-sandbox.db":
-        return Path.home() / "Documents" / "Zettel-Sandbox" / "Rechnungen"
-    return Path.home() / "Documents" / "Zettel" / "Rechnungen"
+    return documents_root() / "Rechnungen"
 
 
 def generate_pdf_for(con, invoice_id: int) -> tuple[str, str]:
