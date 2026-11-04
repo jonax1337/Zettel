@@ -134,17 +134,18 @@ describe("credit note settlement", () => {
 });
 
 describe("credit note settlement in SQL", () => {
-  type CreditNoteSeed = { status: InvoiceStatus; total: number };
+  type CreditNoteSeed = { status: InvoiceStatus; total: number; currency?: string };
 
   /** Invoice 1 (total 119,00 €, `paidCent` paid) with the given credit notes; invoice 2 is untouched. */
   function seed(creditNotes: CreditNoteSeed[], paidCent = 0): SqliteDatabase {
     const db = new DatabaseSync(":memory:") as SqliteDatabase;
     db.exec(`CREATE TABLE invoices (id INTEGER PRIMARY KEY, status TEXT, total INTEGER,
-      amount_paid_cent INTEGER, is_credit_note INTEGER, corrects_invoice_id INTEGER)`);
+      amount_paid_cent INTEGER, is_credit_note INTEGER, corrects_invoice_id INTEGER,
+      currency TEXT NOT NULL DEFAULT 'EUR')`);
     db.prepare("INSERT INTO invoices (id, status, total, amount_paid_cent, is_credit_note) VALUES (1, 'sent', 11900, ?, 0)").run(paidCent);
     db.exec("INSERT INTO invoices (id, status, total, amount_paid_cent, is_credit_note) VALUES (2, 'sent', 11900, 0, 0)");
-    const insert = db.prepare("INSERT INTO invoices (status, total, is_credit_note, corrects_invoice_id) VALUES (?, ?, 1, 1)");
-    for (const note of creditNotes) insert.run(note.status, note.total);
+    const insert = db.prepare("INSERT INTO invoices (status, total, is_credit_note, corrects_invoice_id, currency) VALUES (?, ?, 1, 1, ?)");
+    for (const note of creditNotes) insert.run(note.status, note.total, note.currency ?? "EUR");
     return db;
   }
 
@@ -170,6 +171,13 @@ describe("credit note settlement in SQL", () => {
 
   it.each(["draft", "cancelled"] as const)("keeps an invoice with a %s credit note open and credits nothing", (status) => {
     const db = seed([{ status, total: -11_900 }]);
+
+    expect(settledIds(db)).toEqual([]);
+    expect(creditedCent(db)).toBe(0);
+  });
+
+  it("ignores a credit note in another currency than the invoice", () => {
+    const db = seed([{ status: "sent", total: -11_900, currency: "USD" }]);
 
     expect(settledIds(db)).toEqual([]);
     expect(creditedCent(db)).toBe(0);

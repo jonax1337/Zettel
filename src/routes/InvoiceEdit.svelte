@@ -335,7 +335,7 @@
             bind:startIso={servicePeriodStartIso}
             bind:endIso={servicePeriodEndIso}
           />
-          <CurrencyFields bind:currency bind:exchangeRate totalCent={totals.total} />
+          <CurrencyFields bind:currency bind:exchangeRate totalCent={totals.total} disabled={isCreditNote} />
           <!-- A Storno keeps the reverse-charge type of the invoice it corrects. -->
           {#if !isCreditNote}
             <ReverseChargeField

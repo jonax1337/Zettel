@@ -108,7 +108,7 @@ CREATE TABLE invoices (
     issue_date INTEGER, delivery_date INTEGER, due_date INTEGER, status TEXT,
     subtotal INTEGER, vat_amount INTEGER, total INTEGER, is_kleinunternehmer INTEGER,
     is_reverse_charge INTEGER, reverse_charge_type TEXT, supply_kind TEXT, notes TEXT, payment_terms TEXT,
-    is_credit_note INTEGER, corrects_invoice_id INTEGER, currency TEXT, exchange_rate TEXT,
+    is_credit_note INTEGER, corrects_invoice_id INTEGER, currency TEXT NOT NULL DEFAULT 'EUR', exchange_rate TEXT,
     eur_total_cent INTEGER, notes_internal TEXT, follow_up_date INTEGER,
     service_period_start INTEGER, service_period_end INTEGER, skonto_percent REAL,
     skonto_days INTEGER, pdf_language TEXT, pdf_path TEXT,
@@ -405,11 +405,14 @@ class TestStats:
 
     @staticmethod
     def add(con, **values):
-        row = {"status": "sent", "issue_date": TestStats.ISSUED, "total": 0, "amount_paid_cent": 0, **values}
+        row = {
+            "status": "sent", "issue_date": TestStats.ISSUED, "total": 0, "amount_paid_cent": 0,
+            "eur_total_cent": None, "currency": "EUR", **values,
+        }
         con.execute(
-            "INSERT INTO invoices (status, issue_date, total, amount_paid_cent, eur_total_cent) "
-            "VALUES (:status, :issue_date, :total, :amount_paid_cent, :eur_total_cent)",
-            {"eur_total_cent": None, **row},
+            "INSERT INTO invoices (status, issue_date, total, amount_paid_cent, eur_total_cent, currency) "
+            "VALUES (:status, :issue_date, :total, :amount_paid_cent, :eur_total_cent, :currency)",
+            row,
         )
 
     def test_open_balance_subtracts_payments(self, cli, con):
@@ -437,8 +440,8 @@ class TestStats:
 
         assert open_total == 9_200 - 2_300
 
-    def credit(self, con, invoice_id, total, status="sent"):
-        self.add(con, status=status, total=total)
+    def credit(self, con, invoice_id, total, status="sent", **values):
+        self.add(con, status=status, total=total, **values)
         con.execute(
             "UPDATE invoices SET is_credit_note = 1, corrects_invoice_id = ? WHERE id = last_insert_rowid()",
             (invoice_id,),
@@ -446,6 +449,15 @@ class TestStats:
 
     def last_id(self, con):
         return con.execute("SELECT MAX(id) FROM invoices").fetchone()[0]
+
+    def test_credit_note_in_another_currency_is_ignored(self, cli, con):
+        self.add(con, total=10_000)
+        invoice_id = self.last_id(con)
+        self.credit(con, invoice_id, -10_000, currency="USD")
+
+        _, open_count, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert (open_count, open_total) == (1, 10_000)
 
     def test_full_credit_note_removes_invoice_and_credit_note_from_open_receivables(self, cli, con):
         self.add(con, total=10_000)

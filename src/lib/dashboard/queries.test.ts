@@ -65,7 +65,7 @@ beforeEach(() => {
   sqlite.current.exec(`CREATE TABLE invoices (
     id INTEGER PRIMARY KEY, status TEXT, issue_date INTEGER, due_date INTEGER,
     total INTEGER, subtotal INTEGER, eur_total_cent INTEGER, amount_paid_cent INTEGER,
-    is_credit_note INTEGER, corrects_invoice_id INTEGER);
+    is_credit_note INTEGER, corrects_invoice_id INTEGER, currency TEXT NOT NULL DEFAULT 'EUR');
   CREATE TABLE expenses (status TEXT, issue_date INTEGER, subtotal INTEGER);
   CREATE TABLE recurring_invoices (id INTEGER PRIMARY KEY, active INTEGER, next_due_date INTEGER, is_reverse_charge INTEGER);
   CREATE TABLE recurring_invoice_items (recurring_id INTEGER, quantity REAL, unit_price INTEGER, vat_rate REAL)`);

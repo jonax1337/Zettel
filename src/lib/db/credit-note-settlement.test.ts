@@ -28,7 +28,8 @@ vi.mock("./client", async (importOriginal) => {
 
 import { matchBookings } from "$lib/bank/match";
 import { addPayment, deletePayment, listPayments } from "./invoice-payments";
-import { issueInvoice, listInvoices, markPaid, reopenDraft } from "./invoices";
+import { createInvoice, getInvoice, issueInvoice, listInvoices, markPaid, reopenDraft, updateInvoice } from "./invoices";
+import type { InvoiceFormInput } from "./invoices";
 import { listOverdueInvoices, remindableAmountCents } from "./reminders";
 
 const MIGRATIONS = import.meta.glob<string>("./migrations/*.sql", { query: "?raw", import: "default", eager: true });
@@ -232,5 +233,63 @@ describe("the status of an invoice after payments and an issued credit note", ()
     await deletePayment(first.id);
 
     expect(fullState(invoiceId)).toEqual({ status: "paid", amount_paid_cent: 5_000, paid_at: PAID_AT + 1 });
+  });
+});
+
+describe("a credit note in another currency than its invoice", () => {
+  it("is ignored: nothing is credited and the invoice stays payable", async () => {
+    const invoiceId = invoiceWithCreditNote(-TOTAL);
+    sqlite.current!.prepare("UPDATE invoices SET currency = 'USD' WHERE is_credit_note = 1").run();
+
+    expect(await listed(invoiceId)).toMatchObject({ creditedCent: 0, settledByCreditNote: false });
+    await markPaid(invoiceId, PAID_AT);
+    expect(invoiceState(invoiceId)).toEqual({ status: "paid", amount_paid_cent: TOTAL });
+  });
+});
+
+describe("the currency of a credit note", () => {
+  const FOREIGN_RATE = "1.0832";
+
+  function creditNoteForm(correctsInvoiceId: number, terms: Pick<InvoiceFormInput, "currency" | "exchangeRate">): InvoiceFormInput {
+    return {
+      customerId: 1,
+      issueDate: PAID_AT,
+      deliveryDate: null,
+      dueDate: PAID_AT,
+      notes: null,
+      paymentTerms: null,
+      reverseChargeType: "none",
+      supplyKind: "services",
+      isCreditNote: true,
+      correctsInvoiceId,
+      items: [{ description: "Beratung", quantity: 1, unit: "h", unitPrice: 5_000, vatRate: 19 }],
+      ...terms,
+    };
+  }
+
+  async function storedTerms(invoiceId: number) {
+    const { invoice } = (await getInvoice(invoiceId))!;
+    return { currency: invoice.currency, exchangeRate: invoice.exchangeRate };
+  }
+
+  it("follows the original on creation, whatever the caller passes", async () => {
+    const eurInvoiceId = seedInvoice("RE-2026-0100", TOTAL);
+    const usdInvoiceId = seedInvoice("RE-2026-0101", TOTAL);
+    sqlite.current!.prepare("UPDATE invoices SET currency = 'USD', exchange_rate = ? WHERE id = ?").run(FOREIGN_RATE, usdInvoiceId);
+
+    const eurCreditNote = await createInvoice(creditNoteForm(eurInvoiceId, { currency: "USD", exchangeRate: "2" }));
+    const usdCreditNote = await createInvoice(creditNoteForm(usdInvoiceId, { currency: "EUR", exchangeRate: null }));
+
+    expect(await storedTerms(eurCreditNote)).toEqual({ currency: "EUR", exchangeRate: null });
+    expect(await storedTerms(usdCreditNote)).toEqual({ currency: "USD", exchangeRate: FOREIGN_RATE });
+  });
+
+  it("cannot be changed by editing the draft", async () => {
+    const invoiceId = seedInvoice("RE-2026-0102", TOTAL);
+    const creditNoteId = await createInvoice(creditNoteForm(invoiceId, {}));
+
+    await updateInvoice(creditNoteId, creditNoteForm(invoiceId, { currency: "GBP", exchangeRate: "0.85" }));
+
+    expect(await storedTerms(creditNoteId)).toEqual({ currency: "EUR", exchangeRate: null });
   });
 });

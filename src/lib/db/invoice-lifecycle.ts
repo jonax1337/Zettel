@@ -88,11 +88,15 @@ export function canRemovePayment(
 export const SETTLED_BY_CREDIT_NOTE_ERROR =
   "Die Rechnung ist durch eine Stornorechnung ausgeglichen. Zahlungen können nicht mehr erfasst werden.";
 
-/** SQL mirror of `creditedCent` for the invoice aliased `alias`. */
+/**
+ * SQL mirror of `creditedCent` for the invoice aliased `alias`. Only credit notes in the
+ * invoice's own currency count: amounts of different currencies cannot be summed.
+ */
 export function creditedCentSql(alias: string): string {
   return `(SELECT ABS(COALESCE(SUM(credit_note.total), 0)) FROM invoices credit_note
      WHERE credit_note.corrects_invoice_id = ${alias}.id
        AND credit_note.is_credit_note = 1
+       AND credit_note.currency = ${alias}.currency
        AND credit_note.status NOT IN ('draft','cancelled'))`;
 }
 

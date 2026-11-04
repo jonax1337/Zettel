@@ -219,7 +219,16 @@ function eurTotalFor(input: InvoiceFormInput, unsignedTotal: number): number | n
   return computeEurTotalCent(currency, unsignedTotal, input.exchangeRate);
 }
 
-export async function createInvoice(input: InvoiceFormInput): Promise<number> {
+/** A credit note is denominated in its original's currency, whatever the caller passes. */
+async function withCorrectedCurrency(input: InvoiceFormInput): Promise<InvoiceFormInput> {
+  if (!input.isCreditNote || input.correctsInvoiceId == null) return input;
+  const original = await findInvoice(input.correctsInvoiceId);
+  if (!original) throw new Error(`Rechnung ${input.correctsInvoiceId} nicht gefunden.`);
+  return { ...input, currency: original.currency, exchangeRate: original.exchangeRate };
+}
+
+export async function createInvoice(formInput: InvoiceFormInput): Promise<number> {
+  const input = await withCorrectedCurrency(formInput);
   const settings = await loadSettings();
   const snapshot = await buildCustomerSnapshot(input.customerId);
   const isCreditNote = !!input.isCreditNote;
@@ -283,6 +292,8 @@ export async function updateInvoice(
     throw new Error("Nur Entwürfe können bearbeitet werden.");
   }
   const sign = creditNoteSign(current.isCreditNote);
+  const currency = current.isCreditNote ? current.currency : input.currency ?? current.currency;
+  const exchangeRate = current.isCreditNote ? current.exchangeRate : orKeep(input.exchangeRate, current.exchangeRate);
   const totals = computeSignedTotals(input.items, {
     isKleinunternehmer: current.isKleinunternehmer,
     reverseChargeType: input.reverseChargeType,
@@ -319,8 +330,8 @@ export async function updateInvoice(
       input.supplyKind,
       input.notes,
       input.paymentTerms,
-      input.currency ?? current.currency,
-      orKeep(input.exchangeRate, current.exchangeRate),
+      currency,
+      exchangeRate,
       input.eurTotalCent === undefined
         ? current.eurTotalCent
         : signedOrNull(input.eurTotalCent, sign),

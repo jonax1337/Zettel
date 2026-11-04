@@ -910,10 +910,12 @@ def cmd_invoice_issue(args) -> None:
 
 
 # Spiegel von creditedCentSql() in src/lib/db/invoice-lifecycle.ts: nur ausgestellte
-# Stornorechnungen zählen, ein Storno-Entwurf nicht. Storno-Beträge sind negativ.
+# Stornorechnungen in der Währung der Rechnung zählen, ein Storno-Entwurf nicht.
+# Storno-Beträge sind negativ.
 CREDITED_CENT_SQL = """(SELECT ABS(COALESCE(SUM(credit_note.total), 0)) FROM invoices credit_note
    WHERE credit_note.corrects_invoice_id = invoices.id
      AND credit_note.is_credit_note = 1
+     AND credit_note.currency = invoices.currency
      AND credit_note.status NOT IN ('draft','cancelled'))"""
 
 # Spiegel von settledByCreditNoteSql(): ausgeglichen erst, wenn Zahlungen und
