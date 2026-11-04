@@ -12,6 +12,7 @@
     "core:window:allow-unmaximize",
     "core:window:allow-close",
     "core:window:allow-set-focus",
+    "core:window:allow-show",
     "core:window:allow-set-title",
     "core:event:allow-emit",
     "core:event:allow-listen",
