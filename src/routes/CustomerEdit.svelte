@@ -72,16 +72,16 @@
       .finally(() => (loaded = true));
   });
 
-  async function persist() {
+  async function persist(): Promise<number> {
     if (mode === "new") {
-      await createCustomer(form);
+      const createdId = await createCustomer(form);
       toast.success("Kunde angelegt");
-    } else if (id !== null) {
-      await updateCustomer(id, form);
-      toast.success("Änderungen gespeichert");
-    } else {
-      throw new Error("Keine ID");
+      return createdId;
     }
+    if (id === null) throw new Error("Keine ID");
+    await updateCustomer(id, form);
+    toast.success("Änderungen gespeichert");
+    return id;
   }
 
   async function onSubmit(e: SubmitEvent) {
@@ -97,8 +97,9 @@
     saving = true;
     error = null;
     try {
-      await persist();
-      push("/customers");
+      const customerId = await persist();
+      const submitter = e.submitter as HTMLElement | null;
+      push(submitter?.dataset.next === "invoice" ? `/invoices/new?customerId=${customerId}` : "/customers");
     } catch (err) {
       error = String(err);
       toast.error("Speichern fehlgeschlagen", String(err));
@@ -184,6 +185,9 @@
     <div class="flex items-center gap-3 mt-6">
       <Button type="submit" disabled={saving}>
         {saving ? "Speichere…" : mode === "new" ? "Anlegen" : "Speichern"}
+      </Button>
+      <Button type="submit" variant="outline" disabled={saving} data-next="invoice">
+        Speichern &amp; Rechnung erstellen
       </Button>
       <Button type="button" onclick={() => push("/customers")} variant="ghost">Abbrechen</Button>
       {#if error}

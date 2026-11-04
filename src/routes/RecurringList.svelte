@@ -12,7 +12,11 @@
   import { Plus, FileText, Pencil, Trash2, PowerOff, Power } from "$lib/brand-icons";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
-  import { RECURRING_INTERVAL_LABEL, generateInvoiceAndOpen } from "./parts/entity/recurring";
+  import {
+    RECURRING_INTERVAL_LABEL,
+    generateInvoiceAndOpen,
+    generatingRecurringIds,
+  } from "./parts/entity/recurring";
 
   const templates = createQueryState<RecurringListRow[]>([], listRecurring);
   $effect(() => {
@@ -130,7 +134,11 @@
             <td class="px-3 py-2 text-right whitespace-nowrap">
               <div class="inline-flex items-center gap-1">
                 {#if row.active && isDue(row)}
-                  <Button size="sm" onclick={() => generateInvoiceAndOpen(row.id)}>
+                  <Button
+                    size="sm"
+                    disabled={generatingRecurringIds.has(row.id)}
+                    onclick={() => generateInvoiceAndOpen(row.id)}
+                  >
                     <FileText class="size-3.5" />
                     Jetzt erzeugen
                   </Button>
