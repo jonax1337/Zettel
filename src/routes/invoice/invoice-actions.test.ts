@@ -5,6 +5,7 @@ import {
   canDiscardInvoice,
   canRecordPayments,
   canReopenAsDraft,
+  creditNoteCoverage,
   isOverdue,
   showsPayments,
 } from "./invoice-actions";
@@ -129,5 +130,22 @@ describe("canReopenAsDraft", () => {
     expect(canReopenAsDraft(invoice({ status: "partial" }), 0, false)).toBe(false);
     expect(canReopenAsDraft(invoice({ status: "paid" }), 0, false)).toBe(false);
     expect(canReopenAsDraft(invoice(), 0, true)).toBe(false);
+  });
+});
+
+describe("creditNoteCoverage", () => {
+  const total = { total: 11_900 };
+
+  it("is full when issued credit notes reverse the whole total", () => {
+    expect(creditNoteCoverage(total, 11_900)).toBe("full");
+  });
+
+  it("is partial when they reverse only part of it", () => {
+    expect(creditNoteCoverage(total, 3_000)).toBe("partial");
+    expect(creditNoteCoverage(total, 11_899)).toBe("partial");
+  });
+
+  it("is none while nothing is credited yet, e.g. the credit note is still a draft", () => {
+    expect(creditNoteCoverage(total, 0)).toBe("none");
   });
 });

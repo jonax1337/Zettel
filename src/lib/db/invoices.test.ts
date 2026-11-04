@@ -513,10 +513,12 @@ describe("markPaid", () => {
   const insertedPayments = () =>
     db.execute.mock.calls.filter(([sql]) => String(sql).includes("INSERT INTO invoice_payments"));
 
-  function paidSoFar(invoice: InvoiceRow, paidCent: number) {
-    db.select.mockImplementation(async (sql: string) =>
-      sql.includes("SUM(amount_cent)") ? [{ paid_cent: paidCent }] : [invoice],
-    );
+  function paidSoFar(invoice: InvoiceRow, paidCent: number, creditedCent = 0) {
+    db.select.mockImplementation(async (sql: string) => {
+      if (sql.includes("SUM(amount_cent)")) return [{ paid_cent: paidCent }];
+      if (sql.includes("AS credited_cent")) return [{ credited_cent: creditedCent }];
+      return [invoice];
+    });
   }
   const paidUpdate = () =>
     db.execute.mock.calls.find(([sql]) => String(sql).startsWith("UPDATE invoices SET status = 'paid'"))!;
@@ -557,13 +559,20 @@ describe("markPaid", () => {
   });
 
   it("refuses an invoice an issued credit note offsets, before booking anything", async () => {
-    db.select.mockImplementation(async (sql: string) =>
-      sql.includes("AS settled") ? [{ settled: 1 }] : [invoiceRow({ status: "sent", total: 10_000 })],
-    );
+    paidSoFar(invoiceRow({ status: "sent", total: 10_000 }), 0, 10_000);
 
     await expect(markPaid(7)).rejects.toThrow("Stornorechnung");
 
     expect(db.execute).not.toHaveBeenCalled();
+  });
+
+  it("books exactly what payments and a partial credit note leave open", async () => {
+    paidSoFar(invoiceRow({ status: "partial", total: 11_900, amount_paid_cent: 5_000 }), 5_000, 3_000);
+
+    await markPaid(7, 1_750_000_000);
+
+    expect(insertedPayments()[0][1]).toEqual([7, 1_750_000_000, 3_900]);
+    expect(paidUpdate()[1]).toEqual([1_750_000_000, 8_900, 7]);
   });
 });
 

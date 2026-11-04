@@ -18,8 +18,10 @@ import {
   canCreateCreditNote,
   canDeleteInvoice,
   canReopenInvoice,
+  creditedCentSql,
+  isSettledByCreditNote,
+  openBalanceCent,
   SETTLED_BY_CREDIT_NOTE_ERROR,
-  settledByCreditNoteSql,
 } from "./invoice-lifecycle";
 import { drawNextNumber } from "./numbering";
 import { loadSettings } from "./queries";
@@ -93,8 +95,15 @@ export type InvoiceFilter = {
   search?: string;
 };
 
-/** `settledByCreditNote`: an issued credit note offsets the invoice, so it is no longer due. */
-export type InvoiceListRow = Invoice & { customerName: string; settledByCreditNote: boolean };
+/**
+ * `creditedCent`: what issued credit notes take off the invoice. `settledByCreditNote`:
+ * together with the payments they leave nothing open, so the invoice is no longer due.
+ */
+export type InvoiceListRow = Invoice & {
+  customerName: string;
+  creditedCent: number;
+  settledByCreditNote: boolean;
+};
 
 export function buildInvoiceFilter(filter: InvoiceFilter) {
   const { customerId, ...rest } = filter;
@@ -109,21 +118,33 @@ export async function listInvoices(
 ): Promise<InvoiceListRow[]> {
   const { where, binds } = buildInvoiceFilter(filter);
   const rows = await select<
-    InvoiceRow & { customer_name: string | null; settled_by_credit_note: number }
+    InvoiceRow & { customer_name: string | null; credited_cent: number }
   >(
     `SELECT i.*, c.name AS customer_name,
-            ${settledByCreditNoteSql("i")} AS settled_by_credit_note
+            ${creditedCentSql("i")} AS credited_cent
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
      ${where}
      ORDER BY i.issue_date DESC, i.id DESC`,
     binds,
   );
-  return rows.map((r) => ({
-    ...mapInvoice(r),
-    customerName: r.customer_name ?? MISSING_NAME,
-    settledByCreditNote: r.settled_by_credit_note === 1,
-  }));
+  return rows.map((r) => {
+    const invoice = { ...mapInvoice(r), creditedCent: r.credited_cent };
+    return {
+      ...invoice,
+      customerName: r.customer_name ?? MISSING_NAME,
+      settledByCreditNote: isSettledByCreditNote(invoice),
+    };
+  });
+}
+
+/** Absolute sum of the issued credit notes correcting the invoice, in its currency. */
+export async function loadCreditedCent(invoiceId: number): Promise<number> {
+  const [row] = await select<{ credited_cent: number }>(
+    `SELECT ${creditedCentSql("i")} AS credited_cent FROM invoices i WHERE i.id = ?`,
+    [invoiceId],
+  );
+  return row?.credited_cent ?? 0;
 }
 
 async function findInvoice(id: number): Promise<Invoice | null> {
@@ -506,18 +527,11 @@ async function sumPayments(invoiceId: number): Promise<number> {
   return row?.paid_cent ?? 0;
 }
 
-async function isSettledByCreditNote(invoiceId: number): Promise<boolean> {
-  const [row] = await select<{ settled: number }>(
-    `SELECT ${settledByCreditNoteSql("i")} AS settled FROM invoices i WHERE i.id = ?`,
-    [invoiceId],
-  );
-  return row?.settled === 1;
-}
-
 /**
- * Pays off the remaining balance. The remainder is logged as a payment so the
- * payment list stays consistent with a direct "fully paid" action; an
- * overpayment stays visible in amount_paid_cent.
+ * Pays off the remaining balance, i.e. what payments and issued credit notes
+ * leave open. The remainder is logged as a payment so the payment list stays
+ * consistent with a direct "fully paid" action; an overpayment stays visible in
+ * amount_paid_cent.
  */
 export async function markPaid(id: number, paidAt?: number): Promise<void> {
   const before = await findInvoice(id);
@@ -528,12 +542,17 @@ export async function markPaid(id: number, paidAt?: number): Promise<void> {
   const invoice = await findInvoice(id);
   if (!invoice) return;
   if (invoice.status !== "sent" && invoice.status !== "partial") return;
-  if (await isSettledByCreditNote(id)) throw new Error(SETTLED_BY_CREDIT_NOTE_ERROR);
+
+  const paidBefore = await sumPayments(id);
+  const settlement = {
+    total: invoice.total,
+    amountPaidCent: paidBefore,
+    creditedCent: await loadCreditedCent(id),
+  };
+  if (isSettledByCreditNote(settlement)) throw new Error(SETTLED_BY_CREDIT_NOTE_ERROR);
 
   const paymentTimestamp = paidAt ?? nowUnix();
-  const total = Math.abs(invoice.total);
-  const paidBefore = await sumPayments(id);
-  const remaining = total - paidBefore;
+  const remaining = openBalanceCent(settlement);
   if (remaining > 0) {
     await execute(
       `INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent, source)
@@ -544,7 +563,7 @@ export async function markPaid(id: number, paidAt?: number): Promise<void> {
   await execute(
     `UPDATE invoices SET status = 'paid', paid_at = ?, amount_paid_cent = ?, updated_at = unixepoch()
      WHERE id = ? AND status IN ('sent','partial')`,
-    [paymentTimestamp, Math.max(total, paidBefore), id],
+    [paymentTimestamp, paidBefore + Math.max(remaining, 0), id],
   );
 }
 

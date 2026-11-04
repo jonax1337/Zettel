@@ -1,8 +1,11 @@
 import { execute, insert, select } from "./client";
 import {
+  creditedCentSql,
+  isSettledByCreditNote,
+  openBalanceCent,
   PAYMENT_ROUNDING_TOLERANCE_CENT,
   SETTLED_BY_CREDIT_NOTE_ERROR,
-  settledByCreditNoteSql,
+  type SettlementFacts,
 } from "./invoice-lifecycle";
 import type { InvoicePayment, InvoicePaymentSource, InvoiceStatus } from "./schema";
 import { nowUnix } from "$lib/utils/date";
@@ -44,14 +47,15 @@ export async function listPayments(invoiceId: number): Promise<InvoicePayment[]>
 type PayableStatus = Extract<InvoiceStatus, "sent" | "partial" | "paid">;
 
 /**
- * Status of a sent invoice given what has been paid so far:
+ * Status of a sent invoice given what has been paid so far, against what is
+ * due (the total less issued credit notes):
  *   nothing paid        -> sent
- *   paid < total        -> partial (remainder outstanding)
- *   paid >= total       -> paid
+ *   paid < due          -> partial (remainder outstanding)
+ *   paid >= due         -> paid
  */
-export function statusForPaidAmount(paidCent: number, totalCent: number): PayableStatus {
+export function statusForPaidAmount(paidCent: number, dueCent: number): PayableStatus {
   if (paidCent <= 0) return "sent";
-  return paidCent < totalCent ? "partial" : "paid";
+  return paidCent < dueCent ? "partial" : "paid";
 }
 
 /**
@@ -60,8 +64,8 @@ export function statusForPaidAmount(paidCent: number, totalCent: number): Payabl
  * consistency error the calling UI has to prevent.
  */
 async function recomputeInvoiceStatus(invoiceId: number): Promise<void> {
-  const [invoice] = await select<{ total: number; status: InvoiceStatus }>(
-    "SELECT total, status FROM invoices WHERE id = ?",
+  const [invoice] = await select<{ total: number; status: InvoiceStatus; credited_cent: number }>(
+    `SELECT i.total, i.status, ${creditedCentSql("i")} AS credited_cent FROM invoices i WHERE i.id = ?`,
     [invoiceId],
   );
   if (!invoice || invoice.status === "draft" || invoice.status === "cancelled") return;
@@ -71,7 +75,8 @@ async function recomputeInvoiceStatus(invoiceId: number): Promise<void> {
      FROM invoice_payments WHERE invoice_id = ?`,
     [invoiceId],
   );
-  const status = statusForPaidAmount(payments.paid_cent, Math.abs(invoice.total));
+  const dueCent = Math.abs(invoice.total) - invoice.credited_cent;
+  const status = statusForPaidAmount(payments.paid_cent, dueCent);
   const paidAt = status === "paid" ? (payments.last_paid_at ?? nowUnix()) : null;
   await execute(
     `UPDATE invoices SET status = ?, amount_paid_cent = ?, paid_at = ?, updated_at = unixepoch()
@@ -101,12 +106,8 @@ export class DuplicateBankBookingError extends Error {
   }
 }
 
-export type PayableInvoice = {
-  status: InvoiceStatus;
-  total: number;
-  paidCent: number;
-  settledByCreditNote: boolean;
-};
+/** `amountPaidCent` is the sum of the recorded payments, not the cached column. */
+export type PayableInvoice = SettlementFacts & { status: InvoiceStatus };
 
 /** Why a payment cannot be recorded against this invoice, or null when it can. */
 export function paymentRejection(
@@ -117,12 +118,11 @@ export function paymentRejection(
   if (invoice.status !== "sent" && invoice.status !== "partial") {
     return "Zahlungen können nur für versendete oder teilbezahlte Rechnungen erfasst werden.";
   }
-  if (invoice.settledByCreditNote) return SETTLED_BY_CREDIT_NOTE_ERROR;
+  if (isSettledByCreditNote(invoice)) return SETTLED_BY_CREDIT_NOTE_ERROR;
   if (!Number.isInteger(amountCent) || amountCent <= 0) {
     return "Zahlbetrag muss größer als 0 sein.";
   }
-  const openCent = Math.abs(invoice.total) - invoice.paidCent;
-  if (!allowOverpayment && amountCent > openCent + PAYMENT_ROUNDING_TOLERANCE_CENT) {
+  if (!allowOverpayment && amountCent > openBalanceCent(invoice) + PAYMENT_ROUNDING_TOLERANCE_CENT) {
     return "Der Zahlbetrag übersteigt den offenen Betrag der Rechnung.";
   }
   return null;
@@ -133,11 +133,11 @@ async function loadPayableInvoice(invoiceId: number): Promise<PayableInvoice | n
     status: InvoiceStatus;
     total: number;
     paid_cent: number;
-    settled_by_credit_note: number;
+    credited_cent: number;
   }>(
     `SELECT i.status, i.total,
             (SELECT COALESCE(SUM(p.amount_cent), 0) FROM invoice_payments p WHERE p.invoice_id = i.id) AS paid_cent,
-            ${settledByCreditNoteSql("i")} AS settled_by_credit_note
+            ${creditedCentSql("i")} AS credited_cent
      FROM invoices i WHERE i.id = ?`,
     [invoiceId],
   );
@@ -145,8 +145,8 @@ async function loadPayableInvoice(invoiceId: number): Promise<PayableInvoice | n
   return {
     status: row.status,
     total: row.total,
-    paidCent: row.paid_cent,
-    settledByCreditNote: row.settled_by_credit_note === 1,
+    amountPaidCent: row.paid_cent,
+    creditedCent: row.credited_cent,
   };
 }
 

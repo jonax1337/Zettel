@@ -2,7 +2,8 @@
   import { link } from "svelte-spa-router";
   import { open } from "@tauri-apps/plugin-dialog";
   import { parseBankStatement } from "$lib/sidecar/bank";
-  import { matchBookings, openBalance, type MatchCandidate } from "$lib/bank/match";
+  import { matchBookings, type MatchCandidate } from "$lib/bank/match";
+  import { openBalanceCent } from "$lib/db/invoice-lifecycle";
   import { listInvoices, type InvoiceListRow } from "$lib/db/invoices";
   import { nowUnix } from "$lib/utils/date";
   import { centsToEur } from "$lib/utils/money";
@@ -288,7 +289,7 @@
                       <span class="font-mono">{candidate.invoice.number}</span>
                       <span class="text-muted-foreground truncate">· {candidate.invoice.customerName}</span>
                       <span class="ml-auto text-muted-foreground tabular-nums">
-                        {formatMoney(openBalance(candidate.invoice), candidate.invoice.currency)} offen
+                        {formatMoney(openBalanceCent(candidate.invoice), candidate.invoice.currency)} offen
                       </span>
                     </button>
                     <p class="px-2 -mt-0.5 text-[11px] text-muted-foreground">{candidate.reason}</p>

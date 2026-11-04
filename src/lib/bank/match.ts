@@ -9,7 +9,7 @@
  * Output ist eine Liste von Bookings mit jeweils 0..n Match-Kandidaten;
  * der User bestätigt im UI.
  */
-import { invoiceIdsSettledByCreditNote, PAYMENT_ROUNDING_TOLERANCE_CENT } from "$lib/db/invoice-lifecycle";
+import { openBalanceCent, PAYMENT_ROUNDING_TOLERANCE_CENT } from "$lib/db/invoice-lifecycle";
 import type { InvoiceListRow } from "$lib/db/invoices";
 import { isDraftNumber } from "$lib/utils/invoice-number";
 
@@ -73,10 +73,6 @@ function escapeForRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function openBalance(inv: Pick<InvoiceListRow, "total" | "amountPaidCent">): number {
-  return Math.abs(inv.total) - (inv.amountPaidCent ?? 0);
-}
-
 /** Pass 1: Rechnungsnummer im Verwendungszweck. */
 function matchByInvoiceNumber(booking: Booking, invoices: InvoiceListRow[]): MatchCandidate[] {
   const purpose = booking.purpose.toLowerCase();
@@ -93,7 +89,7 @@ function matchByInvoiceNumber(booking: Booking, invoices: InvoiceListRow[]): Mat
 /** Pass 2: Exakter Betrags-Match auf offenen Saldo. */
 function matchByOpenBalance(booking: Booking, invoices: InvoiceListRow[]): MatchCandidate[] {
   return invoices
-    .filter((inv) => Math.abs(openBalance(inv) - booking.amountCent) <= PAYMENT_ROUNDING_TOLERANCE_CENT)
+    .filter((inv) => Math.abs(openBalanceCent(inv) - booking.amountCent) <= PAYMENT_ROUNDING_TOLERANCE_CENT)
     .map((invoice): MatchCandidate => ({
       invoice,
       confidence: "medium",
@@ -147,11 +143,9 @@ export function matchBookings(
   invoices: InvoiceListRow[],
 ): BookingMatch[] {
   // Wir interessieren uns nur für offene oder teilbezahlte Rechnungen, die
-  // nicht per Stornorechnung ausgeglichen sind.
-  const settled = invoiceIdsSettledByCreditNote(invoices);
+  // nicht per Stornorechnung ausgeglichen sind; ein Teilstorno bleibt mit dem Rest offen.
   const openInvoices = invoices.filter(
-    (i) =>
-      (i.status === "sent" || i.status === "partial") && !i.isCreditNote && !settled.has(i.id),
+    (i) => (i.status === "sent" || i.status === "partial") && !i.isCreditNote && !i.settledByCreditNote,
   );
   return bookings.map((booking) => matchBooking(booking, openInvoices));
 }

@@ -41,41 +41,57 @@ export function canCreateCreditNote(invoice: Pick<Invoice, "status" | "isCreditN
   );
 }
 
-type CreditNoteFacts = Pick<Invoice, "isCreditNote" | "status" | "correctsInvoiceId">;
+type CreditNoteFacts = Pick<Invoice, "isCreditNote" | "status">;
 
 export function isIssuedCreditNote(invoice: CreditNoteFacts): boolean {
   return invoice.isCreditNote && invoice.status !== "draft" && invoice.status !== "cancelled";
 }
 
+/** What a credit note takes off its original: nothing until it is issued. Credit note totals are negative. */
+export function creditedCentOf(creditNote: (CreditNoteFacts & Pick<Invoice, "total">) | null): number {
+  return creditNote && isIssuedCreditNote(creditNote) ? Math.abs(creditNote.total) : 0;
+}
+
 /**
- * Invoices offset by an issued credit note. They keep their own status (KPIs
- * net out invoice and credit note) but are no longer due: not dunnable, not
- * overdue, not matched against bank bookings.
- *
- * Amounts are not compared: a credit note whose quantities were reduced for a
- * partial refund settles the whole invoice as well, so a remainder the customer
- * still owes is no longer tracked as open.
+ * The amounts that decide whether an invoice is still due, all in the invoice's
+ * currency. `creditedCent` is the absolute sum of its issued credit notes.
  */
-export function invoiceIdsSettledByCreditNote(invoices: CreditNoteFacts[]): Set<number> {
-  const ids = new Set<number>();
-  for (const invoice of invoices) {
-    if (isIssuedCreditNote(invoice) && invoice.correctsInvoiceId != null) {
-      ids.add(invoice.correctsInvoiceId);
-    }
-  }
-  return ids;
+export type SettlementFacts = Pick<Invoice, "total" | "amountPaidCent"> & { creditedCent: number };
+
+/** What the customer still owes; negative when payments and credit notes exceed the total. */
+export function openBalanceCent(invoice: SettlementFacts): number {
+  return Math.abs(invoice.total) - invoice.amountPaidCent - invoice.creditedCent;
+}
+
+/**
+ * Settled by credit notes once issued credit notes, together with the payments,
+ * leave nothing open. Such an invoice keeps its own status (KPIs net out invoice
+ * and credit note) but is no longer due: not dunnable, not overdue, not matched
+ * against bank bookings. A partial credit note leaves the remainder due.
+ */
+export function isSettledByCreditNote(invoice: SettlementFacts): boolean {
+  return invoice.creditedCent > 0 && openBalanceCent(invoice) <= 0;
 }
 
 export const SETTLED_BY_CREDIT_NOTE_ERROR =
   "Die Rechnung ist durch eine Stornorechnung ausgeglichen. Zahlungen können nicht mehr erfasst werden.";
 
-/** SQL condition mirroring {@link invoiceIdsSettledByCreditNote} for the invoice aliased `alias`. */
-export function settledByCreditNoteSql(alias: string): string {
-  return `EXISTS (
-    SELECT 1 FROM invoices credit_note
+/** SQL mirror of `creditedCent` for the invoice aliased `alias`. */
+export function creditedCentSql(alias: string): string {
+  return `(SELECT ABS(COALESCE(SUM(credit_note.total), 0)) FROM invoices credit_note
      WHERE credit_note.corrects_invoice_id = ${alias}.id
        AND credit_note.is_credit_note = 1
        AND credit_note.status NOT IN ('draft','cancelled'))`;
+}
+
+/** SQL mirror of {@link openBalanceCent}, from the cached paid amount. */
+function openBalanceSql(alias: string): string {
+  return `(ABS(${alias}.total) - COALESCE(${alias}.amount_paid_cent, 0) - ${creditedCentSql(alias)})`;
+}
+
+/** SQL mirror of {@link isSettledByCreditNote} for the invoice aliased `alias`. */
+export function settledByCreditNoteSql(alias: string): string {
+  return `(${creditedCentSql(alias)} > 0 AND ${openBalanceSql(alias)} <= 0)`;
 }
 
 export function notSettledByCreditNoteSql(alias: string): string {

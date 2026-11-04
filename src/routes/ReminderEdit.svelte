@@ -12,7 +12,7 @@
     type ReminderFields,
   } from "$lib/db/reminders";
   import { DEFAULT_CURRENCY } from "$lib/db/doc-queries";
-  import { getInvoice } from "$lib/db/invoices";
+  import { getInvoice, loadCreditedCent } from "$lib/db/invoices";
   import type { Reminder, ReminderInvoiceSnapshot, ReminderLevel } from "$lib/db/schema";
   import { parseSnapshot } from "$lib/db/snapshot-json";
   import { fromIsoDate, toIsoDate, formatDate, nowUnix } from "$lib/utils/date";
@@ -108,7 +108,10 @@
     level = requestedLevel;
     invoiceNumber = source.invoice.number;
     customerName = customerNameFromSnapshot(source.invoice.customerSnapshot);
-    originalCents = remindableAmountCents(source.invoice);
+    originalCents = remindableAmountCents({
+      ...source.invoice,
+      creditedCent: await loadCreditedCent(sourceInvoiceId),
+    });
     currency = source.invoice.currency;
     issueIso = toIsoDate(draft.issueDate);
     dueIso = toIsoDate(draft.dueDate);

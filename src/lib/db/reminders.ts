@@ -1,7 +1,13 @@
 import { execute, insert, select } from "./client";
 import { DEFAULT_CURRENCY, MISSING_NAME } from "./doc-queries";
-import { notSettledByCreditNoteSql } from "./invoice-lifecycle";
-import { getInvoice } from "./invoices";
+import {
+  creditedCentSql,
+  isSettledByCreditNote,
+  notSettledByCreditNoteSql,
+  openBalanceCent,
+  type SettlementFacts,
+} from "./invoice-lifecycle";
+import { getInvoice, loadCreditedCent } from "./invoices";
 import { drawNextNumber } from "./numbering";
 import { loadSettings } from "./queries";
 import type {
@@ -115,7 +121,7 @@ export async function listRemindersForInvoice(
 }
 
 export type OverdueInvoice = {
-  invoice: Pick<Invoice, "id" | "number" | "dueDate" | "total" | "amountPaidCent" | "currency">;
+  invoice: Pick<Invoice, "id" | "number" | "dueDate" | "currency"> & SettlementFacts;
   customerName: string;
   daysOverdue: number;
   existingReminderLevels: ReminderLevel[];
@@ -127,6 +133,7 @@ type OverdueInvoiceRow = {
   due_date: number;
   total: number;
   amount_paid_cent: number;
+  credited_cent: number;
   currency: string;
   customer_name: string | null;
 };
@@ -155,7 +162,8 @@ async function loadReminderLevelsByInvoice(
 export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
   const now = nowUnix();
   const rows = await select<OverdueInvoiceRow>(
-    `SELECT i.id, i.number, i.due_date, i.total, i.amount_paid_cent, i.currency, c.name AS customer_name
+    `SELECT i.id, i.number, i.due_date, i.total, i.amount_paid_cent, i.currency, c.name AS customer_name,
+            ${creditedCentSql("i")} AS credited_cent
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
      WHERE i.status IN ('sent','partial') AND i.due_date < ? AND (i.is_credit_note IS NULL OR i.is_credit_note = 0)
@@ -173,6 +181,7 @@ export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
       dueDate: r.due_date,
       total: r.total,
       amountPaidCent: r.amount_paid_cent,
+      creditedCent: r.credited_cent,
       currency: r.currency,
     },
     customerName: r.customer_name ?? MISSING_NAME,
@@ -258,25 +267,15 @@ function buildInvoiceSnapshot(invoice: Invoice): ReminderInvoiceSnapshot {
   };
 }
 
-/** A reminder may only demand what is still open, so partial payments are deducted. */
-export function remindableAmountCents(
-  invoice: Pick<Invoice, "total" | "amountPaidCent">,
-): number {
-  return invoice.total - invoice.amountPaidCent;
+/** A reminder may only demand what is still open, so partial payments and credit notes are deducted. */
+export function remindableAmountCents(invoice: SettlementFacts): number {
+  return openBalanceCent(invoice);
 }
 
 function totalDueCents(
   r: Pick<Reminder, "originalTotalCents" | "feeCents" | "interestCents">,
 ): number {
   return r.originalTotalCents + r.feeCents + r.interestCents;
-}
-
-async function isSettledByCreditNote(invoiceId: number): Promise<boolean> {
-  const open = await select<{ id: number }>(
-    `SELECT i.id FROM invoices i WHERE i.id = ? AND ${notSettledByCreditNoteSql("i")}`,
-    [invoiceId],
-  );
-  return open.length === 0;
 }
 
 export async function createReminder(draft: ReminderDraft): Promise<number> {
@@ -288,13 +287,14 @@ export async function createReminder(draft: ReminderDraft): Promise<number> {
   if (data.invoice.isCreditNote) {
     throw new Error("Für Stornorechnungen können keine Mahnungen erstellt werden.");
   }
-  if (await isSettledByCreditNote(draft.invoiceId)) {
+  const settlement = { ...data.invoice, creditedCent: await loadCreditedCent(draft.invoiceId) };
+  if (isSettledByCreditNote(settlement)) {
     throw new Error("Die Rechnung wurde storniert und kann nicht gemahnt werden.");
   }
 
   const number = await drawNextNumber("reminder", draft.issueDate);
   const snapshot = buildInvoiceSnapshot(data.invoice);
-  const originalTotalCents = remindableAmountCents(data.invoice);
+  const originalTotalCents = remindableAmountCents(settlement);
 
   return insert(
     `INSERT INTO reminders

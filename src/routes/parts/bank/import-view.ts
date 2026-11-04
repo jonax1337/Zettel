@@ -1,4 +1,5 @@
-import { openBalance, type MatchCandidate } from "$lib/bank/match";
+import type { MatchCandidate } from "$lib/bank/match";
+import { openBalanceCent } from "$lib/db/invoice-lifecycle";
 import { addPayment, DuplicateBankBookingError, type AddPaymentInput } from "$lib/db/invoice-payments";
 import type { InvoiceListRow } from "$lib/db/invoices";
 import { formatMoney } from "$lib/utils/currency";
@@ -33,12 +34,12 @@ export function payableInvoices(invoices: InvoiceListRow[], currency: string): I
       !invoice.isCreditNote &&
       !invoice.settledByCreditNote &&
       invoice.currency.toUpperCase() === currency.toUpperCase() &&
-      openBalance(invoice) > 0,
+      openBalanceCent(invoice) > 0,
   );
 }
 
 export function invoicePickerLabel(invoice: InvoiceListRow): string {
-  return `${invoice.number} · ${invoice.customerName} · ${formatMoney(openBalance(invoice), invoice.currency)} offen`;
+  return `${invoice.number} · ${invoice.customerName} · ${formatMoney(openBalanceCent(invoice), invoice.currency)} offen`;
 }
 
 export function manualCandidate(invoice: InvoiceListRow): MatchCandidate {

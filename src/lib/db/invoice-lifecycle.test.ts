@@ -6,16 +6,19 @@ import {
   canCreateCreditNote,
   canDeleteInvoice,
   canReopenInvoice,
-  invoiceIdsSettledByCreditNote,
+  creditedCentOf,
+  creditedCentSql,
   isIssuedCreditNote,
+  isSettledByCreditNote,
   notSettledByCreditNoteSql,
+  openBalanceCent,
   settledByCreditNoteSql,
 } from "./invoice-lifecycle";
 import type { InvoiceStatus } from "./schema";
 
 type SqliteDatabase = {
   exec(sql: string): void;
-  prepare(sql: string): { all(): unknown[]; run(...bindings: (string | number)[]): unknown };
+  prepare(sql: string): { all(): unknown[]; run(...bindings: (string | number | null)[]): unknown };
 };
 
 const DRAFT_NUMBER = "DRAFT-1a2b3c";
@@ -87,11 +90,7 @@ describe("canCreateCreditNote", () => {
 });
 
 describe("credit note settlement", () => {
-  const creditNote = (status: InvoiceStatus, correctsInvoiceId: number | null = 1) => ({
-    isCreditNote: true,
-    status,
-    correctsInvoiceId,
-  });
+  const creditNote = (status: InvoiceStatus, total = -11_900) => ({ isCreditNote: true, status, total });
 
   it.each(["sent", "partial", "paid"] as const)("counts a %s credit note as issued", (status) => {
     expect(isIssuedCreditNote(creditNote(status))).toBe(true);
@@ -101,31 +100,54 @@ describe("credit note settlement", () => {
     expect(isIssuedCreditNote(creditNote(status))).toBe(false);
   });
 
-  it("collects the invoices that issued credit notes correct", () => {
-    const invoices = [
-      { isCreditNote: false, status: "sent" as const, correctsInvoiceId: null },
-      creditNote("sent", 1),
-      creditNote("draft", 2),
-      creditNote("paid", null),
-    ];
-    expect([...invoiceIdsSettledByCreditNote(invoices)]).toEqual([1]);
+  it("credits the absolute total of an issued credit note", () => {
+    expect(creditedCentOf(creditNote("sent", -3_000))).toBe(3_000);
   });
 
-  it("settles the whole invoice even when the credit note refunds only part of it", () => {
-    const original = { id: 1, isCreditNote: false, status: "sent" as const, correctsInvoiceId: null, total: 10_000 };
-    const partialRefund = { ...creditNote("sent", 1), total: -2_500 };
+  it.each(["draft", "cancelled"] as const)("credits nothing for a %s credit note or none at all", (status) => {
+    expect(creditedCentOf(creditNote(status))).toBe(0);
+    expect(creditedCentOf(null)).toBe(0);
+  });
 
-    expect(invoiceIdsSettledByCreditNote([original, partialRefund]).has(1)).toBe(true);
+  it("subtracts payments and issued credit notes from the absolute total", () => {
+    expect(openBalanceCent({ total: 11_900, amountPaidCent: 5_000, creditedCent: 3_000 })).toBe(3_900);
+    expect(openBalanceCent({ total: -11_900, amountPaidCent: 0, creditedCent: 0 })).toBe(11_900);
+  });
+
+  it("settles an invoice that a credit note reverses in full", () => {
+    expect(isSettledByCreditNote({ total: 11_900, amountPaidCent: 0, creditedCent: 11_900 })).toBe(true);
+  });
+
+  it("leaves the remainder of a partially credited invoice open", () => {
+    expect(isSettledByCreditNote({ total: 11_900, amountPaidCent: 0, creditedCent: 3_000 })).toBe(false);
+  });
+
+  it("settles once payments and a partial credit note together cover the total", () => {
+    expect(isSettledByCreditNote({ total: 11_900, amountPaidCent: 8_900, creditedCent: 3_000 })).toBe(true);
+    expect(isSettledByCreditNote({ total: 11_900, amountPaidCent: 8_899, creditedCent: 3_000 })).toBe(false);
+  });
+
+  it("does not call a fully paid invoice without credit note settled by one", () => {
+    expect(isSettledByCreditNote({ total: 11_900, amountPaidCent: 11_900, creditedCent: 0 })).toBe(false);
   });
 });
 
-describe("settledByCreditNoteSql", () => {
-  function settledIdsInSql(creditNotes: { status: InvoiceStatus; correctsInvoiceId: number }[]): number[] {
+describe("credit note settlement in SQL", () => {
+  type CreditNoteSeed = { status: InvoiceStatus; total: number };
+
+  /** Invoice 1 (total 119,00 €, `paidCent` paid) with the given credit notes; invoice 2 is untouched. */
+  function seed(creditNotes: CreditNoteSeed[], paidCent = 0): SqliteDatabase {
     const db = new DatabaseSync(":memory:") as SqliteDatabase;
-    db.exec("CREATE TABLE invoices (id INTEGER PRIMARY KEY, status TEXT, is_credit_note INTEGER, corrects_invoice_id INTEGER)");
-    db.exec("INSERT INTO invoices (id, status, is_credit_note) VALUES (1, 'sent', 0), (2, 'sent', 0)");
-    const insert = db.prepare("INSERT INTO invoices (status, is_credit_note, corrects_invoice_id) VALUES (?, 1, ?)");
-    for (const note of creditNotes) insert.run(note.status, note.correctsInvoiceId);
+    db.exec(`CREATE TABLE invoices (id INTEGER PRIMARY KEY, status TEXT, total INTEGER,
+      amount_paid_cent INTEGER, is_credit_note INTEGER, corrects_invoice_id INTEGER)`);
+    db.prepare("INSERT INTO invoices (id, status, total, amount_paid_cent, is_credit_note) VALUES (1, 'sent', 11900, ?, 0)").run(paidCent);
+    db.exec("INSERT INTO invoices (id, status, total, amount_paid_cent, is_credit_note) VALUES (2, 'sent', 11900, 0, 0)");
+    const insert = db.prepare("INSERT INTO invoices (status, total, is_credit_note, corrects_invoice_id) VALUES (?, ?, 1, 1)");
+    for (const note of creditNotes) insert.run(note.status, note.total);
+    return db;
+  }
+
+  function settledIds(db: SqliteDatabase): number[] {
     const settled = db
       .prepare(`SELECT i.id FROM invoices i WHERE i.is_credit_note = 0 AND ${settledByCreditNoteSql("i")} ORDER BY i.id`)
       .all() as { id: number }[];
@@ -136,11 +158,43 @@ describe("settledByCreditNoteSql", () => {
     return settled.map((row) => row.id);
   }
 
-  it.each(["sent", "partial", "paid"] as const)("counts an invoice with a %s credit note as settled", (status) => {
-    expect(settledIdsInSql([{ status, correctsInvoiceId: 1 }])).toEqual([1]);
+  function creditedCent(db: SqliteDatabase): number {
+    const [row] = db.prepare(`SELECT ${creditedCentSql("i")} AS c FROM invoices i WHERE i.id = 1`).all() as { c: number }[];
+    return row.c;
+  }
+
+  it.each(["sent", "partial", "paid"] as const)("counts an invoice with a full %s credit note as settled", (status) => {
+    expect(settledIds(seed([{ status, total: -11_900 }]))).toEqual([1]);
   });
 
-  it.each(["draft", "cancelled"] as const)("keeps an invoice with a %s credit note open", (status) => {
-    expect(settledIdsInSql([{ status, correctsInvoiceId: 1 }])).toEqual([]);
+  it.each(["draft", "cancelled"] as const)("keeps an invoice with a %s credit note open and credits nothing", (status) => {
+    const db = seed([{ status, total: -11_900 }]);
+
+    expect(settledIds(db)).toEqual([]);
+    expect(creditedCent(db)).toBe(0);
+  });
+
+  it("keeps a partially credited invoice open", () => {
+    const db = seed([{ status: "sent", total: -3_000 }]);
+
+    expect(settledIds(db)).toEqual([]);
+    expect(creditedCent(db)).toBe(3_000);
+  });
+
+  it("settles once payments and the partial credit note cover the total", () => {
+    expect(settledIds(seed([{ status: "sent", total: -3_000 }], 8_900))).toEqual([1]);
+    expect(settledIds(seed([{ status: "sent", total: -3_000 }], 5_000))).toEqual([]);
+  });
+
+  it("sums several issued credit notes and ignores draft and cancelled ones", () => {
+    const db = seed([
+      { status: "sent", total: -3_000 },
+      { status: "paid", total: -2_000 },
+      { status: "draft", total: -6_900 },
+      { status: "cancelled", total: -6_900 },
+    ]);
+
+    expect(creditedCent(db)).toBe(5_000);
+    expect(settledIds(db)).toEqual([]);
   });
 });
