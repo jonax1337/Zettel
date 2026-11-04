@@ -356,54 +356,152 @@ fn backup_pdf_entries(
             push(zip_entry_name(dir, &relative), path);
         }
     }
-    for (pdf, dir) in referenced_pdfs(snapshot)? {
-        if pdf.starts_with(documents_root) {
+    for stored in referenced_pdfs(snapshot)? {
+        if stored.path.starts_with(documents_root) {
             continue;
         }
-        let base = pdf_folder_of(&pdf, dir).or_else(|| pdf.parent()).unwrap_or(&pdf).to_path_buf();
-        for version in pdf_versions(&pdf)? {
-            let path = PathBuf::from(version.path);
+        let base = stored.folder_base();
+        for path in readable_versions_outside_root(&stored.path) {
             if let Ok(relative) = path.strip_prefix(&base) {
-                push(zip_entry_name(dir, relative), path.clone());
+                push(zip_entry_name(stored.dir, relative), path.clone());
             }
         }
     }
     Ok(entries)
 }
 
+/// A PDF outside the documents root and its archived versions. Those are
+/// left-overs of an older root, possibly on an offline cloud drive, so an
+/// unreadable one is skipped instead of failing the whole backup.
+fn readable_versions_outside_root(pdf: &Path) -> Vec<PathBuf> {
+    let versions = match pdf_versions(pdf) {
+        Ok(versions) => versions.into_iter().map(|v| PathBuf::from(v.path)).collect(),
+        Err(e) => {
+            eprintln!("[backup] archived versions of {} unreadable, skipped: {e}", pdf.display());
+            vec![pdf.to_path_buf()]
+        }
+    };
+    versions
+        .into_iter()
+        .filter(|path| match File::open(path) {
+            Ok(_) => true,
+            Err(e) => {
+                if e.kind() != io::ErrorKind::NotFound {
+                    eprintln!("[backup] {} unreadable, skipped: {e}", path.display());
+                }
+                false
+            }
+        })
+        .collect()
+}
+
 fn zip_entry_name(dir: &str, relative: &Path) -> String {
     format!("{dir}/{}", relative.to_string_lossy().replace('\\', "/"))
 }
 
-/// The nearest folder above `pdf` named `dir`.
-fn pdf_folder_of<'a>(pdf: &'a Path, dir: &str) -> Option<&'a Path> {
-    pdf.ancestors()
-        .skip(1)
-        .find(|ancestor| ancestor.file_name().is_some_and(|name| name == dir))
+/// A row's `pdf_path`, with the PDF folder of its table.
+struct StoredPdf {
+    table: &'static str,
+    rowid: i64,
+    path: PathBuf,
+    dir: &'static str,
 }
 
-/// Every `pdf_path` stored in the snapshot, with the PDF folder it belongs to.
-fn referenced_pdfs(snapshot: &Path) -> Result<Vec<(PathBuf, &'static str)>, String> {
+impl StoredPdf {
+    /// The folder the PDF's layout is kept relative to in a backup: the
+    /// nearest folder above it named like its PDF folder, else its parent.
+    fn folder_base(&self) -> PathBuf {
+        self.path
+            .ancestors()
+            .skip(1)
+            .find(|ancestor| ancestor.file_name().is_some_and(|name| name == self.dir))
+            .or_else(|| self.path.parent())
+            .unwrap_or(&self.path)
+            .to_path_buf()
+    }
+
+    /// Where a backup restores this PDF to below `documents_root`.
+    fn restored_path(&self, documents_root: &Path) -> Option<PathBuf> {
+        let relative = self.path.strip_prefix(self.folder_base()).ok()?;
+        let mut restored = documents_root.join(self.dir);
+        restored.extend(relative.components());
+        Some(restored)
+    }
+}
+
+/// Every `pdf_path` stored in the snapshot.
+fn referenced_pdfs(snapshot: &Path) -> Result<Vec<StoredPdf>, String> {
     let conn = rusqlite::Connection::open_with_flags(snapshot, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|e| format!("{}: {e}", snapshot.display()))?;
+    stored_pdfs(&conn)
+}
+
+fn stored_pdfs(conn: &rusqlite::Connection) -> Result<Vec<StoredPdf>, String> {
     let mut pdfs = Vec::new();
     for (table, dir) in PDF_SOURCES {
-        if !table_columns(&conn, "main", table)?.iter().any(|c| c == "pdf_path") {
+        if !table_columns(conn, "main", table)?.iter().any(|c| c == "pdf_path") {
             continue;
         }
-        let paths = conn
+        let rows = conn
             .prepare(&format!(
-                "SELECT pdf_path FROM {table} WHERE pdf_path IS NOT NULL AND pdf_path <> ''"
+                "SELECT rowid, pdf_path FROM {table} WHERE pdf_path IS NOT NULL AND pdf_path <> ''"
             ))
             .and_then(|mut statement| {
                 statement
-                    .query_map([], |row| row.get::<_, String>(0))?
+                    .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(|e| format!("{table}.pdf_path: {e}"))?;
-        pdfs.extend(paths.into_iter().map(|path| (PathBuf::from(path), dir)));
+        pdfs.extend(rows.into_iter().map(|(rowid, path)| StoredPdf {
+            table,
+            rowid,
+            path: PathBuf::from(path),
+            dir,
+        }));
     }
     Ok(pdfs)
+}
+
+/// Restored rows still name the absolute PDF path of the machine or the
+/// documents root the backup was made on, while the restore put the file
+/// below `documents_root`. Points every row whose PDF is missing at that
+/// restored copy.
+fn repoint_restored_pdfs(db: &Path, documents_root: &Path) -> Result<(), String> {
+    if !db.is_file() {
+        return Ok(());
+    }
+    let conn = rusqlite::Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_WRITE)
+        .map_err(|e| format!("{}: {e}", db.display()))?;
+    for stored in stored_pdfs(&conn)? {
+        if stored.path.is_file() {
+            continue;
+        }
+        let Some(restored) = stored.restored_path(documents_root).filter(|p| p.is_file()) else {
+            continue;
+        };
+        conn.execute(
+            &format!("UPDATE {} SET pdf_path = ?1 WHERE rowid = ?2", stored.table),
+            rusqlite::params![path_string(&restored), stored.rowid],
+        )
+        .map_err(|e| format!("{}.pdf_path: {e}", stored.table))?;
+    }
+    Ok(())
+}
+
+/// Restores the PDF folders staged in `pending_root` into `documents_root`
+/// and points the rows of `db` at them. Best-effort: the DB part of the
+/// restore already happened, so failures are only logged.
+fn restore_pdfs(pending_root: &Path, documents_root: Option<&Path>, db: &Path) {
+    let Some(documents_root) = documents_root else {
+        eprintln!("[backup] documents dir unavailable, PDFs not restored");
+        return;
+    };
+    if let Err(e) = copy_pdf_dirs(pending_root, documents_root) {
+        eprintln!("[backup] could not restore PDFs: {e}");
+    }
+    if let Err(e) = repoint_restored_pdfs(db, documents_root) {
+        eprintln!("[backup] could not point restored rows at their PDFs: {e}");
+    }
 }
 
 fn add_file(
@@ -610,6 +708,14 @@ fn read_staged_restore(data_dir: &Path) -> StagedRestore {
     })
 }
 
+/// Drops a staged restore that will not be applied, so the (possibly
+/// decrypted) backup does not stay behind in the app-data dir.
+#[tauri::command]
+pub async fn discard_pending_restore(app: AppHandle) -> Result<(), String> {
+    clear_pending(&app_data_dir(&app)?);
+    Ok(())
+}
+
 /// Removes the staged restore and its marker files.
 fn clear_pending(data_dir: &Path) {
     let results = [
@@ -653,21 +759,15 @@ fn apply_pending_full_restore(data_dir: &Path, config_dir: &Path, documents_dir:
         return;
     }
 
+    let target = staged.resolve_target(data_dir, config_dir);
     let pending_db = pending_root.join(DB_ENTRY);
     if pending_db.is_file() {
-        let target = staged.resolve_target(data_dir, config_dir);
         if let Err(e) = place_restored_db(&pending_db, &target) {
             eprintln!("[backup] could not place restored DB at {}: {e}", target.display());
         }
     }
-    match staged.resolve_documents_root(data_dir, documents_dir) {
-        Some(documents_root) => {
-            if let Err(e) = copy_pdf_dirs(&pending_root, &documents_root) {
-                eprintln!("[backup] could not restore PDFs: {e}");
-            }
-        }
-        None => eprintln!("[backup] documents dir unavailable, PDFs not restored"),
-    }
+    let documents_root = staged.resolve_documents_root(data_dir, documents_dir);
+    restore_pdfs(&pending_root, documents_root.as_deref(), &target);
     clear_pending(data_dir);
 }
 
@@ -779,17 +879,8 @@ fn restore_staged_sections(
         return Err("Backup-Datenbank fehlt im pending-Ordner.".into());
     }
     restore_sections(live_db, &staged_db, sections)?;
-
-    if !sections.invoices {
-        return Ok(());
-    }
-    match documents_root {
-        Some(documents_root) => {
-            if let Err(e) = copy_pdf_dirs(pending_root, documents_root) {
-                eprintln!("[backup] could not restore PDFs: {e}");
-            }
-        }
-        None => eprintln!("[backup] documents dir unavailable, PDFs not restored"),
+    if sections.invoices {
+        restore_pdfs(pending_root, documents_root, live_db);
     }
     Ok(())
 }
@@ -836,7 +927,7 @@ fn restore_sections(
         .map_err(|e| format!("{table}: {e}"))?;
     }
     keep_number_counters_ahead(&tx, &live_counters, sections.invoices)?;
-    ensure_no_new_dangling_references(&tx, &violations_before)?;
+    ensure_no_new_dangling_references(&tx, &violations_before, &tables)?;
     tx.commit().map_err(|e| e.to_string())
 }
 
@@ -857,15 +948,20 @@ fn foreign_key_violations(
     Ok(violations)
 }
 
-/// Violations that existed before the restore are the live DB's own and do
-/// not block it; new ones mean the restored rows point at rows of a section
-/// that was not restored.
+/// Violations that existed before the restore in tables it kept are the live
+/// DB's own and do not block it; any other one means rows point at rows of a
+/// section that was not restored. A violation in a `restored_table` always
+/// counts: its rows were replaced, and a restored row reusing the rowid of a
+/// deleted one would otherwise hide behind the old violation.
 fn ensure_no_new_dangling_references(
     conn: &rusqlite::Connection,
     before: &HashSet<ForeignKeyViolation>,
+    restored_tables: &[&str],
 ) -> Result<(), String> {
     let after = foreign_key_violations(conn)?;
-    let mut new = after.difference(before);
+    let mut new = after
+        .iter()
+        .filter(|v| restored_tables.contains(&v.0.as_str()) || !before.contains(*v));
     let Some((table, _, parent, _)) = new.next() else {
         return Ok(());
     };
@@ -1193,6 +1289,18 @@ mod tests {
         restore_sections(&live, &staged, sections(false, false, true)).unwrap();
     }
 
+    #[test]
+    fn an_old_dangling_reference_at_the_same_rowid_does_not_hide_a_restored_one() {
+        let dir = TempDir::new("restore-masked-dangling");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_linked_db(&live, &[], 7);
+        create_linked_db(&staged, &[], 9);
+
+        let err = restore_sections(&live, &staged, sections(false, true, false)).unwrap_err();
+
+        assert!(err.contains("invoices → customers"), "{err}");
+    }
+
     /// DB whose settings row carries an invoice counter.
     fn create_db_with_counter(path: &Path, tag: &str, invoice_counter: i64) {
         create_db(path, tag);
@@ -1478,6 +1586,67 @@ mod tests {
 
         assert_eq!(fs::read(sandbox_root.join("Rechnungen/RE-1.pdf")).unwrap(), b"sandbox");
         assert!(!dirs.documents.join("Zettel/Rechnungen/RE-1.pdf").exists());
+    }
+
+    fn pdf_path_of(db: &Path, table: &str) -> PathBuf {
+        Connection::open(db)
+            .unwrap()
+            .query_row(&format!("SELECT pdf_path FROM {table}"), [], |row| row.get::<_, String>(0))
+            .map(PathBuf::from)
+            .unwrap()
+    }
+
+    #[test]
+    fn full_restore_points_rows_at_pdfs_restored_from_another_root() {
+        let dirs = AppDirs::new("full-restore-repoint");
+        let documents_root = dirs.documents.join("Zettel");
+        let elsewhere = dirs.root.path().join("old-machine/Zettel/Rechnungen/2026/RE-1.pdf");
+        let still_there = dirs.root.path().join("kept/AN-1.pdf");
+        write_file(&still_there, b"offer");
+        let pending = dirs.stage(RestoreMode::Full, Some(dirs.config.join("zettel.db")));
+        create_snapshot(
+            &pending.join(DB_ENTRY),
+            &[("invoices", &elsewhere), ("offers", &still_there)],
+        );
+        write_file(&pending.join("Rechnungen/2026/RE-1.pdf"), b"invoice");
+        write_file(&pending.join("Angebote/AN-1.pdf"), b"offer");
+
+        apply_pending_full_restore(&dirs.data, &dirs.config, Some(&dirs.documents));
+
+        let live = dirs.config.join("zettel.db");
+        let restored_invoice = documents_root.join("Rechnungen/2026/RE-1.pdf");
+        assert_eq!(pdf_path_of(&live, "invoices"), restored_invoice);
+        assert_eq!(fs::read(&restored_invoice).unwrap(), b"invoice");
+        assert_eq!(pdf_path_of(&live, "offers"), still_there);
+    }
+
+    #[test]
+    fn partial_invoice_restore_points_rows_at_the_restored_pdfs() {
+        let dirs = AppDirs::new("partial-restore-repoint");
+        let live = dirs.config.join("zettel.db");
+        create_db(&live, "live");
+        let pending = dirs.stage(partial(sections(false, true, false)), Some(live.clone()));
+        let staged_db = pending.join(DB_ENTRY);
+        create_db(&staged_db, "backup");
+        let elsewhere = dirs.root.path().join("old/Zettel/Mahnungen/MA-1.pdf");
+        Connection::open(&staged_db)
+            .unwrap()
+            .execute_batch(&format!(
+                "ALTER TABLE reminders ADD COLUMN pdf_path TEXT;
+                 UPDATE reminders SET pdf_path = '{}';",
+                path_string(&elsewhere)
+            ))
+            .unwrap();
+        Connection::open(&live)
+            .unwrap()
+            .execute_batch("ALTER TABLE reminders ADD COLUMN pdf_path TEXT;")
+            .unwrap();
+        write_file(&pending.join("Mahnungen/MA-1.pdf"), b"reminder");
+
+        apply_partial_restore(&dirs.data, &dirs.config, Some(&dirs.documents)).unwrap();
+
+        let restored = dirs.documents.join("Zettel/Mahnungen/MA-1.pdf");
+        assert_eq!(pdf_path_of(&live, "reminders"), restored);
     }
 
     #[test]

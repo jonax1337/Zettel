@@ -138,6 +138,7 @@ pub fn run() {
             backup::bundle_backup,
             backup::stage_restore,
             backup::apply_pending_partial_restore,
+            backup::discard_pending_restore,
             validator::validator_status,
             validator::validate_einvoice_xml,
             validator::validate_einvoice_pdf,

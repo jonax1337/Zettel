@@ -127,10 +127,15 @@
     if (!pendingRestoreZip) return;
     let safetyBackup = "";
     const outcome = await attemptRestore(async () => {
-      safetyBackup = await writeSafetyBackup(SAFETY_BACKUP_PREFIX).catch((e) => {
-        throw new Error(`Sicherheits-Backup fehlgeschlagen, nichts wurde verändert: ${e}`);
-      });
+      // Staging first: it rejects a wrong or missing password before any
+      // safety backup gets written.
       await stageRestore(restoreSections);
+      try {
+        safetyBackup = await writeSafetyBackup(SAFETY_BACKUP_PREFIX);
+      } catch (e) {
+        await invoke<void>("discard_pending_restore");
+        throw new Error(`Sicherheits-Backup fehlgeschlagen, nichts wurde verändert: ${e}`);
+      }
       await invoke<void>("apply_pending_partial_restore");
     });
     if (outcome === "done") {
