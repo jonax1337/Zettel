@@ -15,6 +15,7 @@ import {
   documentOutputPath,
   pdfSettingsPayload,
 } from "./payload";
+import { companyIncompleteResponse } from "./company-guard";
 import type { SidecarResponse } from "./types";
 
 const FALLBACK_CUSTOMER_NAME = "—";
@@ -53,6 +54,8 @@ export async function generateReminderPdf(reminderId: number): Promise<SidecarRe
     throw new Error("Zugehörige Rechnung ist nicht mehr verfügbar.");
   }
   const company = await loadSettings();
+  const blocked = companyIncompleteResponse(company);
+  if (blocked) return blocked;
 
   const snapshot =
     parseJsonOrNull<ReminderInvoiceSnapshot>(reminder.invoiceSnapshot) ??

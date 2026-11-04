@@ -16,6 +16,7 @@
   import { formatDate } from "$lib/utils/date";
   import { SUPPLY_KIND_LABEL } from "./invoice/supply-kind";
   import { generateOfferPdf } from "$lib/sidecar/offer";
+  import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import {
     Badge,
     Button,
@@ -237,7 +238,9 @@
           <Pencil />
           Bearbeiten
         </Button>
-        <Button disabled={busy} onclick={() => action("Als versendet markiert", () => markSent(offer!.id))}>
+        <Button disabled={busy} onclick={async () => {
+            if (await ensureCompanyDataComplete()) await action("Als versendet markiert", () => markSent(offer!.id));
+          }}>
           <Send />
           Als versendet markieren
         </Button>

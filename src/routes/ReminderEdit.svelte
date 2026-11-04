@@ -17,6 +17,7 @@
   import { fromIsoDate, toIsoDate, formatDate } from "$lib/utils/date";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
   import { generateReminderPdf } from "$lib/sidecar/reminder";
+  import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import {
     Button,
     Card,
@@ -192,6 +193,7 @@
 
   async function markSent() {
     if (reminderId === null) return;
+    if (!(await ensureCompanyDataComplete())) return;
     try {
       await markReminderSent(reminderId);
       status = "sent";

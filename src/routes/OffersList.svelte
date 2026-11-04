@@ -12,6 +12,7 @@
   } from "$lib/db/offers";
   import type { Customer, OfferStatus } from "$lib/db/schema";
   import { listCustomers } from "$lib/db/queries";
+  import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
   import { Button, Card, Badge, Checkbox, SortableTh, BulkActionBar, ConfirmDialog, toast, EmptyState } from "$lib/ui";
@@ -109,6 +110,11 @@
   );
 
   const selectedLabel = $derived(pluralize(selection.selected.length, "Angebot", "Angebote"));
+
+  async function bulkMarkSent() {
+    if (!(await ensureCompanyDataComplete())) return;
+    await selection.runBulk("als versendet markiert", markSent, offers.reload);
+  }
 
   async function bulkDelete() {
     bulkDeleteConfirmOpen = false;
@@ -222,7 +228,7 @@
     <Button
       size="sm"
       variant="outline"
-      onclick={() => selection.runBulk("als versendet markiert", markSent, offers.reload)}
+      onclick={bulkMarkSent}
       disabled={selection.busy}
     >
       <Send class="size-3.5" />

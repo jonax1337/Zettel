@@ -17,6 +17,7 @@
   import type { Invoice, InvoiceItem, InvoicePayment, Reminder } from "$lib/db/schema";
   import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { generateInvoicePdf, listPdfVersions, type PdfVersion } from "$lib/sidecar/invoice";
+  import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import { validatePdf, type ValidationReport } from "$lib/validator";
   import { Badge, Button, ConfirmDialog, toast } from "$lib/ui";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
@@ -218,6 +219,7 @@
     const { id } = invoice;
     const sentAt = fromIsoDate(dialogDate);
     sendDialogOpen = false;
+    if (!(await ensureCompanyDataComplete())) return;
     await action("Als versendet markiert", () => markSent(id, sentAt));
   }
 
