@@ -264,7 +264,20 @@ pub async fn relocate_active_tenant(
     path: String,
     label: String,
 ) -> Result<(), String> {
+    ensure_sandbox_inactive(&app_data_dir(&app)?)?;
     update_config(&app, |cfg| relocate(cfg, &path, &label))
+}
+
+/// In the sandbox the open DB is the sandbox DB, so "moving the active DB"
+/// would turn sandbox data into the real tenant.
+fn ensure_sandbox_inactive(data_dir: &Path) -> Result<(), String> {
+    if data_dir.join(sandbox::FLAG_FILE).exists() {
+        return Err(
+            "Im Sandbox-Modus kann die Datenbank nicht verschoben werden. Bitte zuerst die Sandbox verlassen."
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 fn relocate(cfg: &mut TenantConfig, path: &str, label: &str) -> Result<(), String> {
@@ -447,6 +460,15 @@ mod tests {
         set_active(&mut cfg, DEFAULT_ID.into()).unwrap();
         assert_eq!(cfg.active, None);
         assert!(set_active(&mut cfg, "missing".into()).is_err());
+    }
+
+    #[test]
+    fn relocating_is_refused_while_the_sandbox_is_active() {
+        let dir = TempDir::new("tenants-relocate-sandbox");
+        assert!(ensure_sandbox_inactive(dir.path()).is_ok());
+        fs::write(dir.path().join(sandbox::FLAG_FILE), b"1").unwrap();
+        let err = ensure_sandbox_inactive(dir.path()).unwrap_err();
+        assert!(err.contains("Sandbox"), "{err}");
     }
 
     #[test]
