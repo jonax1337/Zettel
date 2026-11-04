@@ -26,8 +26,14 @@ export type DatevAccountMap = {
   revenue7: number;
   /** Steuerfreie Umsätze (§ 19 UStG / 0 %). */
   revenueExempt: number;
-  /** Steuerfreie innergemeinschaftliche Lieferung (Reverse-Charge). */
-  revenueIntraEu: number;
+  /** Steuerfreie innergemeinschaftliche Lieferung (§ 4 Nr. 1b UStG). */
+  revenueIntraEuGoods: number;
+  /** Im anderen EU-Land steuerpflichtige sonstige Leistung (§ 13b UStG). */
+  revenueIntraEuServices: number;
+  /** Steuerfreie Ausfuhrlieferung (§ 4 Nr. 1a UStG). */
+  revenueThirdCountryGoods: number;
+  /** Im Drittland steuerbare sonstige Leistung. */
+  revenueThirdCountryServices: number;
   /** Sammel-Kreditor (Verbindlichkeiten aus Lieferungen und Leistungen). */
   kreditor: number;
   /** Aufwand mit 19 % Vorsteuerabzug. */
@@ -45,7 +51,10 @@ export const SKR03: DatevAccountMap = {
   revenue19: 8400,
   revenue7: 8300,
   revenueExempt: 8200,
-  revenueIntraEu: 8336,
+  revenueIntraEuGoods: 8125,
+  revenueIntraEuServices: 8336,
+  revenueThirdCountryGoods: 8120,
+  revenueThirdCountryServices: 8338,
   kreditor: 70000,
   expense19: 3400,
   expense7: 3300,
@@ -58,7 +67,10 @@ export const SKR04: DatevAccountMap = {
   revenue19: 4400,
   revenue7: 4300,
   revenueExempt: 4200,
-  revenueIntraEu: 4125,
+  revenueIntraEuGoods: 4125,
+  revenueIntraEuServices: 4336,
+  revenueThirdCountryGoods: 4120,
+  revenueThirdCountryServices: 4338,
   kreditor: 73000,
   expense19: 5400,
   expense7: 5300,
@@ -174,14 +186,20 @@ type Booking = {
 
 type RateGroup = { rate: number; gross: number };
 
-function revenueAccountFor(
-  vatRate: number,
-  isKleinunternehmer: boolean,
-  isReverseCharge: boolean,
+function reverseChargeRevenueAccount(
+  invoice: Pick<Invoice, "reverseChargeType" | "supplyKind">,
   accounts: DatevAccountMap,
 ): number {
-  if (isReverseCharge) return accounts.revenueIntraEu;
-  if (isKleinunternehmer) return accounts.revenueExempt;
+  const isGoods = invoice.supplyKind === "goods";
+  if (invoice.reverseChargeType === "third_country") {
+    return isGoods ? accounts.revenueThirdCountryGoods : accounts.revenueThirdCountryServices;
+  }
+  return isGoods ? accounts.revenueIntraEuGoods : accounts.revenueIntraEuServices;
+}
+
+function revenueAccountFor(vatRate: number, invoice: Invoice, accounts: DatevAccountMap): number {
+  if (invoice.isReverseCharge) return reverseChargeRevenueAccount(invoice, accounts);
+  if (invoice.isKleinunternehmer) return accounts.revenueExempt;
   if (vatRate === 19) return accounts.revenue19;
   if (vatRate === 7) return accounts.revenue7;
   return accounts.revenueExempt;
@@ -246,7 +264,7 @@ function bookingsForInvoice(input: DatevInvoiceInput, accounts: DatevAccountMap)
   return groups.map(({ rate, gross }) => ({
     amountCents: gross,
     debit: accounts.debitor,
-    credit: revenueAccountFor(rate, isKu, isRc, accounts),
+    credit: revenueAccountFor(rate, invoice, accounts),
     sollHaben: isCreditNote ? "H" : "S",
     belegdatum,
     belegfeld1: invoice.number,

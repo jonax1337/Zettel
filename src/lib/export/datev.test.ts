@@ -121,6 +121,59 @@ describe("buildDatevCsv (bookings)", () => {
     expect(rows.map((r) => r[COLUMN_AMOUNT])).toEqual(["0,72", "0,08", "4,25"]);
   });
 
+  describe.each([
+    ["SKR03", SKR03],
+    ["SKR04", SKR04],
+  ])("revenue account of reverse-charge invoices (%s)", (_name, accounts) => {
+    const accountOpts = { ...opts, accounts };
+    const expectations = [
+      ["intra_eu", "goods", accounts.revenueIntraEuGoods],
+      ["intra_eu", "services", accounts.revenueIntraEuServices],
+      ["third_country", "goods", accounts.revenueThirdCountryGoods],
+      ["third_country", "services", accounts.revenueThirdCountryServices],
+    ] as const;
+
+    it.each(expectations)("books %s + %s to account %i", (reverseChargeType, supplyKind, expected) => {
+      const input = invoiceInput({ isReverseCharge: true, reverseChargeType, supplyKind }, [
+        { lineTotal: 10000, vatRate: 19 },
+      ]);
+      const rows = bookingRows(buildDatevCsv([input], accountOpts, now));
+      expect(rows.map((r) => [r[COLUMN_AMOUNT], r[COLUMN_CONTRA_ACCOUNT]])).toEqual([["100,00", String(expected)]]);
+    });
+
+    it("books a reverse-charge credit note to the same account as its invoice", () => {
+      const input = invoiceInput(
+        { isReverseCharge: true, reverseChargeType: "third_country", supplyKind: "goods", isCreditNote: true },
+        [{ lineTotal: 10000, vatRate: 19 }],
+      );
+      const rows = bookingRows(buildDatevCsv([input], accountOpts, now));
+      expect(rows.map((r) => r[COLUMN_CONTRA_ACCOUNT])).toEqual([String(accounts.revenueThirdCountryGoods)]);
+    });
+
+    it("keeps the domestic 19 % account for a regular invoice with goods", () => {
+      const input = invoiceInput({ reverseChargeType: "none", supplyKind: "goods" }, [
+        { lineTotal: 10000, vatRate: 19 },
+      ]);
+      const rows = bookingRows(buildDatevCsv([input], accountOpts, now));
+      expect(rows.map((r) => [r[COLUMN_AMOUNT], r[COLUMN_CONTRA_ACCOUNT]])).toEqual([
+        ["119,00", String(accounts.revenue19)],
+      ]);
+    });
+  });
+
+  it("uses the documented DATEV standard accounts", () => {
+    expect([
+      SKR03.revenueIntraEuGoods,
+      SKR03.revenueIntraEuServices,
+      SKR03.revenueThirdCountryGoods,
+      SKR03.revenueThirdCountryServices,
+      SKR04.revenueIntraEuGoods,
+      SKR04.revenueIntraEuServices,
+      SKR04.revenueThirdCountryGoods,
+      SKR04.revenueThirdCountryServices,
+    ]).toEqual([8125, 8336, 8120, 8338, 4125, 4336, 4120, 4338]);
+  });
+
   const COLUMN_SOLL_HABEN = 1;
 
   it("books a credit line on its own VAT rate with flipped Soll/Haben", () => {
