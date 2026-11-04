@@ -1,4 +1,8 @@
 <!doctype html>
+{% set currency = invoice.currency or 'EUR' %}
+{# Fee and interest are EUR settings, so for other invoice currencies they are
+   stated in EUR next to the amount instead of being added to it. #}
+{% set mixed_currency = currency | upper != 'EUR' %}
 <html lang="de">
 <head>
   <meta charset="utf-8" />
@@ -69,7 +73,7 @@
           <td>Rechnung {{ invoice.invoiceNumber }}</td>
           <td>{{ invoice.invoiceIssueDate | date_unix }}</td>
           <td>{{ invoice.invoiceDueDate | date_unix }}</td>
-          <td class="num">{{ reminder.originalTotalCents | eur }}</td>
+          <td class="num">{{ reminder.originalTotalCents | eur(currency) }}</td>
         </tr>
       </tbody>
     </table>
@@ -80,23 +84,28 @@
       <tbody>
         <tr>
           <td>Offener Rechnungsbetrag</td>
-          <td class="num">{{ reminder.originalTotalCents | eur }}</td>
+          <td class="num">{{ reminder.originalTotalCents | eur(currency) }}</td>
         </tr>
         {% if reminder.feeCents and reminder.feeCents > 0 %}
         <tr>
-          <td>Mahngebühr</td>
+          <td>Mahngebühr{% if mixed_currency %} (in EUR){% endif %}</td>
           <td class="num">{{ reminder.feeCents | eur }}</td>
         </tr>
         {% endif %}
         {% if reminder.interestCents and reminder.interestCents > 0 %}
         <tr>
-          <td>Verzugszinsen</td>
+          <td>Verzugszinsen{% if mixed_currency %} (in EUR){% endif %}</td>
           <td class="num">{{ reminder.interestCents | eur }}</td>
         </tr>
         {% endif %}
         <tr class="grand">
           <td>Zu zahlender Gesamtbetrag</td>
+          {% if mixed_currency %}
+          {% set extras_cents = (reminder.feeCents or 0) + (reminder.interestCents or 0) %}
+          <td class="num">{{ reminder.originalTotalCents | eur(currency) }}{% if extras_cents > 0 %} zzgl. {{ extras_cents | eur }}{% endif %}</td>
+          {% else %}
           <td class="num">{{ reminder.totalDueCents | eur }}</td>
+          {% endif %}
         </tr>
       </tbody>
     </table>
