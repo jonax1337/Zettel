@@ -61,7 +61,7 @@ describe("computeSkonto", () => {
     expect(r!.discountCent).toBe(expected);
   });
 
-  it("computes deadline =issueDate + days * SECONDS_PER_DAY", () => {
+  it("computes deadline = issueDate + days * SECONDS_PER_DAY", () => {
     const r = computeSkonto({ totalCent: 10000, percent: 2, days: 7, issueDate: ISSUE });
     expect(r!.deadlineUnix).toBe(ISSUE + 7 * SECONDS_PER_DAY);
   });
