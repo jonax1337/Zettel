@@ -83,7 +83,7 @@ Eine neue Migration `000N_<name>.sql` heißt **immer drei Stellen gleichzeitig a
 - CI: `.github/workflows/build.yml` Matrix windows-latest / macos-14 (arm64) / macos-13 (x86_64) / ubuntu-22.04. Jeder Runner installiert Python+GTK+Tauri-Deps, baut `python sidecar/build.py`, dann `pnpm tauri:build`.
 - **Resources-Split** (v0.10-Fix): Production-Resources (`sidecar/dist`, `tools/jre`, `kosit-validator`) leben in `tauri.bundle.conf.json`, **nicht** in `tauri.conf.json`. Dev-Build hat sie nicht — sonst emittiert `cargo:rerun-if-changed` tausende Files und Tauri-Build crashed mit `Zugriff verweigert (os error 5)` durch AV-Interferenz auf Windows. `pnpm tauri:build` lädt die Bundle-Conf als Overlay.
 - **Updater:** Ed25519-signiert, statisches `latest.json` bei GitHub Releases. Tauri-2-Quirk: NSIS-Setup-Sig ist `-setup.exe.sig`, nicht `*.nsis.zip.sig`. `bundle.createUpdaterArtifacts: true` muss in `tauri.conf.json` gesetzt sein.
-- **Linux/macOS-Caveat:** WeasyPrint lädt Pango/Cairo dynamisch vom System. User brauchen `libpango1.0-0 libcairo2 libgdk-pixbuf2.0-0` (apt) bzw. `brew install pango cairo gdk-pixbuf`.
+- **Linux/macOS-Caveat:** WeasyPrint lädt Pango/Cairo dynamisch vom System. User brauchen `libpango1.0-0 libcairo2 libgdk-pixbuf2.0-0` (apt) bzw. `brew install pango cairo gdk-pixbuf`. Das `.deb` deklariert die tatsächlich geladenen Libs selbst (`bundle.linux.deb.depends` in `tauri.conf.json`; WeasyPrint 70 lädt pango, pangoft2, harfbuzz, fontconfig, gobject — kein cairo/gdk-pixbuf). `libharfbuzz-subset0` steht nur unter `recommends`: WeasyPrint nutzt es optional (fonttools-Fallback), und es existiert erst ab Ubuntu 24.04 — als `depends` wäre das `.deb` auf 22.04 nicht installierbar. Getestet: Ubuntu 22.04/24.04/26.04.
 - Windows-Install-Path: `C:\Users\<user>\AppData\Local\zettel\` (NSIS user-scope).
 
 ## Stack quick-ref
@@ -120,7 +120,7 @@ python build.py            # PyInstaller-Bundle nach sidecar/dist/
 ## AppData locations
 - **Windows:** `%APPDATA%\digital.laux.zettel\` (DB, `sandbox.flag`, `pending_restore/`)
 - **macOS:** `~/Library/Application Support/digital.laux.zettel/`
-- **Linux:** `~/.local/share/digital.laux.zettel/`
+- **Linux:** `~/.local/share/digital.laux.zettel/` (`sandbox.flag`, `tenants.json`, `pending_restore/`) — **die DBs (`zettel.db`, `zettel-sandbox.db`) liegen aber in `~/.config/digital.laux.zettel/`**, weil tauri-plugin-sql relative Pfade unter `app_config_dir` auflöst (Windows/macOS: identisch mit data_dir)
 - **PDFs:** `~/Documents/Zettel/{Rechnungen,Angebote,Mahnungen,Eingangsrechnungen/<vendor>}/`
 
 ## Git workflow

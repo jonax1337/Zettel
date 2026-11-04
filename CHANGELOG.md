@@ -6,6 +6,10 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Fixed
+- **Linux: CLI findet die Datenbank.** `zettel-cli` sucht `zettel.db` und `zettel-sandbox.db` unter `~/.config/digital.laux.zettel/` (dort legt tauri-plugin-sql sie ab); `sandbox.flag` und `tenants.json` bleiben im Data-Dir.
+- **Linux-`.deb` deklariert die PDF-Abhängigkeiten** (`libpango-1.0-0`, `libpangoft2-1.0-0`, `libharfbuzz0b`, `libfontconfig1`; empfohlen: `libharfbuzz-subset0`), damit WeasyPrint auf frischen Systemen läuft. Getestet auf Ubuntu 22.04, 24.04 und 26.04.
+
 ## [0.22.0]
 
 ### Added
