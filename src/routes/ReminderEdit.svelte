@@ -17,7 +17,8 @@
   import { fromIsoDate, toIsoDate, formatDate } from "$lib/utils/date";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
   import { generateReminderPdf } from "$lib/sidecar/reminder";
-  import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
+  import { COMPANY_INCOMPLETE_CODE } from "$lib/sidecar/company-guard";
+  import { ensureCompanyDataComplete, notifyCompanyIncomplete } from "$lib/utils/company-guard";
   import {
     Button,
     Card,
@@ -178,7 +179,8 @@
     try {
       const res = await generateReminderPdf(savedId);
       if (!res.success) {
-        toast.error(`PDF fehlgeschlagen: ${res.error.message}`);
+        if (res.error.code === COMPANY_INCOMPLETE_CODE) notifyCompanyIncomplete(res.error.message);
+        else toast.error(`PDF fehlgeschlagen: ${res.error.message}`);
         return;
       }
       pdfPath = res.pdfPath;

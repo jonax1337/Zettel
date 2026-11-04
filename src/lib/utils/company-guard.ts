@@ -21,10 +21,15 @@ export async function ensureCompanyDataComplete(): Promise<boolean> {
     return false;
   }
   if (missing.length === 0) return true;
+  notifyCompanyIncomplete(companyIncompleteMessage(missing));
+  return false;
+}
+
+/** Warning toast with a link to the company settings. */
+export function notifyCompanyIncomplete(description: string): void {
   toast.action(
     "Firmendaten unvollständig",
     { label: "Firmendaten ergänzen", onClick: () => push(COMPANY_SETTINGS_ROUTE) },
-    { description: companyIncompleteMessage(missing), variant: "warning" },
+    { description, variant: "warning" },
   );
-  return false;
 }
