@@ -110,7 +110,6 @@ pub fn run() {
     backup::apply_pending_restore_blocking();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(window_state_plugin())

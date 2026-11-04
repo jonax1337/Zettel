@@ -18,7 +18,6 @@
     "core:window:allow-set-title",
     "core:event:allow-emit",
     "core:event:allow-listen",
-    "shell:allow-open",
     "opener:default",
     {
       "identifier": "opener:allow-open-path",
