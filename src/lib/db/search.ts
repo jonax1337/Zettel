@@ -1,9 +1,9 @@
 import { containsPattern, select } from "./client";
-import { MISSING_NAME } from "./doc-queries";
+import { DEFAULT_CURRENCY, MISSING_NAME } from "./doc-queries";
 import { displayInvoiceNumber } from "./invoices";
 import type { InvoiceStatus } from "./schema";
 import { formatDate } from "$lib/utils/date";
-import { centsToEur } from "$lib/utils/money";
+import { formatMoney } from "$lib/utils/currency";
 
 export type SearchHitKind =
   | "invoice"
@@ -61,8 +61,9 @@ async function searchInvoices(like: string): Promise<SearchHit[]> {
     customer_name: string | null;
     issue_date: number;
     total: number;
+    currency: string;
   }>(
-    `SELECT i.id, i.number, i.status, c.name AS customer_name, i.issue_date, i.total
+    `SELECT i.id, i.number, i.status, c.name AS customer_name, i.issue_date, i.total, i.currency
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
      WHERE i.number LIKE ?1
@@ -80,7 +81,7 @@ async function searchInvoices(like: string): Promise<SearchHit[]> {
     id: r.id,
     number: displayInvoiceNumber(r),
     primary: r.customer_name ?? MISSING_NAME,
-    secondary: joinDetails([dateDetail(r.issue_date), centsToEur(r.total)]),
+    secondary: joinDetails([dateDetail(r.issue_date), formatMoney(r.total, r.currency)]),
     route: `/invoices/${r.id}`,
   }));
 }
@@ -142,9 +143,10 @@ async function searchExpenses(like: string): Promise<SearchHit[]> {
     vendor_name: string | null;
     issue_date: number;
     total: number;
+    currency: string;
   }>(
     `SELECT e.id, e.internal_number, e.number AS external_number,
-            v.name AS vendor_name, e.issue_date, e.total
+            v.name AS vendor_name, e.issue_date, e.total, e.currency
      FROM expenses e
      LEFT JOIN vendors v ON v.id = e.vendor_id
      WHERE e.internal_number LIKE ?1
@@ -165,7 +167,7 @@ async function searchExpenses(like: string): Promise<SearchHit[]> {
     secondary: joinDetails([
       r.external_number ? `Ext.: ${r.external_number}` : null,
       dateDetail(r.issue_date),
-      centsToEur(r.total),
+      formatMoney(r.total, r.currency),
     ]),
     route: `/expenses/${r.id}`,
   }));
@@ -178,8 +180,9 @@ async function searchOffers(like: string): Promise<SearchHit[]> {
     customer_name: string | null;
     issue_date: number;
     total: number;
+    currency: string;
   }>(
-    `SELECT o.id, o.number, c.name AS customer_name, o.issue_date, o.total
+    `SELECT o.id, o.number, c.name AS customer_name, o.issue_date, o.total, o.currency
      FROM offers o
      LEFT JOIN customers c ON c.id = o.customer_id
      WHERE o.number LIKE ?1 OR c.name LIKE ?1
@@ -192,7 +195,7 @@ async function searchOffers(like: string): Promise<SearchHit[]> {
     id: r.id,
     number: r.number,
     primary: r.customer_name ?? MISSING_NAME,
-    secondary: joinDetails([dateDetail(r.issue_date), centsToEur(r.total)]),
+    secondary: joinDetails([dateDetail(r.issue_date), formatMoney(r.total, r.currency)]),
     route: `/offers/${r.id}`,
   }));
 }
@@ -204,8 +207,9 @@ async function searchReminders(like: string): Promise<SearchHit[]> {
     customer_name: string | null;
     issue_date: number;
     total_due_cents: number;
+    currency: string | null;
   }>(
-    `SELECT r.id, r.number, c.name AS customer_name, r.issue_date, r.total_due_cents
+    `SELECT r.id, r.number, c.name AS customer_name, r.issue_date, r.total_due_cents, i.currency
      FROM reminders r
      LEFT JOIN invoices i ON i.id = r.invoice_id
      LEFT JOIN customers c ON c.id = i.customer_id
@@ -219,7 +223,7 @@ async function searchReminders(like: string): Promise<SearchHit[]> {
     id: r.id,
     number: r.number,
     primary: r.customer_name ?? MISSING_NAME,
-    secondary: joinDetails([dateDetail(r.issue_date), centsToEur(r.total_due_cents)]),
+    secondary: joinDetails([dateDetail(r.issue_date), formatMoney(r.total_due_cents, r.currency ?? DEFAULT_CURRENCY)]),
     route: `/reminders/${r.id}`,
   }));
 }

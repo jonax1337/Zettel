@@ -14,6 +14,14 @@ export function formatDate(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleDateString("de-DE");
 }
 
+/** Local date and time, e.g. "22.05.2026, 14:30". */
+export function formatDateTime(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleString("de-DE", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 export function nowUnix(): number {
   return toUnix(new Date());
 }

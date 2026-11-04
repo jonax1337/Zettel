@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDaysUnix, formatDate, fromIsoDate, nowUnix, startOfDayUnix, toIsoDate, toUnix } from "./date";
+import { addDaysUnix, formatDate, formatDateTime, fromIsoDate, nowUnix, startOfDayUnix, toIsoDate, toUnix } from "./date";
 
 describe("toIsoDate / fromIsoDate", () => {
   it("roundtrips at local midnight", () => {
@@ -75,5 +75,14 @@ describe("startOfDayUnix", () => {
   it("returns local midnight of the given day", () => {
     const afternoon = new Date(2026, 4, 17, 15, 45, 12);
     expect(startOfDayUnix(afternoon)).toBe(fromIsoDate("2026-05-17"));
+  });
+});
+
+describe("formatDateTime", () => {
+  it("formats date and time in local German notation", () => {
+    expect(formatDateTime(toUnix(new Date(2026, 4, 22, 14, 30)))).toBe("22.05.2026, 14:30");
+  });
+  it("zero-pads day, month and time", () => {
+    expect(formatDateTime(toUnix(new Date(2026, 0, 5, 9, 5)))).toBe("05.01.2026, 09:05");
   });
 });

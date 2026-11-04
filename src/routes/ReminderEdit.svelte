@@ -11,11 +11,13 @@
     updateReminder,
     type ReminderFields,
   } from "$lib/db/reminders";
+  import { DEFAULT_CURRENCY } from "$lib/db/doc-queries";
   import { getInvoice } from "$lib/db/invoices";
   import type { Reminder, ReminderInvoiceSnapshot, ReminderLevel } from "$lib/db/schema";
   import { parseSnapshot } from "$lib/db/snapshot-json";
   import { fromIsoDate, toIsoDate, formatDate, nowUnix } from "$lib/utils/date";
-  import { centsToEur, eurStringToCents } from "$lib/utils/money";
+  import { formatMoney } from "$lib/utils/currency";
+  import { eurStringToCents } from "$lib/utils/money";
   import { generateReminderPdf } from "$lib/sidecar/reminder";
   import {
     Button,
@@ -66,6 +68,7 @@
   let notes = $state("");
   let status = $state<Reminder["status"]>("draft");
   let originalCents = $state(0);
+  let currency = $state(DEFAULT_CURRENCY);
   let pdfPath = $state<string | null>(null);
 
   const readonly = $derived(status !== "draft");
@@ -104,6 +107,7 @@
     invoiceNumber = source.invoice.number;
     customerName = customerNameFromSnapshot(source.invoice.customerSnapshot);
     originalCents = remindableAmountCents(source.invoice);
+    currency = source.invoice.currency;
     issueIso = toIsoDate(draft.issueDate);
     dueIso = toIsoDate(draft.dueDate);
     feeStr = centsToPriceText(draft.feeCents);
@@ -122,6 +126,7 @@
     invoiceNumber = snapshot.invoiceNumber ?? UNKNOWN_NAME;
     customerName = snapshot.customerName ?? UNKNOWN_NAME;
     originalCents = reminder.originalTotalCents;
+    currency = (await getInvoice(reminder.invoiceId))?.invoice.currency ?? DEFAULT_CURRENCY;
     issueIso = toIsoDate(reminder.issueDate);
     dueIso = toIsoDate(reminder.dueDate);
     feeStr = centsToPriceText(reminder.feeCents);
@@ -288,19 +293,19 @@
     <SectionCard title="Beträge">
       <div class="flex justify-between text-sm">
         <span>Offener Rechnungsbetrag</span>
-        <span class="font-mono">{centsToEur(originalCents)}</span>
+        <span class="font-mono">{formatMoney(originalCents, currency)}</span>
       </div>
       <div class="flex flex-col gap-1.5">
-        <Label>Mahngebühr (EUR)</Label>
+        <Label>Mahngebühr ({currency})</Label>
         <Input bind:value={feeStr} disabled={readonly} />
       </div>
       <div class="flex flex-col gap-1.5">
-        <Label>Verzugszinsen (EUR)</Label>
+        <Label>Verzugszinsen ({currency})</Label>
         <Input bind:value={interestStr} disabled={readonly} />
       </div>
       <div class="flex justify-between text-base font-semibold border-t pt-2">
         <span>Zu zahlender Gesamtbetrag</span>
-        <span class="font-mono">{centsToEur(totalDueCents)}</span>
+        <span class="font-mono">{formatMoney(totalDueCents, currency)}</span>
       </div>
     </SectionCard>
   </div>
@@ -348,7 +353,7 @@
       Hinweis: Diese Mahnung ist eine Zahlungserinnerung — keine Rechtsberatung. Für gerichtliche Mahnverfahren bitte rechtliche Beratung einholen.
     </p>
     <p class="mt-1">
-      Mahngebühr: {centsToEur(feeCents)} · Fällig: {formatDate(fromIsoDate(dueIso))}
+      Mahngebühr: {formatMoney(feeCents, currency)} · Fällig: {formatDate(fromIsoDate(dueIso))}
     </p>
   </div>
 {/if}

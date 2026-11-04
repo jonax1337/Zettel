@@ -1,16 +1,13 @@
 <script lang="ts">
   import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
   import { Badge } from "$lib/ui";
+  import { formatDateTime } from "$lib/utils/date";
   import { Clock, FileText, FolderOpen, History } from "$lib/brand-icons";
   import type { PdfVersion } from "$lib/sidecar/invoice";
 
   let { versions }: { versions: PdfVersion[] } = $props();
 
   const hasHistory = $derived(versions.length > 1);
-
-  function formatVersionTime(unix: number): string {
-    return new Date(unix * 1000).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
-  }
 </script>
 
 <div class="mb-4 rounded-lg border">
@@ -26,7 +23,7 @@
       <li class="flex items-center justify-between gap-3 px-3 py-1.5 text-sm">
         <div class="flex min-w-0 items-center gap-2">
           <Clock class="size-3.5 shrink-0 text-muted-foreground" />
-          <span class="tabular-nums text-muted-foreground">{formatVersionTime(v.modifiedUnix)}</span>
+          <span class="tabular-nums text-muted-foreground">{formatDateTime(v.modifiedUnix)}</span>
           {#if v.current && hasHistory}
             <Badge variant="outline">Aktuell</Badge>
           {/if}

@@ -158,6 +158,17 @@ describe("createReminder", () => {
 });
 
 describe("listReminders", () => {
+  it("carries the currency of the reminded invoice and defaults to EUR", async () => {
+    select.mockResolvedValueOnce([
+      { ...draftReminderRow, invoice_currency: "USD" },
+      { ...draftReminderRow, id: 8, invoice_currency: null },
+    ]);
+
+    const rows = await listReminders();
+
+    expect(rows.map((r) => r.currency)).toEqual(["USD", "EUR"]);
+  });
+
   it("falls back to dashes and warns for an unreadable invoice snapshot", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     select.mockResolvedValueOnce([{ ...draftReminderRow, invoice_snapshot: "{" }]);

@@ -14,6 +14,7 @@
   } from "$lib/ui";
   import { History } from "$lib/brand-icons";
   import { loadSettings, saveAutoBackupInterval } from "$lib/db/queries";
+  import { formatDateTime } from "$lib/utils/date";
   import { lastAutoBackupFailure, type AutoBackupFailure } from "$lib/utils/auto-backup";
 
   // A fresh installation starts with auto-backup switched off (DB default 0).
@@ -63,10 +64,7 @@
 
   function formatTimestamp(unixSeconds: number | null): string {
     if (!unixSeconds) return "noch nie";
-    return new Date(unixSeconds * 1000).toLocaleString("de-DE", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
+    return formatDateTime(unixSeconds);
   }
 </script>
 
