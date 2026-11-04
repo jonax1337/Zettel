@@ -43,13 +43,14 @@ describe("paymentRejection", () => {
     expect(paymentRejection(open, amount)).toContain("größer als 0");
   });
 
-  it("accepts exactly the open amount but not one cent more", () => {
+  it("accepts the open amount plus the rounding cent bank matching tolerates, but no more", () => {
     expect(paymentRejection(open, 6_000)).toBeNull();
-    expect(paymentRejection(open, 6_001)).toContain("übersteigt");
+    expect(paymentRejection(open, 6_001)).toBeNull();
+    expect(paymentRejection(open, 6_002)).toContain("übersteigt");
   });
 
   it("accepts an overpayment when it is explicitly allowed", () => {
-    expect(paymentRejection(open, 6_001, true)).toBeNull();
+    expect(paymentRejection(open, 6_002, true)).toBeNull();
   });
 
   it("measures the open amount of a credit note by its absolute total", () => {
@@ -107,6 +108,24 @@ describe("addPayment", () => {
       DuplicateBankBookingError,
     );
     expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("reports a booking recorded concurrently as a duplicate, not as a raw SQL error", async () => {
+    invoiceInDb(payable);
+    db.insert.mockRejectedValueOnce(
+      new Error("error returned from database: (code: 2067) UNIQUE constraint failed: invoice_payments.bank_transaction_id"),
+    );
+
+    await expect(addPayment({ ...payment, bankTransactionId: "key-1" })).rejects.toBeInstanceOf(
+      DuplicateBankBookingError,
+    );
+  });
+
+  it("passes other insert failures through unchanged", async () => {
+    invoiceInDb(payable);
+    db.insert.mockRejectedValueOnce(new Error("FOREIGN KEY constraint failed"));
+
+    await expect(addPayment({ ...payment, bankTransactionId: "key-1" })).rejects.toThrow("FOREIGN KEY");
   });
 
   it("stores the dedupe key of an imported booking", async () => {

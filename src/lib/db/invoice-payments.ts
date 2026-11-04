@@ -1,4 +1,5 @@
 import { execute, insert, select } from "./client";
+import { PAYMENT_ROUNDING_TOLERANCE_CENT } from "./invoice-lifecycle";
 import type { InvoicePayment, InvoicePaymentSource, InvoiceStatus } from "./schema";
 import { nowUnix } from "$lib/utils/date";
 
@@ -111,7 +112,7 @@ export function paymentRejection(
     return "Zahlbetrag muss größer als 0 sein.";
   }
   const openCent = Math.abs(invoice.total) - invoice.paidCent;
-  if (!allowOverpayment && amountCent > openCent) {
+  if (!allowOverpayment && amountCent > openCent + PAYMENT_ROUNDING_TOLERANCE_CENT) {
     return "Der Zahlbetrag übersteigt den offenen Betrag der Rechnung.";
   }
   return null;
@@ -150,20 +151,7 @@ export async function addPayment(input: AddPaymentInput): Promise<number> {
     throw new DuplicateBankBookingError();
   }
 
-  const id = await insert(
-    `INSERT INTO invoice_payments
-       (invoice_id, paid_at, amount_cent, eur_amount_cent, source, notes, bank_transaction_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [
-      input.invoiceId,
-      input.paidAt,
-      input.amountCent,
-      input.eurAmountCent ?? null,
-      input.source ?? "manual",
-      input.notes ?? null,
-      bankTransactionId,
-    ],
-  );
+  const id = await insertPayment(input, bankTransactionId);
   try {
     await recomputeInvoiceStatus(input.invoiceId);
   } catch (error) {
@@ -171,6 +159,34 @@ export async function addPayment(input: AddPaymentInput): Promise<number> {
     throw error;
   }
   return id;
+}
+
+async function insertPayment(input: AddPaymentInput, bankTransactionId: string | null): Promise<number> {
+  try {
+    return await insert(
+      `INSERT INTO invoice_payments
+         (invoice_id, paid_at, amount_cent, eur_amount_cent, source, notes, bank_transaction_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        input.invoiceId,
+        input.paidAt,
+        input.amountCent,
+        input.eurAmountCent ?? null,
+        input.source ?? "manual",
+        input.notes ?? null,
+        bankTransactionId,
+      ],
+    );
+  } catch (error) {
+    // A concurrent import of the same booking can pass the pre-check; the unique index decides.
+    if (bankTransactionId !== null && isBankTransactionConflict(error)) throw new DuplicateBankBookingError();
+    throw error;
+  }
+}
+
+function isBankTransactionConflict(error: unknown): boolean {
+  const message = String(error);
+  return message.includes("UNIQUE constraint failed") && message.includes("invoice_payments.bank_transaction_id");
 }
 
 export async function deletePayment(id: number): Promise<void> {

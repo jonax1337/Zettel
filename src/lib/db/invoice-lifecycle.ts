@@ -7,6 +7,9 @@ import { isDraftNumber } from "$lib/utils/invoice-number";
 
 type LifecycleFacts = Pick<Invoice, "number" | "status">;
 
+/** A bank booking may miss the open balance by a rounding cent; matching and payment validation both accept it. */
+export const PAYMENT_ROUNDING_TOLERANCE_CENT = 1;
+
 /** Only invoices that never received a real number leave no gap when deleted. */
 export function canDeleteInvoice(invoice: LifecycleFacts): boolean {
   return isDraftNumber(invoice.number);

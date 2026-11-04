@@ -9,7 +9,7 @@
  * Output ist eine Liste von Bookings mit jeweils 0..n Match-Kandidaten;
  * der User bestätigt im UI.
  */
-import { invoiceIdsSettledByCreditNote } from "$lib/db/invoice-lifecycle";
+import { invoiceIdsSettledByCreditNote, PAYMENT_ROUNDING_TOLERANCE_CENT } from "$lib/db/invoice-lifecycle";
 import type { InvoiceListRow } from "$lib/db/invoices";
 import { isDraftNumber } from "$lib/utils/invoice-number";
 
@@ -35,7 +35,6 @@ export type BookingMatch = {
   defaultPick: number | null;
 };
 
-const AMOUNT_TOLERANCE_CENT = 1;
 const MIN_PARTY_NAME_LENGTH = 4;
 const MIN_CUSTOMER_WORD_LENGTH = 4;
 /** Bookings and invoices without a currency are EUR (German accounts, legacy rows). */
@@ -94,7 +93,7 @@ function matchByInvoiceNumber(booking: Booking, invoices: InvoiceListRow[]): Mat
 /** Pass 2: Exakter Betrags-Match auf offenen Saldo. */
 function matchByOpenBalance(booking: Booking, invoices: InvoiceListRow[]): MatchCandidate[] {
   return invoices
-    .filter((inv) => Math.abs(openBalance(inv) - booking.amountCent) <= AMOUNT_TOLERANCE_CENT)
+    .filter((inv) => Math.abs(openBalance(inv) - booking.amountCent) <= PAYMENT_ROUNDING_TOLERANCE_CENT)
     .map((invoice): MatchCandidate => ({
       invoice,
       confidence: "medium",
