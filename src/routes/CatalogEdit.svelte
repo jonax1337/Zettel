@@ -9,6 +9,7 @@
   import type { CatalogItem } from "$lib/db/schema";
   import { Button, Input, Textarea, Label, Card, CardContent, Checkbox, toast } from "$lib/ui";
   import { eurStringToCents } from "$lib/utils/money";
+  import { DEFAULT_UNIT } from "$lib/utils/units";
   import BackLink from "./parts/entity/BackLink.svelte";
   import { fetchEditTarget } from "./parts/entity/edit-target";
   import { centsToPriceText } from "./parts/entity/format";
@@ -26,7 +27,7 @@
     name: "",
     descriptionDe: "",
     descriptionEn: null,
-    unit: "Stk",
+    unit: DEFAULT_UNIT,
     defaultUnitPrice: 0,
     defaultVatRate: STANDARD_VAT_RATE,
     defaultDatevAccount: null,
