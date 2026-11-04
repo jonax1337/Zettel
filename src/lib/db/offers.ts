@@ -491,6 +491,8 @@ export async function convertToInvoice(
 export async function openOffersStats(): Promise<{
   count: number;
   total: number;
+  /** Open offers left out of `total` because they have no usable exchange rate. */
+  unconvertedCount: number;
   expiringSoonCount: number;
 }> {
   const today = startOfTodayUnix();
@@ -499,10 +501,13 @@ export async function openOffersStats(): Promise<{
   );
   // Foreign-currency offers count in EUR at their stored rate; without a usable rate they add nothing
   // rather than mixing currencies into one sum.
-  const totalEur = openOffers.reduce(
-    (sum, o) => sum + (computeEurTotalCent(o.currency ?? DEFAULT_CURRENCY, o.total, o.exchange_rate) ?? 0),
-    0,
-  );
+  let totalEur = 0;
+  let unconvertedCount = 0;
+  for (const o of openOffers) {
+    const eur = computeEurTotalCent(o.currency ?? DEFAULT_CURRENCY, o.total, o.exchange_rate);
+    if (eur === null) unconvertedCount += 1;
+    else totalEur += eur;
+  }
   const [soonRow] = await select<{ c: number }>(
     `SELECT COUNT(*) AS c FROM offers WHERE status IN ${OPEN_STATUSES_SQL} AND valid_until BETWEEN ? AND ?`,
     [today, addDaysUnix(today, EXPIRING_SOON_DAYS)],
@@ -510,6 +515,7 @@ export async function openOffersStats(): Promise<{
   return {
     count: openOffers.length,
     total: totalEur,
+    unconvertedCount,
     expiringSoonCount: soonRow?.c ?? 0,
   };
 }
