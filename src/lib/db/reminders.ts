@@ -108,7 +108,7 @@ export async function listRemindersForInvoice(
 }
 
 export type OverdueInvoice = {
-  invoice: Pick<Invoice, "id" | "number" | "dueDate" | "total">;
+  invoice: Pick<Invoice, "id" | "number" | "dueDate" | "total" | "amountPaidCent" | "currency">;
   customerName: string;
   daysOverdue: number;
   existingReminderLevels: ReminderLevel[];
@@ -119,6 +119,8 @@ type OverdueInvoiceRow = {
   number: string;
   due_date: number;
   total: number;
+  amount_paid_cent: number;
+  currency: string;
   customer_name: string | null;
 };
 
@@ -146,7 +148,7 @@ async function loadReminderLevelsByInvoice(
 export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
   const now = nowUnix();
   const rows = await select<OverdueInvoiceRow>(
-    `SELECT i.id, i.number, i.due_date, i.total, c.name AS customer_name
+    `SELECT i.id, i.number, i.due_date, i.total, i.amount_paid_cent, i.currency, c.name AS customer_name
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
      WHERE i.status IN ('sent','partial') AND i.due_date < ? AND (i.is_credit_note IS NULL OR i.is_credit_note = 0)
@@ -157,7 +159,14 @@ export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
 
   const levelsByInvoice = await loadReminderLevelsByInvoice(rows.map((r) => r.id));
   return rows.map((r) => ({
-    invoice: { id: r.id, number: r.number, dueDate: r.due_date, total: r.total },
+    invoice: {
+      id: r.id,
+      number: r.number,
+      dueDate: r.due_date,
+      total: r.total,
+      amountPaidCent: r.amount_paid_cent,
+      currency: r.currency,
+    },
     customerName: r.customer_name ?? MISSING_VALUE,
     daysOverdue: Math.max(0, Math.floor((now - r.due_date) / SECONDS_PER_DAY)),
     existingReminderLevels: levelsByInvoice.get(r.id) ?? [],
@@ -333,10 +342,10 @@ export async function updateReminder(id: number, patch: ReminderPatch): Promise<
   );
 }
 
-export async function markReminderSent(id: number): Promise<void> {
+export async function markReminderSent(id: number, sentAt: number = nowUnix()): Promise<void> {
   await execute(
-    "UPDATE reminders SET status = 'sent', sent_at = unixepoch(), updated_at = unixepoch() WHERE id = ? AND status = 'draft'",
-    [id],
+    "UPDATE reminders SET status = 'sent', sent_at = ?, updated_at = unixepoch() WHERE id = ? AND status = 'draft'",
+    [sentAt, id],
   );
 }
 

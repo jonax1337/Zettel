@@ -28,6 +28,12 @@ describe("year and customer filter items", () => {
       { value: "7", label: "ACME" },
     ]);
   });
+
+  it("labels the catch-all option for another counterparty", () => {
+    expect(customerFilterItems([], "Alle Lieferanten")).toEqual([
+      { value: "all", label: "Alle Lieferanten" },
+    ]);
+  });
 });
 
 describe("numberOrAll", () => {

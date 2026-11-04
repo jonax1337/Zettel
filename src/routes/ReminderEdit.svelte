@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { push, replace } from "svelte-spa-router";
   import {
     buildReminderDraft,
     createReminder,
@@ -14,7 +14,7 @@
   import { getInvoice } from "$lib/db/invoices";
   import type { Reminder, ReminderInvoiceSnapshot, ReminderLevel } from "$lib/db/schema";
   import { parseSnapshot } from "$lib/db/snapshot-json";
-  import { fromIsoDate, toIsoDate, formatDate } from "$lib/utils/date";
+  import { fromIsoDate, toIsoDate, formatDate, nowUnix } from "$lib/utils/date";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
   import { generateReminderPdf } from "$lib/sidecar/reminder";
   import {
@@ -28,7 +28,9 @@
     toast,
   } from "$lib/ui";
   import { FileText, Send, Trash2 } from "$lib/brand-icons";
-  import { open as openShell } from "@tauri-apps/plugin-shell";
+  import { openPath } from "@tauri-apps/plugin-opener";
+  import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
+  import { sendDateWarning } from "./invoice/date-warnings";
   import BackLink from "./parts/entity/BackLink.svelte";
   import { parseId } from "./parts/entity/edit-target";
   import { centsToPriceText } from "./parts/entity/format";
@@ -47,6 +49,8 @@
   let generating = $state(false);
   let error = $state<string | null>(null);
   let confirmDeleteOpen = $state(false);
+  let sendDialogOpen = $state(false);
+  let sendDate = $state(toIsoDate(nowUnix()));
 
   let reminderId = $state<number | null>(null);
   let invoiceId = $state<number | null>(null);
@@ -67,6 +71,9 @@
   const readonly = $derived(status !== "draft");
   const feeCents = $derived(eurStringToCents(feeStr));
   const totalDueCents = $derived(originalCents + feeCents + eurStringToCents(interestStr));
+  const sendWarning = $derived(
+    sendDate ? sendDateWarning(fromIsoDate(sendDate), fromIsoDate(issueIso), nowUnix()) : null,
+  );
 
   $effect(() => {
     init();
@@ -150,54 +157,68 @@
       }
       return reminderId;
     } catch (e) {
-      toast.error(String(e));
+      toast.error("Mahnung konnte nicht gespeichert werden", String(e));
       return null;
     } finally {
       saving = false;
     }
   }
 
+  /** A freshly created reminder gets its own route, so a reload cannot create a duplicate draft. */
+  function showSavedReminder(savedId: number) {
+    if (mode === "new") replace(`/reminders/${savedId}`);
+  }
+
   async function saveAndStay() {
     const savedId = await save();
-    if (savedId !== null && mode === "new") push(`/reminders/${savedId}`);
+    if (savedId !== null) showSavedReminder(savedId);
   }
 
   async function openPdf(path: string) {
     try {
-      await openShell(path);
+      await openPath(path);
     } catch (e) {
       toast.error("PDF konnte nicht geöffnet werden", String(e));
     }
   }
 
   async function generatePdf() {
-    const savedId = await save();
+    const savedId = readonly ? reminderId : await save();
     if (savedId === null) return;
     generating = true;
     try {
       const res = await generateReminderPdf(savedId);
       if (!res.success) {
-        toast.error(`PDF fehlgeschlagen: ${res.error.message}`);
-        return;
+        toast.error("PDF konnte nicht erstellt werden", res.error.message);
+      } else {
+        pdfPath = res.pdfPath;
+        toast.success("PDF erstellt");
+        await openPdf(res.pdfPath);
       }
-      pdfPath = res.pdfPath;
-      toast.success("PDF erstellt");
-      await openPdf(res.pdfPath);
     } catch (e) {
-      toast.error(String(e));
+      toast.error("PDF konnte nicht erstellt werden", String(e));
     } finally {
       generating = false;
     }
+    showSavedReminder(savedId);
   }
 
-  async function markSent() {
-    if (reminderId === null) return;
+  function openSendDialog() {
+    sendDate = toIsoDate(nowUnix());
+    sendDialogOpen = true;
+  }
+
+  async function confirmSend() {
+    sendDialogOpen = false;
+    const savedId = await save();
+    if (savedId === null) return;
     try {
-      await markReminderSent(reminderId);
+      await markReminderSent(savedId, fromIsoDate(sendDate));
       status = "sent";
       toast.success("Als versendet markiert");
+      showSavedReminder(savedId);
     } catch (e) {
-      toast.error(String(e));
+      toast.error("Mahnung konnte nicht als versendet markiert werden", String(e));
     }
   }
 
@@ -208,7 +229,7 @@
       toast.success("Mahnung gelöscht");
       push("/reminders");
     } catch (e) {
-      toast.error(String(e));
+      toast.error("Mahnung konnte nicht gelöscht werden", String(e));
     }
   }
 </script>
@@ -232,7 +253,13 @@
       </p>
     </div>
     {#if readonly}
-      <span class="text-sm text-muted-foreground">Versendet — schreibgeschützt</span>
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-muted-foreground">Versendet — schreibgeschützt</span>
+        <Button variant="outline" onclick={generatePdf} disabled={generating}>
+          <FileText class="size-4" />
+          PDF neu erzeugen
+        </Button>
+      </div>
     {:else}
       <div class="flex gap-2">
         <Button variant="outline" onclick={saveAndStay} disabled={saving}>
@@ -309,7 +336,7 @@
         <Trash2 class="size-4" />
         Löschen
       </Button>
-      <Button variant="outline" onclick={markSent}>
+      <Button variant="outline" onclick={openSendDialog} disabled={saving}>
         <Send class="size-4" />
         Als versendet markieren
       </Button>
@@ -325,6 +352,19 @@
     </p>
   </div>
 {/if}
+
+<DateConfirmDialog
+  bind:open={sendDialogOpen}
+  bind:date={sendDate}
+  title="Als versendet markieren"
+  description="Danach ist die Mahnung schreibgeschützt und kann nicht mehr bearbeitet oder gelöscht werden."
+  dateInputId="reminder-send-date"
+  dateLabel="Versanddatum"
+  hint="Standard ist heute. Für Nacherfassung das tatsächliche Versanddatum eintragen."
+  confirmLabel="Als versendet markieren"
+  warning={sendWarning}
+  onConfirm={confirmSend}
+/>
 
 <ConfirmDialog
   bind:open={confirmDeleteOpen}
