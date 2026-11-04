@@ -4,6 +4,7 @@
   import { open, save } from "@tauri-apps/plugin-dialog";
   import { execute, isSandboxActive } from "$lib/db/client";
   import { loadSettings } from "$lib/db/queries";
+  import { relaunchApp } from "$lib/utils/relaunch";
   import { version as appVersion } from "../../../package.json";
   import {
     Button,
@@ -82,11 +83,6 @@
   // The default tenant has no label of its own; the company name stands in for it.
   function tenantDisplayName(t: TenantEntry): string {
     return t.id === DEFAULT_TENANT_ID ? companyName || t.label : t.label;
-  }
-
-  async function relaunchApp() {
-    const { relaunch } = await import("@tauri-apps/plugin-process");
-    await relaunch();
   }
 
   async function changeTenantAndRelaunch(failureTitle: string, change: () => Promise<unknown>) {

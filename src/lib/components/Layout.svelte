@@ -3,7 +3,7 @@
   import { onMount, type Snippet } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { FlaskConical } from "$lib/brand-icons";
-  import { Toaster, Titlebar, CommandPalette } from "$lib/ui";
+  import { Toaster, Titlebar, CommandPalette, toast } from "$lib/ui";
   import { isSandboxActive } from "$lib/db/client";
   import { loadSettings } from "$lib/db/queries";
   import { maybeRunAutoBackup } from "$lib/utils/auto-backup";
@@ -36,7 +36,13 @@
     openOnboardingOnFreshInstall();
     // Sandbox data is disposable, so it is never backed up.
     if (!sandbox) {
-      maybeRunAutoBackup().catch((e) => console.error("Auto-backup failed", e));
+      maybeRunAutoBackup()
+        .then((outcome) => {
+          if (outcome.status === "failed") {
+            toast.error("Auto-Backup fehlgeschlagen", outcome.message);
+          }
+        })
+        .catch((e) => console.error("Auto-backup failed", e));
     }
   });
 
