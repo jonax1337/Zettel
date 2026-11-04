@@ -10,46 +10,30 @@
   import type { ReminderLevel } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
+  import { applySort } from "$lib/utils/sort";
   import { Button, Card, Badge, SortableTh, EmptyState } from "$lib/ui";
   import { Plus, AlertTriangle } from "$lib/brand-icons";
-  import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
+  import { pluralize } from "./parts/entity/format";
+  import { createListSort } from "./parts/entity/list-sort.svelte";
+  import { createQueryState } from "./parts/entity/query-state.svelte";
+  import { suggestNextLevel } from "./parts/reminder/reminder-level";
 
-  let reminders = $state<ReminderListRow[]>([]);
-  let overdue = $state<OverdueInvoice[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
+  const SEVERE_OVERDUE_DAYS = 30;
 
-  async function reload() {
-    loading = true;
-    try {
-      [reminders, overdue] = await Promise.all([listReminders(), listOverdueInvoices()]);
-      error = null;
-    } catch (e) {
-      error = String(e);
-    } finally {
-      loading = false;
-    }
-  }
+  type ReminderOverview = { reminders: ReminderListRow[]; overdue: OverdueInvoice[] };
 
+  const overview = createQueryState<ReminderOverview>({ reminders: [], overdue: [] }, async () => {
+    const [reminders, overdue] = await Promise.all([listReminders(), listOverdueInvoices()]);
+    return { reminders, overdue };
+  });
   $effect(() => {
-    reload();
+    overview.reload();
   });
 
-  function suggestedLevel(existing: ReminderLevel[]): ReminderLevel {
-    if (existing.includes(3)) return 3;
-    if (existing.includes(2)) return 3;
-    if (existing.includes(1)) return 2;
-    return 1;
-  }
-
   type SortKey = "number" | "issueDate" | "invoice" | "customer" | "level" | "totalDue" | "status";
-  let sort = $state<SortState<SortKey>>(loadSortState<SortKey>("reminders", { key: "issueDate", dir: "desc" }));
-  function setSort(key: SortKey, dir: SortState<SortKey>["dir"]) {
-    sort = { key: dir === null ? null : key, dir };
-    saveSortState("reminders", sort);
-  }
+  const sort = createListSort<SortKey>("reminders", { key: "issueDate", dir: "desc" });
   const sortedReminders = $derived(
-    applySort(reminders, sort, {
+    applySort(overview.data.reminders, sort.state, {
       number: (r) => r.number,
       issueDate: (r) => r.issueDate,
       invoice: (r) => r.invoiceNumber,
@@ -65,17 +49,17 @@
   <div>
     <h1 class="text-3xl font-semibold tracking-tight">Mahnungen</h1>
     <p class="text-sm text-muted-foreground mt-1">
-      {reminders.length} {reminders.length === 1 ? "Mahnung" : "Mahnungen"} · {overdue.length} überfällige Rechnung{overdue.length === 1 ? "" : "en"}
+      {overview.data.reminders.length} {pluralize(overview.data.reminders.length, "Mahnung", "Mahnungen")} · {overview.data.overdue.length} {pluralize(overview.data.overdue.length, "überfällige Rechnung", "überfällige Rechnungen")}
     </p>
   </div>
 </header>
 
-{#if error}
-  <p class="text-sm text-destructive">Fehler: {error}</p>
-{:else if loading}
+{#if overview.error}
+  <p class="text-sm text-destructive">Fehler: {overview.error}</p>
+{:else if overview.loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else}
-  {#if overdue.length > 0}
+  {#if overview.data.overdue.length > 0}
     <section class="mb-8">
       <h2 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
         <AlertTriangle class="size-4 text-warning" />
@@ -95,15 +79,15 @@
             </tr>
           </thead>
           <tbody class="stagger">
-            {#each overdue as o (o.invoice.id)}
-              {@const lvl = suggestedLevel(o.existingReminderLevels)}
+            {#each overview.data.overdue as o (o.invoice.id)}
+              {@const nextLevel = suggestNextLevel(o.existingReminderLevels)}
               <tr class="border-t hover:bg-muted/30 transition-colors">
                 <td class="px-4 py-3 font-mono text-xs">{o.invoice.number}</td>
                 <td class="px-4 py-3">{o.customerName}</td>
                 <td class="px-4 py-3 text-right font-mono">{centsToEur(o.invoice.total)}</td>
                 <td class="px-4 py-3 text-muted-foreground text-xs">{formatDate(o.invoice.dueDate)}</td>
                 <td class="px-4 py-3">
-                  <Badge variant={o.daysOverdue > 30 ? "destructive" : "warning"}>
+                  <Badge variant={o.daysOverdue > SEVERE_OVERDUE_DAYS ? "destructive" : "warning"}>
                     {o.daysOverdue} Tage
                   </Badge>
                 </td>
@@ -116,10 +100,10 @@
                   <Button
                     size="sm"
                     variant="outline"
-                    onclick={() => push(`/reminders/new/${o.invoice.id}/${lvl}`)}
+                    onclick={() => push(`/reminders/new/${o.invoice.id}/${nextLevel}`)}
                   >
                     <Plus class="size-3.5" />
-                    {levelLabel(lvl)}
+                    {levelLabel(nextLevel)}
                   </Button>
                 </td>
               </tr>
@@ -134,20 +118,20 @@
     <h2 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
       Alle Mahnungen
     </h2>
-    {#if reminders.length === 0}
+    {#if overview.data.reminders.length === 0}
       <EmptyState message="Noch keine Mahnungen erstellt." />
     {:else}
       <Card class="overflow-hidden py-0">
         <table class="w-full text-sm">
           <thead class="bg-muted/40 text-left">
             <tr>
-              <SortableTh column="number" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Nummer</SortableTh>
-              <SortableTh column="issueDate" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Datum</SortableTh>
-              <SortableTh column="invoice" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Rechnung</SortableTh>
-              <SortableTh column="customer" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Kunde</SortableTh>
-              <SortableTh column="level" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Stufe</SortableTh>
-              <SortableTh column="totalDue" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} align="right" class="px-4 py-3 text-right">Zu zahlen</SortableTh>
-              <SortableTh column="status" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Status</SortableTh>
+              <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Nummer</SortableTh>
+              <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Datum</SortableTh>
+              <SortableTh column="invoice" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Rechnung</SortableTh>
+              <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Kunde</SortableTh>
+              <SortableTh column="level" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Stufe</SortableTh>
+              <SortableTh column="totalDue" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-4 py-3 text-right">Zu zahlen</SortableTh>
+              <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Status</SortableTh>
             </tr>
           </thead>
           <tbody class="stagger">

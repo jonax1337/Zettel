@@ -19,7 +19,6 @@ def test_trigger_skips_non_eur():
         iban="DE89370400440532013000",
         amount_cent=10000,
         is_credit_note=False,
-        reverse_charge_type=None,
     ) is False
 
 
@@ -29,14 +28,12 @@ def test_trigger_skips_missing_iban():
         iban=None,
         amount_cent=10000,
         is_credit_note=False,
-        reverse_charge_type=None,
     ) is False
     assert should_emit_qr(
         currency="EUR",
         iban="",
         amount_cent=10000,
         is_credit_note=False,
-        reverse_charge_type=None,
     ) is False
 
 
@@ -46,7 +43,6 @@ def test_trigger_skips_credit_note():
         iban="DE89370400440532013000",
         amount_cent=10000,
         is_credit_note=True,
-        reverse_charge_type=None,
     ) is False
 
 
@@ -56,7 +52,6 @@ def test_trigger_skips_zero_amount():
         iban="DE89370400440532013000",
         amount_cent=0,
         is_credit_note=False,
-        reverse_charge_type=None,
     ) is False
 
 
@@ -66,7 +61,6 @@ def test_trigger_emits_for_standard_invoice():
         iban="DE89 3704 0044 0532 0130 00",  # spaces tolerated
         amount_cent=5950,
         is_credit_note=False,
-        reverse_charge_type="none",
     ) is True
 
 

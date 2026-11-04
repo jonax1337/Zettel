@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push, link } from "svelte-spa-router";
+  import { push } from "svelte-spa-router";
   import {
     buildReminderDraft,
     createReminder,
@@ -7,21 +7,37 @@
     getReminder,
     levelLabel,
     markReminderSent,
+    remindableAmountCents,
     updateReminder,
-    type ReminderDraft,
+    type ReminderFields,
   } from "$lib/db/reminders";
   import { getInvoice } from "$lib/db/invoices";
-  import type {
-    Reminder,
-    ReminderInvoiceSnapshot,
-    ReminderLevel,
-  } from "$lib/db/schema";
+  import type { Reminder, ReminderInvoiceSnapshot, ReminderLevel } from "$lib/db/schema";
+  import { parseSnapshot } from "$lib/db/snapshot-json";
   import { fromIsoDate, toIsoDate, formatDate } from "$lib/utils/date";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
   import { generateReminderPdf } from "$lib/sidecar/reminder";
-  import { Button, Card, DatePicker, Input, Label, Textarea, toast } from "$lib/ui";
-  import { ArrowLeft, FileText, Send, Trash2 } from "$lib/brand-icons";
+  import {
+    Button,
+    Card,
+    ConfirmDialog,
+    DatePicker,
+    Input,
+    Label,
+    Textarea,
+    toast,
+  } from "$lib/ui";
+  import { FileText, Send, Trash2 } from "$lib/brand-icons";
   import { open as openShell } from "@tauri-apps/plugin-shell";
+  import BackLink from "./parts/entity/BackLink.svelte";
+  import { parseId } from "./parts/entity/edit-target";
+  import { centsToPriceText } from "./parts/entity/format";
+  import SectionCard from "./parts/reminder/SectionCard.svelte";
+  import {
+    UNKNOWN_NAME,
+    customerNameFromSnapshot,
+    parseReminderLevel,
+  } from "./parts/reminder/reminder-level";
 
   type Mode = "new" | "edit";
   let { mode, params }: { mode: Mode; params: Record<string, string> } = $props();
@@ -30,25 +46,27 @@
   let saving = $state(false);
   let generating = $state(false);
   let error = $state<string | null>(null);
+  let confirmDeleteOpen = $state(false);
 
   let reminderId = $state<number | null>(null);
+  let invoiceId = $state<number | null>(null);
   let invoiceNumber = $state("");
   let customerName = $state("");
 
   let level = $state<ReminderLevel>(1);
-  let issueIso = $state(toIsoDate(Math.floor(Date.now() / 1000)));
-  let dueIso = $state(toIsoDate(Math.floor(Date.now() / 1000) + 14 * 86400));
-  let feeStr = $state("0,00");
-  let interestStr = $state("0,00");
+  let issueIso = $state("");
+  let dueIso = $state("");
+  let feeStr = $state("");
+  let interestStr = $state("");
   let bodyText = $state("");
   let notes = $state("");
   let status = $state<Reminder["status"]>("draft");
   let originalCents = $state(0);
   let pdfPath = $state<string | null>(null);
 
-  const totalDueCents = $derived(
-    originalCents + eurStringToCents(feeStr) + eurStringToCents(interestStr),
-  );
+  const readonly = $derived(status !== "draft");
+  const feeCents = $derived(eurStringToCents(feeStr));
+  const totalDueCents = $derived(originalCents + feeCents + eurStringToCents(interestStr));
 
   $effect(() => {
     init();
@@ -57,53 +75,8 @@
   async function init() {
     loading = true;
     try {
-      if (mode === "new") {
-        const invoiceId = Number.parseInt(params.invoiceId, 10);
-        const lvlParam = Number.parseInt(params.level ?? "1", 10);
-        const lvl: ReminderLevel = (lvlParam === 2 || lvlParam === 3 ? lvlParam : 1) as ReminderLevel;
-        const draft = await buildReminderDraft(invoiceId, lvl);
-        const data = await getInvoice(invoiceId);
-        if (!data) throw new Error(`Rechnung ${invoiceId} nicht gefunden.`);
-        let snapName = "—";
-        try {
-          snapName = JSON.parse(data.invoice.customerSnapshot)?.name ?? "—";
-        } catch {
-          /* default */
-        }
-        level = lvl;
-        invoiceNumber = data.invoice.number;
-        customerName = snapName;
-        originalCents = data.invoice.total;
-        issueIso = toIsoDate(draft.issueDate);
-        dueIso = toIsoDate(draft.dueDate);
-        feeStr = (draft.feeCents / 100).toLocaleString("de-DE", { minimumFractionDigits: 2 });
-        interestStr = "0,00";
-        bodyText = draft.bodyText;
-        notes = "";
-      } else {
-        const id = Number.parseInt(params.id, 10);
-        const r = await getReminder(id);
-        if (!r) throw new Error(`Mahnung ${id} nicht gefunden.`);
-        reminderId = r.id;
-        level = r.level as ReminderLevel;
-        let snap: ReminderInvoiceSnapshot | null = null;
-        try {
-          snap = JSON.parse(r.invoiceSnapshot);
-        } catch {
-          snap = null;
-        }
-        invoiceNumber = snap?.invoiceNumber ?? "—";
-        customerName = snap?.customerName ?? "—";
-        originalCents = r.originalTotalCents;
-        issueIso = toIsoDate(r.issueDate);
-        dueIso = toIsoDate(r.dueDate);
-        feeStr = (r.feeCents / 100).toLocaleString("de-DE", { minimumFractionDigits: 2 });
-        interestStr = (r.interestCents / 100).toLocaleString("de-DE", { minimumFractionDigits: 2 });
-        bodyText = r.bodyText;
-        notes = r.notes ?? "";
-        status = r.status;
-        pdfPath = r.pdfPath;
-      }
+      if (mode === "new") await loadNewReminder();
+      else await loadExistingReminder();
       error = null;
     } catch (e) {
       error = String(e);
@@ -112,39 +85,69 @@
     }
   }
 
+  async function loadNewReminder() {
+    const sourceInvoiceId = parseId(params.invoiceId);
+    if (sourceInvoiceId === null) throw new Error("Ungültige Rechnungs-ID.");
+    const requestedLevel = parseReminderLevel(params.level);
+    const draft = await buildReminderDraft(sourceInvoiceId, requestedLevel);
+    const source = await getInvoice(sourceInvoiceId);
+    if (!source) throw new Error(`Rechnung ${sourceInvoiceId} nicht gefunden.`);
+    invoiceId = sourceInvoiceId;
+    level = requestedLevel;
+    invoiceNumber = source.invoice.number;
+    customerName = customerNameFromSnapshot(source.invoice.customerSnapshot);
+    originalCents = remindableAmountCents(source.invoice);
+    issueIso = toIsoDate(draft.issueDate);
+    dueIso = toIsoDate(draft.dueDate);
+    feeStr = centsToPriceText(draft.feeCents);
+    interestStr = centsToPriceText(0);
+    bodyText = draft.bodyText;
+    notes = "";
+  }
+
+  async function loadExistingReminder() {
+    const existingId = parseId(params.id);
+    const reminder = existingId === null ? null : await getReminder(existingId);
+    if (!reminder) throw new Error(`Mahnung ${params.id} nicht gefunden.`);
+    const snapshot = parseSnapshot<ReminderInvoiceSnapshot>(reminder.invoiceSnapshot, `Mahnungssnapshot ${reminder.number}`);
+    reminderId = reminder.id;
+    level = reminder.level as ReminderLevel;
+    invoiceNumber = snapshot.invoiceNumber ?? UNKNOWN_NAME;
+    customerName = snapshot.customerName ?? UNKNOWN_NAME;
+    originalCents = reminder.originalTotalCents;
+    issueIso = toIsoDate(reminder.issueDate);
+    dueIso = toIsoDate(reminder.dueDate);
+    feeStr = centsToPriceText(reminder.feeCents);
+    interestStr = centsToPriceText(reminder.interestCents);
+    bodyText = reminder.bodyText;
+    notes = reminder.notes ?? "";
+    status = reminder.status;
+    pdfPath = reminder.pdfPath;
+  }
+
+  function formFields(): ReminderFields {
+    return {
+      issueDate: fromIsoDate(issueIso),
+      dueDate: fromIsoDate(dueIso),
+      feeCents,
+      interestCents: eurStringToCents(interestStr),
+      bodyText,
+      notes: notes.trim() || null,
+    };
+  }
+
+  /** Creates the reminder on the first save, updates it afterwards. */
   async function save(): Promise<number | null> {
     saving = true;
     try {
-      const issueDate = fromIsoDate(issueIso);
-      const dueDate = fromIsoDate(dueIso);
-      const feeCents = eurStringToCents(feeStr);
-      const interestCents = eurStringToCents(interestStr);
-      if (mode === "new") {
-        const draft: ReminderDraft = {
-          invoiceId: Number.parseInt(params.invoiceId, 10),
-          level,
-          issueDate,
-          dueDate,
-          feeCents,
-          interestCents,
-          bodyText,
-          notes: notes.trim() || null,
-        };
-        const id = await createReminder(draft);
-        reminderId = id;
+      if (reminderId === null) {
+        if (invoiceId === null) throw new Error("Rechnung unbekannt.");
+        reminderId = await createReminder({ invoiceId, level, ...formFields() });
         toast.success("Mahnung erstellt");
-        return id;
+      } else {
+        await updateReminder(reminderId, formFields());
+        toast.success("Mahnung aktualisiert");
       }
-      if (reminderId == null) return null;
-      await updateReminder(reminderId, {
-        issueDate,
-        dueDate,
-        feeCents,
-        interestCents,
-        bodyText,
-        notes: notes.trim() || null,
-      });
-      toast.success("Mahnung aktualisiert");
       return reminderId;
     } catch (e) {
       toast.error(String(e));
@@ -155,28 +158,31 @@
   }
 
   async function saveAndStay() {
-    const id = await save();
-    if (id != null && mode === "new") {
-      push(`/reminders/${id}`);
+    const savedId = await save();
+    if (savedId !== null && mode === "new") push(`/reminders/${savedId}`);
+  }
+
+  async function openPdf(path: string) {
+    try {
+      await openShell(path);
+    } catch (e) {
+      toast.error("PDF konnte nicht geöffnet werden", String(e));
     }
   }
 
   async function generatePdf() {
-    if (reminderId == null) {
-      const id = await save();
-      if (id == null) return;
-    }
-    if (reminderId == null) return;
+    const savedId = await save();
+    if (savedId === null) return;
     generating = true;
     try {
-      const res = await generateReminderPdf(reminderId);
-      if (res.success) {
-        pdfPath = res.pdfPath;
-        toast.success("PDF erstellt");
-        await openShell(res.pdfPath);
-      } else {
+      const res = await generateReminderPdf(savedId);
+      if (!res.success) {
         toast.error(`PDF fehlgeschlagen: ${res.error.message}`);
+        return;
       }
+      pdfPath = res.pdfPath;
+      toast.success("PDF erstellt");
+      await openPdf(res.pdfPath);
     } catch (e) {
       toast.error(String(e));
     } finally {
@@ -185,7 +191,7 @@
   }
 
   async function markSent() {
-    if (reminderId == null) return;
+    if (reminderId === null) return;
     try {
       await markReminderSent(reminderId);
       status = "sent";
@@ -196,8 +202,7 @@
   }
 
   async function remove() {
-    if (reminderId == null) return;
-    if (!confirm("Mahnung wirklich löschen?")) return;
+    if (reminderId === null) return;
     try {
       await deleteReminder(reminderId);
       toast.success("Mahnung gelöscht");
@@ -209,13 +214,7 @@
 </script>
 
 <div class="mb-6">
-  <a
-    href="/reminders"
-    use:link
-    class="group inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-  >
-    <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" /> Mahnungen
-  </a>
+  <BackLink href="/reminders">Mahnungen</BackLink>
 </div>
 
 {#if error}
@@ -232,7 +231,9 @@
         zur Rechnung <span class="font-mono">{invoiceNumber}</span> · {customerName}
       </p>
     </div>
-    {#if status === "draft"}
+    {#if readonly}
+      <span class="text-sm text-muted-foreground">Versendet — schreibgeschützt</span>
+    {:else}
       <div class="flex gap-2">
         <Button variant="outline" onclick={saveAndStay} disabled={saving}>
           Speichern
@@ -242,73 +243,51 @@
           PDF erzeugen
         </Button>
       </div>
-    {:else}
-      <span class="text-sm text-muted-foreground">Versendet — schreibgeschützt</span>
     {/if}
   </header>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-    <Card>
-      <div class="p-5 flex flex-col gap-4">
-        <h3 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Termine
-        </h3>
-        <div class="flex flex-col gap-1.5">
-          <Label>Mahnungsdatum</Label>
-          <DatePicker bind:value={issueIso} disabled={status !== "draft"} />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <Label>Neue Zahlungsfrist</Label>
-          <DatePicker bind:value={dueIso} disabled={status !== "draft"} />
-        </div>
+    <SectionCard title="Termine">
+      <div class="flex flex-col gap-1.5">
+        <Label>Mahnungsdatum</Label>
+        <DatePicker bind:value={issueIso} disabled={readonly} />
       </div>
-    </Card>
+      <div class="flex flex-col gap-1.5">
+        <Label>Neue Zahlungsfrist</Label>
+        <DatePicker bind:value={dueIso} disabled={readonly} />
+      </div>
+    </SectionCard>
 
-    <Card>
-      <div class="p-5 flex flex-col gap-4">
-        <h3 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Beträge
-        </h3>
-        <div class="flex justify-between text-sm">
-          <span>Rechnungsbetrag</span>
-          <span class="font-mono">{centsToEur(originalCents)}</span>
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <Label>Mahngebühr (EUR)</Label>
-          <Input bind:value={feeStr} disabled={status !== "draft"} />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <Label>Verzugszinsen (EUR)</Label>
-          <Input bind:value={interestStr} disabled={status !== "draft"} />
-        </div>
-        <div class="flex justify-between text-base font-semibold border-t pt-2">
-          <span>Zu zahlender Gesamtbetrag</span>
-          <span class="font-mono">{centsToEur(totalDueCents)}</span>
-        </div>
+    <SectionCard title="Beträge">
+      <div class="flex justify-between text-sm">
+        <span>Offener Rechnungsbetrag</span>
+        <span class="font-mono">{centsToEur(originalCents)}</span>
       </div>
-    </Card>
+      <div class="flex flex-col gap-1.5">
+        <Label>Mahngebühr (EUR)</Label>
+        <Input bind:value={feeStr} disabled={readonly} />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label>Verzugszinsen (EUR)</Label>
+        <Input bind:value={interestStr} disabled={readonly} />
+      </div>
+      <div class="flex justify-between text-base font-semibold border-t pt-2">
+        <span>Zu zahlender Gesamtbetrag</span>
+        <span class="font-mono">{centsToEur(totalDueCents)}</span>
+      </div>
+    </SectionCard>
   </div>
 
-  <Card class="mb-4">
-    <div class="p-5 flex flex-col gap-4">
-      <h3 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-        Mahntext
-      </h3>
-      <Textarea bind:value={bodyText} rows={6} disabled={status !== "draft"} />
-      <p class="text-xs text-muted-foreground">
-        Erscheint im PDF unter „Sehr geehrte Damen und Herren,". Vorbefüllt aus den Einstellungen je nach Mahnstufe.
-      </p>
-    </div>
-  </Card>
+  <SectionCard title="Mahntext" class="mb-4">
+    <Textarea bind:value={bodyText} rows={6} disabled={readonly} />
+    <p class="text-xs text-muted-foreground">
+      Erscheint im PDF unter „Sehr geehrte Damen und Herren,". Vorbefüllt aus den Einstellungen je nach Mahnstufe.
+    </p>
+  </SectionCard>
 
-  <Card class="mb-4">
-    <div class="p-5 flex flex-col gap-4">
-      <h3 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-        Interne Notiz
-      </h3>
-      <Textarea bind:value={notes} rows={3} disabled={status !== "draft"} placeholder="Erscheint nicht im PDF" />
-    </div>
-  </Card>
+  <SectionCard title="Interne Notiz" class="mb-4">
+    <Textarea bind:value={notes} rows={3} disabled={readonly} placeholder="Erscheint nicht im PDF" />
+  </SectionCard>
 
   {#if pdfPath}
     <Card class="mb-4">
@@ -317,16 +296,16 @@
           <div class="font-medium">PDF</div>
           <div class="text-xs text-muted-foreground font-mono">{pdfPath}</div>
         </div>
-        <Button variant="outline" size="sm" onclick={() => pdfPath && openShell(pdfPath)}>
+        <Button variant="outline" size="sm" onclick={() => openPdf(pdfPath!)}>
           Öffnen
         </Button>
       </div>
     </Card>
   {/if}
 
-  {#if reminderId != null && status === "draft"}
+  {#if reminderId !== null && !readonly}
     <div class="flex justify-between items-center pt-4 border-t">
-      <Button variant="ghost" size="sm" onclick={remove}>
+      <Button variant="ghost" size="sm" onclick={() => (confirmDeleteOpen = true)}>
         <Trash2 class="size-4" />
         Löschen
       </Button>
@@ -342,7 +321,16 @@
       Hinweis: Diese Mahnung ist eine Zahlungserinnerung — keine Rechtsberatung. Für gerichtliche Mahnverfahren bitte rechtliche Beratung einholen.
     </p>
     <p class="mt-1">
-      Mahngebühr: {centsToEur(eurStringToCents(feeStr))} · Fällig: {formatDate(fromIsoDate(dueIso))}
+      Mahngebühr: {centsToEur(feeCents)} · Fällig: {formatDate(fromIsoDate(dueIso))}
     </p>
   </div>
 {/if}
+
+<ConfirmDialog
+  bind:open={confirmDeleteOpen}
+  title="Mahnung löschen?"
+  description="Die Mahnung wird unwiderruflich entfernt."
+  confirmLabel="Löschen"
+  destructive
+  onConfirm={remove}
+/>

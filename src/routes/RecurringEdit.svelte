@@ -6,11 +6,9 @@
     getRecurring,
     updateRecurring,
     type RecurringFormInput,
-    type RecurringItemInput,
   } from "$lib/db/recurring";
-  import { computeLineTotal, computeTotals, getInvoice } from "$lib/db/invoices";
-  import type { Customer, Settings, RecurringInterval } from "$lib/db/schema";
-  import { centsToEur, eurStringToCents } from "$lib/utils/money";
+  import { computeTotals, getInvoice, type SupplyKind } from "$lib/db/invoices";
+  import type { CatalogItem, Customer, RecurringInterval, Settings } from "$lib/db/schema";
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import {
     Button,
@@ -21,13 +19,25 @@
     CardContent,
     CatalogPicker,
     DatePicker,
-    LinePeriodPopover,
     Select,
     Checkbox,
     toast,
   } from "$lib/ui";
-  import { ArrowLeft, Plus, Trash2, FileText, X, Package } from "$lib/brand-icons";
-  import type { CatalogItem } from "$lib/db/schema";
+  import BackLink from "./parts/entity/BackLink.svelte";
+  import { fetchEditTarget, parseId } from "./parts/entity/edit-target";
+  import { centsToPriceText } from "./parts/entity/format";
+  import { RECURRING_INTERVAL_ITEMS } from "./parts/entity/recurring";
+  import { vatRateForNewItem } from "./parts/entity/vat";
+  import SupplyKindField from "./invoice/SupplyKindField.svelte";
+  import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
+  import RecurringItemsTable from "./parts/recurring/RecurringItemsTable.svelte";
+  import {
+    emptyItemRow,
+    itemInputFromRow,
+    itemRowFromStored,
+    paymentTermDays,
+    type RecurringItemRow,
+  } from "./parts/recurring/recurring-items";
 
   type Props = {
     mode: "new" | "edit";
@@ -38,14 +48,14 @@
 
   const fromInvoiceId = $derived.by(() => {
     if (mode !== "new" || !querystring) return null;
-    const v = new URLSearchParams(querystring).get("fromInvoice");
-    if (!v) return null;
-    const n = Number.parseInt(v, 10);
-    return Number.isFinite(n) ? n : null;
+    const raw = new URLSearchParams(querystring).get("fromInvoice");
+    const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+    return Number.isFinite(parsed) ? parsed : null;
   });
 
   let customers = $state<Customer[]>([]);
   let settings = $state<Settings | null>(null);
+  let referenceDataLoaded = $state(false);
   let id = $state<number | null>(null);
   let loaded = $state(false);
   const loading = $derived(mode === "edit" && !loaded);
@@ -59,250 +69,155 @@
   let startDateIso = $state(toIsoDate(nowUnix()));
   let paymentTermsDays = $state(14);
   let isReverseCharge = $state(false);
+  let supplyKind = $state<SupplyKind>(DEFAULT_SUPPLY_KIND);
   let active = $state(true);
   let notes = $state("");
   let paymentTerms = $state("");
-  type ItemUI = RecurringItemInput & {
-    priceText: string;
-    longDescription: string;
-    periodStartIso: string;
-    periodEndIso: string;
-    showDetail: boolean;
-  };
-  function emptyItem(vatRate = 0): ItemUI {
-    return {
-      description: "",
-      quantity: 1,
-      unit: "Stk",
-      unitPrice: 0,
-      vatRate,
-      priceText: "",
-      longDescription: "",
-      periodStartIso: "",
-      periodEndIso: "",
-      showDetail: false,
-    };
-  }
-  let items = $state<ItemUI[]>([emptyItem()]);
+  let items = $state<RecurringItemRow[]>([emptyItemRow(0)]);
+
+  let catalogPickerOpen = $state(false);
 
   const selectedCustomer = $derived(
     customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
   );
 
   const canReverseCharge = $derived(
-    !!settings &&
-      !settings.isKleinunternehmer &&
-      !!settings.vatId &&
-      !!selectedCustomer?.vatId,
+    !!settings && !settings.isKleinunternehmer && !!settings.vatId && !!selectedCustomer?.vatId,
+  );
+  const vatExempt = $derived(!!settings?.isKleinunternehmer || isReverseCharge);
+  const customerItems = $derived(
+    customers.map((c) => ({ value: String(c.id), label: `${c.customerNumber} · ${c.name}` })),
+  );
+  const totals = $derived(
+    settings
+      ? computeTotals(items, { isKleinunternehmer: settings.isKleinunternehmer, isReverseCharge })
+      : { subtotal: 0, vatAmount: 0, total: 0 },
   );
 
+  // Not before the customers and settings are in: a template loaded earlier would otherwise lose its flag.
   $effect(() => {
-    if (!canReverseCharge && isReverseCharge) isReverseCharge = false;
+    if (referenceDataLoaded && !canReverseCharge && isReverseCharge) isReverseCharge = false;
   });
 
   $effect(() => {
-    if (isReverseCharge) {
-      let changed = false;
-      for (const it of items) {
-        if (it.vatRate !== 0) {
-          it.vatRate = 0;
-          changed = true;
-        }
-      }
-      if (changed) items = [...items];
-    }
+    if (!isReverseCharge) return;
+    for (const item of items) item.vatRate = 0;
   });
-
-  const vatExempt = $derived(!!settings?.isKleinunternehmer || isReverseCharge);
 
   $effect(() => {
     Promise.all([loadSettings(), listCustomers()])
-      .then(async ([s, cs]) => {
-        settings = s;
-        customers = cs;
-        if (mode === "new") {
-          paymentTermsDays = s.defaultPaymentTermsDays;
-          for (const it of items) it.vatRate = s.isKleinunternehmer ? 0 : 19;
-          items = [...items];
-          if (fromInvoiceId !== null) {
-            const res = await getInvoice(fromInvoiceId);
-            if (res) {
-              customerIdStr = String(res.invoice.customerId);
-              isReverseCharge = res.invoice.isReverseCharge;
-              paymentTerms = res.invoice.paymentTerms ?? "";
-              const days = Math.max(
-                0,
-                Math.round((res.invoice.dueDate - res.invoice.issueDate) / 86400),
-              );
-              paymentTermsDays = days || s.defaultPaymentTermsDays;
-              if (res.items.length > 0) {
-                items = res.items.map((it) => ({
-                  description: it.description,
-                  quantity: it.quantity,
-                  unit: it.unit,
-                  unitPrice: it.unitPrice,
-                  vatRate: it.vatRate,
-                  priceText: (it.unitPrice / 100).toFixed(2).replace(".", ","),
-                  longDescription: it.longDescription ?? "",
-                  periodStartIso: it.linePeriodStart ? toIsoDate(it.linePeriodStart) : "",
-                  periodEndIso: it.linePeriodEnd ? toIsoDate(it.linePeriodEnd) : "",
-                  showDetail: !!it.longDescription,
-                }));
-              }
-              startDateIso = "";
-            }
-          }
-        }
+      .then(async ([loadedSettings, loadedCustomers]) => {
+        settings = loadedSettings;
+        customers = loadedCustomers;
+        referenceDataLoaded = true;
+        if (mode === "new") await prepareNewTemplate(loadedSettings);
       })
       .catch((e) => (error = String(e)));
   });
 
+  async function prepareNewTemplate(loadedSettings: Settings) {
+    paymentTermsDays = loadedSettings.defaultPaymentTermsDays;
+    for (const item of items) item.vatRate = vatRateForNewItem(loadedSettings.isKleinunternehmer);
+    if (fromInvoiceId !== null) await prefillFromInvoice(fromInvoiceId, loadedSettings);
+  }
+
+  async function prefillFromInvoice(invoiceId: number, loadedSettings: Settings) {
+    const source = await getInvoice(invoiceId);
+    if (!source) return;
+    const { invoice } = source;
+    customerIdStr = String(invoice.customerId);
+    isReverseCharge = invoice.isReverseCharge;
+    supplyKind = invoice.supplyKind;
+    paymentTerms = invoice.paymentTerms ?? "";
+    paymentTermsDays = paymentTermDays(
+      invoice.issueDate,
+      invoice.dueDate,
+      loadedSettings.defaultPaymentTermsDays,
+    );
+    if (source.items.length > 0) items = source.items.map(itemRowFromStored);
+    startDateIso = "";
+  }
+
   $effect(() => {
-    if (mode === "edit" && params?.id) {
-      const numId = Number.parseInt(params.id, 10);
-      if (Number.isNaN(numId)) return;
-      id = numId;
-      getRecurring(numId)
-        .then((res) => {
-          if (!res) {
-            error = "Vorlage nicht gefunden.";
-            return;
-          }
-          name = res.recurring.name;
-          customerIdStr = String(res.recurring.customerId);
-          interval = res.recurring.interval;
-          startDateIso = toIsoDate(res.recurring.startDate);
-          paymentTermsDays = res.recurring.paymentTermsDays;
-          isReverseCharge = res.recurring.isReverseCharge;
-          active = res.recurring.active;
-          notes = res.recurring.notes ?? "";
-          paymentTerms = res.recurring.paymentTerms ?? "";
-          items = res.items.map((it) => ({
-            description: it.description,
-            quantity: it.quantity,
-            unit: it.unit,
-            unitPrice: it.unitPrice,
-            vatRate: it.vatRate,
-            priceText: (it.unitPrice / 100).toFixed(2).replace(".", ","),
-            longDescription: it.longDescription ?? "",
-            periodStartIso: it.linePeriodStart ? toIsoDate(it.linePeriodStart) : "",
-            periodEndIso: it.linePeriodEnd ? toIsoDate(it.linePeriodEnd) : "",
-            showDetail: !!it.longDescription,
-          }));
-        })
-        .catch((e) => (error = String(e)))
-        .finally(() => (loaded = true));
-    }
+    if (mode !== "edit") return;
+    fetchEditTarget(params?.id, getRecurring, "Vorlage nicht gefunden.")
+      .then((target) => {
+        if ("error" in target) {
+          error = target.error;
+          return;
+        }
+        id = target.id;
+        applyTemplate(target.value);
+      })
+      .catch((e) => (error = String(e)))
+      .finally(() => (loaded = true));
   });
+
+  function applyTemplate({ recurring, items: storedItems }: NonNullable<Awaited<ReturnType<typeof getRecurring>>>) {
+    name = recurring.name;
+    customerIdStr = String(recurring.customerId);
+    interval = recurring.interval;
+    startDateIso = toIsoDate(recurring.startDate);
+    paymentTermsDays = recurring.paymentTermsDays;
+    isReverseCharge = recurring.isReverseCharge;
+    supplyKind = recurring.supplyKind;
+    active = recurring.active;
+    notes = recurring.notes ?? "";
+    paymentTerms = recurring.paymentTerms ?? "";
+    items = storedItems.map(itemRowFromStored);
+  }
 
   function addItem() {
-    items = [...items, emptyItem(settings?.isKleinunternehmer ? 0 : 19)];
+    items = [...items, emptyItemRow(vatRateForNewItem(!!settings?.isKleinunternehmer))];
   }
 
-  let catalogPickerOpen = $state(false);
-  function addFromCatalog(it: CatalogItem) {
-    const vatRate = vatExempt ? 0 : it.defaultVatRate;
-    const next = emptyItem(vatRate);
-    next.description = it.name;
-    next.quantity = 1;
-    next.unit = it.unit;
-    next.unitPrice = it.defaultUnitPrice;
-    next.priceText = (it.defaultUnitPrice / 100).toFixed(2).replace(".", ",");
-    if (it.descriptionDe) {
-      next.longDescription = it.descriptionDe;
-      next.showDetail = true;
+  function addFromCatalog(catalogItem: CatalogItem) {
+    const row = emptyItemRow(vatExempt ? 0 : catalogItem.defaultVatRate);
+    row.description = catalogItem.name;
+    row.unit = catalogItem.unit;
+    row.unitPrice = catalogItem.defaultUnitPrice;
+    row.priceText = centsToPriceText(catalogItem.defaultUnitPrice);
+    if (catalogItem.descriptionDe) {
+      row.longDescription = catalogItem.descriptionDe;
+      row.showDetail = true;
     }
-    items = [...items, next];
+    items = [...items, row];
   }
 
-  function removeItem(idx: number) {
-    items = items.filter((_, i) => i !== idx);
-  }
-
-  function onPriceBlur(idx: number) {
-    const it = items[idx];
-    it.unitPrice = eurStringToCents(it.priceText);
-    it.priceText = (it.unitPrice / 100).toFixed(2).replace(".", ",");
-    items = [...items];
-  }
-
-  const totals = $derived.by(() => {
-    if (!settings) return { subtotal: 0, vatAmount: 0, total: 0 };
-    return computeTotals(items, {
-      isKleinunternehmer: settings.isKleinunternehmer,
+  function buildInput(customerId: number): RecurringFormInput {
+    return {
+      name: name.trim(),
+      customerId,
+      interval,
+      startDate: fromIsoDate(startDateIso),
+      paymentTermsDays,
       isReverseCharge,
-    });
-  });
+      supplyKind,
+      notes: notes.trim() || null,
+      paymentTerms: paymentTerms.trim() || null,
+      active,
+      items: items.map(itemInputFromRow),
+    };
+  }
 
-  const customerItems = $derived(
-    customers.map((c) => ({ value: String(c.id), label: `${c.customerNumber} · ${c.name}` })),
-  );
-
-  const intervalItems = [
-    { value: "monthly", label: "Monatlich" },
-    { value: "quarterly", label: "Quartalsweise" },
-    { value: "yearly", label: "Jährlich" },
-  ];
-
-  const vatItems = [
-    { value: "0", label: "0 %" },
-    { value: "7", label: "7 %" },
-    { value: "19", label: "19 %" },
-  ];
-
-  async function onSubmit(e: SubmitEvent) {
-    e.preventDefault();
-    const customerId = customerIdStr ? Number.parseInt(customerIdStr, 10) : null;
-    if (!name.trim()) {
-      error = "Bitte einen Namen vergeben.";
-      return;
+  async function persist(input: RecurringFormInput) {
+    if (mode === "new") {
+      await createRecurring(input);
+      toast.success("Vorlage erstellt");
+    } else if (id !== null) {
+      await updateRecurring(id, input);
+      toast.success("Änderungen gespeichert");
+    } else {
+      throw new Error("Keine ID");
     }
-    if (customerId === null || Number.isNaN(customerId)) {
-      error = "Bitte einen Kunden auswählen.";
-      return;
-    }
-    if (items.length === 0) {
-      error = "Mindestens eine Position erforderlich.";
-      return;
-    }
+  }
+
+  async function save(input: RecurringFormInput) {
     saving = true;
     error = null;
     try {
-      const input: RecurringFormInput = {
-        name: name.trim(),
-        customerId,
-        interval,
-        startDate: fromIsoDate(startDateIso),
-        paymentTermsDays,
-        isReverseCharge,
-        notes: notes.trim() || null,
-        paymentTerms: paymentTerms.trim() || null,
-        active,
-        items: items.map((it) => ({
-          description: it.description,
-          quantity: it.quantity,
-          unit: it.unit,
-          unitPrice: it.unitPrice,
-          vatRate: it.vatRate,
-          longDescription:
-            it.showDetail && it.longDescription.trim() ? it.longDescription.trim() : null,
-          linePeriodStart: it.periodStartIso ? fromIsoDate(it.periodStartIso) : null,
-          linePeriodEnd: it.periodEndIso ? fromIsoDate(it.periodEndIso) : null,
-        })),
-      };
-      let savedId: number;
-      if (mode === "new") {
-        savedId = await createRecurring(input);
-        toast.success("Vorlage erstellt");
-      } else if (id !== null) {
-        await updateRecurring(id, input);
-        toast.success("Änderungen gespeichert");
-        savedId = id;
-      } else {
-        throw new Error("Keine ID");
-      }
-      push(`/recurring`);
-      void savedId;
+      await persist(input);
+      push("/recurring");
     } catch (err) {
       error = String(err);
       toast.error("Speichern fehlgeschlagen", String(err));
@@ -310,16 +225,19 @@
       saving = false;
     }
   }
+
+  function onSubmit(e: SubmitEvent) {
+    e.preventDefault();
+    const customerId = parseId(customerIdStr);
+    if (!name.trim()) error = "Bitte einen Namen vergeben.";
+    else if (customerId === null) error = "Bitte einen Kunden auswählen.";
+    else if (items.length === 0) error = "Mindestens eine Position erforderlich.";
+    else void save(buildInput(customerId));
+  }
 </script>
 
 <header class="mb-6">
-  <a
-    href="/recurring"
-    use:link
-    class="group inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-  >
-    <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" /> Wiederkehrende Rechnungen
-  </a>
+  <BackLink href="/recurring">Wiederkehrende Rechnungen</BackLink>
   <h1 class="text-3xl font-semibold tracking-tight mt-2">
     {mode === "new" ? "Neue Vorlage" : "Vorlage bearbeiten"}
   </h1>
@@ -342,7 +260,10 @@
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>Intervall</Label>
-            <Select bind:value={interval as unknown as string} items={intervalItems} />
+            <Select
+              bind:value={() => interval, (v) => (interval = v as RecurringInterval)}
+              items={RECURRING_INTERVAL_ITEMS}
+            />
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>Erste Fälligkeit</Label>
@@ -373,144 +294,21 @@
                 </p>
               </div>
             </div>
+            {#if isReverseCharge}
+              <SupplyKindField bind:value={supplyKind} />
+            {/if}
           {/if}
         </section>
       </CardContent>
     </Card>
 
-    <section>
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-sm font-semibold uppercase text-muted-foreground tracking-wider">
-          Positionen
-        </h2>
-        <div class="inline-flex items-center gap-2">
-          <Button type="button" size="sm" variant="outline" onclick={() => (catalogPickerOpen = true)}>
-            <Package />
-            Aus Katalog…
-          </Button>
-          <Button type="button" size="sm" variant="outline" onclick={addItem}>
-            <Plus />
-            Position
-          </Button>
-        </div>
-      </div>
-      <Card class="overflow-hidden py-0">
-        <table class="w-full text-sm">
-          <thead class="bg-muted/40 text-left">
-            <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-              <th class="px-3 py-2 w-10 font-medium">#</th>
-              <th class="px-3 py-2 font-medium">Beschreibung</th>
-              <th class="px-3 py-2 w-20 font-medium">Menge</th>
-              <th class="px-3 py-2 w-20 font-medium">Einheit</th>
-              <th class="px-3 py-2 w-28 font-medium">Preis (€)</th>
-              {#if !vatExempt}
-                <th class="px-3 py-2 w-24 font-medium">USt</th>
-              {/if}
-              <th class="px-3 py-2 w-28 font-medium text-right">Summe</th>
-              <th class="px-3 py-2 w-10 font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each items as it, idx (idx)}
-              <tr class="border-t">
-                <td class="px-3 py-2 text-xs text-muted-foreground align-top pt-3">{idx + 1}</td>
-                <td class="px-2 py-1.5">
-                  <Input bind:value={it.description} required />
-                  {#if it.showDetail}
-                    <div class="mt-1.5">
-                      <Textarea
-                        rows={2}
-                        placeholder="Detail-Beschreibung"
-                        bind:value={it.longDescription}
-                      />
-                    </div>
-                  {/if}
-                  <div class="mt-1.5 flex flex-wrap gap-1.5">
-                    <LinePeriodPopover
-                      bind:startIso={it.periodStartIso}
-                      bind:endIso={it.periodEndIso}
-                    />
-                    {#if it.showDetail}
-                      <button
-                        type="button"
-                        class="inline-flex items-center gap-1 rounded-md border border-input bg-transparent px-2 h-7 text-xs text-muted-foreground hover:bg-accent hover:text-destructive transition-colors cursor-pointer"
-                        onclick={() => {
-                          it.showDetail = false;
-                          it.longDescription = "";
-                          items = [...items];
-                        }}
-                      >
-                        <X class="size-3" /> Detail entfernen
-                      </button>
-                    {:else}
-                      <button
-                        type="button"
-                        class="inline-flex items-center gap-1 rounded-md border border-input bg-transparent px-2 h-7 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
-                        onclick={() => {
-                          it.showDetail = true;
-                          items = [...items];
-                        }}
-                      >
-                        <FileText class="size-3" /> Detail-Beschreibung
-                      </button>
-                    {/if}
-                  </div>
-                </td>
-                <td class="px-2 py-1.5 align-top pt-1.5">
-                  <Input type="number" step="0.01" min="0" bind:value={it.quantity} />
-                </td>
-                <td class="px-2 py-1.5 align-top pt-1.5"><Input bind:value={it.unit} /></td>
-                <td class="px-2 py-1.5 align-top pt-1.5">
-                  <Input
-                    bind:value={it.priceText}
-                    onblur={() => onPriceBlur(idx)}
-                    placeholder="0,00"
-                    class="text-right"
-                  />
-                </td>
-                {#if !vatExempt}
-                  <td class="px-2 py-1.5 align-top pt-1.5">
-                    <Select
-                      bind:value={
-                        () => String(it.vatRate),
-                        (v) => {
-                          it.vatRate = Number.parseInt(v, 10);
-                          items = [...items];
-                        }
-                      }
-                      items={vatItems}
-                    />
-                  </td>
-                {/if}
-                <td class="px-3 py-2 text-right font-mono text-xs align-top pt-3">
-                  {centsToEur(computeLineTotal(it))}
-                </td>
-                <td class="px-2 py-1.5 text-right align-top pt-1.5">
-                  <button
-                    type="button"
-                    onclick={() => removeItem(idx)}
-                    disabled={items.length === 1}
-                    class="inline-flex items-center justify-center size-8 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                    title="Position entfernen"
-                  >
-                    <Trash2 class="size-4" />
-                  </button>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-          <tfoot class="bg-muted/40 text-sm">
-            <tr class="border-t">
-              <td colspan={vatExempt ? 5 : 6} class="px-3 py-2 text-right font-semibold">
-                Voraussichtlicher Gesamtbetrag pro Erzeugung
-              </td>
-              <td class="px-3 py-2 text-right font-mono font-semibold">{centsToEur(totals.total)}</td>
-              <td></td>
-            </tr>
-          </tfoot>
-        </table>
-      </Card>
-    </section>
+    <RecurringItemsTable
+      bind:items
+      {vatExempt}
+      totalCents={totals.total}
+      onAdd={addItem}
+      onAddFromCatalog={() => (catalogPickerOpen = true)}
+    />
 
     <Card>
       <CardContent class="space-y-4">
@@ -538,5 +336,5 @@
     </div>
   </form>
 
-  <CatalogPicker bind:open={catalogPickerOpen} onPick={addFromCatalog} context="recurring" />
+  <CatalogPicker bind:open={catalogPickerOpen} onPick={addFromCatalog} />
 {/if}

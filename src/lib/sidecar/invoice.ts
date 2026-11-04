@@ -1,36 +1,32 @@
 import { invoke } from "@tauri-apps/api/core";
-import { homeDir, join } from "@tauri-apps/api/path";
-import { execute } from "$lib/db/client";
-import { getInvoice, isDraftNumber, issueInvoice } from "$lib/db/invoices";
+import {
+  getInvoice,
+  isDraftNumber,
+  issueInvoice,
+  recordGeneratedPdf,
+  type ValidationOutcome,
+} from "$lib/db/invoices";
 import { loadSettings } from "$lib/db/queries";
 import type { CustomerSnapshot, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
-import { validatePdf, type ValidationReport } from "$lib/validator";
 import { computeSkonto } from "$lib/utils/skonto";
+import { validatePdf, type ValidationReport } from "$lib/validator";
+import {
+  companyBankPayload,
+  companyContactPayload,
+  companyKleinunternehmerPayload,
+  customerPayload,
+  documentOutputPath,
+  itemsPayload,
+  parseCustomerSnapshot,
+  pdfSettingsPayload,
+  skontoPayload,
+} from "./payload";
+import type { SidecarSuccess, SidecarResponse } from "./types";
 
-export type SidecarSuccess = {
-  success: true;
-  pdfPath: string;
-  validationWarnings: string[];
-  validationErrors: string[];
-  /** KoSIT report. null = validator unavailable (Java/jar missing). */
-  kositReport?: ValidationReport | null;
-};
+export type { SidecarError, SidecarResponse, SidecarSuccess } from "./types";
 
-export type SidecarError = {
-  success: false;
-  error: { code: string; message: string; details: string };
-};
-
-export type SidecarResponse = SidecarSuccess | SidecarError;
-
-function safeFilename(s: string): string {
-  return s.replace(/[\\/:*?"<>|]+/g, "_");
-}
-
-async function buildOutputPath(invoice: Invoice): Promise<string> {
-  const home = await homeDir();
-  return join(home, "Documents", "Zettel", "Rechnungen", `${safeFilename(invoice.number)}.pdf`);
-}
+type InvoiceWithItems = { invoice: Invoice; items: InvoiceItem[] };
+type CorrectedInvoice = { number: string; issueDate: number };
 
 function buildPayload(opts: {
   invoice: Invoice;
@@ -38,7 +34,7 @@ function buildPayload(opts: {
   customer: CustomerSnapshot;
   company: Settings;
   outputPath: string;
-  correctsInvoice?: { number: string; issueDate: number } | null;
+  correctsInvoice: CorrectedInvoice | null;
 }) {
   const { invoice, items, customer, company, outputPath, correctsInvoice } = opts;
   const skonto = computeSkonto({
@@ -60,8 +56,9 @@ function buildPayload(opts: {
       isKleinunternehmer: invoice.isKleinunternehmer,
       isReverseCharge: invoice.isReverseCharge,
       reverseChargeType: invoice.reverseChargeType,
+      supplyKind: invoice.supplyKind,
       isCreditNote: invoice.isCreditNote,
-      correctsInvoice: correctsInvoice ?? null,
+      correctsInvoice,
       notes: invoice.notes,
       paymentTerms: invoice.paymentTerms,
       currency: invoice.currency ?? "EUR",
@@ -69,123 +66,99 @@ function buildPayload(opts: {
       eurTotalCent: invoice.eurTotalCent,
       servicePeriodStart: invoice.servicePeriodStart,
       servicePeriodEnd: invoice.servicePeriodEnd,
-      skontoPercent: skonto?.percent ?? null,
-      skontoDays: skonto?.days ?? null,
-      skontoAmountCent: skonto?.discountCent ?? null,
-      skontoDeadline: skonto?.deadlineUnix ?? null,
+      ...skontoPayload(skonto),
       amountPaidCent: invoice.amountPaidCent ?? 0,
       pdfLanguage: invoice.pdfLanguage ?? "de",
     },
-    items: items.map((it) => ({
-      position: it.position,
-      description: it.description,
-      quantity: it.quantity,
-      unit: it.unit,
-      unitPrice: it.unitPrice,
-      vatRate: it.vatRate,
-      lineTotal: it.lineTotal,
-      longDescription: it.longDescription,
-      linePeriodStart: it.linePeriodStart,
-      linePeriodEnd: it.linePeriodEnd,
-    })),
+    items: itemsPayload(items),
     company: {
-      companyName: company.companyName,
-      ownerName: company.ownerName,
-      street: company.street,
-      postalCode: company.postalCode,
-      city: company.city,
-      country: company.country,
-      taxNumber: company.taxNumber,
-      vatId: company.vatId,
-      email: company.email,
-      phone: company.phone,
-      website: company.website,
-      bankName: company.bankName,
-      bankIban: company.bankIban,
-      bankBic: company.bankBic,
-      isKleinunternehmer: company.isKleinunternehmer,
-      kleinunternehmerNote: company.kleinunternehmerNote,
-      logoPath: company.logoPath,
+      ...companyContactPayload(company),
+      ...companyBankPayload(company),
+      ...companyKleinunternehmerPayload(company),
     },
-    customer: {
-      name: customer.name,
-      contactPerson: customer.contactPerson,
-      street: customer.street,
-      postalCode: customer.postalCode,
-      city: customer.city,
-      country: customer.country,
-      vatId: customer.vatId,
-    },
+    customer: customerPayload(customer),
     outputPath,
     profile: company.zugferdProfile ?? "en16931",
-    settings: {
-      pdf_theme: company.pdfTheme ?? "classic",
-    },
+    settings: pdfSettingsPayload(company),
   };
 }
 
-export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResponse> {
+/**
+ * A draft still carrying a DRAFT-… placeholder must be issued before render:
+ * PDFs are durable artifacts and must not reference placeholder numbers.
+ */
+async function loadInvoiceForRendering(invoiceId: number): Promise<InvoiceWithItems> {
   let data = await getInvoice(invoiceId);
   if (!data) throw new Error(`Invoice ${invoiceId} not found`);
-  // A draft still carrying a DRAFT-… placeholder must be issued before render.
-  // PDFs are durable artifacts — they must not reference placeholder numbers.
   if (data.invoice.status === "draft" && isDraftNumber(data.invoice.number)) {
     await issueInvoice(invoiceId);
     data = await getInvoice(invoiceId);
     if (!data) throw new Error(`Invoice ${invoiceId} not found after issue`);
   }
-  const company = await loadSettings();
-  let customer: CustomerSnapshot;
-  try {
-    customer = JSON.parse(data.invoice.customerSnapshot);
-  } catch {
-    throw new Error("Customer snapshot is corrupt — cannot render PDF.");
-  }
-  const outputPath = await buildOutputPath(data.invoice);
-  // Preserve the previous PDF (if any) before the sidecar overwrites it, so
-  // every generation stays available as a version (audit trail).
+  return data;
+}
+
+/**
+ * Keeps the previous PDF (if any) before the sidecar overwrites it, so every
+ * generation stays available as a version (audit trail). A failed archive must
+ * never block PDF generation.
+ */
+async function archivePreviousPdf(outputPath: string): Promise<void> {
   try {
     await invoke("archive_pdf_version", { path: outputPath });
+  } catch (error) {
+    console.warn(`Could not archive previous PDF version of ${outputPath}:`, error);
+  }
+}
+
+async function findCorrectedInvoice(invoice: Invoice): Promise<CorrectedInvoice | null> {
+  if (!invoice.isCreditNote || !invoice.correctsInvoiceId) return null;
+  const original = await getInvoice(invoice.correctsInvoiceId);
+  if (!original) return null;
+  return { number: original.invoice.number, issueDate: original.invoice.issueDate };
+}
+
+/**
+ * Soft-gate: the validator being unavailable (Java or jar missing, no XML in
+ * the PDF) never blocks PDF release; it is recorded as "unavailable" so the UI
+ * can surface it.
+ */
+async function validateGeneratedPdf(
+  pdfPath: string,
+): Promise<{ report: ValidationReport | null; outcome: ValidationOutcome }> {
+  try {
+    const report = await validatePdf(pdfPath);
+    return { report, outcome: report.valid ? "valid" : "invalid" };
   } catch {
-    // Non-fatal: a failed archive must never block PDF generation.
+    return { report: null, outcome: "unavailable" };
   }
-  let correctsInvoice: { number: string; issueDate: number } | null = null;
-  if (data.invoice.isCreditNote && data.invoice.correctsInvoiceId) {
-    const orig = await getInvoice(data.invoice.correctsInvoiceId);
-    if (orig) {
-      correctsInvoice = { number: orig.invoice.number, issueDate: orig.invoice.issueDate };
-    }
-  }
+}
+
+async function validateAndRecord(response: SidecarSuccess, invoiceId: number): Promise<void> {
+  const { report, outcome } = await validateGeneratedPdf(response.pdfPath);
+  response.kositReport = report;
+  await recordGeneratedPdf(invoiceId, response.pdfPath, outcome, report?.findings.length ?? null);
+}
+
+export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResponse> {
+  const { invoice, items } = await loadInvoiceForRendering(invoiceId);
+  const company = await loadSettings();
+  const customer = parseCustomerSnapshot(invoice.customerSnapshot);
+  const outputPath = await documentOutputPath("Rechnungen", invoice.number);
+  await archivePreviousPdf(outputPath);
+
   const payload = buildPayload({
-    invoice: data.invoice,
-    items: data.items,
+    invoice,
+    items,
     customer,
     company,
     outputPath,
-    correctsInvoice,
+    correctsInvoice: await findCorrectedInvoice(invoice),
   });
-
-  const response = (await invoke<SidecarResponse>("generate_invoice", { payload })) as SidecarResponse;
+  const response = await invoke<SidecarResponse>("generate_invoice", { payload });
 
   if (response.success) {
-    // Soft-gate: validate the freshly written PDF against KoSIT and persist
-    // outcome. We never block PDF release on validator unavailability — but
-    // we record it, so the UI can surface it.
-    let report: ValidationReport | null = null;
-    let status: "valid" | "invalid" | "unavailable" = "unavailable";
-    let findingsCount: number | null = null;
-    try {
-      report = await validatePdf(response.pdfPath);
-      status = report.valid ? "valid" : "invalid";
-      findingsCount = report.findings.length;
-    } catch {
-      // Validator missing, Java missing, no XML in PDF — leave as "unavailable".
-    }
-    response.kositReport = report;
-    await execute(
-      "UPDATE invoices SET pdf_path = ?, last_validation_status = ?, last_validated_at = unixepoch(), last_validation_findings_count = ?, updated_at = unixepoch() WHERE id = ?",
-      [response.pdfPath, status, findingsCount, invoiceId],
-    );
+    await validateAndRecord(response, invoiceId);
   }
   return response;
 }

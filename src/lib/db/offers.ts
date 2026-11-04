@@ -1,14 +1,24 @@
-import { execute, getDb, select } from "./client";
+import { execute, insert, select } from "./client";
 import { createInvoice } from "./invoices";
-import type { InvoiceFormInput } from "./invoices";
-import { getCustomer, loadSettings } from "./queries";
+import type { InvoiceFormInput, SupplyKind } from "./invoices";
+import { drawNextNumber } from "./numbering";
+import { loadSettings } from "./queries";
+import { buildCustomerSnapshot } from "./snapshots";
 import type {
-  CustomerSnapshot,
   Offer,
   OfferItem,
   OfferStatus,
 } from "./schema";
-import { formatInvoiceNumber } from "$lib/utils/invoice-number";
+import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
+import { computeLineTotal, computeTotals } from "$lib/utils/totals";
+
+export { computeLineTotal, computeTotals };
+
+const DEFAULT_CURRENCY = "EUR";
+const MISSING_CUSTOMER_NAME = "—";
+const EXPIRING_SOON_DAYS = 7;
+const OPEN_STATUSES_SQL = "('draft','sent')";
+const DELETABLE_STATUSES: readonly OfferStatus[] = ["draft", "rejected", "expired"];
 
 // --- Row types ---
 
@@ -25,6 +35,7 @@ type OfferRow = {
   total: number;
   is_kleinunternehmer: number;
   is_reverse_charge: number;
+  supply_kind: string;
   notes: string | null;
   intro_text: string | null;
   pdf_path: string | null;
@@ -58,7 +69,7 @@ type OfferItemRow = {
   line_period_end: number | null;
 };
 
-function mapOffer(r: OfferRow): Offer {
+export function mapOffer(r: OfferRow): Offer {
   return {
     id: r.id,
     number: r.number,
@@ -72,6 +83,7 @@ function mapOffer(r: OfferRow): Offer {
     total: r.total,
     isKleinunternehmer: r.is_kleinunternehmer === 1,
     isReverseCharge: r.is_reverse_charge === 1,
+    supplyKind: r.supply_kind as Offer["supplyKind"],
     notes: r.notes,
     introText: r.intro_text,
     pdfPath: r.pdf_path,
@@ -81,7 +93,7 @@ function mapOffer(r: OfferRow): Offer {
     sentAt: r.sent_at,
     acceptedAt: r.accepted_at,
     rejectedAt: r.rejected_at,
-    currency: r.currency ?? "EUR",
+    currency: r.currency ?? DEFAULT_CURRENCY,
     exchangeRate: r.exchange_rate,
     servicePeriodStart: r.service_period_start,
     servicePeriodEnd: r.service_period_end,
@@ -126,6 +138,7 @@ export type OfferFormInput = {
   notes: string | null;
   introText: string | null;
   isReverseCharge: boolean;
+  supplyKind: SupplyKind;
   items: OfferItemInput[];
   currency?: string;
   exchangeRate?: string | null;
@@ -135,9 +148,6 @@ export type OfferFormInput = {
   skontoDays?: number | null;
   pdfLanguage?: "de" | "en";
 };
-
-import { computeLineTotal, computeTotals } from "$lib/utils/totals";
-export { computeLineTotal, computeTotals };
 
 // --- List / get ---
 
@@ -150,9 +160,7 @@ export type OfferFilter = {
 
 export type OfferListRow = Offer & { customerName: string };
 
-export async function listOffers(
-  filter: OfferFilter = {},
-): Promise<OfferListRow[]> {
+function buildOfferFilter(filter: OfferFilter): { where: string; binds: unknown[] } {
   const wheres: string[] = [];
   const binds: unknown[] = [];
 
@@ -176,8 +184,14 @@ export async function listOffers(
     binds.push(q, q);
   }
 
-  const where = wheres.length ? `WHERE ${wheres.join(" AND ")}` : "";
-  const rows = await select<OfferRow & { customer_name: string }>(
+  return { where: wheres.length ? `WHERE ${wheres.join(" AND ")}` : "", binds };
+}
+
+export async function listOffers(
+  filter: OfferFilter = {},
+): Promise<OfferListRow[]> {
+  const { where, binds } = buildOfferFilter(filter);
+  const rows = await select<OfferRow & { customer_name: string | null }>(
     `SELECT o.*, c.name AS customer_name
      FROM offers o
      LEFT JOIN customers c ON c.id = o.customer_id
@@ -187,7 +201,7 @@ export async function listOffers(
   );
   return rows.map((r) => ({
     ...mapOffer(r),
-    customerName: r.customer_name ?? "—",
+    customerName: r.customer_name ?? MISSING_CUSTOMER_NAME,
   }));
 }
 
@@ -208,45 +222,12 @@ export async function getOffer(
 
 export async function getOfferYears(): Promise<number[]> {
   const rows = await select<{ y: number }>(
-    "SELECT DISTINCT CAST(strftime('%Y', issue_date, 'unixepoch') AS INTEGER) AS y FROM offers ORDER BY y DESC",
+    "SELECT DISTINCT CAST(strftime('%Y', issue_date, 'unixepoch', 'localtime') AS INTEGER) AS y FROM offers ORDER BY y DESC",
   );
   return rows.map((r) => r.y).filter((y) => Number.isFinite(y));
 }
 
-// --- Numbering ---
-
-async function nextOfferNumber(): Promise<string> {
-  const db = await getDb();
-  await db.execute(
-    "UPDATE settings SET offer_number_counter = offer_number_counter + 1, updated_at = unixepoch() WHERE id = 1",
-  );
-  const rows = await db.select<
-    Array<{ offer_number_counter: number; offer_number_format: string }>
-  >("SELECT offer_number_counter, offer_number_format FROM settings WHERE id = 1");
-  const counter = rows[0]?.offer_number_counter ?? 1;
-  const pattern = rows[0]?.offer_number_format ?? "AN-{YYYY}-{NNNN}";
-  return formatInvoiceNumber(pattern, counter);
-}
-
 // --- Mutations ---
-
-async function buildCustomerSnapshot(
-  customerId: number,
-): Promise<CustomerSnapshot> {
-  const c = await getCustomer(customerId);
-  if (!c) throw new Error(`Customer ${customerId} not found`);
-  return {
-    customerNumber: c.customerNumber,
-    name: c.name,
-    contactPerson: c.contactPerson,
-    street: c.street,
-    postalCode: c.postalCode,
-    city: c.city,
-    country: c.country,
-    email: c.email,
-    vatId: c.vatId,
-  };
-}
 
 async function writeItems(
   offerId: number,
@@ -285,15 +266,15 @@ export async function createOffer(input: OfferFormInput): Promise<number> {
     isKleinunternehmer: settings.isKleinunternehmer,
     isReverseCharge: input.isReverseCharge,
   });
-  const number = await nextOfferNumber();
+  const number = await drawNextNumber("offer", input.issueDate);
 
-  const res = await execute(
+  const id = await insert(
     `INSERT INTO offers
       (number, customer_id, customer_snapshot, issue_date, valid_until,
-       status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
+       status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge, supply_kind,
        notes, intro_text, currency, exchange_rate,
        service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language)
-     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.customerId,
@@ -305,9 +286,10 @@ export async function createOffer(input: OfferFormInput): Promise<number> {
       totals.total,
       settings.isKleinunternehmer ? 1 : 0,
       input.isReverseCharge ? 1 : 0,
+      input.supplyKind,
       input.notes,
       input.introText,
-      input.currency ?? "EUR",
+      input.currency ?? DEFAULT_CURRENCY,
       input.exchangeRate ?? null,
       input.servicePeriodStart ?? null,
       input.servicePeriodEnd ?? null,
@@ -316,7 +298,6 @@ export async function createOffer(input: OfferFormInput): Promise<number> {
       input.pdfLanguage ?? settings.defaultPdfLanguage,
     ],
   );
-  const id = Number(res.lastInsertId ?? 0);
   await writeItems(id, input.items);
   return id;
 }
@@ -345,7 +326,7 @@ export async function updateOffer(
       customer_id = ?, customer_snapshot = ?,
       issue_date = ?, valid_until = ?,
       subtotal = ?, vat_amount = ?, total = ?,
-      is_reverse_charge = ?,
+      is_reverse_charge = ?, supply_kind = ?,
       notes = ?, intro_text = ?,
       currency = ?, exchange_rate = ?,
       service_period_start = ?, service_period_end = ?,
@@ -362,10 +343,11 @@ export async function updateOffer(
       totals.vatAmount,
       totals.total,
       input.isReverseCharge ? 1 : 0,
+      input.supplyKind,
       input.notes,
       input.introText,
-      input.currency ?? existing.offer.currency ?? "EUR",
-      input.exchangeRate ?? existing.offer.exchangeRate ?? null,
+      input.currency ?? existing.offer.currency,
+      input.exchangeRate ?? existing.offer.exchangeRate,
       input.servicePeriodStart ?? null,
       input.servicePeriodEnd ?? null,
       input.skontoPercent ?? null,
@@ -380,7 +362,7 @@ export async function updateOffer(
 export async function deleteOffer(id: number): Promise<void> {
   const existing = await getOffer(id);
   if (!existing) return;
-  if (existing.offer.status !== "draft" && existing.offer.status !== "rejected" && existing.offer.status !== "expired") {
+  if (!DELETABLE_STATUSES.includes(existing.offer.status)) {
     throw new Error("Nur Entwürfe, abgelehnte oder abgelaufene Angebote können gelöscht werden.");
   }
   await execute("DELETE FROM offers WHERE id = ?", [id]);
@@ -409,13 +391,6 @@ export async function markRejected(id: number): Promise<void> {
   );
 }
 
-export async function markExpired(id: number): Promise<void> {
-  await execute(
-    "UPDATE offers SET status = 'expired', updated_at = unixepoch() WHERE id = ? AND status IN ('sent','draft')",
-    [id],
-  );
-}
-
 export async function reopenDraft(id: number): Promise<void> {
   await execute(
     "UPDATE offers SET status = 'draft', sent_at = NULL, accepted_at = NULL, rejected_at = NULL, updated_at = unixepoch() WHERE id = ? AND status IN ('sent','rejected','expired')",
@@ -424,19 +399,61 @@ export async function reopenDraft(id: number): Promise<void> {
 }
 
 /**
- * Auto-expire offers whose valid_until has passed.
+ * valid_until is local midnight of the last valid day ("Gültig bis" is
+ * inclusive), so an offer only counts as lapsed once that day is over.
+ */
+function startOfTodayUnix(): number {
+  return fromIsoDate(toIsoDate(nowUnix()));
+}
+
+/**
+ * Auto-expire offers whose validity ended before today.
  * Called on dashboard / list load — cheap, idempotent.
  */
 export async function expireDueOffers(): Promise<number> {
-  const now = Math.floor(Date.now() / 1000);
   const res = await execute(
-    "UPDATE offers SET status = 'expired', updated_at = unixepoch() WHERE status IN ('draft','sent') AND valid_until < ?",
-    [now],
+    `UPDATE offers SET status = 'expired', updated_at = unixepoch() WHERE status IN ${OPEN_STATUSES_SQL} AND valid_until < ?`,
+    [startOfTodayUnix()],
   );
   return res.rowsAffected ?? 0;
 }
 
 // --- Convert to invoice ---
+
+function invoiceInputFromOffer(
+  offer: Offer,
+  items: OfferItem[],
+  issueDate: number,
+  dueDate: number,
+): InvoiceFormInput {
+  return {
+    customerId: offer.customerId,
+    issueDate,
+    deliveryDate: null,
+    dueDate,
+    notes: offer.notes,
+    paymentTerms: null,
+    reverseChargeType: offer.isReverseCharge ? "intra_eu" : "none",
+    supplyKind: offer.supplyKind,
+    items: items.map((it) => ({
+      description: it.description,
+      quantity: it.quantity,
+      unit: it.unit,
+      unitPrice: it.unitPrice,
+      vatRate: it.vatRate,
+      longDescription: it.longDescription,
+      linePeriodStart: it.linePeriodStart,
+      linePeriodEnd: it.linePeriodEnd,
+    })),
+    currency: offer.currency,
+    exchangeRate: offer.exchangeRate,
+    servicePeriodStart: offer.servicePeriodStart,
+    servicePeriodEnd: offer.servicePeriodEnd,
+    skontoPercent: offer.skontoPercent,
+    skontoDays: offer.skontoDays,
+    pdfLanguage: offer.pdfLanguage,
+  };
+}
 
 /**
  * Creates a fresh draft invoice from this offer's data and links it back.
@@ -457,37 +474,10 @@ export async function convertToInvoice(
 
   const settings = await loadSettings();
   const paymentDays = opts.paymentTermsDays ?? settings.defaultPaymentTermsDays;
-  const issueDate = Math.floor(Date.now() / 1000);
-  const dueDate = issueDate + paymentDays * 86400;
-
-  const invoiceInput: InvoiceFormInput = {
-    customerId: data.offer.customerId,
-    issueDate,
-    deliveryDate: null,
-    dueDate,
-    notes: data.offer.notes,
-    paymentTerms: null,
-    reverseChargeType: data.offer.isReverseCharge ? "intra_eu" : "none",
-    items: data.items.map((it) => ({
-      description: it.description,
-      quantity: it.quantity,
-      unit: it.unit,
-      unitPrice: it.unitPrice,
-      vatRate: it.vatRate,
-      longDescription: it.longDescription,
-      linePeriodStart: it.linePeriodStart,
-      linePeriodEnd: it.linePeriodEnd,
-    })),
-    currency: data.offer.currency,
-    exchangeRate: data.offer.exchangeRate,
-    servicePeriodStart: data.offer.servicePeriodStart,
-    servicePeriodEnd: data.offer.servicePeriodEnd,
-    skontoPercent: data.offer.skontoPercent,
-    skontoDays: data.offer.skontoDays,
-    pdfLanguage: data.offer.pdfLanguage,
-  };
-
-  const invoiceId = await createInvoice(invoiceInput);
+  const issueDate = nowUnix();
+  const invoiceId = await createInvoice(
+    invoiceInputFromOffer(data.offer, data.items, issueDate, addDaysUnix(issueDate, paymentDays)),
+  );
   await execute(
     "UPDATE offers SET status = 'accepted', accepted_at = COALESCE(accepted_at, unixepoch()), converted_invoice_id = ?, updated_at = unixepoch() WHERE id = ?",
     [invoiceId, offerId],
@@ -502,14 +492,13 @@ export async function openOffersStats(): Promise<{
   total: number;
   expiringSoonCount: number;
 }> {
-  const now = Math.floor(Date.now() / 1000);
-  const soon = now + 7 * 86400;
+  const today = startOfTodayUnix();
   const [open] = await select<{ c: number; t: number }>(
-    "SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS t FROM offers WHERE status IN ('draft','sent')",
+    `SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS t FROM offers WHERE status IN ${OPEN_STATUSES_SQL}`,
   );
   const [soonRow] = await select<{ c: number }>(
-    "SELECT COUNT(*) AS c FROM offers WHERE status IN ('draft','sent') AND valid_until BETWEEN ? AND ?",
-    [now, soon],
+    `SELECT COUNT(*) AS c FROM offers WHERE status IN ${OPEN_STATUSES_SQL} AND valid_until BETWEEN ? AND ?`,
+    [today, addDaysUnix(today, EXPIRING_SOON_DAYS)],
   );
   return {
     count: open?.c ?? 0,

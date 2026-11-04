@@ -37,110 +37,63 @@
   import { checkForUpdate, isTauri } from "$lib/updater";
   import { toast } from "$lib/ui";
 
+  const UPDATE_CHECK_DELAY_MS = 10_000;
+
+  async function offerUpdateIfAvailable() {
+    try {
+      const result = await checkForUpdate();
+      if (!result.available) return;
+      toast.action(
+        `Update v${result.version} verfügbar`,
+        { label: "Installieren", onClick: () => result.install() },
+        { description: "Klick zum Herunterladen und Neustarten." },
+      );
+    } catch {
+      // Silent: offline, dev build without pubkey, etc.
+    }
+  }
+
   onMount(() => {
     if (!isTauri()) return;
-    const timer = setTimeout(async () => {
-      try {
-        const result = await checkForUpdate();
-        if (result.available) {
-          toast.action(
-            `Update v${result.version} verfügbar`,
-            {
-              label: "Installieren",
-              onClick: () => result.install(),
-            },
-            { description: "Klick zum Herunterladen und Neustarten." },
-          );
-        }
-      } catch {
-        // Silent: offline, dev build without pubkey, etc.
-      }
-    }, 10_000);
+    const timer = setTimeout(offerUpdateIfAvailable, UPDATE_CHECK_DELAY_MS);
     return () => clearTimeout(timer);
   });
 
   // svelte-spa-router's TS types are still Svelte 4-shaped; Svelte 5 Component<>
   // is structurally compatible at runtime, so we cast through unknown.
+  function editorRoute(component: unknown, mode: "new" | "edit") {
+    return wrap({ component: component as never, props: { mode } });
+  }
+
   const routes = {
     "/": Dashboard,
     "/customers": CustomersList,
-    "/customers/new": wrap({
-      component: CustomerEdit as unknown as never,
-      props: { mode: "new" },
-    }),
-    "/customers/:id": wrap({
-      component: CustomerEdit as unknown as never,
-      props: { mode: "edit" },
-    }),
+    "/customers/new": editorRoute(CustomerEdit, "new"),
+    "/customers/:id": editorRoute(CustomerEdit, "edit"),
     "/invoices": InvoicesList,
-    "/invoices/new": wrap({
-      component: InvoiceEdit as unknown as never,
-      props: { mode: "new" },
-    }),
-    "/invoices/:id/edit": wrap({
-      component: InvoiceEdit as unknown as never,
-      props: { mode: "edit" },
-    }),
+    "/invoices/new": editorRoute(InvoiceEdit, "new"),
+    "/invoices/:id/edit": editorRoute(InvoiceEdit, "edit"),
     "/invoices/:id": InvoiceDetail,
     "/offers": OffersList,
-    "/offers/new": wrap({
-      component: OfferEdit as unknown as never,
-      props: { mode: "new" },
-    }),
-    "/offers/:id/edit": wrap({
-      component: OfferEdit as unknown as never,
-      props: { mode: "edit" },
-    }),
+    "/offers/new": editorRoute(OfferEdit, "new"),
+    "/offers/:id/edit": editorRoute(OfferEdit, "edit"),
     "/offers/:id": OfferDetail,
     "/recurring": RecurringList,
-    "/recurring/new": wrap({
-      component: RecurringEdit as unknown as never,
-      props: { mode: "new" },
-    }),
-    "/recurring/:id": wrap({
-      component: RecurringEdit as unknown as never,
-      props: { mode: "edit" },
-    }),
+    "/recurring/new": editorRoute(RecurringEdit, "new"),
+    "/recurring/:id": editorRoute(RecurringEdit, "edit"),
     "/catalog": CatalogList,
-    "/catalog/new": wrap({
-      component: CatalogEdit as unknown as never,
-      props: { mode: "new" },
-    }),
-    "/catalog/:id": wrap({
-      component: CatalogEdit as unknown as never,
-      props: { mode: "edit" },
-    }),
+    "/catalog/new": editorRoute(CatalogEdit, "new"),
+    "/catalog/:id": editorRoute(CatalogEdit, "edit"),
     "/vendors": VendorsList,
-    "/vendors/new": wrap({
-      component: VendorEdit as unknown as never,
-      props: { mode: "new" },
-    }),
-    "/vendors/:id": wrap({
-      component: VendorEdit as unknown as never,
-      props: { mode: "edit" },
-    }),
+    "/vendors/new": editorRoute(VendorEdit, "new"),
+    "/vendors/:id": editorRoute(VendorEdit, "edit"),
     "/expenses": ExpensesList,
-    "/expenses/new": wrap({
-      component: ExpenseEdit as unknown as never,
-      props: { mode: "new" },
-    }),
-    "/expenses/:id": wrap({
-      component: ExpenseEdit as unknown as never,
-      props: { mode: "edit" },
-    }),
+    "/expenses/new": editorRoute(ExpenseEdit, "new"),
+    "/expenses/:id": editorRoute(ExpenseEdit, "edit"),
     "/reminders": RemindersList,
-    "/reminders/new/:invoiceId/:level": wrap({
-      component: ReminderEdit as unknown as never,
-      props: { mode: "new" },
-    }),
-    "/reminders/new/:invoiceId": wrap({
-      component: ReminderEdit as unknown as never,
-      props: { mode: "new" },
-    }),
-    "/reminders/:id": wrap({
-      component: ReminderEdit as unknown as never,
-      props: { mode: "edit" },
-    }),
+    "/reminders/new/:invoiceId/:level": editorRoute(ReminderEdit, "new"),
+    "/reminders/new/:invoiceId": editorRoute(ReminderEdit, "new"),
+    "/reminders/:id": editorRoute(ReminderEdit, "edit"),
     "/bank-import": BankImport,
     "/reports/ustva": UstvaReport,
     "/reports/taxes": TaxReport,

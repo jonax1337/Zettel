@@ -10,7 +10,10 @@ from jinja2 import Environment, FileSystemLoader
 from .i18n import t as translate
 
 
-def _templates_dir() -> Path:
+DISPLAY_DATE_FORMAT = "%d.%m.%Y"
+
+
+def templates_dir() -> Path:
     # When frozen by PyInstaller, templates ship next to the binary in _MEIPASS.
     if getattr(sys, "frozen", False):
         return Path(sys._MEIPASS) / "templates"  # type: ignore[attr-defined]
@@ -37,16 +40,19 @@ def fmt_qty(q: float | int) -> str:
     return f"{q:.2f}".replace(".", ",")
 
 
-def fmt_date_unix(unix_seconds: int | None) -> str:
+def format_unix_utc(unix_seconds: int | None, pattern: str) -> str:
     if not unix_seconds:
         return ""
-    dt = datetime.fromtimestamp(int(unix_seconds), tz=timezone.utc)
-    return dt.strftime("%d.%m.%Y")
+    return datetime.fromtimestamp(int(unix_seconds), tz=timezone.utc).strftime(pattern)
+
+
+def fmt_date_unix(unix_seconds: int | None) -> str:
+    return format_unix_utc(unix_seconds, DISPLAY_DATE_FORMAT)
 
 
 def build_env() -> Environment:
     env = Environment(
-        loader=FileSystemLoader(str(_templates_dir())),
+        loader=FileSystemLoader(str(templates_dir())),
         # Always autoescape — our templates are .xml.j2 / .html.j2, and
         # select_autoescape() only inspects the *last* extension, missing both.
         autoescape=True,

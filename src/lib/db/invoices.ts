@@ -1,131 +1,33 @@
-import { execute, getDb, select } from "./client";
-import { getCustomer, loadSettings } from "./queries";
+import { containsPattern, execute, insert, select, toSqlBool } from "./client";
+import {
+  MISSING_NAME,
+  mapInvoice,
+  mapItem,
+  type InvoiceItemRow,
+  type InvoiceRow,
+} from "./invoice-rows";
+import { drawNextNumber } from "./numbering";
+import { loadSettings } from "./queries";
+import { parseSnapshot } from "./snapshot-json";
+import { buildCustomerSnapshot } from "./snapshots";
 import type {
   CustomerSnapshot,
   Invoice,
   InvoiceItem,
   InvoiceStatus,
+  PdfLanguage,
 } from "./schema";
-import { formatInvoiceNumber } from "$lib/utils/invoice-number";
+import { nowUnix, toUnix } from "$lib/utils/date";
+import { displayInvoiceNumber, draftPlaceholder, isDraftNumber } from "$lib/utils/invoice-number";
+import { computeLineTotal, computeTotals, type Totals } from "$lib/utils/totals";
 
-// --- Row types (snake_case as returned from SQLite) ---
+// Pure math lives in lib/utils/totals.ts, re-exported for the callers of this module.
+export { computeLineTotal, computeTotals };
+export { displayInvoiceNumber, isDraftNumber };
 
-type InvoiceRow = {
-  id: number;
-  number: string;
-  customer_id: number;
-  customer_snapshot: string;
-  issue_date: number;
-  delivery_date: number | null;
-  due_date: number;
-  status: InvoiceStatus;
-  subtotal: number;
-  vat_amount: number;
-  total: number;
-  is_kleinunternehmer: number;
-  is_reverse_charge: number;
-  reverse_charge_type: string | null;
-  notes: string | null;
-  payment_terms: string | null;
-  pdf_path: string | null;
-  is_credit_note: number | null;
-  corrects_invoice_id: number | null;
-  created_at: number;
-  updated_at: number;
-  sent_at: number | null;
-  paid_at: number | null;
-  last_validation_status: string | null;
-  last_validated_at: number | null;
-  last_validation_findings_count: number | null;
-  currency: string;
-  exchange_rate: string | null;
-  eur_total_cent: number | null;
-  notes_internal: string | null;
-  follow_up_date: number | null;
-  service_period_start: number | null;
-  service_period_end: number | null;
-  skonto_percent: number | null;
-  skonto_days: number | null;
-  amount_paid_cent: number | null;
-  pdf_language: string | null;
-};
+// --- Input types ---
 
-type InvoiceItemRow = {
-  id: number;
-  invoice_id: number;
-  position: number;
-  description: string;
-  quantity: number;
-  unit: string;
-  unit_price: number;
-  vat_rate: number;
-  line_total: number;
-  long_description: string | null;
-  line_period_start: number | null;
-  line_period_end: number | null;
-};
-
-function mapInvoice(r: InvoiceRow): Invoice {
-  return {
-    id: r.id,
-    number: r.number,
-    customerId: r.customer_id,
-    customerSnapshot: r.customer_snapshot,
-    issueDate: r.issue_date,
-    deliveryDate: r.delivery_date,
-    dueDate: r.due_date,
-    status: r.status,
-    subtotal: r.subtotal,
-    vatAmount: r.vat_amount,
-    total: r.total,
-    isKleinunternehmer: r.is_kleinunternehmer === 1,
-    isReverseCharge: (r.reverse_charge_type ?? "none") !== "none",
-    reverseChargeType: ((r.reverse_charge_type ?? "none") as Invoice["reverseChargeType"]),
-    notes: r.notes,
-    paymentTerms: r.payment_terms,
-    pdfPath: r.pdf_path,
-    isCreditNote: r.is_credit_note === 1,
-    correctsInvoiceId: r.corrects_invoice_id,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    sentAt: r.sent_at,
-    paidAt: r.paid_at,
-    lastValidationStatus: r.last_validation_status as Invoice["lastValidationStatus"],
-    lastValidatedAt: r.last_validated_at,
-    lastValidationFindingsCount: r.last_validation_findings_count,
-    currency: r.currency ?? "EUR",
-    exchangeRate: r.exchange_rate,
-    eurTotalCent: r.eur_total_cent,
-    notesInternal: r.notes_internal,
-    followUpDate: r.follow_up_date,
-    servicePeriodStart: r.service_period_start,
-    servicePeriodEnd: r.service_period_end,
-    skontoPercent: r.skonto_percent,
-    skontoDays: r.skonto_days,
-    amountPaidCent: r.amount_paid_cent ?? 0,
-    pdfLanguage: (r.pdf_language ?? "de") as Invoice["pdfLanguage"],
-  };
-}
-
-function mapItem(r: InvoiceItemRow): InvoiceItem {
-  return {
-    id: r.id,
-    invoiceId: r.invoice_id,
-    position: r.position,
-    description: r.description,
-    quantity: r.quantity,
-    unit: r.unit,
-    unitPrice: r.unit_price,
-    vatRate: r.vat_rate,
-    lineTotal: r.line_total,
-    longDescription: r.long_description,
-    linePeriodStart: r.line_period_start,
-    linePeriodEnd: r.line_period_end,
-  };
-}
-
-// --- Item input (no id/invoiceId/lineTotal — derived) ---
-
+/** No id/invoiceId/lineTotal: those are derived. */
 export type InvoiceItemInput = {
   description: string;
   quantity: number;
@@ -139,6 +41,9 @@ export type InvoiceItemInput = {
 
 export type ReverseChargeType = "none" | "intra_eu" | "third_country";
 
+/** 'goods' = Lieferung, 'services' = sonstige Leistung; decides the UStVA line and the PDF legal notice. */
+export type SupplyKind = Invoice["supplyKind"];
+
 export type InvoiceFormInput = {
   customerId: number;
   issueDate: number;
@@ -147,6 +52,7 @@ export type InvoiceFormInput = {
   notes: string | null;
   paymentTerms: string | null;
   reverseChargeType: ReverseChargeType;
+  supplyKind: SupplyKind;
   isCreditNote?: boolean;
   correctsInvoiceId?: number | null;
   items: InvoiceItemInput[];
@@ -159,13 +65,8 @@ export type InvoiceFormInput = {
   servicePeriodEnd?: number | null;
   skontoPercent?: number | null;
   skontoDays?: number | null;
-  pdfLanguage?: "de" | "en";
+  pdfLanguage?: PdfLanguage;
 };
-
-// --- Totals (pure math lives in lib/utils/totals.ts, re-exported here) ---
-
-import { computeLineTotal, computeTotals } from "$lib/utils/totals";
-export { computeLineTotal, computeTotals };
 
 // --- List / get ---
 
@@ -178,34 +79,45 @@ export type InvoiceFilter = {
 
 export type InvoiceListRow = Invoice & { customerName: string };
 
-export async function listInvoices(
-  filter: InvoiceFilter = {},
-): Promise<InvoiceListRow[]> {
-  const wheres: string[] = [];
+export function buildInvoiceFilter(filter: InvoiceFilter): {
+  where: string;
+  binds: unknown[];
+} {
+  const conditions: string[] = [];
   const binds: unknown[] = [];
 
   if (filter.status && filter.status !== "all") {
-    wheres.push(`i.status = ?`);
+    conditions.push("i.status = ?");
     binds.push(filter.status);
   }
   if (filter.customerId && filter.customerId !== "all") {
-    wheres.push(`i.customer_id = ?`);
+    conditions.push("i.customer_id = ?");
     binds.push(filter.customerId);
   }
   if (filter.year && filter.year !== "all") {
-    const start = Math.floor(new Date(filter.year, 0, 1).getTime() / 1000);
-    const end = Math.floor(new Date(filter.year + 1, 0, 1).getTime() / 1000);
-    wheres.push(`i.issue_date >= ? AND i.issue_date < ?`);
-    binds.push(start, end);
+    conditions.push("i.issue_date >= ? AND i.issue_date < ?");
+    binds.push(
+      toUnix(new Date(filter.year, 0, 1)),
+      toUnix(new Date(filter.year + 1, 0, 1)),
+    );
   }
-  if (filter.search && filter.search.trim() !== "") {
-    wheres.push(`(i.number LIKE ? OR c.name LIKE ?)`);
-    const q = `%${filter.search.trim()}%`;
-    binds.push(q, q);
+  const pattern = containsPattern(filter.search ?? "");
+  if (pattern !== null) {
+    conditions.push("(i.number LIKE ? OR c.name LIKE ?)");
+    binds.push(pattern, pattern);
   }
 
-  const where = wheres.length ? `WHERE ${wheres.join(" AND ")}` : "";
-  const rows = await select<InvoiceRow & { customer_name: string }>(
+  return {
+    where: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "",
+    binds,
+  };
+}
+
+export async function listInvoices(
+  filter: InvoiceFilter = {},
+): Promise<InvoiceListRow[]> {
+  const { where, binds } = buildInvoiceFilter(filter);
+  const rows = await select<InvoiceRow & { customer_name: string | null }>(
     `SELECT i.*, c.name AS customer_name
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
@@ -215,84 +127,43 @@ export async function listInvoices(
   );
   return rows.map((r) => ({
     ...mapInvoice(r),
-    customerName: r.customer_name ?? "—",
+    customerName: r.customer_name ?? MISSING_NAME,
   }));
+}
+
+async function findInvoice(id: number): Promise<Invoice | null> {
+  const rows = await select<InvoiceRow>("SELECT * FROM invoices WHERE id = ?", [id]);
+  return rows.length ? mapInvoice(rows[0]) : null;
 }
 
 export async function getInvoice(
   id: number,
 ): Promise<{ invoice: Invoice; items: InvoiceItem[] } | null> {
-  const rows = await select<InvoiceRow>(
-    "SELECT * FROM invoices WHERE id = ?",
-    [id],
-  );
-  if (!rows.length) return null;
+  const invoice = await findInvoice(id);
+  if (!invoice) return null;
   const itemRows = await select<InvoiceItemRow>(
     "SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY position ASC",
     [id],
   );
-  return { invoice: mapInvoice(rows[0]), items: itemRows.map(mapItem) };
+  return { invoice, items: itemRows.map(mapItem) };
 }
 
+/** Years in local time, matching how issue dates are entered and filtered. */
 export async function getInvoiceYears(): Promise<number[]> {
   const rows = await select<{ y: number }>(
-    "SELECT DISTINCT CAST(strftime('%Y', issue_date, 'unixepoch') AS INTEGER) AS y FROM invoices ORDER BY y DESC",
+    "SELECT DISTINCT CAST(strftime('%Y', issue_date, 'unixepoch', 'localtime') AS INTEGER) AS y FROM invoices ORDER BY y DESC",
   );
   return rows.map((r) => r.y).filter((y) => Number.isFinite(y));
 }
 
-// --- Numbering (atomic via tx) ---
-
-async function nextInvoiceNumber(): Promise<{
-  number: string;
-  newCounter: number;
-  pattern: string;
-}> {
-  const db = await getDb();
-  // Bump counter atomically and read it back. Single-writer SQLite makes this safe.
-  await db.execute(
-    "UPDATE settings SET invoice_number_counter = invoice_number_counter + 1, updated_at = unixepoch() WHERE id = 1",
-  );
-  const rows = await db.select<
-    Array<{ invoice_number_counter: number; invoice_number_format: string }>
-  >("SELECT invoice_number_counter, invoice_number_format FROM settings WHERE id = 1");
-  const counter = rows[0]?.invoice_number_counter ?? 1;
-  const pattern = rows[0]?.invoice_number_format ?? "RE-{YYYY}-{NNNN}";
-  return {
-    number: formatInvoiceNumber(pattern, counter),
-    newCounter: counter,
-    pattern,
-  };
-}
-
-// --- Mutations ---
-
-async function buildCustomerSnapshot(
-  customerId: number,
-): Promise<CustomerSnapshot> {
-  const c = await getCustomer(customerId);
-  if (!c) throw new Error(`Customer ${customerId} not found`);
-  return {
-    customerNumber: c.customerNumber,
-    name: c.name,
-    contactPerson: c.contactPerson,
-    street: c.street,
-    postalCode: c.postalCode,
-    city: c.city,
-    country: c.country,
-    email: c.email,
-    vatId: c.vatId,
-  };
-}
+// --- Create / update ---
 
 async function writeItems(
   invoiceId: number,
   items: InvoiceItemInput[],
 ): Promise<void> {
   await execute("DELETE FROM invoice_items WHERE invoice_id = ?", [invoiceId]);
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i];
-    const line = computeLineTotal(it);
+  for (const [index, item] of items.entries()) {
     await execute(
       `INSERT INTO invoice_items
         (invoice_id, position, description, quantity, unit, unit_price, vat_rate, line_total,
@@ -300,95 +171,103 @@ async function writeItems(
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         invoiceId,
-        i + 1,
-        it.description,
-        it.quantity,
-        it.unit,
-        it.unitPrice,
-        it.vatRate,
-        line,
-        it.longDescription ?? null,
-        it.linePeriodStart ?? null,
-        it.linePeriodEnd ?? null,
+        index + 1,
+        item.description,
+        item.quantity,
+        item.unit,
+        item.unitPrice,
+        item.vatRate,
+        computeLineTotal(item),
+        item.longDescription ?? null,
+        item.linePeriodStart ?? null,
+        item.linePeriodEnd ?? null,
       ],
     );
   }
 }
 
-function draftPlaceholder(): string {
-  // Random placeholder satisfies the UNIQUE constraint without burning a real
-  // counter slot. Real number is assigned in issueInvoice() when the draft is
-  // sent / PDF is generated. "DRAFT-" prefix never collides with RE-/AN-/MA-.
-  const rand =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID().replace(/-/g, "").slice(0, 16)
-      : Math.random().toString(36).slice(2) + Date.now().toString(36);
-  return `DRAFT-${rand}`;
+/** Credit notes (Stornorechnungen) store all amounts negated. */
+function creditNoteSign(isCreditNote: boolean | undefined): 1 | -1 {
+  return isCreditNote ? -1 : 1;
 }
 
-export function isDraftNumber(n: string | null | undefined): boolean {
-  return !!n && n.startsWith("DRAFT-");
+function computeSignedTotals(
+  items: InvoiceItemInput[],
+  opts: {
+    isKleinunternehmer: boolean;
+    reverseChargeType: ReverseChargeType;
+    isCreditNote: boolean | undefined;
+  },
+): Totals {
+  const totals = computeTotals(items, {
+    isKleinunternehmer: opts.isKleinunternehmer,
+    isReverseCharge: opts.reverseChargeType !== "none",
+  });
+  const sign = creditNoteSign(opts.isCreditNote);
+  return {
+    subtotal: totals.subtotal * sign,
+    vatAmount: totals.vatAmount * sign,
+    total: totals.total * sign,
+  };
 }
 
-export function displayInvoiceNumber(inv: {
-  number: string;
-  status: InvoiceStatus;
-}): string {
-  if (inv.status === "draft" && isDraftNumber(inv.number)) {
-    return `Entwurf #${inv.number.slice(6, 10)}`;
-  }
-  return inv.number;
+function signedOrNull(amount: number | null | undefined, sign: 1 | -1): number | null {
+  return amount != null ? amount * sign : null;
+}
+
+function orKeep<T>(incoming: T | undefined, current: T): T {
+  return incoming === undefined ? current : incoming;
 }
 
 export async function createInvoice(input: InvoiceFormInput): Promise<number> {
   const settings = await loadSettings();
   const snapshot = await buildCustomerSnapshot(input.customerId);
-  const isReverseCharge = input.reverseChargeType !== "none";
-  const totals = computeTotals(input.items, {
+  const isCreditNote = !!input.isCreditNote;
+  const sign = creditNoteSign(isCreditNote);
+  const totals = computeSignedTotals(input.items, {
     isKleinunternehmer: settings.isKleinunternehmer,
-    isReverseCharge,
+    reverseChargeType: input.reverseChargeType,
+    isCreditNote,
   });
-  const number = draftPlaceholder();
 
-  const sign = input.isCreditNote ? -1 : 1;
-  const res = await execute(
+  const id = await insert(
     `INSERT INTO invoices
       (number, customer_id, customer_snapshot, issue_date, delivery_date, due_date,
        status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
-       reverse_charge_type, notes, payment_terms, is_credit_note, corrects_invoice_id,
+       reverse_charge_type, supply_kind, notes, payment_terms, is_credit_note, corrects_invoice_id,
        currency, exchange_rate, eur_total_cent, notes_internal, follow_up_date,
        service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      number,
+      draftPlaceholder(),
       input.customerId,
       JSON.stringify(snapshot),
       input.issueDate,
       input.deliveryDate,
       input.dueDate,
-      totals.subtotal * sign,
-      totals.vatAmount * sign,
-      totals.total * sign,
-      settings.isKleinunternehmer ? 1 : 0,
-      isReverseCharge ? 1 : 0,
+      totals.subtotal,
+      totals.vatAmount,
+      totals.total,
+      toSqlBool(settings.isKleinunternehmer),
+      toSqlBool(input.reverseChargeType !== "none"),
       input.reverseChargeType,
+      input.supplyKind,
       input.notes,
       input.paymentTerms,
-      input.isCreditNote ? 1 : 0,
+      toSqlBool(isCreditNote),
       input.correctsInvoiceId ?? null,
       input.currency ?? "EUR",
       input.exchangeRate ?? null,
-      input.eurTotalCent != null ? input.eurTotalCent * sign : null,
+      signedOrNull(input.eurTotalCent, sign),
       input.notesInternal ?? null,
       input.followUpDate ?? null,
       input.servicePeriodStart ?? null,
       input.servicePeriodEnd ?? null,
-      input.isCreditNote ? null : input.skontoPercent ?? null,
-      input.isCreditNote ? null : input.skontoDays ?? null,
+      isCreditNote ? null : input.skontoPercent ?? null,
+      isCreditNote ? null : input.skontoDays ?? null,
       input.pdfLanguage ?? settings.defaultPdfLanguage,
     ],
   );
-  const id = Number(res.lastInsertId ?? 0);
   await writeItems(id, input.items);
   return id;
 }
@@ -397,30 +276,28 @@ export async function updateInvoice(
   id: number,
   input: InvoiceFormInput,
 ): Promise<void> {
-  const existing = await getInvoice(id);
-  if (!existing) throw new Error(`Invoice ${id} not found`);
-  if (existing.invoice.status !== "draft") {
+  const current = await findInvoice(id);
+  if (!current) throw new Error(`Invoice ${id} not found`);
+  if (current.status !== "draft") {
     throw new Error("Nur Entwürfe können bearbeitet werden.");
   }
-  const isReverseCharge = input.reverseChargeType !== "none";
-  const totals = computeTotals(input.items, {
-    isKleinunternehmer: existing.invoice.isKleinunternehmer,
-    isReverseCharge,
+  const sign = creditNoteSign(current.isCreditNote);
+  const totals = computeSignedTotals(input.items, {
+    isKleinunternehmer: current.isKleinunternehmer,
+    reverseChargeType: input.reverseChargeType,
+    isCreditNote: current.isCreditNote,
   });
-  const sign = existing.invoice.isCreditNote ? -1 : 1;
-
-  // If customer changed, refresh snapshot.
-  let snapshotJson = existing.invoice.customerSnapshot;
-  if (input.customerId !== existing.invoice.customerId) {
-    snapshotJson = JSON.stringify(await buildCustomerSnapshot(input.customerId));
-  }
+  const customerSnapshot =
+    input.customerId === current.customerId
+      ? current.customerSnapshot
+      : JSON.stringify(await buildCustomerSnapshot(input.customerId));
 
   await execute(
     `UPDATE invoices SET
       customer_id = ?, customer_snapshot = ?,
       issue_date = ?, delivery_date = ?, due_date = ?,
       subtotal = ?, vat_amount = ?, total = ?,
-      is_reverse_charge = ?, reverse_charge_type = ?,
+      is_reverse_charge = ?, reverse_charge_type = ?, supply_kind = ?,
       notes = ?, payment_terms = ?,
       currency = ?, exchange_rate = ?, eur_total_cent = ?,
       notes_internal = ?, follow_up_date = ?,
@@ -431,27 +308,30 @@ export async function updateInvoice(
      WHERE id = ?`,
     [
       input.customerId,
-      snapshotJson,
+      customerSnapshot,
       input.issueDate,
       input.deliveryDate,
       input.dueDate,
-      totals.subtotal * sign,
-      totals.vatAmount * sign,
-      totals.total * sign,
-      isReverseCharge ? 1 : 0,
+      totals.subtotal,
+      totals.vatAmount,
+      totals.total,
+      toSqlBool(input.reverseChargeType !== "none"),
       input.reverseChargeType,
+      input.supplyKind,
       input.notes,
       input.paymentTerms,
-      input.currency ?? existing.invoice.currency ?? "EUR",
-      input.exchangeRate ?? existing.invoice.exchangeRate ?? null,
-      input.eurTotalCent != null ? input.eurTotalCent * sign : existing.invoice.eurTotalCent ?? null,
-      input.notesInternal ?? existing.invoice.notesInternal ?? null,
-      input.followUpDate ?? existing.invoice.followUpDate ?? null,
+      input.currency ?? current.currency,
+      orKeep(input.exchangeRate, current.exchangeRate),
+      input.eurTotalCent === undefined
+        ? current.eurTotalCent
+        : signedOrNull(input.eurTotalCent, sign),
+      orKeep(input.notesInternal, current.notesInternal),
+      orKeep(input.followUpDate, current.followUpDate),
       input.servicePeriodStart ?? null,
       input.servicePeriodEnd ?? null,
-      existing.invoice.isCreditNote ? null : input.skontoPercent ?? null,
-      existing.invoice.isCreditNote ? null : input.skontoDays ?? null,
-      input.pdfLanguage ?? existing.invoice.pdfLanguage,
+      current.isCreditNote ? null : input.skontoPercent ?? null,
+      current.isCreditNote ? null : input.skontoDays ?? null,
+      input.pdfLanguage ?? current.pdfLanguage,
       id,
     ],
   );
@@ -468,12 +348,44 @@ export async function updateInvoiceInternalMeta(
   );
 }
 
+export type ValidationOutcome = NonNullable<Invoice["lastValidationStatus"]>;
+
+const VALIDATION_ASSIGNMENTS =
+  "last_validation_status = ?, last_validated_at = unixepoch(), last_validation_findings_count = ?";
+
+export async function recordInvoiceValidation(
+  id: number,
+  outcome: ValidationOutcome,
+  findingsCount: number | null,
+): Promise<void> {
+  await execute(`UPDATE invoices SET ${VALIDATION_ASSIGNMENTS} WHERE id = ?`, [
+    outcome,
+    findingsCount,
+    id,
+  ]);
+}
+
+/** Stores a freshly rendered PDF together with the outcome of its validation. */
+export async function recordGeneratedPdf(
+  id: number,
+  pdfPath: string,
+  outcome: ValidationOutcome,
+  findingsCount: number | null,
+): Promise<void> {
+  await execute(
+    `UPDATE invoices SET pdf_path = ?, ${VALIDATION_ASSIGNMENTS}, updated_at = unixepoch() WHERE id = ?`,
+    [pdfPath, outcome, findingsCount, id],
+  );
+}
+
 export async function deleteInvoice(id: number): Promise<void> {
-  const existing = await getInvoice(id);
-  if (!existing) return;
-  if (existing.invoice.status !== "draft" && existing.invoice.status !== "cancelled") {
+  const invoice = await findInvoice(id);
+  if (!invoice) return;
+  if (invoice.status !== "draft" && invoice.status !== "cancelled") {
     throw new Error("Nur Entwürfe oder stornierte Rechnungen können gelöscht werden.");
   }
+  // invoice_payments has no FK to invoices, so a cancelled invoice would leave them behind.
+  await execute("DELETE FROM invoice_payments WHERE invoice_id = ?", [id]);
   await execute("DELETE FROM invoices WHERE id = ?", [id]);
 }
 
@@ -488,27 +400,16 @@ export async function findCreditNoteFor(invoiceId: number): Promise<Invoice | nu
 }
 
 /**
- * Creates a draft credit note (Stornorechnung) from an existing sent/paid invoice.
- * Items are mirrored verbatim — user can edit quantities/positions in the draft to
- * model partial refunds before sending. Totals are stored negative.
+ * Items are mirrored verbatim; the user can edit quantities in the draft to model
+ * partial refunds. The foreign-currency terms of the original carry over, because
+ * the mirrored unit prices are denominated in that currency.
  */
-export async function createCreditNoteFromInvoice(originalId: number): Promise<number> {
-  const data = await getInvoice(originalId);
-  if (!data) throw new Error(`Rechnung ${originalId} nicht gefunden.`);
-  const { invoice, items } = data;
-  if (invoice.isCreditNote) {
-    throw new Error("Für eine Stornorechnung kann keine weitere Stornorechnung erstellt werden.");
-  }
-  if (invoice.status !== "sent" && invoice.status !== "paid") {
-    throw new Error("Nur versendete oder bezahlte Rechnungen können storniert werden.");
-  }
-  const existing = await findCreditNoteFor(originalId);
-  if (existing) {
-    throw new Error(`Es existiert bereits eine Stornorechnung (${existing.number}).`);
-  }
-
-  const issueDate = Math.floor(Date.now() / 1000);
-  const input: InvoiceFormInput = {
+export function creditNoteInputFor(
+  invoice: Invoice,
+  items: InvoiceItem[],
+  issueDate: number,
+): InvoiceFormInput {
+  return {
     customerId: invoice.customerId,
     issueDate,
     deliveryDate: invoice.deliveryDate,
@@ -516,10 +417,14 @@ export async function createCreditNoteFromInvoice(originalId: number): Promise<n
     notes: `Storno zur Rechnung ${invoice.number}`,
     paymentTerms: null,
     reverseChargeType: invoice.reverseChargeType,
+    supplyKind: invoice.supplyKind,
     isCreditNote: true,
-    correctsInvoiceId: originalId,
+    correctsInvoiceId: invoice.id,
     servicePeriodStart: invoice.servicePeriodStart,
     servicePeriodEnd: invoice.servicePeriodEnd,
+    currency: invoice.currency,
+    exchangeRate: invoice.exchangeRate,
+    eurTotalCent: invoice.eurTotalCent,
     items: items.map((it) => ({
       description: it.description,
       quantity: it.quantity,
@@ -531,75 +436,88 @@ export async function createCreditNoteFromInvoice(originalId: number): Promise<n
       linePeriodEnd: it.linePeriodEnd,
     })),
   };
-  return createInvoice(input);
+}
+
+function assertCancellable(invoice: Invoice): void {
+  if (invoice.isCreditNote) {
+    throw new Error("Für eine Stornorechnung kann keine weitere Stornorechnung erstellt werden.");
+  }
+  if (invoice.status !== "sent" && invoice.status !== "paid") {
+    throw new Error("Nur versendete oder bezahlte Rechnungen können storniert werden.");
+  }
+}
+
+/** Creates a draft credit note (Stornorechnung) from a sent or paid invoice. */
+export async function createCreditNoteFromInvoice(originalId: number): Promise<number> {
+  const original = await getInvoice(originalId);
+  if (!original) throw new Error(`Rechnung ${originalId} nicht gefunden.`);
+  assertCancellable(original.invoice);
+  const existing = await findCreditNoteFor(originalId);
+  if (existing) {
+    throw new Error(`Es existiert bereits eine Stornorechnung (${existing.number}).`);
+  }
+  return createInvoice(creditNoteInputFor(original.invoice, original.items, nowUnix()));
 }
 
 // --- Status transitions ---
 
 /**
  * Assigns the final invoice number (if still a DRAFT-… placeholder) and
- * transitions status draft → sent. Counter is only consumed here, never on
- * createInvoice — so deleted/abandoned drafts leave no gaps.
+ * transitions status draft → sent. The counter is only consumed here, never on
+ * createInvoice, so deleted or abandoned drafts leave no gaps.
  *
- * sentAt is optional and defaults to "now". For nacherfassung of an old
- * invoice, pass the original send date as unix seconds.
+ * sentAt defaults to now; pass the original send date (unix seconds) when
+ * recording an old invoice after the fact.
  */
 export async function issueInvoice(
   id: number,
   sentAt?: number,
 ): Promise<string> {
-  const existing = await getInvoice(id);
-  if (!existing) throw new Error(`Rechnung ${id} nicht gefunden.`);
-  const cur = existing.invoice;
-  if (cur.status !== "draft") {
-    return cur.number;
-  }
-  const ts = sentAt ?? Math.floor(Date.now() / 1000);
-  let finalNumber = cur.number;
-  if (isDraftNumber(cur.number)) {
-    const { number } = await nextInvoiceNumber();
-    finalNumber = number;
-  }
+  const invoice = await findInvoice(id);
+  if (!invoice) throw new Error(`Rechnung ${id} nicht gefunden.`);
+  if (invoice.status !== "draft") return invoice.number;
+
+  const number = isDraftNumber(invoice.number)
+    ? await drawNextNumber("invoice", invoice.issueDate)
+    : invoice.number;
   await execute(
     `UPDATE invoices SET number = ?, status = 'sent', sent_at = ?, updated_at = unixepoch()
      WHERE id = ? AND status = 'draft'`,
-    [finalNumber, ts, id],
+    [number, sentAt ?? nowUnix(), id],
   );
-  return finalNumber;
+  return number;
 }
 
-export async function markSent(id: number, sentAt?: number): Promise<string> {
-  return issueInvoice(id, sentAt);
-}
+export { issueInvoice as markSent };
 
+/**
+ * Pays off the remaining balance. The remainder is logged as a payment so the
+ * payment list stays consistent with a direct "fully paid" action.
+ */
 export async function markPaid(id: number, paidAt?: number): Promise<void> {
-  const existing = await getInvoice(id);
-  if (!existing) return;
-  // Drafts must be issued first so they get a real number.
-  if (existing.invoice.status === "draft") {
+  const before = await findInvoice(id);
+  if (!before) return;
+  if (before.status === "draft") {
     await issueInvoice(id, paidAt);
   }
-  const ts = paidAt ?? Math.floor(Date.now() / 1000);
-  // Restbetrag als Payment-Eintrag protokollieren, damit die Zahlungsliste auch
-  // bei einem direkten "voll bezahlt"-Workflow konsistent bleibt. Bei manueller
-  // Teilzahlung markiert addPayment() die Rechnung selbständig als paid sobald
-  // der Saldo den Total-Betrag erreicht.
-  const fresh = await getInvoice(id);
-  if (!fresh) return;
-  const total = Math.abs(fresh.invoice.total);
-  const already = fresh.invoice.amountPaidCent ?? 0;
-  const remaining = total - already;
+  const invoice = await findInvoice(id);
+  if (!invoice) return;
+  if (invoice.status !== "sent" && invoice.status !== "partial") return;
+
+  const paymentTimestamp = paidAt ?? nowUnix();
+  const total = Math.abs(invoice.total);
+  const remaining = total - invoice.amountPaidCent;
   if (remaining > 0) {
     await execute(
       `INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent, source)
        VALUES (?, ?, ?, 'auto')`,
-      [id, ts, remaining],
+      [id, paymentTimestamp, remaining],
     );
   }
   await execute(
     `UPDATE invoices SET status = 'paid', paid_at = ?, amount_paid_cent = ?, updated_at = unixepoch()
-     WHERE id = ? AND status IN ('sent','partial','draft')`,
-    [ts, total, id],
+     WHERE id = ? AND status IN ('sent','partial')`,
+    [paymentTimestamp, total, id],
   );
 }
 
@@ -617,126 +535,7 @@ export async function reopenDraft(id: number): Promise<void> {
   );
 }
 
-// --- Dashboard helpers ---
-
-export async function dashboardStats(): Promise<{
-  openCount: number;
-  openTotal: number;
-  paidYtdTotal: number;
-  overdueCount: number;
-  overdueTotal: number;
-}> {
-  const now = Math.floor(Date.now() / 1000);
-  const yearStart = Math.floor(new Date(new Date().getFullYear(), 0, 1).getTime() / 1000);
-
-  const [open] = await select<{ c: number; t: number }>(
-    "SELECT COUNT(*) AS c, COALESCE(SUM(total - COALESCE(amount_paid_cent, 0)), 0) AS t FROM invoices WHERE status IN ('draft','sent','partial')",
-  );
-  const [paid] = await select<{ t: number }>(
-    "SELECT COALESCE(SUM(total), 0) AS t FROM invoices WHERE status = 'paid' AND paid_at >= ?",
-    [yearStart],
-  );
-  const [overdue] = await select<{ c: number; t: number }>(
-    "SELECT COUNT(*) AS c, COALESCE(SUM(total - COALESCE(amount_paid_cent, 0)), 0) AS t FROM invoices WHERE status IN ('sent','partial') AND due_date < ?",
-    [now],
-  );
-
-  return {
-    openCount: open?.c ?? 0,
-    openTotal: open?.t ?? 0,
-    paidYtdTotal: paid?.t ?? 0,
-    overdueCount: overdue?.c ?? 0,
-    overdueTotal: overdue?.t ?? 0,
-  };
-}
-
-export type MonthlyRevenuePoint = {
-  year: number;
-  month: number; // 1-12
-  label: string; // "Mai" / "2026-05"
-  paidTotal: number; // cents (paid invoices only)
-};
-
-/**
- * Paid invoice totals grouped by month of paid_at, for the last N months
- * (including current). Months with no invoices are returned with 0 so the
- * chart's x-axis stays contiguous.
- */
-export async function monthlyRevenue(months = 12): Promise<MonthlyRevenuePoint[]> {
-  const now = new Date();
-  const startDate = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
-  const startUnix = Math.floor(startDate.getTime() / 1000);
-
-  const rows = await select<{ ym: string; t: number }>(
-    `SELECT strftime('%Y-%m', paid_at, 'unixepoch') AS ym,
-            COALESCE(SUM(total), 0) AS t
-     FROM invoices
-     WHERE status = 'paid' AND paid_at >= ?
-     GROUP BY ym`,
-    [startUnix],
-  );
-
-  const byKey = new Map(rows.map((r) => [r.ym, r.t]));
-  const monthNames = [
-    "Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
-    "Jul", "Aug", "Sep", "Okt", "Nov", "Dez",
-  ];
-  const out: MonthlyRevenuePoint[] = [];
-  for (let i = 0; i < months; i++) {
-    const d = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1);
-    const y = d.getFullYear();
-    const m = d.getMonth() + 1;
-    const key = `${y}-${String(m).padStart(2, "0")}`;
-    out.push({
-      year: y,
-      month: m,
-      label: monthNames[d.getMonth()],
-      paidTotal: byKey.get(key) ?? 0,
-    });
-  }
-  return out;
-}
-
-export type TopCustomer = {
-  customerId: number;
-  name: string;
-  customerNumber: string;
-  invoiceCount: number;
-  paidTotal: number; // cents
-};
-
-export async function topCustomers(limit = 5, months = 12): Promise<TopCustomer[]> {
-  const now = new Date();
-  const startDate = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
-  const startUnix = Math.floor(startDate.getTime() / 1000);
-
-  const rows = await select<{
-    customer_id: number;
-    name: string;
-    customer_number: string;
-    count: number;
-    total: number;
-  }>(
-    `SELECT i.customer_id, c.name, c.customer_number,
-            COUNT(*) AS count,
-            COALESCE(SUM(i.total), 0) AS total
-     FROM invoices i
-     INNER JOIN customers c ON c.id = i.customer_id
-     WHERE i.status = 'paid' AND i.paid_at >= ?
-     GROUP BY i.customer_id
-     ORDER BY total DESC
-     LIMIT ?`,
-    [startUnix, limit],
-  );
-
-  return rows.map((r) => ({
-    customerId: r.customer_id,
-    name: r.name,
-    customerNumber: r.customer_number,
-    invoiceCount: r.count,
-    paidTotal: r.total,
-  }));
-}
+// --- Export ---
 
 export type InvoiceForExport = {
   invoice: Invoice;
@@ -745,61 +544,53 @@ export type InvoiceForExport = {
   customerVatId: string | null;
 };
 
+const EXPORTABLE_INVOICES_IN_RANGE =
+  "status IN ('sent','partial','paid') AND issue_date >= ? AND issue_date <= ?";
+
+function readSnapshotCustomer(
+  snapshotJson: string,
+): Pick<InvoiceForExport, "customerName" | "customerVatId"> {
+  const snapshot = parseSnapshot<CustomerSnapshot>(snapshotJson, "Kundensnapshot (Export)");
+  return {
+    customerName: snapshot.name ?? MISSING_NAME,
+    customerVatId: snapshot.vatId ?? null,
+  };
+}
+
+function groupItemsByInvoice(rows: InvoiceItemRow[]): Map<number, InvoiceItem[]> {
+  const byInvoice = new Map<number, InvoiceItem[]>();
+  for (const row of rows) {
+    const items = byInvoice.get(row.invoice_id) ?? [];
+    items.push(mapItem(row));
+    byInvoice.set(row.invoice_id, items);
+  }
+  return byInvoice;
+}
+
 export async function loadInvoicesForExport(
   dateFromUnix: number,
   dateToUnix: number,
 ): Promise<InvoiceForExport[]> {
-  const invRows = await select<InvoiceRow>(
+  const range = [dateFromUnix, dateToUnix];
+  const invoiceRows = await select<InvoiceRow>(
     `SELECT * FROM invoices
-     WHERE status IN ('sent','partial','paid')
-       AND issue_date >= ? AND issue_date <= ?
+     WHERE ${EXPORTABLE_INVOICES_IN_RANGE}
      ORDER BY issue_date ASC, id ASC`,
-    [dateFromUnix, dateToUnix],
+    range,
   );
-  if (!invRows.length) return [];
-  const ids = invRows.map((r) => r.id);
-  const placeholders = ids.map(() => "?").join(",");
-  const itemRows = await select<InvoiceItemRow>(
-    `SELECT * FROM invoice_items WHERE invoice_id IN (${placeholders}) ORDER BY invoice_id, position`,
-    ids,
-  );
-  const itemsByInv = new Map<number, InvoiceItem[]>();
-  for (const ir of itemRows) {
-    const arr = itemsByInv.get(ir.invoice_id) ?? [];
-    arr.push(mapItem(ir));
-    itemsByInv.set(ir.invoice_id, arr);
-  }
-  return invRows.map((r) => {
-    const invoice = mapInvoice(r);
-    let customerName = "—";
-    let customerVatId: string | null = null;
-    try {
-      const snap = JSON.parse(r.customer_snapshot) as CustomerSnapshot;
-      customerName = snap.name ?? "—";
-      customerVatId = snap.vatId ?? null;
-    } catch {
-      /* defaults */
-    }
-    return {
-      invoice,
-      items: itemsByInv.get(r.id) ?? [],
-      customerName,
-      customerVatId,
-    };
-  });
-}
+  if (!invoiceRows.length) return [];
 
-export async function recentInvoices(limit = 10): Promise<InvoiceListRow[]> {
-  const rows = await select<InvoiceRow & { customer_name: string }>(
-    `SELECT i.*, c.name AS customer_name
-     FROM invoices i
-     LEFT JOIN customers c ON c.id = i.customer_id
-     ORDER BY i.created_at DESC
-     LIMIT ?`,
-    [limit],
+  const itemRows = await select<InvoiceItemRow>(
+    `SELECT * FROM invoice_items
+     WHERE invoice_id IN (SELECT id FROM invoices WHERE ${EXPORTABLE_INVOICES_IN_RANGE})
+     ORDER BY invoice_id, position`,
+    range,
   );
-  return rows.map((r) => ({
-    ...mapInvoice(r),
-    customerName: r.customer_name ?? "—",
+  const itemsByInvoice = groupItemsByInvoice(itemRows);
+
+  return invoiceRows.map((row) => ({
+    invoice: mapInvoice(row),
+    items: itemsByInvoice.get(row.id) ?? [],
+    ...readSnapshotCustomer(row.customer_snapshot),
   }));
 }

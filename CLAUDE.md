@@ -3,10 +3,10 @@
 Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tauri 2 + Svelte 5 + Python sidecar.** ZUGFeRD/Factur-X PDF/A-3 output. Release-Historie in `CHANGELOG.md` — hier nicht duplizieren.
 
 ## Current state
-- **Released:** v0.21.0 on `main`. Auto-Update aktiv seit v0.4.3.
-- **DB schema:** `user_version = 26` (letzte Migration `0025_v0.16_expense_categories.sql`).
+- **Released:** v0.22.0 on `main`. Auto-Update aktiv seit v0.4.3.
+- **DB schema:** `user_version = 27` (letzte Migration `0026_v0.22_tax_options.sql`).
 - **Dev-Linie:** neue Arbeit auf `release/vX.Y`-Branches.
-- **Test-Suite:** 134 Vitest-Cases (`pnpm test`) + 71 Pytest-Cases (`sidecar/tests/`). Pure-Math (Totals/Tax/Skonto/Currency/Date/DATEV) ist voll abgedeckt, Sidecar deckt ZUGFeRD-XML-Goldens + KoSIT-Validator-Roundtrip + i18n ab.
+- **Test-Suite:** 483 Vitest-Cases (`pnpm test`, Zeitzone in `vite.config.ts` auf Europe/Berlin gepinnt) + 172 Pytest-Cases (`sidecar/tests/`, inkl. CLI-Logik) + 81 Rust-Tests (`cargo test`). Pure-Math (Totals/Tax/Skonto/Currency/Date/DATEV) ist voll abgedeckt, Sidecar deckt ZUGFeRD-XML-Goldens + KoSIT-Validator-Roundtrip + i18n ab.
 
 ## Architecture
 
@@ -22,11 +22,11 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 ### Rust (`src-tauri/src/`)
 - `lib.rs` — Plugin-Init, Migrations-Registry, Command-Registrierung. `apply_pending_restore_blocking()` läuft **vor** dem SQL-Plugin-Init, damit ein staged Restore die DB ersetzt, bevor sie geöffnet wird.
 - `sidecar.rs` — spawnt Python-Sidecar (`std::process::Command`, JSON über stdin/stdout). Dev: Script direkt; Release: PyInstaller-Binary aus Tauri-Resources. Tauri-Commands: `generate_invoice`, `generate_offer`, `generate_reminder`, `extract_zugferd`, `extract_text_pdf`, `ping_sidecar`.
-- `backup.rs` — ZIP-Snapshot (`VACUUM INTO` + PDFs + `manifest.json`). Staged Restore: extrahiert nach `<appdata>/pending_restore/`, Marker-File, dann `apply_pending_partial_restore` (`ATTACH DATABASE` + selektiver `INSERT`). App-Identifier ist hardcoded `digital.laux.zettel` (Pre-Builder hat keinen AppHandle). `CURRENT_SCHEMA` muss mit `user_version` der neuesten Migration matchen — sonst `Schema neuer als App-Version` beim Restore.
+- `backup.rs` — ZIP-Snapshot (`VACUUM INTO` + PDFs + `manifest.json`). Staged Restore: extrahiert nach `<appdata>/pending_restore/`, Marker-File, dann `apply_pending_partial_restore` (`ATTACH DATABASE` + selektiver `INSERT`). Die Ziel-DB (aktiver Tenant bzw. Sandbox) wird beim Stagen in `restore_mode.json` festgehalten; ein fehlgeschlagener Teil-Restore räumt `pending_restore/` wieder ab. App-Identifier ist hardcoded `digital.laux.zettel` (Pre-Builder hat keinen AppHandle). `CURRENT_SCHEMA` muss mit `user_version` der neuesten Migration matchen — sonst `Schema neuer als App-Version` beim Restore.
 - `crypto.rs` — AES-256-GCM + Argon2id für Backup-Verschlüsselung. Magic-Header `ZETTEL-ENC-1`. Kein gespeichertes Master-Passwort.
 - `fs_export.rs` — `save_text_file` (CSV ohne `plugin-fs`), `import_expense_pdf` (kollisionssichere Ablage `~/Documents/Zettel/Eingangsrechnungen/<vendor>/`).
 - `sandbox.rs` — `is_sandbox`/`set_sandbox`, gesteuert über Flag-File `sandbox.flag` im AppData-Dir. Toggle → `plugin-process::relaunch`. `client.ts` wählt die DB-URL beim Open.
-- `exchange.rs` — `fetch_ecb_exchange_rate(currency)`, blocking ureq gegen `eurofxref-daily.xml`, ~8s Timeout.
+- `exchange.rs` — `fetch_ecb_exchange_rate(currency)`, async Command (blockiert den Main-Thread nicht), ureq gegen `eurofxref-daily.xml`, ~8s Timeout.
 - `validator.rs` — E-Rechnungs-Validierung über den gebundelten KoSIT-Validator (**Java**). Extrahiert via Sidecar (`extract_xml_only`) erst die XML aus dem PDF, schreibt sie in eine Temp-Datei und startet Java als CLI-Subprozess (`Command::new(java) -jar validator.jar -s scenarios.xml -r <dir> -o <tmp> <input>`), parst dann den XML-Report (String-Scan: `valid`, Szenario, `failed-assert`-Findings). `resolve_java`: dev `tools/jre/bin/java` → Release `jre/bin/java` aus Resources → System-`java`. Commands: `validator_status`, `validate_einvoice_xml`, `validate_einvoice_pdf`. Nur Release-Build (bzw. dev mit lokalem `tools/jre` + `tools/kosit-validator`). Frontend-Bridge `src/lib/validator.ts`, UI `src/routes/Validate.svelte`. Setup-Skripte: `tools/download-validator.sh` (lädt `validator.jar` + Scenarios), `tools/build-jre.sh` (jlink-minimierte JRE, ~35 MB). Gebundelt via `tauri.bundle.conf.json` (`kosit-validator`, `jre`).
 
 ### CLI (`cli/zettel.py`)
@@ -50,8 +50,8 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 Eine neue Migration `000N_<name>.sql` heißt **immer drei Stellen gleichzeitig anfassen**:
 1. `PRAGMA user_version = <neu>;` am Ende der Migration.
 2. `CURRENT_SCHEMA` in `src-tauri/src/backup.rs` — sonst lehnt Restore frische Backups ab.
-3. `CURRENT_DB_SCHEMA_VERSION` in `src/routes/settings/{Advanced,Data}.svelte` (Display + Pre-Wipe-Backup).
-4. Plus `Migration { version, description, sql: include_str!(...) }` in `build_migrations()` in `lib.rs`.
+3. `CURRENT_DB_SCHEMA_VERSION` in `src/lib/utils/schema-version.ts` (einzige Frontend-Quelle für Display, Backups, Pre-Wipe-Backup).
+4. Plus eine Zeile `(version, "beschreibung", "000N_<name>")` im `up_migrations!`-Makro in `build_migrations()` in `lib.rs`. Ein Rust-Test in `lib.rs` prüft lückenlose Versionen, `PRAGMA user_version` je Datei und `CURRENT_SCHEMA`.
 
 **Migrationen sind nach Shipping unveränderlich** — Inhalt ändern = neue Migration. `.gitattributes` pinnt LF für `*.sql`, weil `include_str!` byte-stabil über Plattformen muss.
 

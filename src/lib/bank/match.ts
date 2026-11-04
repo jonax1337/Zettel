@@ -10,6 +10,7 @@
  * der User bestätigt im UI.
  */
 import type { InvoiceListRow } from "$lib/db/invoices";
+import { isDraftNumber } from "$lib/utils/invoice-number";
 
 export type Booking = {
   valutaDate: string; // YYYY-MM-DD
@@ -33,12 +34,85 @@ export type BookingMatch = {
   defaultPick: number | null;
 };
 
+const AMOUNT_TOLERANCE_CENT = 1;
+const MIN_PARTY_NAME_LENGTH = 4;
+const MIN_CUSTOMER_WORD_LENGTH = 4;
+
+const CONFIDENCE_RANK: Record<MatchCandidate["confidence"], number> = {
+  high: 3,
+  medium: 2,
+  low: 1,
+};
+
 function escapeForRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function openBalance(inv: InvoiceListRow): number {
+export function openBalance(inv: Pick<InvoiceListRow, "total" | "amountPaidCent">): number {
   return Math.abs(inv.total) - (inv.amountPaidCent ?? 0);
+}
+
+/** Pass 1: Rechnungsnummer im Verwendungszweck. */
+function matchByInvoiceNumber(booking: Booking, invoices: InvoiceListRow[]): MatchCandidate[] {
+  const purpose = booking.purpose.toLowerCase();
+  return invoices
+    .filter((inv) => inv.number && !isDraftNumber(inv.number))
+    .filter((inv) => new RegExp(`\\b${escapeForRegex(inv.number)}\\b`, "i").test(purpose))
+    .map((invoice): MatchCandidate => ({
+      invoice,
+      confidence: "high",
+      reason: `Rechnungsnummer "${invoice.number}" im Verwendungszweck`,
+    }));
+}
+
+/** Pass 2: Exakter Betrags-Match auf offenen Saldo. */
+function matchByOpenBalance(booking: Booking, invoices: InvoiceListRow[]): MatchCandidate[] {
+  return invoices
+    .filter((inv) => Math.abs(openBalance(inv) - booking.amountCent) <= AMOUNT_TOLERANCE_CENT)
+    .map((invoice): MatchCandidate => ({
+      invoice,
+      confidence: "medium",
+      reason: "Betrag matcht offenen Saldo exakt",
+    }));
+}
+
+/** Pass 3: Ein Wort des Kundennamens kommt im Namen des Zahlers vor. */
+function matchByPartyName(booking: Booking, invoices: InvoiceListRow[]): MatchCandidate[] {
+  if (booking.partyName.length < MIN_PARTY_NAME_LENGTH) return [];
+  const party = booking.partyName.toLowerCase();
+  return invoices
+    .filter((inv) =>
+      inv.customerName
+        .toLowerCase()
+        .split(/\s+/)
+        .some((word) => word.length >= MIN_CUSTOMER_WORD_LENGTH && party.includes(word)),
+    )
+    .map((invoice): MatchCandidate => ({
+      invoice,
+      confidence: "low",
+      reason: `Kunde "${invoice.customerName}" könnte zum Zahler "${booking.partyName}" passen`,
+    }));
+}
+
+function matchBooking(booking: Booking, openInvoices: InvoiceListRow[]): BookingMatch {
+  // Geldausgänge ignorieren wir komplett — wir matchen nur Forderungs-Eingänge.
+  if (booking.amountCent <= 0) {
+    return { booking, candidates: [], defaultPick: null };
+  }
+
+  const passes = [matchByInvoiceNumber, matchByOpenBalance, matchByPartyName];
+  let candidates: MatchCandidate[] = [];
+  for (const pass of passes) {
+    candidates = pass(booking, openInvoices);
+    if (candidates.length > 0) break;
+  }
+
+  candidates.sort((a, b) => CONFIDENCE_RANK[b.confidence] - CONFIDENCE_RANK[a.confidence]);
+  return {
+    booking,
+    candidates,
+    defaultPick: candidates.length > 0 && candidates[0].confidence !== "low" ? 0 : null,
+  };
 }
 
 export function matchBookings(
@@ -46,70 +120,8 @@ export function matchBookings(
   invoices: InvoiceListRow[],
 ): BookingMatch[] {
   // Wir interessieren uns nur für offene oder teilbezahlte Rechnungen.
-  const candidates = invoices.filter(
+  const openInvoices = invoices.filter(
     (i) => (i.status === "sent" || i.status === "partial") && !i.isCreditNote,
   );
-
-  return bookings.map((b) => {
-    // Geldausgänge ignorieren wir komplett — wir matchen nur Forderungs-Eingänge.
-    if (b.amountCent <= 0) {
-      return { booking: b, candidates: [], defaultPick: null };
-    }
-
-    const hits: MatchCandidate[] = [];
-    const purpose = b.purpose.toLowerCase();
-
-    // Pass 1: Rechnungsnummer im Verwendungszweck.
-    for (const inv of candidates) {
-      const num = inv.number;
-      if (!num || num.startsWith("DRAFT-")) continue;
-      const re = new RegExp(`\\b${escapeForRegex(num)}\\b`, "i");
-      if (re.test(purpose)) {
-        hits.push({
-          invoice: inv,
-          confidence: "high",
-          reason: `Rechnungsnummer "${num}" im Verwendungszweck`,
-        });
-      }
-    }
-
-    // Pass 2: Exakter Betrags-Match auf offenen Saldo.
-    if (hits.length === 0) {
-      for (const inv of candidates) {
-        if (Math.abs(openBalance(inv) - b.amountCent) <= 1) {
-          hits.push({
-            invoice: inv,
-            confidence: "medium",
-            reason: "Betrag matcht offenen Saldo exakt",
-          });
-        }
-      }
-    }
-
-    // Pass 3: Kunde matcht teilweise auf partyName (Name-Substring).
-    if (hits.length === 0 && b.partyName.length > 3) {
-      const partyLower = b.partyName.toLowerCase();
-      for (const inv of candidates) {
-        const cust = inv.customerName.toLowerCase();
-        const overlap = cust.split(/\s+/).some((w) => w.length >= 4 && partyLower.includes(w));
-        if (overlap) {
-          hits.push({
-            invoice: inv,
-            confidence: "low",
-            reason: `Kunde "${inv.customerName}" könnte zum Zahler "${b.partyName}" passen`,
-          });
-        }
-      }
-    }
-
-    // Sortiere absteigend nach Konfidenz.
-    const order = { high: 3, medium: 2, low: 1 };
-    hits.sort((a, b) => order[b.confidence] - order[a.confidence]);
-
-    return {
-      booking: b,
-      candidates: hits,
-      defaultPick: hits.length > 0 && hits[0].confidence !== "low" ? 0 : null,
-    };
-  });
+  return bookings.map((booking) => matchBooking(booking, openInvoices));
 }

@@ -1,13 +1,15 @@
 <script lang="ts">
-  import { link, push } from "svelte-spa-router";
+  import { push } from "svelte-spa-router";
   import {
     createVendor,
     getVendor,
     updateVendor,
     type VendorInput,
   } from "$lib/db/queries";
+  import type { Vendor } from "$lib/db/schema";
   import { Button, Input, Textarea, Label, Card, CardContent, toast } from "$lib/ui";
-  import { ArrowLeft } from "$lib/brand-icons";
+  import BackLink from "./parts/entity/BackLink.svelte";
+  import { fetchEditTarget } from "./parts/entity/edit-target";
 
   type Props = {
     mode: "new" | "edit";
@@ -39,54 +41,58 @@
   let saving = $state(false);
   let error = $state<string | null>(null);
 
+  function toForm(v: Vendor): VendorInput {
+    return {
+      name: v.name,
+      contactPerson: v.contactPerson,
+      street: v.street,
+      postalCode: v.postalCode,
+      city: v.city,
+      country: v.country,
+      email: v.email,
+      phone: v.phone,
+      vatId: v.vatId,
+      bankName: v.bankName,
+      bankIban: v.bankIban,
+      bankBic: v.bankBic,
+      defaultCategory: v.defaultCategory,
+      notes: v.notes,
+    };
+  }
+
   $effect(() => {
-    if (mode === "edit" && params?.id) {
-      const numId = Number.parseInt(params.id, 10);
-      if (!Number.isNaN(numId)) {
-        id = numId;
-        getVendor(numId)
-          .then((v) => {
-            if (v) {
-              form = {
-                name: v.name,
-                contactPerson: v.contactPerson,
-                street: v.street,
-                postalCode: v.postalCode,
-                city: v.city,
-                country: v.country,
-                email: v.email,
-                phone: v.phone,
-                vatId: v.vatId,
-                bankName: v.bankName,
-                bankIban: v.bankIban,
-                bankBic: v.bankBic,
-                defaultCategory: v.defaultCategory,
-                notes: v.notes,
-              };
-            } else {
-              error = "Lieferant nicht gefunden.";
-            }
-          })
-          .catch((e) => (error = String(e)))
-          .finally(() => (loaded = true));
-      }
-    }
+    if (mode !== "edit") return;
+    fetchEditTarget(params?.id, getVendor, "Lieferant nicht gefunden.")
+      .then((target) => {
+        if ("error" in target) {
+          error = target.error;
+          return;
+        }
+        id = target.id;
+        form = toForm(target.value);
+      })
+      .catch((e) => (error = String(e)))
+      .finally(() => (loaded = true));
   });
+
+  async function persist() {
+    if (mode === "new") {
+      await createVendor(form);
+      toast.success("Lieferant angelegt");
+    } else if (id !== null) {
+      await updateVendor(id, form);
+      toast.success("Änderungen gespeichert");
+    } else {
+      throw new Error("Keine ID");
+    }
+  }
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     saving = true;
     error = null;
     try {
-      if (mode === "new") {
-        await createVendor(form);
-        toast.success("Lieferant angelegt");
-      } else if (id !== null) {
-        await updateVendor(id, form);
-        toast.success("Änderungen gespeichert");
-      } else {
-        throw new Error("Keine ID");
-      }
+      await persist();
       push("/vendors");
     } catch (err) {
       error = String(err);
@@ -95,20 +101,10 @@
       saving = false;
     }
   }
-
-  function onCancel() {
-    push("/vendors");
-  }
 </script>
 
 <header class="mb-6">
-  <a
-    href="/vendors"
-    use:link
-    class="group inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-  >
-    <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" /> Lieferanten
-  </a>
+  <BackLink href="/vendors">Lieferanten</BackLink>
   <h1 class="text-3xl font-semibold tracking-tight mt-2">
     {mode === "new" ? "Neuer Lieferant" : "Lieferant bearbeiten"}
   </h1>
@@ -206,7 +202,7 @@
       <Button type="submit" disabled={saving}>
         {saving ? "Speichere…" : mode === "new" ? "Anlegen" : "Speichern"}
       </Button>
-      <Button type="button" onclick={onCancel} variant="ghost">Abbrechen</Button>
+      <Button type="button" onclick={() => push("/vendors")} variant="ghost">Abbrechen</Button>
       {#if error}
         <span class="text-sm text-destructive">{error}</span>
       {/if}

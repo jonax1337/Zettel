@@ -158,3 +158,12 @@ class TestVatGrouping:
         ]
         groups = _vat_groups(items, is_klein=False)
         assert [g["rate"] for g in groups] == [0, 7, 19]
+
+    def test_half_cent_tax_rounds_up_like_the_app(self):
+        # 150 ct * 19 % = 28.5 ct; the app (Math.round) books 29, banker's rounding gives 28.
+        groups = _vat_groups([{"lineTotal": 150, "vatRate": 19}], is_klein=False)
+        assert groups[0]["tax"] == 29
+
+    def test_credit_note_tax_mirrors_the_invoice_tax(self):
+        groups = _vat_groups([{"lineTotal": 150, "vatRate": 19}], is_klein=False, sign=-1)
+        assert (groups[0]["basis"], groups[0]["tax"]) == (-150, -29)

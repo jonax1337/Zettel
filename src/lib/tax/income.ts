@@ -87,21 +87,20 @@ const TARIF_2025: Tarif = {
   z5Offset: 19_246.67,
 };
 
-// VZ 2026 — Steuerfortentwicklungsgesetz Dez 2024 (Grundfreibetrag-
-// Anhebung auf 12.348 € + linear angepasste Tarif-Eckwerte).
+// VZ 2026 — Steuerfortentwicklungsgesetz Dez 2024 (BGBl. 2024 I Nr. 449).
 const TARIF_2026: Tarif = {
   grundfreibetrag: 12_348,
   zone2End: 17_799,
-  zone3End: 69_798,
+  zone3End: 69_878,
   zone4End: 277_825,
   soliFreigrenze: 20_350,
-  z2a: 949.94,
+  z2a: 914.51,
   z2b: 1_400,
-  z3a: 173.30,
+  z3a: 173.10,
   z3b: 2_397,
-  z3c: 1_013.65,
-  z4Offset: 11_129.62,
-  z5Offset: 19_464.37,
+  z3c: 1_034.87,
+  z4Offset: 11_135.63,
+  z5Offset: 19_470.38,
 };
 
 const TARIFE: Record<TaxYear, Tarif> = {
@@ -109,6 +108,13 @@ const TARIFE: Record<TaxYear, Tarif> = {
   2025: TARIF_2025,
   2026: TARIF_2026,
 };
+
+const SPITZENSTEUERSATZ = 0.42;
+const REICHENSTEUERSATZ = 0.45;
+const SOLI_RATE = 0.055;
+/** Milderungszone (§ 4 Abs. 2 SolzG): Soli steigt mit 11,9 % der ESt über der Freigrenze. */
+const SOLI_MILDERUNG_RATE = 0.119;
+const EURO_TO_CENT = 100;
 
 /** Höchstes hinterlegtes Tarifjahr — Fallback für Jahre außerhalb der Range. */
 const LATEST_TARIF_YEAR: TaxYear = 2026;
@@ -132,9 +138,9 @@ function tariflicheEStSingle(zvEEuro: number, t: Tarif): number {
     return Math.floor((t.z3a * z + t.z3b) * z + t.z3c);
   }
   if (zvEEuro <= t.zone4End) {
-    return Math.floor(0.42 * zvEEuro - t.z4Offset);
+    return Math.floor(SPITZENSTEUERSATZ * zvEEuro - t.z4Offset);
   }
-  return Math.floor(0.45 * zvEEuro - t.z5Offset);
+  return Math.floor(REICHENSTEUERSATZ * zvEEuro - t.z5Offset);
 }
 
 /** Splittingtarif (§ 32a Abs. 5): ESt für (zvE / 2) × 2. */
@@ -154,8 +160,8 @@ function tariflicheESt(zvEEuro: number, status: FilingStatus, t: Tarif): number 
 function soli(estEuro: number, status: FilingStatus, t: Tarif): number {
   const freigrenze = status === "married" ? t.soliFreigrenze * 2 : t.soliFreigrenze;
   if (estEuro <= freigrenze) return 0;
-  const voller = 0.055 * estEuro;
-  const milderung = 0.119 * (estEuro - freigrenze);
+  const voller = SOLI_RATE * estEuro;
+  const milderung = SOLI_MILDERUNG_RATE * (estEuro - freigrenze);
   return Math.floor(Math.min(voller, milderung));
 }
 
@@ -178,14 +184,14 @@ export function estimateIncomeTax(
 ): IncomeTaxResult {
   const tarifYear = getTarifYear(year);
   const t = TARIFE[tarifYear];
-  const zvEEuro = Math.max(0, Math.floor(taxableProfitCent / 100));
+  const zvEEuro = Math.max(0, Math.floor(taxableProfitCent / EURO_TO_CENT));
   const estEuro = tariflicheESt(zvEEuro, status, t);
   const soliEuro = soli(estEuro, status, t);
   const kistEuro = Math.floor(estEuro * churchRate);
 
-  const est = estEuro * 100;
-  const soliCent = soliEuro * 100;
-  const kistCent = kistEuro * 100;
+  const est = estEuro * EURO_TO_CENT;
+  const soliCent = soliEuro * EURO_TO_CENT;
+  const kistCent = kistEuro * EURO_TO_CENT;
 
   return {
     est,

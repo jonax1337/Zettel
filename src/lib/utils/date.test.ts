@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDaysUnix, formatDate, fromIsoDate, nowUnix, toIsoDate } from "./date";
+import { addDaysUnix, formatDate, fromIsoDate, nowUnix, startOfDayUnix, toIsoDate, toUnix } from "./date";
 
 describe("toIsoDate / fromIsoDate", () => {
   it("roundtrips at local midnight", () => {
@@ -41,12 +41,15 @@ describe("addDaysUnix", () => {
     expect(toIsoDate(addDaysUnix(base, -1))).toBe("2026-04-30");
   });
   it("crosses DST boundary cleanly (Berlin)", () => {
-    // 2026-03-29 02:00 → 03:00 CEST. addDaysUnix is pure-second math, so the
-    // ISO output can shift by 1h, but the date string at local midnight stays
-    // stable thanks to fromIsoDate using local-time constructor.
     const base = fromIsoDate("2026-03-28");
     const plus2 = addDaysUnix(base, 2);
     expect(toIsoDate(plus2)).toBe("2026-03-30");
+  });
+  it("keeps local midnight when crossing the autumn DST change (Berlin: 2026-10-25)", () => {
+    const base = fromIsoDate("2026-10-01");
+    const plus30 = addDaysUnix(base, 30);
+    expect(toIsoDate(plus30)).toBe("2026-10-31");
+    expect(new Date(plus30 * 1000).getHours()).toBe(0);
   });
 });
 
@@ -59,5 +62,18 @@ describe("nowUnix", () => {
   });
   it("returns integer seconds", () => {
     expect(Number.isInteger(nowUnix())).toBe(true);
+  });
+});
+
+describe("toUnix", () => {
+  it("floors milliseconds to whole seconds", () => {
+    expect(toUnix(new Date(1_700_000_000_999))).toBe(1_700_000_000);
+  });
+});
+
+describe("startOfDayUnix", () => {
+  it("returns local midnight of the given day", () => {
+    const afternoon = new Date(2026, 4, 17, 15, 45, 12);
+    expect(startOfDayUnix(afternoon)).toBe(fromIsoDate("2026-05-17"));
   });
 });

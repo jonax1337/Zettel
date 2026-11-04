@@ -6,6 +6,32 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.22.0]
+
+### Added
+- **Lieferung oder Leistung bei Reverse-Charge.** Rechnung, Angebot und Serienrechnung haben die Auswahl „Art des Umsatzes“. Die UStVA meldet EU-Lieferungen in KZ 41, EU-Leistungen in KZ 21, Drittland-Lieferungen in KZ 43 und Drittland-Leistungen in KZ 45. Der Pflichthinweis im PDF passt sich an. Die Art bleibt bei Storno, Angebot → Rechnung und Serienrechnung → Rechnung erhalten. CLI: `--supply-kind goods|services`.
+- **Ist-Versteuerung (§ 20 UStG).** In Einstellungen → Unternehmen wählbar. Inlandsumsätze zählen im Zeitraum des Zahlungseingangs, Teilzahlungen anteilig, Gutschriften erst bei Rückzahlung. KZ 41/21, § 13b-Bezüge und Vorsteuer bleiben beim Rechnungsdatum. Der UStVA-Bericht zeigt die Versteuerungsart an.
+- **Steuerrücklage: Ausgaben netto oder brutto.** Schalter für Kleinunternehmer; Standard bleibt netto (konservatives Minimum). Der Steuerbericht zeigt, welche Variante gilt.
+
+### Changed
+- **Nummernkreise nach Belegdatum.** `{YYYY}`, `{YY}` und `{MM}` kommen aus dem Belegdatum statt aus dem heutigen Datum, für Rechnungen, Angebote, Ausgaben, Mahnungen und die CLI. Eine rückdatierte Rechnung vom 15.03.2024 bekommt `RE-2024-…`.
+- **Onboarding:** Der Button heißt jetzt „Nicht mehr anzeigen“.
+- **Clean-Code-Durchgang** über Frontend, Sidecar, CLI und Rust-Backend, abgesichert durch neue Tests (483 Vitest, 172 Pytest, 81 Rust).
+- Auf deutschen PDFs steht der Reverse-Charge-Hinweis wieder zusätzlich auf Englisch.
+
+### Fixed
+- **UStVA bei Fremdwährung:** Fremdwährungsrechnungen wurden bei Soll-Versteuerung in Fremdwährungs-Cent gemeldet. Jetzt wird über den eingefrorenen EUR-Betrag umgerechnet.
+- **UStVA Drittland:** Drittland-Rechnungen tauchten in keiner Kennzahl auf.
+- **Teil-Restore** übernimmt nur Spalten, die in Backup und App-DB existieren, und scheitert so nicht mehr an neuen Spalten. Backups älter als Schema 19 werden für einen Teil-Restore abgelehnt; der volle Restore geht weiter.
+- **Mahnungen** fordern bei Teilzahlungen den offenen Betrag statt der vollen Rechnungssumme.
+- **Einkommensteuer-Tarif 2026:** Konstanten korrigiert.
+- **CLI** stürzte mit älteren Python-Versionen (SQLite < 3.38) beim Ausstellen, Bezahlen und PDF-Erzeugen ab (`no such function: unixepoch`).
+
+### Migration
+- **Migration `0026_v0.22_tax_options`**, Schema `user_version = 27`.
+- Bestehende Reverse-Charge-Belege werden zu „Leistung“, bestehende Drittland-Rechnungen zu „Lieferung“. So bleiben bereits verschickte PDFs beim Neu-Erzeugen identisch.
+- **Achtung:** Eine neu berechnete UStVA meldet alte EU-Umsätze dadurch in **KZ 21 statt KZ 41**. Wer schon UStVAs mit Zahlen aus Zettel abgegeben hat, sollte betroffene Zeiträume vergleichen und echte Warenlieferungen auf „Lieferung“ umstellen.
+
 ## [0.21.0]
 
 ### Changed

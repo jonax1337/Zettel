@@ -1,58 +1,47 @@
 <script lang="ts">
-  import { link, push } from "svelte-spa-router";
-  import { onMount } from "svelte";
+  import { link } from "svelte-spa-router";
   import {
     listRecurring,
     deleteRecurring,
     toggleActive,
-    generateInvoiceFromRecurring,
     type RecurringListRow,
   } from "$lib/db/recurring";
-  import { formatDate as fmtDate } from "$lib/utils/date";
+  import { formatDate, nowUnix } from "$lib/utils/date";
+  import { applySort } from "$lib/utils/sort";
   import { Button, Badge, Card, ConfirmDialog, SortableTh, toast, EmptyState } from "$lib/ui";
   import { Plus, FileText, Pencil, Trash2, PowerOff, Power } from "$lib/brand-icons";
-  import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
+  import { createListSort } from "./parts/entity/list-sort.svelte";
+  import { createQueryState } from "./parts/entity/query-state.svelte";
+  import { RECURRING_INTERVAL_LABEL, generateInvoiceAndOpen } from "./parts/entity/recurring";
 
-  let rows = $state<RecurringListRow[]>([]);
-  let loading = $state(true);
-  let confirmDeleteId = $state<number | null>(null);
+  const templates = createQueryState<RecurringListRow[]>([], listRecurring);
+  $effect(() => {
+    templates.reload();
+  });
+
+  type SortKey = "name" | "customer" | "interval" | "nextDueDate" | "active";
+  const sort = createListSort<SortKey>("recurring", { key: "nextDueDate", dir: "asc" });
+  const sortedTemplates = $derived(
+    applySort(templates.data, sort.state, {
+      name: (r) => r.name,
+      customer: (r) => r.customerName,
+      interval: (r) => r.interval,
+      nextDueDate: (r) => r.nextDueDate,
+      active: (r) => (r.active ? 1 : 0),
+    }),
+  );
+
   let confirmOpen = $state(false);
+  let confirmDeleteId = $state<number | null>(null);
 
-  const intervalLabels: Record<RecurringListRow["interval"], string> = {
-    monthly: "Monatlich",
-    quarterly: "Quartalsweise",
-    yearly: "Jährlich",
-  };
-
-  async function refresh() {
-    loading = true;
-    try {
-      rows = await listRecurring();
-    } finally {
-      loading = false;
-    }
-  }
-
-  onMount(refresh);
-
-  function isDue(unixSeconds: number): boolean {
-    return unixSeconds * 1000 <= Date.now();
-  }
-
-  async function onGenerate(id: number) {
-    try {
-      const invoiceId = await generateInvoiceFromRecurring(id);
-      toast.success("Rechnung erzeugt");
-      push(`/invoices/${invoiceId}`);
-    } catch (e) {
-      toast.error("Erzeugen fehlgeschlagen", String(e));
-    }
+  function isDue(row: RecurringListRow): boolean {
+    return row.nextDueDate <= nowUnix();
   }
 
   async function onToggle(row: RecurringListRow) {
     try {
       await toggleActive(row.id, !row.active);
-      await refresh();
+      await templates.reload();
     } catch (e) {
       toast.error("Fehler", String(e));
     }
@@ -63,28 +52,12 @@
     confirmOpen = true;
   }
 
-  type SortKey = "name" | "customer" | "interval" | "nextDueDate" | "active";
-  let sort = $state<SortState<SortKey>>(loadSortState<SortKey>("recurring", { key: "nextDueDate", dir: "asc" }));
-  function setSort(key: SortKey, dir: SortState<SortKey>["dir"]) {
-    sort = { key: dir === null ? null : key, dir };
-    saveSortState("recurring", sort);
-  }
-  const sortedRows = $derived(
-    applySort(rows, sort, {
-      name: (r) => r.name,
-      customer: (r) => r.customerName,
-      interval: (r) => r.interval,
-      nextDueDate: (r) => r.nextDueDate,
-      active: (r) => (r.active ? 1 : 0),
-    }),
-  );
-
   async function onConfirmDelete() {
     if (confirmDeleteId === null) return;
     try {
       await deleteRecurring(confirmDeleteId);
       toast.success("Vorlage gelöscht");
-      await refresh();
+      await templates.reload();
     } catch (e) {
       toast.error("Löschen fehlgeschlagen", String(e));
     } finally {
@@ -108,25 +81,27 @@
   </a>
 </header>
 
-{#if loading}
+{#if templates.error}
+  <p class="text-sm text-destructive">Fehler: {templates.error}</p>
+{:else if templates.loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if rows.length === 0}
+{:else if templates.data.length === 0}
   <EmptyState message="Noch keine Vorlagen. Erstelle die erste über „Neue Vorlage“." />
 {:else}
   <Card class="overflow-hidden">
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
         <tr>
-          <SortableTh column="name" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-3 py-2">Name</SortableTh>
-          <SortableTh column="customer" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-3 py-2">Kunde</SortableTh>
-          <SortableTh column="interval" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-3 py-2">Intervall</SortableTh>
-          <SortableTh column="nextDueDate" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-3 py-2">Nächste Fälligkeit</SortableTh>
-          <SortableTh column="active" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-3 py-2">Status</SortableTh>
+          <SortableTh column="name" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Name</SortableTh>
+          <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Kunde</SortableTh>
+          <SortableTh column="interval" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Intervall</SortableTh>
+          <SortableTh column="nextDueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Nächste Fälligkeit</SortableTh>
+          <SortableTh column="active" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Status</SortableTh>
           <th class="px-3 py-2 font-medium text-right w-px text-xs uppercase tracking-wider text-muted-foreground">Aktionen</th>
         </tr>
       </thead>
       <tbody class="stagger">
-        {#each sortedRows as row (row.id)}
+        {#each sortedTemplates as row (row.id)}
           <tr class="border-t">
             <td class="px-3 py-2">
               <a href={`/recurring/${row.id}`} use:link class="font-medium hover:underline">
@@ -134,14 +109,14 @@
               </a>
             </td>
             <td class="px-3 py-2 text-muted-foreground">{row.customerName}</td>
-            <td class="px-3 py-2">{intervalLabels[row.interval]}</td>
+            <td class="px-3 py-2">{RECURRING_INTERVAL_LABEL[row.interval]}</td>
             <td class="px-3 py-2">
-              <span class={isDue(row.nextDueDate) && row.active ? "text-warning font-medium" : ""}>
-                {fmtDate(row.nextDueDate)}
+              <span class={isDue(row) && row.active ? "text-warning font-medium" : ""}>
+                {formatDate(row.nextDueDate)}
               </span>
               {#if row.lastGeneratedAt}
                 <div class="text-xs text-muted-foreground">
-                  zuletzt: {fmtDate(row.lastGeneratedAt)}
+                  zuletzt: {formatDate(row.lastGeneratedAt)}
                 </div>
               {/if}
             </td>
@@ -154,8 +129,8 @@
             </td>
             <td class="px-3 py-2 text-right whitespace-nowrap">
               <div class="inline-flex items-center gap-1">
-                {#if row.active && isDue(row.nextDueDate)}
-                  <Button size="sm" onclick={() => onGenerate(row.id)}>
+                {#if row.active && isDue(row)}
+                  <Button size="sm" onclick={() => generateInvoiceAndOpen(row.id)}>
                     <FileText class="size-3.5" />
                     Jetzt erzeugen
                   </Button>

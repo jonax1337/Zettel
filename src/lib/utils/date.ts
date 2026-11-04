@@ -1,9 +1,25 @@
+export const SECONDS_PER_DAY = 86_400;
+
+export const MONTHS_DE = [
+  "Januar", "Februar", "März", "April", "Mai", "Juni",
+  "Juli", "August", "September", "Oktober", "November", "Dezember",
+];
+
+export const MONTHS_DE_SHORT = [
+  "Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
+  "Jul", "Aug", "Sep", "Okt", "Nov", "Dez",
+];
+
 export function formatDate(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleDateString("de-DE");
 }
 
 export function nowUnix(): number {
-  return Math.floor(Date.now() / 1000);
+  return toUnix(new Date());
+}
+
+export function toUnix(date: Date): number {
+  return Math.floor(date.getTime() / 1000);
 }
 
 /** ISO date (YYYY-MM-DD) for <input type="date">, in local time. */
@@ -18,9 +34,17 @@ export function toIsoDate(unixSeconds: number): string {
 /** Parse YYYY-MM-DD as local midnight unix seconds. */
 export function fromIsoDate(iso: string): number {
   const [y, m, d] = iso.split("-").map((s) => Number.parseInt(s, 10));
-  return Math.floor(new Date(y, (m ?? 1) - 1, d ?? 1).getTime() / 1000);
+  return toUnix(new Date(y, (m ?? 1) - 1, d ?? 1));
 }
 
+/** Local midnight of the given day, unix seconds. */
+export function startOfDayUnix(date: Date): number {
+  return toUnix(new Date(date.getFullYear(), date.getMonth(), date.getDate()));
+}
+
+/** Shifts by calendar days in local time, so the wall-clock time survives DST changes. */
 export function addDaysUnix(unixSeconds: number, days: number): number {
-  return unixSeconds + days * 86400;
+  const shifted = new Date(unixSeconds * 1000);
+  shifted.setDate(shifted.getDate() + days);
+  return toUnix(shifted);
 }

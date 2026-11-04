@@ -1,20 +1,24 @@
 <script lang="ts">
-  import { link, push } from "svelte-spa-router";
+  import { push } from "svelte-spa-router";
   import {
     createCustomer,
     getCustomer,
     updateCustomer,
     type CustomerInput,
   } from "$lib/db/queries";
+  import type { Customer } from "$lib/db/schema";
   import { Button, Input, Textarea, Label, Card, CardContent, DatePicker, toast } from "$lib/ui";
-  import { ArrowLeft } from "$lib/brand-icons";
   import { fromIsoDate, toIsoDate } from "$lib/utils/date";
+  import BackLink from "./parts/entity/BackLink.svelte";
+  import { fetchEditTarget } from "./parts/entity/edit-target";
 
   type Props = {
     mode: "new" | "edit";
     params?: { id?: string };
   };
   let { mode, params }: Props = $props();
+
+  const ISO_COUNTRY_CODE_LENGTH = 2;
 
   const empty: CustomerInput = {
     name: "",
@@ -37,61 +41,63 @@
   let saving = $state(false);
   let error = $state<string | null>(null);
 
+  function toForm(c: Customer): CustomerInput {
+    return {
+      name: c.name,
+      contactPerson: c.contactPerson,
+      street: c.street,
+      postalCode: c.postalCode,
+      city: c.city,
+      country: c.country,
+      email: c.email,
+      phone: c.phone,
+      vatId: c.vatId,
+      notes: c.notes,
+    };
+  }
+
   $effect(() => {
-    if (mode === "edit" && params?.id) {
-      const numId = Number.parseInt(params.id, 10);
-      if (!Number.isNaN(numId)) {
-        id = numId;
-        getCustomer(numId)
-          .then((c) => {
-            if (c) {
-              form = {
-                name: c.name,
-                contactPerson: c.contactPerson,
-                street: c.street,
-                postalCode: c.postalCode,
-                city: c.city,
-                country: c.country,
-                email: c.email,
-                phone: c.phone,
-                vatId: c.vatId,
-                notes: c.notes,
-              };
-              followUpIso = c.followUpDate ? toIsoDate(c.followUpDate) : "";
-            } else {
-              error = "Kunde nicht gefunden.";
-            }
-          })
-          .catch((e) => (error = String(e)))
-          .finally(() => (loaded = true));
-      }
-    }
+    if (mode !== "edit") return;
+    fetchEditTarget(params?.id, getCustomer, "Kunde nicht gefunden.")
+      .then((target) => {
+        if ("error" in target) {
+          error = target.error;
+          return;
+        }
+        id = target.id;
+        form = toForm(target.value);
+        followUpIso = target.value.followUpDate ? toIsoDate(target.value.followUpDate) : "";
+      })
+      .catch((e) => (error = String(e)))
+      .finally(() => (loaded = true));
   });
+
+  async function persist() {
+    if (mode === "new") {
+      await createCustomer(form);
+      toast.success("Kunde angelegt");
+    } else if (id !== null) {
+      await updateCustomer(id, form);
+      toast.success("Änderungen gespeichert");
+    } else {
+      throw new Error("Keine ID");
+    }
+  }
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
-    // Belt-and-suspenders: HTML `required` catches empty strings, but we also
-    // explicitly trim whitespace-only inputs that browsers would accept.
-    const trimmed = form.country?.trim().toUpperCase() ?? "";
-    if (trimmed.length !== 2) {
+    const country = form.country?.trim().toUpperCase() ?? "";
+    if (country.length !== ISO_COUNTRY_CODE_LENGTH) {
       error = "Land muss ein zweistelliger ISO-Code sein (z. B. DE, AT, CH).";
       toast.error("Land ungültig", error);
       return;
     }
-    form.country = trimmed;
+    form.country = country;
     form.followUpDate = followUpIso ? fromIsoDate(followUpIso) : null;
     saving = true;
     error = null;
     try {
-      if (mode === "new") {
-        await createCustomer(form);
-        toast.success("Kunde angelegt");
-      } else if (id !== null) {
-        await updateCustomer(id, form);
-        toast.success("Änderungen gespeichert");
-      } else {
-        throw new Error("Keine ID");
-      }
+      await persist();
       push("/customers");
     } catch (err) {
       error = String(err);
@@ -100,20 +106,10 @@
       saving = false;
     }
   }
-
-  function onCancel() {
-    push("/customers");
-  }
 </script>
 
 <header class="mb-6">
-  <a
-    href="/customers"
-    use:link
-    class="group inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-  >
-    <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" /> Kunden
-  </a>
+  <BackLink href="/customers">Kunden</BackLink>
   <h1 class="text-3xl font-semibold tracking-tight mt-2">
     {mode === "new" ? "Neuer Kunde" : "Kunde bearbeiten"}
   </h1>
@@ -151,7 +147,7 @@
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>Land <span class="text-destructive">*</span></Label>
-            <Input bind:value={form.country} required maxlength={2} placeholder="DE" />
+            <Input bind:value={form.country} required maxlength={ISO_COUNTRY_CODE_LENGTH} placeholder="DE" />
           </div>
           <p class="col-span-3 text-xs text-muted-foreground -mt-2">
             Pflichtfelder für EN16931-konforme E-Rechnungen. Land als ISO-2-Code (DE, AT, FR…).
@@ -189,7 +185,7 @@
       <Button type="submit" disabled={saving}>
         {saving ? "Speichere…" : mode === "new" ? "Anlegen" : "Speichern"}
       </Button>
-      <Button type="button" onclick={onCancel} variant="ghost">Abbrechen</Button>
+      <Button type="button" onclick={() => push("/customers")} variant="ghost">Abbrechen</Button>
       {#if error}
         <span class="text-sm text-destructive">{error}</span>
       {/if}

@@ -30,10 +30,30 @@ import subprocess
 import sys
 import time
 import uuid
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Iterator
 
 APP_IDENTIFIER = "digital.laux.zettel"
+DEFAULT_PAYMENT_TERMS_DAYS = 14
+DEFAULT_UNIT = "Std"
+DEFAULT_PDF_PROFILE = "en16931"
+DEFAULT_PDF_THEME = "classic"
+DEFAULT_PDF_LANGUAGE = "de"
+PAYABLE_STATUSES = ("sent", "partial")
+DRAFT_PREFIX = "DRAFT-"
+DRAFT_TOKEN_LENGTH = 16
+DRAFT_DISPLAY_LENGTH = 4
+DATE_INPUT_FORMATS = ("%Y-%m-%d", "%d.%m.%Y")
+NOON_HOUR = 12
+SIDECAR_TIMEOUT_SECONDS = 300
+ERROR_TAIL_CHARS = 2000
+ERROR_DETAIL_CHARS = 800
+MIN_ITEM_FIELDS = 4
+CENTS_PER_EUR = 100
+# unixepoch() needs SQLite 3.38+; older Python builds ship an older SQLite.
+SQL_NOW = "CAST(strftime('%s', 'now') AS INTEGER)"
 
 # ----------------------------------------------------------------------------
 # DB-Auflösung (Spiegel von src-tauri/src/tenants.rs)
@@ -69,13 +89,17 @@ def resolve_db_path() -> Path:
     return d / "zettel.db"
 
 
-def connect() -> sqlite3.Connection:
+@contextmanager
+def connect() -> Iterator[sqlite3.Connection]:
     path = resolve_db_path()
     if not path.exists():
         sys.exit(f"Fehler: Datenbank nicht gefunden: {path}")
     con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
-    return con
+    try:
+        yield con
+    finally:
+        con.close()
 
 
 # ----------------------------------------------------------------------------
@@ -84,8 +108,8 @@ def connect() -> sqlite3.Connection:
 
 
 def js_round(v: float) -> int:
-    """Math.round wie in JS: half away from zero (Pythons round() ist banker's)."""
-    return int(math.floor(v + 0.5)) if v >= 0 else int(math.ceil(v - 0.5))
+    """Math.round wie in JS: .5 rundet Richtung +unendlich (Pythons round() ist banker's)."""
+    return math.floor(v + 0.5)
 
 
 def compute_line_total(quantity: float, unit_price_cent: int) -> int:
@@ -120,16 +144,17 @@ def format_invoice_number(pattern: str, counter: int, dt: datetime) -> str:
 
 
 def draft_placeholder() -> str:
-    return f"DRAFT-{uuid.uuid4().hex[:16]}"
+    return f"{DRAFT_PREFIX}{uuid.uuid4().hex[:DRAFT_TOKEN_LENGTH]}"
 
 
 def is_draft_number(n: str | None) -> bool:
-    return bool(n) and n.startswith("DRAFT-")
+    return bool(n) and n.startswith(DRAFT_PREFIX)
 
 
 def display_number(number: str, status: str) -> str:
     if status == "draft" and is_draft_number(number):
-        return f"Entwurf #{number[6:10]}"
+        token = number[len(DRAFT_PREFIX):][:DRAFT_DISPLAY_LENGTH]
+        return f"Entwurf #{token}"
     return number
 
 
@@ -144,13 +169,19 @@ def parse_date(s: str | None) -> int | None:
     s = s.strip()
     if s.isdigit():
         return int(s)
-    for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+    for fmt in DATE_INPUT_FORMATS:
         try:
             dt = datetime.strptime(s, fmt)
-            return int(datetime(dt.year, dt.month, dt.day, 12, 0, 0).timestamp())
+            return int(datetime(dt.year, dt.month, dt.day, NOON_HOUR).timestamp())
         except ValueError:
             continue
     sys.exit(f"Ungültiges Datum: {s} (erwartet YYYY-MM-DD oder TT.MM.JJJJ)")
+
+
+def add_days_unix(unix_seconds: int, days: int) -> int:
+    """Kalendertage in lokaler Zeit (wie addDaysUnix), damit die Uhrzeit DST-Wechsel überlebt."""
+    shifted = datetime.fromtimestamp(unix_seconds) + timedelta(days=days)
+    return int(shifted.timestamp())
 
 
 def fmt_eur(cent) -> str:
@@ -226,15 +257,17 @@ def call_sidecar(command: str, payload: dict) -> dict:
         input=req,
         capture_output=True,
         text=True,
-        timeout=300,
+        timeout=SIDECAR_TIMEOUT_SECONDS,
         cwd=str(Path(main_py).parent) if main_py else None,
     )
     if proc.returncode != 0:
-        sys.exit(f"Sidecar-Fehler (exit {proc.returncode}):\n{proc.stderr[-2000:]}")
+        sys.exit(f"Sidecar-Fehler (exit {proc.returncode}):\n{proc.stderr[-ERROR_TAIL_CHARS:]}")
     try:
         return json.loads(proc.stdout.strip().splitlines()[-1])
     except (json.JSONDecodeError, IndexError):
-        sys.exit(f"Sidecar-Antwort nicht parsebar:\n{proc.stdout[-2000:]}\n{proc.stderr[-2000:]}")
+        sys.exit(
+            f"Sidecar-Antwort nicht parsebar:\n{proc.stdout[-ERROR_TAIL_CHARS:]}\n{proc.stderr[-ERROR_TAIL_CHARS:]}"
+        )
 
 
 # ----------------------------------------------------------------------------
@@ -243,14 +276,15 @@ def call_sidecar(command: str, payload: dict) -> dict:
 
 
 def skonto_of(inv: dict) -> dict | None:
-    if inv.get("skonto_percent") is None or inv.get("skonto_days") is None:
+    percent = inv.get("skonto_percent") or 0
+    days = inv.get("skonto_days") or 0
+    if inv["is_credit_note"] or inv["total"] <= 0 or percent <= 0 or days <= 0:
         return None
-    total = abs(inv["total"])
     return {
-        "percent": inv["skonto_percent"],
-        "days": inv["skonto_days"],
-        "discountCent": js_round(total * inv["skonto_percent"] / 100),
-        "deadlineUnix": (inv["issue_date"] or now_unix()) + inv["skonto_days"] * 86400,
+        "percent": percent,
+        "days": days,
+        "discountCent": math.floor(inv["total"] * percent / 100),
+        "deadlineUnix": add_days_unix(inv["issue_date"] or now_unix(), days),
     }
 
 
@@ -268,6 +302,7 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
             "isKleinunternehmer": bool(inv["is_kleinunternehmer"]),
             "isReverseCharge": bool(inv["is_reverse_charge"]),
             "reverseChargeType": inv["reverse_charge_type"],
+            "supplyKind": inv["supply_kind"],
             "isCreditNote": bool(inv["is_credit_note"]),
             "correctsInvoice": None,
             "notes": inv["notes"],
@@ -282,7 +317,7 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
             "skontoAmountCent": skonto["discountCent"] if skonto else None,
             "skontoDeadline": skonto["deadlineUnix"] if skonto else None,
             "amountPaidCent": inv["amount_paid_cent"] or 0,
-            "pdfLanguage": inv["pdf_language"] or "de",
+            "pdfLanguage": inv["pdf_language"] or DEFAULT_PDF_LANGUAGE,
         },
         "items": [
             {
@@ -328,8 +363,8 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
             "vatId": customer.get("vatId") or customer.get("vat_id"),
         },
         "outputPath": output_path,
-        "profile": company["zugferd_profile"] or "en16931",
-        "settings": {"pdf_theme": company["pdf_theme"] or "classic"},
+        "profile": company["zugferd_profile"] or DEFAULT_PDF_PROFILE,
+        "settings": {"pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME},
     }
 
 
@@ -340,26 +375,24 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
 
 def cmd_status(_args) -> None:
     path = resolve_db_path()
-    con = connect()
-    n_inv = con.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
-    n_cust = con.execute("SELECT COUNT(*) FROM customers").fetchone()[0]
+    with connect() as con:
+        n_inv = con.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
+        n_cust = con.execute("SELECT COUNT(*) FROM customers").fetchone()[0]
     sandbox = (app_data_dir() / "sandbox.flag").exists()
     print(f"DB:         {path}")
     print(f"Sandbox:    {'JA' if sandbox else 'nein'}")
     print(f"Rechnungen: {n_inv}  ·  Kunden: {n_cust}")
     exe, _ = resolve_sidecar()
     print(f"Sidecar:    {exe or 'nicht verfügbar'}")
-    con.close()
 
 
 def cmd_customers(_args) -> None:
-    con = connect()
-    rows = con.execute("SELECT * FROM customers ORDER BY id").fetchall()
+    with connect() as con:
+        rows = con.execute("SELECT * FROM customers ORDER BY id").fetchall()
     if not rows:
         print("Keine Kunden.")
     for c in rows:
         print(f"{c['id']:>3}  {c['customer_number']:<8} {c['name']:<40} {c['city'] or '':<20} {c['email'] or ''}")
-    con.close()
 
 
 def resolve_customer(con, ref: str) -> sqlite3.Row:
@@ -373,31 +406,36 @@ def resolve_customer(con, ref: str) -> sqlite3.Row:
 
 
 def cmd_invoice_list(args) -> None:
-    con = connect()
     q = "SELECT * FROM invoices"
     cond, params = [], []
     if args.status:
         cond.append("status = ?")
         params.append(args.status)
     if args.year:
-        cond.append("CAST(strftime('%Y', issue_date, 'unixepoch') AS INT) = ?")
+        cond.append("CAST(strftime('%Y', issue_date, 'unixepoch', 'localtime') AS INT) = ?")
         params.append(args.year)
     if cond:
         q += " WHERE " + " AND ".join(cond)
     q += " ORDER BY id DESC"
-    for r in con.execute(q, params).fetchall():
+    with connect() as con:
+        rows = con.execute(q, params).fetchall()
+    for r in rows:
         print(
             f"{r['id']:>3}  {display_number(r['number'], r['status']):<15} "
             f"{fmt_date(r['issue_date'])}  {fmt_eur(r['total']):>12}  {r['status']:<9} "
             f"{'PDF' if r['pdf_path'] else '—':<3} fällig {fmt_date(r['due_date'])}"
         )
-    con.close()
 
 
-def load_invoice_full(con, invoice_id: int) -> tuple[dict, list[dict], dict]:
+def fetch_invoice(con, invoice_id: int) -> sqlite3.Row:
     inv = con.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
     if not inv:
         sys.exit(f"Rechnung {invoice_id} nicht gefunden.")
+    return inv
+
+
+def load_invoice_full(con, invoice_id: int) -> tuple[dict, list[dict], dict]:
+    inv = fetch_invoice(con, invoice_id)
     items = [
         dict(r)
         for r in con.execute(
@@ -413,9 +451,7 @@ def load_invoice_full(con, invoice_id: int) -> tuple[dict, list[dict], dict]:
 
 def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
     """Spiegel von issueInvoice(): DRAFT -> echte Nummer, status sent."""
-    inv = con.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
-    if not inv:
-        sys.exit(f"Rechnung {invoice_id} nicht gefunden.")
+    inv = fetch_invoice(con, invoice_id)
     if inv["status"] != "draft":
         return inv["number"]
     ts = sent_at or now_unix()
@@ -423,16 +459,18 @@ def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
     if is_draft_number(inv["number"]):
         con.execute(
             "UPDATE settings SET invoice_number_counter = invoice_number_counter + 1, "
-            "updated_at = unixepoch() WHERE id = 1"
+            f"updated_at = {SQL_NOW} WHERE id = 1"
         )
         row = con.execute(
             "SELECT invoice_number_counter, invoice_number_format FROM settings WHERE id = 1"
         ).fetchone()
         final_number = format_invoice_number(
-            row["invoice_number_format"], row["invoice_number_counter"], datetime.now()
+            row["invoice_number_format"],
+            row["invoice_number_counter"],
+            datetime.fromtimestamp(inv["issue_date"] or ts),
         )
     con.execute(
-        "UPDATE invoices SET number = ?, status = 'sent', sent_at = ?, updated_at = unixepoch() "
+        f"UPDATE invoices SET number = ?, status = 'sent', sent_at = ?, updated_at = {SQL_NOW} "
         "WHERE id = ? AND status = 'draft'",
         (final_number, ts, invoice_id),
     )
@@ -484,9 +522,9 @@ def generate_pdf_for(con, invoice_id: int) -> tuple[str, str]:
     resp = call_sidecar("generate_invoice", payload)
     if not resp.get("success"):
         err = resp.get("error", {})
-        sys.exit(f"PDF-Fehler [{err.get('code')}]: {err.get('message')}\n{err.get('details', '')[:800]}")
+        sys.exit(f"PDF-Fehler [{err.get('code')}]: {err.get('message')}\n{err.get('details', '')[:ERROR_DETAIL_CHARS]}")
     con.execute(
-        "UPDATE invoices SET pdf_path = ?, updated_at = unixepoch() WHERE id = ?",
+        f"UPDATE invoices SET pdf_path = ?, updated_at = {SQL_NOW} WHERE id = ?",
         (resp["pdfPath"], invoice_id),
     )
     con.commit()
@@ -503,42 +541,36 @@ def parse_items_arg(spec: str | None) -> list[dict]:
         part = part.strip()
         if not part:
             continue
-        fields = part.split("|")
-        if len(fields) < 4:
-            sys.exit(f"Position ungültig (min. 4 Felder): {part}")
-        desc = fields[0].strip()
-        qty = float(fields[1].strip().replace(",", "."))
-        unit = fields[2].strip() or "Std"
-        price_eur = float(fields[3].strip().replace(",", "."))
-        vat = float(fields[4].strip().replace(",", ".")) if len(fields) > 4 and fields[4].strip() else 0
-        long_desc = fields[5].strip() if len(fields) > 5 and fields[5].strip() else None
+        fields = [f.strip() for f in part.split("|")]
+        if len(fields) < MIN_ITEM_FIELDS:
+            sys.exit(f"Position ungültig (min. {MIN_ITEM_FIELDS} Felder): {part}")
+        optional = fields[MIN_ITEM_FIELDS:] + [""] * 2
+        vat_field, long_desc = optional[0], optional[1]
+        try:
+            qty = parse_decimal(fields[1])
+            price_eur = parse_decimal(fields[3])
+            vat = parse_decimal(vat_field) if vat_field else 0
+        except ValueError:
+            sys.exit(f"Position ungültig (Zahl erwartet für Menge/Preis/MwSt): {part}")
         items.append(
             {
-                "description": desc,
+                "description": fields[0],
                 "quantity": qty,
-                "unit": unit,
-                "unitPrice": js_round(price_eur * 100),
+                "unit": fields[2] or DEFAULT_UNIT,
+                "unitPrice": js_round(price_eur * CENTS_PER_EUR),
                 "vatRate": int(vat),
-                "longDescription": long_desc,
+                "longDescription": long_desc or None,
             }
         )
     return items
 
 
-def cmd_invoice_create(args) -> None:
-    con = connect()
-    settings = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
-    customer = resolve_customer(con, args.customer)
-    items = parse_items_arg(args.items)
-    if not items:
-        sys.exit("Keine Positionen angegeben (siehe --items).")
-    is_rc = args.reverse_charge != "none"
-    totals = compute_totals(items, bool(settings["is_kleinunternehmer"]), is_rc)
-    issue_ts = parse_date(args.issue_date) or now_unix()
-    terms_days = args.payment_terms if args.payment_terms is not None else (settings["default_payment_terms_days"] or 14)
-    due_ts = parse_date(args.due_date) or (issue_ts + terms_days * 86400)
-    payment_terms = f"Zahlbar innerhalb von {terms_days} Tagen ohne Abzug."
-    snapshot = {
+def parse_decimal(s: str) -> float:
+    return float(s.replace(",", "."))
+
+
+def customer_snapshot(customer: sqlite3.Row) -> dict:
+    return {
         "customerNumber": customer["customer_number"],
         "name": customer["name"],
         "contactPerson": customer["contact_person"],
@@ -549,19 +581,30 @@ def cmd_invoice_create(args) -> None:
         "email": customer["email"],
         "vatId": customer["vat_id"],
     }
+
+
+def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, totals: dict, is_reverse_charge: bool) -> int:
+    issue_ts = parse_date(args.issue_date) or now_unix()
+    terms_days = (
+        args.payment_terms
+        if args.payment_terms is not None
+        else (settings["default_payment_terms_days"] or DEFAULT_PAYMENT_TERMS_DAYS)
+    )
+    due_ts = parse_date(args.due_date) or add_days_unix(issue_ts, terms_days)
+    payment_terms = f"Zahlbar innerhalb von {terms_days} Tagen ohne Abzug."
     cur = con.execute(
         """INSERT INTO invoices
            (number, customer_id, customer_snapshot, issue_date, delivery_date, due_date,
             status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
-            reverse_charge_type, notes, payment_terms, is_credit_note, corrects_invoice_id,
+            reverse_charge_type, supply_kind, notes, payment_terms, is_credit_note, corrects_invoice_id,
             currency, exchange_rate, eur_total_cent, notes_internal, follow_up_date,
             service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language)
-           VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL,
+           VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL,
                    'EUR', NULL, ?, NULL, NULL, ?, ?, ?, ?, ?)""",
         (
             draft_placeholder(),
             customer["id"],
-            json.dumps(snapshot, ensure_ascii=False),
+            json.dumps(customer_snapshot(customer), ensure_ascii=False),
             issue_ts,
             parse_date(args.delivery_date),
             due_ts,
@@ -569,8 +612,9 @@ def cmd_invoice_create(args) -> None:
             totals["vatAmount"],
             totals["total"],
             1 if settings["is_kleinunternehmer"] else 0,
-            1 if is_rc else 0,
+            1 if is_reverse_charge else 0,
             args.reverse_charge,
+            args.supply_kind,
             args.notes,
             payment_terms,
             totals["total"],
@@ -581,16 +625,19 @@ def cmd_invoice_create(args) -> None:
             args.pdf_language,
         ),
     )
-    invoice_id = cur.lastrowid
-    for i, it in enumerate(items, start=1):
+    return cur.lastrowid
+
+
+def insert_invoice_items(con, invoice_id: int, items: list[dict]) -> None:
+    for position, it in enumerate(items, start=1):
         con.execute(
             """INSERT INTO invoice_items
                (invoice_id, position, description, quantity, unit, unit_price, vat_rate, line_total,
                 long_description, line_period_start, line_period_end)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)""",
             (
                 invoice_id,
-                i,
+                position,
                 it["description"],
                 it["quantity"],
                 it["unit"],
@@ -598,23 +645,33 @@ def cmd_invoice_create(args) -> None:
                 it["vatRate"],
                 compute_line_total(it["quantity"], it["unitPrice"]),
                 it.get("longDescription"),
-                None,
-                None,
             ),
         )
-    con.commit()
-    print(f"Draft erstellt: id={invoice_id}  {fmt_eur(totals['total'])}  Kunde: {customer['name']}")
-    if args.issue:
-        print(f"Bereitgestellt: {issue_invoice(con, invoice_id)}")
-    if args.pdf:
-        number, pdf_path = generate_pdf_for(con, invoice_id)
-        print(f"PDF: {pdf_path}")
-    con.close()
+
+
+def cmd_invoice_create(args) -> None:
+    items = parse_items_arg(args.items)
+    if not items:
+        sys.exit("Keine Positionen angegeben (siehe --items).")
+    with connect() as con:
+        settings = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+        customer = resolve_customer(con, args.customer)
+        is_reverse_charge = args.reverse_charge != "none"
+        totals = compute_totals(items, bool(settings["is_kleinunternehmer"]), is_reverse_charge)
+        invoice_id = insert_draft_invoice(con, args, customer, settings, totals, is_reverse_charge)
+        insert_invoice_items(con, invoice_id, items)
+        con.commit()
+        print(f"Draft erstellt: id={invoice_id}  {fmt_eur(totals['total'])}  Kunde: {customer['name']}")
+        if args.issue:
+            print(f"Bereitgestellt: {issue_invoice(con, invoice_id)}")
+        if args.pdf:
+            _, pdf_path = generate_pdf_for(con, invoice_id)
+            print(f"PDF: {pdf_path}")
 
 
 def cmd_invoice_show(args) -> None:
-    con = connect()
-    inv, items, cust = load_invoice_full(con, args.id)
+    with connect() as con:
+        inv, items, cust = load_invoice_full(con, args.id)
     print(f"Rechnung {display_number(inv['number'], inv['status'])}  [{inv['status']}]")
     print(f"Kunde:        {cust.get('name')} ({cust.get('customerNumber')})")
     print(f"Datum:        {fmt_date(inv['issue_date'])}  ·  fällig {fmt_date(inv['due_date'])}")
@@ -629,64 +686,65 @@ def cmd_invoice_show(args) -> None:
     print(f"Netto: {fmt_eur(inv['subtotal'])}  ·  USt: {fmt_eur(inv['vat_amount'])}  ·  Gesamt: {fmt_eur(inv['total'])}")
     if inv["pdf_path"]:
         print(f"PDF:   {inv['pdf_path']}")
-    con.close()
 
 
 def cmd_invoice_pdf(args) -> None:
-    con = connect()
-    number, path = generate_pdf_for(con, args.id)
+    with connect() as con:
+        number, path = generate_pdf_for(con, args.id)
     print(f"{number}: {path}")
-    con.close()
 
 
 def cmd_invoice_issue(args) -> None:
-    con = connect()
-    print(f"Bereitgestellt: {issue_invoice(con, args.id, parse_date(args.sent_at))}")
-    con.close()
+    with connect() as con:
+        print(f"Bereitgestellt: {issue_invoice(con, args.id, parse_date(args.sent_at))}")
 
 
-def cmd_invoice_paid(args) -> None:
-    con = connect()
-    inv = con.execute("SELECT * FROM invoices WHERE id = ?", (args.id,)).fetchone()
-    if not inv:
-        sys.exit(f"Rechnung {args.id} nicht gefunden.")
-    if inv["status"] == "draft":
-        issue_invoice(con, args.id)
-        inv = con.execute("SELECT * FROM invoices WHERE id = ?", (args.id,)).fetchone()
-    ts = parse_date(args.paid_at) or now_unix()
+def mark_invoice_paid(con, invoice_id: int, paid_at: int) -> sqlite3.Row | None:
+    """Spiegel von markPaid(): zahlt den Restbetrag nur bei sent/partial, sonst None."""
+    if fetch_invoice(con, invoice_id)["status"] == "draft":
+        issue_invoice(con, invoice_id, paid_at)
+    inv = fetch_invoice(con, invoice_id)
+    if inv["status"] not in PAYABLE_STATUSES:
+        return None
     total = abs(inv["total"])
-    already = inv["amount_paid_cent"] or 0
-    remaining = total - already
+    remaining = total - (inv["amount_paid_cent"] or 0)
     if remaining > 0:
         con.execute(
             "INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent, source) VALUES (?, ?, ?, 'auto')",
-            (args.id, ts, remaining),
+            (invoice_id, paid_at, remaining),
         )
     con.execute(
-        "UPDATE invoices SET status = 'paid', paid_at = ?, amount_paid_cent = ?, updated_at = unixepoch() "
-        "WHERE id = ? AND status IN ('sent','partial','draft')",
-        (ts, total, args.id),
+        f"UPDATE invoices SET status = 'paid', paid_at = ?, amount_paid_cent = ?, updated_at = {SQL_NOW} "
+        "WHERE id = ? AND status IN ('sent','partial')",
+        (paid_at, total, invoice_id),
     )
     con.commit()
-    print(f"Als bezahlt markiert: {inv['number']} ({fmt_eur(total)})")
-    con.close()
+    return inv
+
+
+def cmd_invoice_paid(args) -> None:
+    with connect() as con:
+        inv = mark_invoice_paid(con, args.id, parse_date(args.paid_at) or now_unix())
+        if inv is None:
+            status = fetch_invoice(con, args.id)["status"]
+            sys.exit(f"Rechnung {args.id} hat Status '{status}' und kann nicht als bezahlt markiert werden.")
+    print(f"Als bezahlt markiert: {inv['number']} ({fmt_eur(abs(inv['total']))})")
 
 
 def cmd_stats(_args) -> None:
-    con = connect()
     year = datetime.now().year
-    row = con.execute(
-        "SELECT COALESCE(SUM(total),0) FROM invoices "
-        "WHERE status NOT IN ('cancelled','draft') "
-        "AND strftime('%Y', issue_date, 'unixepoch') = ?",
-        (str(year),),
-    ).fetchone()
-    print(f"Umsatz {year} (ohne Entwurf/Storno): {fmt_eur(row[0])}")
-    row = con.execute(
-        "SELECT COUNT(*), COALESCE(SUM(total),0) FROM invoices WHERE status IN ('sent','partial')"
-    ).fetchone()
-    print(f"Offene Forderungen: {row[0]} · {fmt_eur(row[1])}")
-    con.close()
+    with connect() as con:
+        revenue = con.execute(
+            "SELECT COALESCE(SUM(total),0) FROM invoices "
+            "WHERE status NOT IN ('cancelled','draft') "
+            "AND strftime('%Y', issue_date, 'unixepoch', 'localtime') = ?",
+            (str(year),),
+        ).fetchone()[0]
+        open_count, open_total = con.execute(
+            "SELECT COUNT(*), COALESCE(SUM(total),0) FROM invoices WHERE status IN ('sent','partial')"
+        ).fetchone()
+    print(f"Umsatz {year} (ohne Entwurf/Storno): {fmt_eur(revenue)}")
+    print(f"Offene Forderungen: {open_count} · {fmt_eur(open_total)}")
 
 
 def main() -> None:
@@ -714,9 +772,10 @@ def main() -> None:
     p_new.add_argument("--service-end")
     p_new.add_argument("--payment-terms", type=int, help="Tage (Default aus Settings)")
     p_new.add_argument("--reverse-charge", default="none", choices=["none", "intra_eu", "third_country"])
+    p_new.add_argument("--supply-kind", default="services", choices=["goods", "services"], help="Lieferung oder sonstige Leistung (nur bei Reverse-Charge relevant)")
     p_new.add_argument("--skonto-percent", type=float)
     p_new.add_argument("--skonto-days", type=int)
-    p_new.add_argument("--pdf-language", default="de")
+    p_new.add_argument("--pdf-language", default=DEFAULT_PDF_LANGUAGE)
     p_new.add_argument("--notes")
     p_new.add_argument("--issue", action="store_true", help="Direkt bereitstellen (Nummer ziehen)")
     p_new.add_argument("--pdf", action="store_true", help="PDF generieren (impliziert --issue)")

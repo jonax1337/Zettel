@@ -1,0 +1,37 @@
+import { loadSettings, saveSettings } from "$lib/db/queries";
+import type { Settings } from "$lib/db/schema";
+import { toast } from "$lib/ui/toast.svelte";
+
+/** Load/edit/save lifecycle shared by the settings pages that edit the settings row as one form. */
+export class SettingsForm {
+  settings = $state<Settings | null>(null);
+  loading = $state(true);
+  saving = $state(false);
+  error = $state<string | null>(null);
+
+  async load() {
+    try {
+      this.settings = await loadSettings();
+    } catch (e) {
+      this.error = String(e);
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  async submit(event: SubmitEvent) {
+    event.preventDefault();
+    if (!this.settings) return;
+    this.saving = true;
+    this.error = null;
+    try {
+      await saveSettings(this.settings);
+      toast.success("Einstellungen gespeichert");
+    } catch (e) {
+      this.error = String(e);
+      toast.error("Speichern fehlgeschlagen", String(e));
+    } finally {
+      this.saving = false;
+    }
+  }
+}

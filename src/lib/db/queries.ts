@@ -1,4 +1,4 @@
-import { execute, select } from "./client";
+import { containsPattern, execute, insert, select, toSqlBool } from "./client";
 import type { Customer, Settings, Vendor } from "./schema";
 
 // --- Settings (singleton row id=1) ---
@@ -62,11 +62,41 @@ type SettingsRow = {
   auto_backup_interval_days: number | null;
   last_auto_backup_at: number | null;
   default_pdf_language: string | null;
+  vat_accounting: string | null;
+  tax_reserve_expenses_gross: number | null;
   created_at: number;
   updated_at: number;
 };
 
+/** Fallbacks for unset values; mirrors the column defaults in the migrations. */
+export const SETTINGS_DEFAULTS = {
+  country: "DE",
+  invoiceNumberFormat: "RE-{YYYY}-{NNNN}",
+  offerNumberFormat: "AN-{YYYY}-{NNNN}",
+  defaultOfferValidityDays: 30,
+  defaultPaymentTermsDays: 14,
+  zugferdProfile: "en16931",
+  pdfTheme: "classic",
+  vendorNumberFormat: "L-{NNNN}",
+  expenseNumberFormat: "EX-{YYYY}-{NNNN}",
+  reminderNumberFormat: "MA-{YYYY}-{NNNN}",
+  reminderDays: 14,
+  reminderFeeL1Cents: 0,
+  reminderFeeL2Cents: 500,
+  reminderFeeL3Cents: 1000,
+  legalForm: "freelancer",
+  tradeTaxRate: 4.0,
+  churchTaxRate: 0.0,
+  taxFilingStatus: "single",
+  pauschalTaxPercent: 30.0,
+  defaultSkontoPercent: 2.0,
+  defaultSkontoDays: 7,
+  defaultPdfLanguage: "de",
+  vatAccounting: "accrual",
+} as const;
+
 function mapSettings(r: SettingsRow): Settings {
+  const d = SETTINGS_DEFAULTS;
   return {
     id: r.id,
     companyName: r.company_name,
@@ -87,45 +117,47 @@ function mapSettings(r: SettingsRow): Settings {
     kleinunternehmerNote: r.kleinunternehmer_note,
     invoiceNumberFormat: r.invoice_number_format,
     invoiceNumberCounter: r.invoice_number_counter,
-    offerNumberFormat: r.offer_number_format ?? "AN-{YYYY}-{NNNN}",
+    offerNumberFormat: r.offer_number_format ?? d.offerNumberFormat,
     offerNumberCounter: r.offer_number_counter ?? 0,
-    defaultOfferValidityDays: r.default_offer_validity_days ?? 30,
+    defaultOfferValidityDays: r.default_offer_validity_days ?? d.defaultOfferValidityDays,
     defaultPaymentTermsDays: r.default_payment_terms_days,
     logoPath: r.logo_path,
-    zugferdProfile: (r.zugferd_profile ?? "en16931") as Settings["zugferdProfile"],
-    pdfTheme: (r.pdf_theme ?? "classic") as Settings["pdfTheme"],
-    vendorNumberFormat: r.vendor_number_format ?? "L-{NNNN}",
+    zugferdProfile: (r.zugferd_profile ?? d.zugferdProfile) as Settings["zugferdProfile"],
+    pdfTheme: (r.pdf_theme ?? d.pdfTheme) as Settings["pdfTheme"],
+    vendorNumberFormat: r.vendor_number_format ?? d.vendorNumberFormat,
     vendorNumberCounter: r.vendor_number_counter ?? 0,
-    expenseNumberFormat: r.expense_number_format ?? "EX-{YYYY}-{NNNN}",
+    expenseNumberFormat: r.expense_number_format ?? d.expenseNumberFormat,
     expenseNumberCounter: r.expense_number_counter ?? 0,
-    reminderNumberFormat: r.reminder_number_format ?? "MA-{YYYY}-{NNNN}",
+    reminderNumberFormat: r.reminder_number_format ?? d.reminderNumberFormat,
     reminderNumberCounter: r.reminder_number_counter ?? 0,
-    reminderDaysL1: r.reminder_days_l1 ?? 14,
-    reminderDaysL2: r.reminder_days_l2 ?? 14,
-    reminderDaysL3: r.reminder_days_l3 ?? 14,
-    reminderFeeL1Cents: r.reminder_fee_l1_cents ?? 0,
-    reminderFeeL2Cents: r.reminder_fee_l2_cents ?? 500,
-    reminderFeeL3Cents: r.reminder_fee_l3_cents ?? 1000,
+    reminderDaysL1: r.reminder_days_l1 ?? d.reminderDays,
+    reminderDaysL2: r.reminder_days_l2 ?? d.reminderDays,
+    reminderDaysL3: r.reminder_days_l3 ?? d.reminderDays,
+    reminderFeeL1Cents: r.reminder_fee_l1_cents ?? d.reminderFeeL1Cents,
+    reminderFeeL2Cents: r.reminder_fee_l2_cents ?? d.reminderFeeL2Cents,
+    reminderFeeL3Cents: r.reminder_fee_l3_cents ?? d.reminderFeeL3Cents,
     reminderTextL1: r.reminder_text_l1 ?? "",
     reminderTextL2: r.reminder_text_l2 ?? "",
     reminderTextL3: r.reminder_text_l3 ?? "",
-    legalForm: (r.legal_form ?? "freelancer") as Settings["legalForm"],
-    tradeTaxRate: r.trade_tax_rate ?? 4.0,
-    churchTaxRate: r.church_tax_rate ?? 0.0,
-    taxFilingStatus: (r.tax_filing_status ?? "single") as Settings["taxFilingStatus"],
+    legalForm: (r.legal_form ?? d.legalForm) as Settings["legalForm"],
+    tradeTaxRate: r.trade_tax_rate ?? d.tradeTaxRate,
+    churchTaxRate: r.church_tax_rate ?? d.churchTaxRate,
+    taxFilingStatus: (r.tax_filing_status ?? d.taxFilingStatus) as Settings["taxFilingStatus"],
     estPrepaymentQ1Cent: r.est_prepayment_q1_cent ?? 0,
     estPrepaymentQ2Cent: r.est_prepayment_q2_cent ?? 0,
     estPrepaymentQ3Cent: r.est_prepayment_q3_cent ?? 0,
     estPrepaymentQ4Cent: r.est_prepayment_q4_cent ?? 0,
-    usePauschalTaxReserve: (r.use_pauschal_tax_reserve ?? 0) === 1,
-    pauschalTaxPercent: r.pauschal_tax_percent ?? 30.0,
+    usePauschalTaxReserve: r.use_pauschal_tax_reserve === 1,
+    pauschalTaxPercent: r.pauschal_tax_percent ?? d.pauschalTaxPercent,
     otherIncomeAnnualCent: r.other_income_annual_cent ?? 0,
-    defaultSkontoActive: (r.default_skonto_active ?? 0) === 1,
-    defaultSkontoPercent: r.default_skonto_percent ?? 2.0,
-    defaultSkontoDays: r.default_skonto_days ?? 7,
+    defaultSkontoActive: r.default_skonto_active === 1,
+    defaultSkontoPercent: r.default_skonto_percent ?? d.defaultSkontoPercent,
+    defaultSkontoDays: r.default_skonto_days ?? d.defaultSkontoDays,
     autoBackupIntervalDays: r.auto_backup_interval_days ?? 0,
     lastAutoBackupAt: r.last_auto_backup_at,
-    defaultPdfLanguage: (r.default_pdf_language ?? "de") as Settings["defaultPdfLanguage"],
+    defaultPdfLanguage: (r.default_pdf_language ?? d.defaultPdfLanguage) as Settings["defaultPdfLanguage"],
+    vatAccounting: (r.vat_accounting ?? d.vatAccounting) as Settings["vatAccounting"],
+    taxReserveExpensesGross: r.tax_reserve_expenses_gross === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -142,128 +174,99 @@ export async function loadSettings(): Promise<Settings> {
   return mapSettings(rows[0]);
 }
 
+/** Column/value pairs kept side by side so a new setting cannot shift the bindings. */
+function settingsColumnValues(s: Partial<Settings>): Array<[column: string, value: unknown]> {
+  const d = SETTINGS_DEFAULTS;
+  return [
+    ["company_name", s.companyName ?? ""],
+    ["owner_name", s.ownerName ?? ""],
+    ["street", s.street ?? ""],
+    ["postal_code", s.postalCode ?? ""],
+    ["city", s.city ?? ""],
+    ["country", s.country ?? d.country],
+    ["tax_number", s.taxNumber ?? ""],
+    ["vat_id", s.vatId ?? null],
+    ["email", s.email ?? ""],
+    ["phone", s.phone ?? null],
+    ["website", s.website ?? null],
+    ["bank_name", s.bankName ?? ""],
+    ["bank_iban", s.bankIban ?? ""],
+    ["bank_bic", s.bankBic ?? ""],
+    ["is_kleinunternehmer", toSqlBool(s.isKleinunternehmer)],
+    ["kleinunternehmer_note", s.kleinunternehmerNote ?? ""],
+    ["invoice_number_format", s.invoiceNumberFormat ?? d.invoiceNumberFormat],
+    ["invoice_number_counter", s.invoiceNumberCounter ?? 0],
+    ["offer_number_format", s.offerNumberFormat ?? d.offerNumberFormat],
+    ["offer_number_counter", s.offerNumberCounter ?? 0],
+    ["default_offer_validity_days", s.defaultOfferValidityDays ?? d.defaultOfferValidityDays],
+    ["default_payment_terms_days", s.defaultPaymentTermsDays ?? d.defaultPaymentTermsDays],
+    ["logo_path", s.logoPath ?? null],
+    ["zugferd_profile", s.zugferdProfile ?? d.zugferdProfile],
+    ["pdf_theme", s.pdfTheme ?? d.pdfTheme],
+    ["vendor_number_format", s.vendorNumberFormat ?? d.vendorNumberFormat],
+    ["vendor_number_counter", s.vendorNumberCounter ?? 0],
+    ["expense_number_format", s.expenseNumberFormat ?? d.expenseNumberFormat],
+    ["expense_number_counter", s.expenseNumberCounter ?? 0],
+    ["reminder_number_format", s.reminderNumberFormat ?? d.reminderNumberFormat],
+    ["reminder_number_counter", s.reminderNumberCounter ?? 0],
+    ["reminder_days_l1", s.reminderDaysL1 ?? d.reminderDays],
+    ["reminder_days_l2", s.reminderDaysL2 ?? d.reminderDays],
+    ["reminder_days_l3", s.reminderDaysL3 ?? d.reminderDays],
+    ["reminder_fee_l1_cents", s.reminderFeeL1Cents ?? d.reminderFeeL1Cents],
+    ["reminder_fee_l2_cents", s.reminderFeeL2Cents ?? d.reminderFeeL2Cents],
+    ["reminder_fee_l3_cents", s.reminderFeeL3Cents ?? d.reminderFeeL3Cents],
+    ["reminder_text_l1", s.reminderTextL1 ?? ""],
+    ["reminder_text_l2", s.reminderTextL2 ?? ""],
+    ["reminder_text_l3", s.reminderTextL3 ?? ""],
+    ["legal_form", s.legalForm ?? d.legalForm],
+    ["trade_tax_rate", s.tradeTaxRate ?? d.tradeTaxRate],
+    ["church_tax_rate", s.churchTaxRate ?? d.churchTaxRate],
+    ["tax_filing_status", s.taxFilingStatus ?? d.taxFilingStatus],
+    ["est_prepayment_q1_cent", s.estPrepaymentQ1Cent ?? 0],
+    ["est_prepayment_q2_cent", s.estPrepaymentQ2Cent ?? 0],
+    ["est_prepayment_q3_cent", s.estPrepaymentQ3Cent ?? 0],
+    ["est_prepayment_q4_cent", s.estPrepaymentQ4Cent ?? 0],
+    ["use_pauschal_tax_reserve", toSqlBool(s.usePauschalTaxReserve)],
+    ["pauschal_tax_percent", s.pauschalTaxPercent ?? d.pauschalTaxPercent],
+    ["other_income_annual_cent", s.otherIncomeAnnualCent ?? 0],
+    ["default_skonto_active", toSqlBool(s.defaultSkontoActive)],
+    ["default_skonto_percent", s.defaultSkontoPercent ?? d.defaultSkontoPercent],
+    ["default_skonto_days", s.defaultSkontoDays ?? d.defaultSkontoDays],
+    ["auto_backup_interval_days", s.autoBackupIntervalDays ?? 0],
+    ["last_auto_backup_at", s.lastAutoBackupAt ?? null],
+    ["default_pdf_language", s.defaultPdfLanguage ?? d.defaultPdfLanguage],
+    ["vat_accounting", s.vatAccounting ?? d.vatAccounting],
+    ["tax_reserve_expenses_gross", toSqlBool(s.taxReserveExpensesGross)],
+  ];
+}
+
 export async function saveSettings(s: Partial<Settings>): Promise<void> {
+  const columnValues = settingsColumnValues(s);
+  const assignments = columnValues.map(([column]) => `${column} = ?`).join(", ");
   await execute(
-    `UPDATE settings SET
-      company_name = ?,
-      owner_name = ?,
-      street = ?,
-      postal_code = ?,
-      city = ?,
-      country = ?,
-      tax_number = ?,
-      vat_id = ?,
-      email = ?,
-      phone = ?,
-      website = ?,
-      bank_name = ?,
-      bank_iban = ?,
-      bank_bic = ?,
-      is_kleinunternehmer = ?,
-      kleinunternehmer_note = ?,
-      invoice_number_format = ?,
-      invoice_number_counter = ?,
-      offer_number_format = ?,
-      offer_number_counter = ?,
-      default_offer_validity_days = ?,
-      default_payment_terms_days = ?,
-      logo_path = ?,
-      zugferd_profile = ?,
-      pdf_theme = ?,
-      vendor_number_format = ?,
-      vendor_number_counter = ?,
-      expense_number_format = ?,
-      expense_number_counter = ?,
-      reminder_number_format = ?,
-      reminder_number_counter = ?,
-      reminder_days_l1 = ?,
-      reminder_days_l2 = ?,
-      reminder_days_l3 = ?,
-      reminder_fee_l1_cents = ?,
-      reminder_fee_l2_cents = ?,
-      reminder_fee_l3_cents = ?,
-      reminder_text_l1 = ?,
-      reminder_text_l2 = ?,
-      reminder_text_l3 = ?,
-      legal_form = ?,
-      trade_tax_rate = ?,
-      church_tax_rate = ?,
-      tax_filing_status = ?,
-      est_prepayment_q1_cent = ?,
-      est_prepayment_q2_cent = ?,
-      est_prepayment_q3_cent = ?,
-      est_prepayment_q4_cent = ?,
-      use_pauschal_tax_reserve = ?,
-      pauschal_tax_percent = ?,
-      other_income_annual_cent = ?,
-      default_skonto_active = ?,
-      default_skonto_percent = ?,
-      default_skonto_days = ?,
-      auto_backup_interval_days = ?,
-      last_auto_backup_at = ?,
-      default_pdf_language = ?,
-      updated_at = unixepoch()
-    WHERE id = 1`,
-    [
-      s.companyName ?? "",
-      s.ownerName ?? "",
-      s.street ?? "",
-      s.postalCode ?? "",
-      s.city ?? "",
-      s.country ?? "DE",
-      s.taxNumber ?? "",
-      s.vatId ?? null,
-      s.email ?? "",
-      s.phone ?? null,
-      s.website ?? null,
-      s.bankName ?? "",
-      s.bankIban ?? "",
-      s.bankBic ?? "",
-      s.isKleinunternehmer ? 1 : 0,
-      s.kleinunternehmerNote ?? "",
-      s.invoiceNumberFormat ?? "RE-{YYYY}-{NNNN}",
-      s.invoiceNumberCounter ?? 0,
-      s.offerNumberFormat ?? "AN-{YYYY}-{NNNN}",
-      s.offerNumberCounter ?? 0,
-      s.defaultOfferValidityDays ?? 30,
-      s.defaultPaymentTermsDays ?? 14,
-      s.logoPath ?? null,
-      s.zugferdProfile ?? "en16931",
-      s.pdfTheme ?? "classic",
-      s.vendorNumberFormat ?? "L-{NNNN}",
-      s.vendorNumberCounter ?? 0,
-      s.expenseNumberFormat ?? "EX-{YYYY}-{NNNN}",
-      s.expenseNumberCounter ?? 0,
-      s.reminderNumberFormat ?? "MA-{YYYY}-{NNNN}",
-      s.reminderNumberCounter ?? 0,
-      s.reminderDaysL1 ?? 14,
-      s.reminderDaysL2 ?? 14,
-      s.reminderDaysL3 ?? 14,
-      s.reminderFeeL1Cents ?? 0,
-      s.reminderFeeL2Cents ?? 500,
-      s.reminderFeeL3Cents ?? 1000,
-      s.reminderTextL1 ?? "",
-      s.reminderTextL2 ?? "",
-      s.reminderTextL3 ?? "",
-      s.legalForm ?? "freelancer",
-      s.tradeTaxRate ?? 4.0,
-      s.churchTaxRate ?? 0.0,
-      s.taxFilingStatus ?? "single",
-      s.estPrepaymentQ1Cent ?? 0,
-      s.estPrepaymentQ2Cent ?? 0,
-      s.estPrepaymentQ3Cent ?? 0,
-      s.estPrepaymentQ4Cent ?? 0,
-      s.usePauschalTaxReserve ? 1 : 0,
-      s.pauschalTaxPercent ?? 30.0,
-      s.otherIncomeAnnualCent ?? 0,
-      s.defaultSkontoActive ? 1 : 0,
-      s.defaultSkontoPercent ?? 2.0,
-      s.defaultSkontoDays ?? 7,
-      s.autoBackupIntervalDays ?? 0,
-      s.lastAutoBackupAt ?? null,
-      s.defaultPdfLanguage ?? "de",
-    ],
+    `UPDATE settings SET ${assignments}, updated_at = unixepoch() WHERE id = 1`,
+    columnValues.map(([, value]) => value),
   );
+}
+
+// --- Numbering shared by customers and vendors ---
+
+/** Next `<prefix>NNNN`, derived from the highest numeric suffix already stored. */
+async function nextPrefixedNumber(
+  table: "customers" | "vendors",
+  column: "customer_number" | "vendor_number",
+  prefix: string,
+): Promise<string> {
+  const rows = await select<Record<string, string>>(
+    `SELECT ${column} FROM ${table} WHERE ${column} LIKE ?`,
+    [`${prefix}%`],
+  );
+  let max = 0;
+  for (const row of rows) {
+    const n = Number.parseInt(row[column].slice(prefix.length), 10);
+    if (!Number.isNaN(n) && n > max) max = n;
+  }
+  return `${prefix}${String(max + 1).padStart(4, "0")}`;
 }
 
 // --- Customers ---
@@ -307,19 +310,18 @@ function mapCustomer(r: CustomerRow): Customer {
 }
 
 export async function listCustomers(search = ""): Promise<Customer[]> {
-  if (search.trim() === "") {
-    const rows = await select<CustomerRow>(
-      "SELECT * FROM customers ORDER BY name COLLATE NOCASE ASC",
-    );
-    return rows.map(mapCustomer);
-  }
-  const q = `%${search.trim()}%`;
-  const rows = await select<CustomerRow>(
-    `SELECT * FROM customers
-     WHERE name LIKE ?1 OR customer_number LIKE ?1 OR city LIKE ?1 OR email LIKE ?1
-     ORDER BY name COLLATE NOCASE ASC`,
-    [q],
-  );
+  const pattern = containsPattern(search);
+  const rows =
+    pattern === null
+      ? await select<CustomerRow>(
+          "SELECT * FROM customers ORDER BY name COLLATE NOCASE ASC",
+        )
+      : await select<CustomerRow>(
+          `SELECT * FROM customers
+           WHERE name LIKE ?1 OR customer_number LIKE ?1 OR city LIKE ?1 OR email LIKE ?1
+           ORDER BY name COLLATE NOCASE ASC`,
+          [pattern],
+        );
   return rows.map(mapCustomer);
 }
 
@@ -331,19 +333,6 @@ export async function getCustomer(id: number): Promise<Customer | null> {
   return rows.length ? mapCustomer(rows[0]) : null;
 }
 
-async function nextCustomerNumber(): Promise<string> {
-  // Format: K-0001, K-0002 ... derived from MAX existing numeric suffix.
-  const rows = await select<{ customer_number: string }>(
-    "SELECT customer_number FROM customers WHERE customer_number LIKE 'K-%'",
-  );
-  let max = 0;
-  for (const r of rows) {
-    const n = Number.parseInt(r.customer_number.slice(2), 10);
-    if (!Number.isNaN(n) && n > max) max = n;
-  }
-  return `K-${String(max + 1).padStart(4, "0")}`;
-}
-
 export type CustomerInput = Omit<
   Customer,
   "id" | "customerNumber" | "createdAt" | "updatedAt" | "followUpDate"
@@ -353,8 +342,9 @@ export type CustomerInput = Omit<
 };
 
 export async function createCustomer(input: CustomerInput): Promise<number> {
-  const number = input.customerNumber ?? (await nextCustomerNumber());
-  const res = await execute(
+  const number =
+    input.customerNumber ?? (await nextPrefixedNumber("customers", "customer_number", "K-"));
+  return insert(
     `INSERT INTO customers
       (customer_number, name, contact_person, street, postal_code, city, country, email, phone, vat_id, notes,
        follow_up_date)
@@ -374,7 +364,6 @@ export async function createCustomer(input: CustomerInput): Promise<number> {
       input.followUpDate ?? null,
     ],
   );
-  return Number(res.lastInsertId ?? 0);
 }
 
 export async function updateCustomer(
@@ -456,19 +445,18 @@ function mapVendor(r: VendorRow): Vendor {
 }
 
 export async function listVendors(search = ""): Promise<Vendor[]> {
-  if (search.trim() === "") {
-    const rows = await select<VendorRow>(
-      "SELECT * FROM vendors ORDER BY name COLLATE NOCASE ASC",
-    );
-    return rows.map(mapVendor);
-  }
-  const q = `%${search.trim()}%`;
-  const rows = await select<VendorRow>(
-    `SELECT * FROM vendors
-     WHERE name LIKE ?1 OR vendor_number LIKE ?1 OR city LIKE ?1 OR email LIKE ?1
-     ORDER BY name COLLATE NOCASE ASC`,
-    [q],
-  );
+  const pattern = containsPattern(search);
+  const rows =
+    pattern === null
+      ? await select<VendorRow>(
+          "SELECT * FROM vendors ORDER BY name COLLATE NOCASE ASC",
+        )
+      : await select<VendorRow>(
+          `SELECT * FROM vendors
+           WHERE name LIKE ?1 OR vendor_number LIKE ?1 OR city LIKE ?1 OR email LIKE ?1
+           ORDER BY name COLLATE NOCASE ASC`,
+          [pattern],
+        );
   return rows.map(mapVendor);
 }
 
@@ -477,26 +465,15 @@ export async function getVendor(id: number): Promise<Vendor | null> {
   return rows.length ? mapVendor(rows[0]) : null;
 }
 
-async function nextVendorNumber(): Promise<string> {
-  const rows = await select<{ vendor_number: string }>(
-    "SELECT vendor_number FROM vendors WHERE vendor_number LIKE 'L-%'",
-  );
-  let max = 0;
-  for (const r of rows) {
-    const n = Number.parseInt(r.vendor_number.slice(2), 10);
-    if (!Number.isNaN(n) && n > max) max = n;
-  }
-  return `L-${String(max + 1).padStart(4, "0")}`;
-}
-
 export type VendorInput = Omit<
   Vendor,
   "id" | "vendorNumber" | "createdAt" | "updatedAt"
 > & { vendorNumber?: string };
 
 export async function createVendor(input: VendorInput): Promise<number> {
-  const number = input.vendorNumber ?? (await nextVendorNumber());
-  const res = await execute(
+  const number =
+    input.vendorNumber ?? (await nextPrefixedNumber("vendors", "vendor_number", "L-"));
+  return insert(
     `INSERT INTO vendors
       (vendor_number, name, contact_person, street, postal_code, city, country,
        email, phone, vat_id, bank_name, bank_iban, bank_bic, default_category, notes)
@@ -519,7 +496,6 @@ export async function createVendor(input: VendorInput): Promise<number> {
       input.notes ?? null,
     ],
   );
-  return Number(res.lastInsertId ?? 0);
 }
 
 export async function updateVendor(id: number, input: VendorInput): Promise<void> {

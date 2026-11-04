@@ -22,69 +22,46 @@ export const WIPEABLE_TABLE_LABELS: Record<WipeableTable, string> = {
   tax_prepayments: "Steuer-Vorauszahlungen",
 };
 
-async function clearTable(name: WipeableTable): Promise<void> {
-  // Reihenfolge wichtig: Children vor Parent, sonst FK-Constraint-Fail.
-  switch (name) {
-    case "invoices":
-      await execute("DELETE FROM reminders");
-      await execute("DELETE FROM invoice_items");
-      await execute("DELETE FROM invoices");
-      break;
-    case "offers":
-      await execute("DELETE FROM offer_items");
-      await execute("DELETE FROM offers");
-      break;
-    case "expenses":
-      await execute("DELETE FROM expense_items");
-      await execute("DELETE FROM expenses");
-      break;
-    case "reminders":
-      await execute("DELETE FROM reminders");
-      break;
-    case "customers":
-      // Rechnungen+Angebote+Mahnungen hängen an customer_id — alle weg.
-      await execute("DELETE FROM reminders");
-      await execute("DELETE FROM invoice_items");
-      await execute("DELETE FROM invoices");
-      await execute("DELETE FROM offer_items");
-      await execute("DELETE FROM offers");
-      await execute("DELETE FROM recurring_invoice_items");
-      await execute("DELETE FROM recurring_invoices");
-      await execute("DELETE FROM customers");
-      break;
-    case "vendors":
-      await execute("DELETE FROM expense_items");
-      await execute("DELETE FROM expenses");
-      await execute("DELETE FROM vendors");
-      break;
-    case "recurring_invoices":
-      await execute("DELETE FROM recurring_invoice_items");
-      await execute("DELETE FROM recurring_invoices");
-      break;
-    case "tax_prepayments":
-      await execute("DELETE FROM tax_prepayments");
-      break;
-  }
+// Each list is ordered children before parent, otherwise FK constraints fail.
+// invoice_payments has no FK to invoices, so it must be cleared explicitly.
+const INVOICE_TABLES = ["reminders", "invoice_payments", "invoice_items", "invoices"];
+const OFFER_TABLES = ["offer_items", "offers"];
+const EXPENSE_TABLES = ["expense_items", "expenses"];
+const RECURRING_TABLES = ["recurring_invoice_items", "recurring_invoices"];
+
+// Customers own invoices, offers and recurring templates, so those go with them.
+const TABLES_TO_CLEAR: Record<WipeableTable, string[]> = {
+  invoices: INVOICE_TABLES,
+  offers: OFFER_TABLES,
+  expenses: EXPENSE_TABLES,
+  reminders: ["reminders"],
+  customers: [...INVOICE_TABLES, ...OFFER_TABLES, ...RECURRING_TABLES, "customers"],
+  vendors: [...EXPENSE_TABLES, "vendors"],
+  recurring_invoices: RECURRING_TABLES,
+  tax_prepayments: ["tax_prepayments"],
+};
+
+const ALL_BUSINESS_TABLES = [
+  ...INVOICE_TABLES,
+  ...OFFER_TABLES,
+  ...EXPENSE_TABLES,
+  ...RECURRING_TABLES,
+  "tax_prepayments",
+  "customers",
+  "vendors",
+];
+
+async function deleteAllRows(tables: string[]): Promise<void> {
+  for (const table of tables) await execute(`DELETE FROM ${table}`);
 }
 
 export async function wipeTables(tables: WipeableTable[]): Promise<void> {
-  for (const t of tables) await clearTable(t);
+  for (const table of tables) await deleteAllRows(TABLES_TO_CLEAR[table]);
 }
 
+/** All business data; settings stay. */
 export async function wipeAllBusinessData(): Promise<void> {
-  // Alle Geschäftsdaten — Settings bleiben.
-  await execute("DELETE FROM reminders");
-  await execute("DELETE FROM invoice_items");
-  await execute("DELETE FROM invoices");
-  await execute("DELETE FROM offer_items");
-  await execute("DELETE FROM offers");
-  await execute("DELETE FROM expense_items");
-  await execute("DELETE FROM expenses");
-  await execute("DELETE FROM recurring_invoice_items");
-  await execute("DELETE FROM recurring_invoices");
-  await execute("DELETE FROM tax_prepayments");
-  await execute("DELETE FROM customers");
-  await execute("DELETE FROM vendors");
+  await deleteAllRows(ALL_BUSINESS_TABLES);
 }
 
 export async function resetNumberingCounters(): Promise<void> {
@@ -100,6 +77,23 @@ export async function resetNumberingCounters(): Promise<void> {
   );
 }
 
+async function withContext<T>(step: string, action: () => Promise<T>): Promise<T> {
+  try {
+    return await action();
+  } catch (e) {
+    throw new Error(`${step}: ${e}`);
+  }
+}
+
+/** `2026-05-04_13-45-09` */
+function backupTimestamp(): string {
+  return new Date()
+    .toISOString()
+    .replace(/[:.]/g, "-")
+    .replace("T", "_")
+    .slice(0, 19);
+}
+
 /**
  * Macht ein unverschlüsseltes Backup nach `~/Documents/Zettel/Backups/pre-wipe-<ts>.zip`
  * und gibt den Pfad zurück. Wirft bei Fehler.
@@ -107,43 +101,25 @@ export async function resetNumberingCounters(): Promise<void> {
 export async function autoBackupBeforeWipe(
   dbSchemaVersion: number,
 ): Promise<string> {
-  const ts = new Date()
-    .toISOString()
-    .replace(/[:.]/g, "-")
-    .replace("T", "_")
-    .slice(0, 19);
-  let target: string;
-  try {
-    target = await invoke<string>("auto_backup_target", {
-      filename: `pre-wipe-${ts}.zip`,
-    });
-  } catch (e) {
-    throw new Error(`auto_backup_target: ${e}`);
-  }
-
-  let snapshotPath: string;
-  try {
-    snapshotPath = await invoke<string>("snapshot_db_path");
-  } catch (e) {
-    throw new Error(`snapshot_db_path: ${e}`);
-  }
-
-  try {
-    await execute(`VACUUM INTO ?`, [snapshotPath]);
-  } catch (e) {
-    throw new Error(`VACUUM INTO '${snapshotPath}': ${e}`);
-  }
-
-  try {
-    await invoke<string>("bundle_backup", {
+  const target = await withContext("auto_backup_target", () =>
+    invoke<string>("auto_backup_target", {
+      filename: `pre-wipe-${backupTimestamp()}.zip`,
+    }),
+  );
+  const snapshotPath = await withContext("snapshot_db_path", () =>
+    invoke<string>("snapshot_db_path"),
+  );
+  await withContext(`VACUUM INTO '${snapshotPath}'`, () =>
+    execute("VACUUM INTO ?", [snapshotPath]),
+  );
+  await withContext(`bundle_backup → '${target}'`, () =>
+    invoke<string>("bundle_backup", {
       snapshotPath,
       targetZip: target,
       invoiceCount: null,
       dbSchemaVersion,
       password: null,
-    });
-  } catch (e) {
-    throw new Error(`bundle_backup → '${target}': ${e}`);
-  }
+    }),
+  );
   return target;
 }

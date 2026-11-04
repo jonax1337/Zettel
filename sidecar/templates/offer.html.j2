@@ -130,7 +130,7 @@
   {% endif %}
 
   {% if offer.isReverseCharge %}
-    <p class="callout">{{ t('offer_rc_hint', lang) }}</p>
+    <p class="callout">{{ t('offer_rc_hint_goods' if offer.supplyKind == 'goods' else 'offer_rc_hint_services', lang) }}</p>
   {% endif %}
 
   <p class="callout">

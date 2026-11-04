@@ -14,11 +14,19 @@
   import { cn } from "$lib/utils";
   import {
     search as runSearch,
-    flattenResults,
     type SearchHit,
-    type SearchResults,
     type SearchHitKind,
+    type SearchResults,
   } from "$lib/db/search";
+  import { createDebouncedTask } from "./debounced-task";
+  import {
+    DIALOG_CONTENT_ANIMATION_CLASS,
+    DIALOG_OVERLAY_CLASS,
+    pickerRowClass,
+  } from "./dialog-classes";
+  import { cycleIndex } from "./list-navigation";
+  import { groupSearchResults, hitsInDisplayOrder } from "./search-groups";
+  import { toast } from "./toast.svelte";
 
   type Props = {
     open?: boolean;
@@ -28,52 +36,16 @@
 
   const RECENTS_KEY = "zettel.search.recents";
   const MAX_RECENTS = 5;
+  const SEARCH_DEBOUNCE_MS = 150;
 
-  let query = $state("");
-  let results = $state<SearchResults>({
-    invoices: [],
-    customers: [],
-    vendors: [],
-    expenses: [],
-    offers: [],
-    reminders: [],
-  });
-  let activeIndex = $state(0);
-  let recents = $state<SearchHit[]>(loadRecents());
-  let inputEl = $state<HTMLInputElement | null>(null);
-  let listEl = $state<HTMLDivElement | null>(null);
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastQuerySent = "";
-
-  function loadRecents(): SearchHit[] {
-    if (typeof localStorage === "undefined") return [];
-    try {
-      const raw = localStorage.getItem(RECENTS_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
-      return parsed.slice(0, MAX_RECENTS);
-    } catch {
-      return [];
-    }
-  }
-
-  function saveRecents(list: SearchHit[]) {
-    try {
-      localStorage.setItem(RECENTS_KEY, JSON.stringify(list));
-    } catch {
-      /* ignore */
-    }
-  }
-
-  function pushRecent(hit: SearchHit) {
-    const without = recents.filter(
-      (r) => !(r.kind === hit.kind && r.id === hit.id),
-    );
-    const next = [hit, ...without].slice(0, MAX_RECENTS);
-    recents = next;
-    saveRecents(next);
-  }
+  const HIT_ICONS: Record<SearchHitKind, typeof FileText> = {
+    invoice: FileText,
+    offer: FileSignature,
+    reminder: FileWarning,
+    expense: FileInput,
+    customer: Users,
+    vendor: Truck,
+  };
 
   function emptyResults(): SearchResults {
     return {
@@ -86,22 +58,54 @@
     };
   }
 
+  function loadRecents(): SearchHit[] {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? "[]");
+      return Array.isArray(parsed) ? parsed.slice(0, MAX_RECENTS) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveRecents(list: SearchHit[]) {
+    try {
+      localStorage.setItem(RECENTS_KEY, JSON.stringify(list));
+    } catch {
+      // Recents are a convenience; a blocked storage must not break navigation.
+    }
+  }
+
+  let query = $state("");
+  let results = $state<SearchResults>(emptyResults());
+  let activeIndex = $state(0);
+  let recents = $state<SearchHit[]>(loadRecents());
+  let inputEl = $state<HTMLInputElement | null>(null);
+  let listEl = $state<HTMLDivElement | null>(null);
+
+  const searchTask = createDebouncedTask({
+    run: runSearch,
+    onResult: (found) => {
+      results = found;
+      activeIndex = 0;
+    },
+    onError: (error) => toast.error("Suche fehlgeschlagen", String(error)),
+    delayMs: SEARCH_DEBOUNCE_MS,
+  });
+
+  const hasQuery = $derived(query.trim() !== "");
+  const groups = $derived(hasQuery ? groupSearchResults(results) : []);
+  const visibleHits = $derived(hasQuery ? hitsInDisplayOrder(groups) : recents);
+  const showingRecents = $derived(!hasQuery && recents.length > 0);
+
   $effect(() => {
-    const q = query;
-    if (debounceTimer) clearTimeout(debounceTimer);
-    if (q.trim() === "") {
+    if (query.trim() === "") {
+      searchTask.cancel();
       results = emptyResults();
       activeIndex = 0;
       return;
     }
-    debounceTimer = setTimeout(async () => {
-      lastQuerySent = q;
-      const r = await runSearch(q);
-      if (lastQuerySent === q) {
-        results = r;
-        activeIndex = 0;
-      }
-    }, 150);
+    searchTask.schedule(query);
+    return searchTask.cancel;
   });
 
   $effect(() => {
@@ -114,48 +118,10 @@
     }
   });
 
-  const visibleHits = $derived.by<SearchHit[]>(() => {
-    if (query.trim() === "") return recents;
-    return flattenResults(results);
-  });
-
-  const showingRecents = $derived(query.trim() === "" && recents.length > 0);
-
-  type Group = { key: SearchHitKind; label: string; hits: SearchHit[] };
-
-  const groups = $derived.by<Group[]>(() => {
-    if (query.trim() === "") return [];
-    const out: Group[] = [];
-    if (results.invoices.length)
-      out.push({ key: "invoice", label: "Rechnungen", hits: results.invoices });
-    if (results.offers.length)
-      out.push({ key: "offer", label: "Angebote", hits: results.offers });
-    if (results.reminders.length)
-      out.push({ key: "reminder", label: "Mahnungen", hits: results.reminders });
-    if (results.expenses.length)
-      out.push({ key: "expense", label: "Ausgaben", hits: results.expenses });
-    if (results.customers.length)
-      out.push({ key: "customer", label: "Kunden", hits: results.customers });
-    if (results.vendors.length)
-      out.push({ key: "vendor", label: "Lieferanten", hits: results.vendors });
-    return out;
-  });
-
-  function iconFor(kind: SearchHitKind) {
-    switch (kind) {
-      case "invoice":
-        return FileText;
-      case "offer":
-        return FileSignature;
-      case "reminder":
-        return FileWarning;
-      case "expense":
-        return FileInput;
-      case "customer":
-        return Users;
-      case "vendor":
-        return Truck;
-    }
+  function pushRecent(hit: SearchHit) {
+    const others = recents.filter((r) => !(r.kind === hit.kind && r.id === hit.id));
+    recents = [hit, ...others].slice(0, MAX_RECENTS);
+    saveRecents(recents);
   }
 
   function selectHit(hit: SearchHit) {
@@ -165,38 +131,29 @@
     push(hit.route);
   }
 
-  function onKey(e: KeyboardEvent) {
-    const hits = visibleHits;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (hits.length === 0) return;
-      activeIndex = (activeIndex + 1) % hits.length;
-      scrollActiveIntoView();
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (hits.length === 0) return;
-      activeIndex = (activeIndex - 1 + hits.length) % hits.length;
-      scrollActiveIntoView();
-    } else if (e.key === "Tab") {
-      e.preventDefault();
-      if (hits.length === 0) return;
-      const dir = e.shiftKey ? -1 : 1;
-      activeIndex = (activeIndex + dir + hits.length) % hits.length;
-      scrollActiveIntoView();
-    } else if (e.key === "Enter") {
-      if (hits.length === 0) return;
-      e.preventDefault();
-      selectHit(hits[activeIndex]);
-    }
+  function moveActive(delta: number) {
+    activeIndex = cycleIndex(activeIndex, delta, visibleHits.length);
+    queueMicrotask(() => {
+      listEl
+        ?.querySelector<HTMLElement>(`[data-hit-index="${activeIndex}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+    });
   }
 
-  function scrollActiveIntoView() {
-    queueMicrotask(() => {
-      const el = listEl?.querySelector<HTMLElement>(
-        `[data-hit-index="${activeIndex}"]`,
-      );
-      el?.scrollIntoView({ block: "nearest" });
-    });
+  function onKey(e: KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      moveActive(1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      moveActive(-1);
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      moveActive(e.shiftKey ? -1 : 1);
+    } else if (e.key === "Enter" && visibleHits.length > 0) {
+      e.preventDefault();
+      selectHit(visibleHits[activeIndex]);
+    }
   }
 
   function flatIndex(groupIdx: number, withinGroupIdx: number): number {
@@ -206,13 +163,34 @@
   }
 </script>
 
+{#snippet hitRow(hit: SearchHit, idx: number)}
+  {@const Icon = HIT_ICONS[hit.kind]}
+  <button
+    type="button"
+    data-hit-index={idx}
+    onclick={() => selectHit(hit)}
+    onmouseenter={() => (activeIndex = idx)}
+    class={cn(pickerRowClass(activeIndex === idx), "text-sm")}
+  >
+    <Icon class="size-4 shrink-0 text-muted-foreground" />
+    <span class="font-mono text-xs text-muted-foreground shrink-0 w-24 truncate">
+      {hit.number}
+    </span>
+    <span class="flex-1 truncate">{hit.primary}</span>
+    {#if hit.secondary}
+      <span class="text-xs text-muted-foreground truncate">{hit.secondary}</span>
+    {/if}
+  </button>
+{/snippet}
+
 <DialogPrimitive.Root bind:open {onOpenChange}>
   <DialogPrimitive.Portal>
-    <DialogPrimitive.Overlay
-      class="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50"
-    />
+    <DialogPrimitive.Overlay class={DIALOG_OVERLAY_CLASS} />
     <DialogPrimitive.Content
-      class="bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[15%] left-[50%] z-50 flex w-full max-w-2xl -translate-x-1/2 flex-col overflow-hidden rounded-lg border shadow-xl outline-none"
+      class={cn(
+        DIALOG_CONTENT_ANIMATION_CLASS,
+        "bg-background fixed top-[15%] left-[50%] z-50 flex w-full max-w-2xl -translate-x-1/2 flex-col overflow-hidden rounded-lg border shadow-xl outline-none",
+      )}
     >
       <DialogPrimitive.Title class="sr-only">Globale Suche</DialogPrimitive.Title>
       <DialogPrimitive.Description class="sr-only">
@@ -247,30 +225,9 @@
             Zuletzt geöffnet
           </div>
           {#each recents as hit, i (hit.kind + "-" + hit.id)}
-            {@const Icon = iconFor(hit.kind)}
-            <button
-              type="button"
-              data-hit-index={i}
-              onclick={() => selectHit(hit)}
-              onmouseenter={() => (activeIndex = i)}
-              class={cn(
-                "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                activeIndex === i
-                  ? "bg-accent text-accent-foreground"
-                  : "hover:bg-accent/60",
-              )}
-            >
-              <Icon class="size-4 shrink-0 text-muted-foreground" />
-              <span class="font-mono text-xs text-muted-foreground shrink-0 w-24 truncate">
-                {hit.number}
-              </span>
-              <span class="flex-1 truncate">{hit.primary}</span>
-              {#if hit.secondary}
-                <span class="text-xs text-muted-foreground truncate">{hit.secondary}</span>
-              {/if}
-            </button>
+            {@render hitRow(hit, i)}
           {/each}
-        {:else if query.trim() === ""}
+        {:else if !hasQuery}
           <div class="px-3 py-10 text-center text-sm text-muted-foreground">
             Tippen, um zu suchen…
           </div>
@@ -284,29 +241,7 @@
               {group.label}
             </div>
             {#each group.hits as hit, hi (hit.kind + "-" + hit.id)}
-              {@const idx = flatIndex(gi, hi)}
-              {@const Icon = iconFor(hit.kind)}
-              <button
-                type="button"
-                data-hit-index={idx}
-                onclick={() => selectHit(hit)}
-                onmouseenter={() => (activeIndex = idx)}
-                class={cn(
-                  "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                  activeIndex === idx
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-accent/60",
-                )}
-              >
-                <Icon class="size-4 shrink-0 text-muted-foreground" />
-                <span class="font-mono text-xs text-muted-foreground shrink-0 w-24 truncate">
-                  {hit.number}
-                </span>
-                <span class="flex-1 truncate">{hit.primary}</span>
-                {#if hit.secondary}
-                  <span class="text-xs text-muted-foreground truncate">{hit.secondary}</span>
-                {/if}
-              </button>
+              {@render hitRow(hit, flatIndex(gi, hi))}
             {/each}
           {/each}
         {/if}

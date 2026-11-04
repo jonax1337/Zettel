@@ -28,5 +28,7 @@ export default defineConfig(async () => ({
     include: ["src/**/*.{test,spec}.ts"],
     environment: "node",
     globals: false,
+    // The DST regression tests (date, skonto, follow-up) only bite in a zone with daylight saving.
+    env: { TZ: "Europe/Berlin" },
   },
 }));
