@@ -327,6 +327,8 @@ export async function deleteExpense(id: number): Promise<void> {
   if (existing.expense.status === "paid") {
     throw new Error("Bezahlte Eingangsrechnungen können nicht gelöscht werden — bitte stornieren.");
   }
+  // expense_items has no FK cascade to expenses.
+  await execute("DELETE FROM expense_items WHERE expense_id = ?", [id]);
   await execute("DELETE FROM expenses WHERE id = ?", [id]);
 }
 

@@ -5,6 +5,7 @@ vi.mock("./client", () => ({ execute, insert: vi.fn(), select }));
 vi.mock("./queries", () => ({ getVendor: vi.fn() }));
 
 import {
+  deleteExpense,
   getExpenseYears,
   listExpenses,
   loadExpensesForExport,
@@ -148,5 +149,19 @@ describe("markExpensePaid", () => {
     await markExpensePaid(4, 1234);
 
     expect(execute.mock.calls[0][1]).toEqual([1234, 4]);
+  });
+});
+
+describe("deleteExpense", () => {
+  it("removes the expense items as well, which have no FK cascade", async () => {
+    execute.mockClear();
+    select.mockResolvedValueOnce([expenseRow(4, "{}")]).mockResolvedValueOnce([]);
+
+    await deleteExpense(4);
+
+    expect(execute.mock.calls).toEqual([
+      ["DELETE FROM expense_items WHERE expense_id = ?", [4]],
+      ["DELETE FROM expenses WHERE id = ?", [4]],
+    ]);
   });
 });
