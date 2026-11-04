@@ -26,6 +26,16 @@ INSERT INTO migration_0027_guard
     FROM sqlite_master WHERE type = 'table' AND name = 'invoices';
 DROP TABLE migration_0027_guard;
 
+-- Partial payments recorded while the CHECK rejected 'partial' never reached
+-- their invoice. Only the unambiguous case is repaired: a sent invoice whose
+-- payments cover part of its total.
+UPDATE invoices
+   SET status = 'partial',
+       amount_paid_cent = (SELECT SUM(p.amount_cent) FROM invoice_payments p WHERE p.invoice_id = invoices.id)
+ WHERE status = 'sent'
+   AND (SELECT COALESCE(SUM(p.amount_cent), 0) FROM invoice_payments p WHERE p.invoice_id = invoices.id)
+       BETWEEN 1 AND abs(total) - 1;
+
 -- Offers and recurring templates only knew "reverse charge yes/no"; invoices
 -- distinguish intra-EU (K) from third-country (G). The boolean stays for older
 -- readers; the backfill keeps what conversions produced so far.

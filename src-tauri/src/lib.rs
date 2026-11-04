@@ -223,7 +223,8 @@ mod tests {
                    VALUES (3, 'RE-2026-0003', 1, 1, 1, 'sent', -5000, 1, 2);
                  INSERT INTO invoice_items (invoice_id, position, unit_price, line_total)
                    VALUES (1, 1, 10000, 10000), (2, 1, 5000, 5000), (3, 1, -5000, -5000);
-                 INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent) VALUES (2, 1, 5000);
+                 INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent)
+                   VALUES (2, 1, 5000), (1, 1, 4000);
                  INSERT INTO reminders (number, invoice_id, issue_date, due_date) VALUES ('MA-1', 1, 1, 1);
                  INSERT INTO offers (id, number, customer_id, issue_date, valid_until,
                                      is_reverse_charge, converted_invoice_id)
@@ -310,6 +311,23 @@ mod tests {
                     .execute("UPDATE invoices SET status = 'bogus' WHERE id = 1", [])
                     .is_err());
             }
+        }
+
+        #[test]
+        fn repairs_sent_invoices_whose_partial_payment_was_recorded() {
+            let m = migrated_from_version_27();
+            let state = |id: i64| -> (String, i64) {
+                m.conn
+                    .query_row(
+                        "SELECT status, amount_paid_cent FROM invoices WHERE id = ?1",
+                        [id],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .unwrap()
+            };
+            assert_eq!(state(1), ("partial".to_string(), 4000));
+            assert_eq!(state(2), ("paid".to_string(), 0));
+            assert_eq!(state(3), ("sent".to_string(), 0));
         }
 
         #[test]
