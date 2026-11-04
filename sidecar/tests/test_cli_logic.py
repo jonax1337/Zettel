@@ -354,12 +354,16 @@ class TestSkonto:
     def test_deadline_counts_calendar_days(self, cli):
         assert cli.skonto_of(self.invoice())["deadlineUnix"] == local_timestamp(2026, 4, 4)
 
-    def test_discount_is_rounded_down_like_the_app(self, cli):
-        assert cli.skonto_of(self.invoice(total=1010, skonto_percent=2.5))["discountCent"] == 25
+    @pytest.mark.parametrize(
+        "total, percent, expected",
+        [(1010, 2.5, 25), (3070, 2.5, 77), (3070, 2, 61), (3075, 2, 62), (10000, 2.5, 250)],
+    )
+    def test_discount_is_rounded_half_up_like_the_app(self, cli, total, percent, expected):
+        assert cli.skonto_of(self.invoice(total=total, skonto_percent=percent))["discountCent"] == expected
 
     @pytest.mark.parametrize(
         "total, percent, expected",
-        [(3000, 2.3, 69), (10000, 1.1, 110), (5800, 2.5, 145), (1000, 0.7, 7), (11900, 3.5, 416)],
+        [(3000, 2.3, 69), (10000, 1.1, 110), (5800, 2.5, 145), (1000, 0.7, 7), (11900, 3.5, 417)],
     )
     def test_fractional_percent_is_exact(self, cli, total, percent, expected):
         assert cli.skonto_of(self.invoice(total=total, skonto_percent=percent))["discountCent"] == expected

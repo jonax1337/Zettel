@@ -47,7 +47,7 @@ Der CLI repliziert bewusst die App-Logik aus `src/lib/db/invoices.ts`:
   nur bei Status `sent`/`partial` (Entwürfe werden vorher bereitgestellt),
   bei `paid`/`cancelled` bricht `invoice:paid` ohne Änderung mit Fehler ab
 - **Fristen** (Fälligkeit, Skonto) zählen Kalendertage in lokaler Zeit (DST-sicher),
-  Skonto-Betrag wird abgerundet; Jahresfilter/-statistik gruppieren nach lokalem Jahr
+  Skonto-Betrag wird kaufmännisch gerundet (half-up); Jahresfilter/-statistik gruppieren nach lokalem Jahr
 - **PDF-Versionierung**: existierendes PDF wird vor Regeneration nach
   `Versionen/<stem>__<mtime>.pdf` verschoben (wie `archive_pdf_version`); ein
   bisher in einem anderen Ordner gespeichertes PDF wandert samt Versionen mit

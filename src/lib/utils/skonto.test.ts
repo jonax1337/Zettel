@@ -44,10 +44,20 @@ describe("computeSkonto", () => {
     expect(r!.discountCent).toBe(17850);
   });
 
-  it("floors to whole cents", () => {
-    // 2 % von 99,99 € = 1,9998 € → 199 Cent (nicht 200)
+  it("rounds half-up to whole cents", () => {
+    // 2 % von 99,99 € = 1,9998 € → 200 Cent
     const r = computeSkonto({ totalCent: 9999, percent: 2, days: 7, issueDate: ISSUE });
-    expect(r!.discountCent).toBe(199);
+    expect(r!.discountCent).toBe(200);
+  });
+
+  it.each([
+    [3070, 2.5, 77], // 76,75 ct: exakt auf der Halb-Cent-Grenze, aufgerundet
+    [3070, 2, 61], // 61,4 ct: unter der Grenze, abgerundet
+    [3075, 2, 62], // 61,5 ct: exakt auf der Grenze, aufgerundet
+    [10000, 2.5, 250], // exakt, keine Rundung
+  ])("rounds at the half-cent boundary: %i cent x %f %% = %i cent", (totalCent, percent, expected) => {
+    const r = computeSkonto({ totalCent, percent, days: 7, issueDate: ISSUE });
+    expect(r!.discountCent).toBe(expected);
   });
 
   it.each([
@@ -55,7 +65,7 @@ describe("computeSkonto", () => {
     [10000, 1.1, 110],
     [5800, 2.5, 145],
     [1000, 0.7, 7],
-    [11900, 3.5, 416],
+    [11900, 3.5, 417], // 416,5 ct
   ])("is exact for fractional percents: %i cent x %f %% = %i cent", (totalCent, percent, expected) => {
     const r = computeSkonto({ totalCent, percent, days: 7, issueDate: ISSUE });
     expect(r!.discountCent).toBe(expected);
