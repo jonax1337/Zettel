@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
   select: vi.fn(),
-  execute: vi.fn(async () => ({ rowsAffected: 1 })),
+  execute: vi.fn<(sql: string, bindings?: unknown[]) => Promise<{ rowsAffected: number }>>(
+    async () => ({ rowsAffected: 1 }),
+  ),
   insert: vi.fn(),
 }));
 
