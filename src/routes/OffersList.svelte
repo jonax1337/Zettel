@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { link, push } from "svelte-spa-router";
   import {
     deleteOffer,
     expireDueOffers,
@@ -12,6 +12,7 @@
   } from "$lib/db/offers";
   import type { Customer, OfferStatus } from "$lib/db/schema";
   import { listCustomers } from "$lib/db/queries";
+  import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
   import {
@@ -21,7 +22,6 @@
     BulkActionBar,
     ConfirmDialog,
     toast,
-    EmptyState,
     PageHeader,
     QueryBoundary,
     StatusBadge,
@@ -31,6 +31,8 @@
   import DocumentListFilters from "./invoice/DocumentListFilters.svelte";
   import { createRowSelection } from "./invoice/list-selection.svelte";
   import { pluralize } from "./parts/entity/format";
+  import { createListFilters } from "./parts/entity/list-filters.svelte";
+  import ListEmptyState from "./parts/entity/ListEmptyState.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
@@ -43,16 +45,25 @@
   let customers = $state<Customer[]>([]);
   let years = $state<number[]>([]);
 
-  let status = $state<OfferStatus | typeof ALL>(ALL);
-  let year = $state(ALL);
-  let customerId = $state(ALL);
-  let search = $state("");
+  type OfferListFilters = {
+    status: OfferStatus | typeof ALL;
+    year: string;
+    customerId: string;
+    search: string;
+  };
+  const filters = createListFilters<OfferListFilters>("offers", {
+    status: ALL,
+    year: ALL,
+    customerId: ALL,
+    search: "",
+  });
+  const f = filters.values;
 
   const filter = $derived<OfferFilter>({
-    status,
-    year: numberOrAll(year),
-    customerId: numberOrAll(customerId),
-    search,
+    status: f.status,
+    year: numberOrAll(f.year),
+    customerId: numberOrAll(f.customerId),
+    search: f.search,
   });
 
   const fetchOffers = createOfferListFetcher({
@@ -115,6 +126,11 @@
 
   const selectedLabel = $derived(pluralize(selection.selected.length, "Angebot", "Angebote"));
 
+  async function bulkMarkSent() {
+    if (!(await ensureCompanyDataComplete())) return;
+    await selection.runBulk("als versendet markiert", markSent, offers.reload);
+  }
+
   async function bulkDelete() {
     bulkDeleteConfirmOpen = false;
     await selection.runBulk("gelöscht", deleteOffer, offers.reload);
@@ -135,11 +151,11 @@
 
 <div class="mb-5">
   <DocumentListFilters
-    bind:status
+    bind:status={f.status}
     {statusItems}
-    bind:year
-    bind:customerId
-    bind:search
+    bind:year={f.year}
+    bind:customerId={f.customerId}
+    bind:search={f.search}
     {years}
     {customers}
   />
@@ -147,7 +163,14 @@
 
 <QueryBoundary query={offers} isEmpty={offers.data.length === 0}>
   {#snippet empty()}
-    <EmptyState variant={search ? "no-results" : "empty"} message="Keine Angebote gefunden." />
+    <ListEmptyState
+      filtered={filters.isFiltered}
+      onResetFilters={filters.reset}
+      filteredMessage="Keine Angebote für diese Filter."
+      emptyMessage="Noch keine Angebote angelegt."
+      createLabel="Neues Angebot"
+      onCreate={() => push("/offers/new")}
+    />
   {/snippet}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
@@ -165,7 +188,16 @@
                 aria-label={`Angebot ${off.number} auswählen`}
               />
             </td>
-            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">{off.number}</td>
+            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">
+              <a
+                href={`/offers/${off.id}`}
+                use:link
+                onclick={(e) => e.stopPropagation()}
+                class="hover:underline focus-visible:underline"
+              >
+                {off.number}
+              </a>
+            </td>
             <td class="px-3 @3xl:px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(off.issueDate)}</td>
             <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={off.customerName}>{off.customerName}</span></td>
             <td class="px-3 @3xl:px-4 py-3 text-right font-mono whitespace-nowrap">{formatMoney(off.total, off.currency)}</td>
@@ -185,11 +217,11 @@
     <Button
       size="sm"
       variant="outline"
-      onclick={() => selection.runBulk("als versandt markiert", markSent, offers.reload)}
+      onclick={bulkMarkSent}
       disabled={selection.busy}
     >
       <Send class="size-3.5" />
-      Versenden
+      Als versendet markieren
     </Button>
   {/if}
   {#if canBulkReject}

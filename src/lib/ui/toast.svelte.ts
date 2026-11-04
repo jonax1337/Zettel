@@ -14,13 +14,14 @@ export type Toast = {
   action?: ToastAction;
 };
 
+const PERSISTENT = 0;
+// Errors stay until dismissed: a failure the user could not read in time is lost information.
 const DURATION_MS: Record<ToastVariant, number> = {
   default: 3500,
   success: 3500,
-  error: 5000,
+  error: PERSISTENT,
   warning: 4000,
 };
-const PERSISTENT = 0;
 
 let nextId = 1;
 

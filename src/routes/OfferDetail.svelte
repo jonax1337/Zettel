@@ -21,6 +21,7 @@
   import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { SUPPLY_KIND_LABEL } from "./invoice/supply-kind";
   import { generateOfferPdf } from "$lib/sidecar/offer";
+  import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import {
     Badge,
     Button,
@@ -136,6 +137,7 @@
     const { id } = offer;
     const sentAt = fromIsoDate(sendDate);
     sendDialogOpen = false;
+    if (!(await ensureCompanyDataComplete())) return;
     await actions.run("Als versendet markiert", () => markSent(id, sentAt));
   }
 
@@ -226,7 +228,7 @@
         </Button>
         <Button disabled={actions.busy} onclick={openSendDialog}>
           <Send />
-          Versenden
+          Als versendet markieren
         </Button>
       {/if}
       {#if offer.status === "sent"}
@@ -364,9 +366,9 @@
     title="Als versendet markieren"
     description="Das Versanddatum wird im Angebot festgehalten."
     dateInputId="offer-send-date"
-    dateLabel="Versanddatum"
-    hint="Standard ist heute. Für Nacherfassung das tatsächliche Versanddatum eintragen."
-    confirmLabel="Versenden"
+    dateLabel="Versendet am"
+    hint="Standard ist heute. Für Nacherfassung das tatsächliche Datum eintragen."
+    confirmLabel="Als versendet markieren"
     warning={sendWarning}
     busy={actions.busy}
     onConfirm={confirmSend}

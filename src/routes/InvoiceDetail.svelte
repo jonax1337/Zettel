@@ -17,6 +17,7 @@
   import type { Invoice, InvoiceItem, InvoicePayment, Reminder } from "$lib/db/schema";
   import { formatDate, formatDateTime, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { generateInvoicePdf, listPdfVersions, type PdfVersion } from "$lib/sidecar/invoice";
+  import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import { validatePdf, type ValidationReport } from "$lib/validator";
   import { Badge, Button, ConfirmDialog, toast } from "$lib/ui";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
@@ -225,6 +226,7 @@
     const { id } = invoice;
     const sentAt = fromIsoDate(dialogDate);
     sendDialogOpen = false;
+    if (!(await ensureCompanyDataComplete())) return;
     await actions.run("Als versendet markiert", () => markSent(id, sentAt));
   }
 
@@ -344,6 +346,7 @@
     const { id } = invoice;
     const sentAt = fromIsoDate(dialogDate);
     issueForPdfDialogOpen = false;
+    if (!(await ensureCompanyDataComplete())) return;
     await generatePdf({ run: () => markSent(id, sentAt), failureTitle: "Festschreiben fehlgeschlagen" });
   }
 
@@ -470,7 +473,7 @@
       {#if invoice.status === "draft"}
         <Button disabled={actions.busy} onclick={openSendDialog}>
           <Send />
-          Versenden
+          Als versendet markieren
         </Button>
       {:else if canMarkPaid}
         <Button disabled={actions.busy} onclick={openPaidDialog}>
@@ -582,9 +585,9 @@
     title="Als versendet markieren"
     description="Festschreiben unter neuer Rechnungsnummer."
     dateInputId="send-date"
-    dateLabel="Versanddatum"
-    hint="Standard ist heute. Für Nacherfassung das tatsächliche Versanddatum eintragen."
-    confirmLabel="Versenden"
+    dateLabel="Versendet am"
+    hint="Standard ist heute. Für Nacherfassung das tatsächliche Datum eintragen."
+    confirmLabel="Als versendet markieren"
     warning={dialogWarning}
     busy={actions.busy}
     onConfirm={confirmSend}
@@ -596,8 +599,8 @@
     title="Rechnung festschreiben?"
     description="Vergibt die Rechnungsnummer und setzt den Status auf Versendet. Erst danach wird die PDF erzeugt."
     dateInputId="issue-pdf-date"
-    dateLabel="Versanddatum"
-    hint="Standard ist heute. Für Nacherfassung das tatsächliche Versanddatum eintragen."
+    dateLabel="Versendet am"
+    hint="Standard ist heute. Für Nacherfassung das tatsächliche Datum eintragen."
     confirmLabel="Festschreiben und PDF erzeugen"
     warning={dialogWarning}
     busy={actions.busy}

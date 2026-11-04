@@ -11,6 +11,7 @@ type Options = {
 export function createDocumentFormData({ customerId, onLoaded, onError }: Options) {
   let customers = $state<Customer[]>([]);
   let settings = $state<Settings | null>(null);
+  let loaded = $state(false);
 
   const customerItems = $derived(
     customers.map((c) => ({ value: String(c.id), label: `${c.customerNumber} · ${c.name}` })),
@@ -25,6 +26,7 @@ export function createDocumentFormData({ customerId, onLoaded, onError }: Option
         customers = loadedCustomers;
         settings = loadedSettings;
         await onLoaded(loadedSettings, loadedCustomers);
+        loaded = true;
       })
       .catch((e) => onError(String(e)));
   });
@@ -32,6 +34,10 @@ export function createDocumentFormData({ customerId, onLoaded, onError }: Option
   return {
     get settings() {
       return settings;
+    },
+    /** Settings, customers and the page's `onLoaded` defaults are all in place. */
+    get loaded() {
+      return loaded;
     },
     get customerItems() {
       return customerItems;

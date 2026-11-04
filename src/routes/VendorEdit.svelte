@@ -46,6 +46,7 @@
     update: (id) => updateVendor(id, form),
     createdMessage: "Lieferant angelegt",
     listRoute: LIST_ROUTE,
+    unsavedState: () => form,
   });
 
   $effect(() => {

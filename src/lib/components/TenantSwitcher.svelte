@@ -66,7 +66,7 @@
       tenants = await invoke<TenantEntry[]>("list_tenants");
     } catch (e) {
       tenants = [];
-      toast.error("Tenants konnten nicht geladen werden", String(e));
+      toast.error("Mandanten konnten nicht geladen werden", String(e));
     }
   }
 
@@ -126,7 +126,7 @@
 
   async function addAndSwitch() {
     if (actionsLocked || !newLabel.trim() || !newPath) return;
-    await changeTenantAndRelaunch("Tenant konnte nicht angelegt werden", async () => {
+    await changeTenantAndRelaunch("Mandant konnte nicht angelegt werden", async () => {
       const id = await invoke<string>("add_tenant", {
         label: newLabel.trim(),
         path: newPath,
@@ -158,7 +158,7 @@
     try {
       await invoke("remove_tenant", { id });
       await loadTenants();
-      toast.success("Tenant entfernt", "Die DB-Datei selbst bleibt erhalten.");
+      toast.success("Mandant entfernt", "Die DB-Datei selbst bleibt erhalten.");
     } catch (e) {
       toast.error("Entfernen fehlgeschlagen", String(e));
     }
@@ -187,7 +187,7 @@
     {/snippet}
 
     <div class="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-      Tenants
+      Mandanten
     </div>
     {#each tenants as t (t.id)}
       <DropdownItem onSelect={() => switchTenant(t.id)} disabled={sandbox && !t.current}>
@@ -199,7 +199,7 @@
     {/each}
     <DropdownItem onSelect={openManage}>
       <Plus class="size-4" />
-      <span>Tenants verwalten…</span>
+      <span>Mandanten verwalten…</span>
     </DropdownItem>
 
     <DropdownSeparator />
@@ -209,13 +209,13 @@
 
 <Dialog
   bind:open={manageOpen}
-  title="Tenants"
+  title="Mandanten"
   description="Mehrere getrennte Datenbanken — z. B. pro Mandant. Lege die DB-Datei in einem Cloud-Ordner (OneDrive o. ä.) ab, um sie geräteübergreifend zu nutzen. Wichtig: nicht gleichzeitig auf zwei Geräten öffnen."
 >
   <div class="min-w-0 space-y-4">
     {#if sandbox}
       <p class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
-        Die Sandbox ist aktiv. Tenants lassen sich erst wieder wechseln, verschieben, anlegen oder
+        Die Sandbox ist aktiv. Mandanten lassen sich erst wieder wechseln, verschieben, anlegen oder
         entfernen, wenn du die Sandbox verlassen hast (Einstellungen → Daten).
       </p>
     {/if}
@@ -251,8 +251,8 @@
               onclick={() => removeTenant(t.id)}
               disabled={actionsLocked}
               class="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:pointer-events-none disabled:opacity-50"
-              title="Tenant entfernen (Datei bleibt erhalten)"
-              aria-label="Tenant entfernen"
+              title="Mandant entfernen (Datei bleibt erhalten)"
+              aria-label="Mandant entfernen"
             >
               <Trash2 class="size-4" />
             </button>
@@ -267,7 +267,7 @@
 
     <div class="space-y-3 rounded-md border border-dashed p-3">
       <div class="flex items-center gap-2 text-sm font-medium">
-        <Database class="size-4" /> Neuen Tenant hinzufügen
+        <Database class="size-4" /> Neuen Mandanten hinzufügen
       </div>
       <div class="space-y-1.5">
         <Label>Bezeichnung</Label>

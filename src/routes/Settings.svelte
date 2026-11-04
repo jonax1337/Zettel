@@ -56,8 +56,8 @@
       href: "/settings/advanced",
       icon: AlertTriangle,
       title: "Erweitert",
-      description: "Gefahrenzone — Daten löschen und Counter zurücksetzen.",
-      items: ["Daten löschen", "Tabellen leeren", "Counter-Reset"],
+      description: "Gefahrenbereich — Daten löschen und Nummernzähler zurücksetzen.",
+      items: ["Daten löschen", "Tabellen leeren", "Zähler zurücksetzen"],
       danger: true,
     },
   ];

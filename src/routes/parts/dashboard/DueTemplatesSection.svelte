@@ -13,7 +13,7 @@
   <div class="flex items-center justify-between mb-3">
     <h2 class="text-sm font-semibold uppercase text-muted-foreground tracking-wider flex items-center gap-2">
       <Repeat class="size-4" />
-      Fällige Vorlagen
+      Fällige wiederkehrende Rechnungen
     </h2>
     <span class="text-xs text-muted-foreground">{templates.length} fällig</span>
   </div>

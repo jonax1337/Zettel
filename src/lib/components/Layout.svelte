@@ -3,11 +3,12 @@
   import { onMount, type Snippet } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { FlaskConical } from "$lib/brand-icons";
-  import { Toaster, Titlebar, CommandPalette, toast } from "$lib/ui";
+  import { Toaster, Titlebar, CommandPalette, ConfirmDialog, toast } from "$lib/ui";
   import { isSandboxActive } from "$lib/db/client";
   import { loadSettings } from "$lib/db/queries";
   import { maybeRunAutoBackup } from "$lib/utils/auto-backup";
   import { isMac } from "$lib/utils/platform";
+  import { leavePage, pendingNavigation, stayOnPage } from "$lib/utils/unsaved-guard.svelte";
   import OnboardingWizard from "./OnboardingWizard.svelte";
   import Sidebar from "./Sidebar.svelte";
   import { isOnboardingDismissed } from "./onboarding-dismissal";
@@ -22,8 +23,8 @@
   // An empty company name is the most reliable sign of a fresh installation
   // (the default is an empty string, not NULL).
   async function openOnboardingOnFreshInstall() {
-    if (isOnboardingDismissed()) return;
     try {
+      if (await isOnboardingDismissed()) return;
       const settings = await loadSettings();
       if (settings.companyName.trim() === "") onboardingOpen = true;
     } catch (e) {
@@ -53,16 +54,11 @@
       .catch((e) => console.error("Reading the window title failed", e));
   });
 
-  function isEditable(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) return false;
-    if (target.dataset.commandPaletteInput !== undefined) return false;
-    return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable;
-  }
-
+  // The modifier makes Ctrl/Cmd+K unambiguous, so it opens the palette even while a field has focus.
   function onGlobalKey(e: KeyboardEvent) {
     const modifierPressed = isMac ? e.metaKey : e.ctrlKey;
     if (!modifierPressed || e.key.toLowerCase() !== "k") return;
-    if (paletteOpen || isEditable(e.target)) return;
+    if (paletteOpen) return;
     e.preventDefault();
     paletteOpen = true;
   }
@@ -75,9 +71,9 @@
     {#if sandbox}
       <button
         type="button"
-        onclick={() => push("/settings")}
+        onclick={() => push("/settings/data")}
         class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-warning/20 text-warning border border-warning/40 hover:bg-warning/30 transition-colors cursor-pointer"
-        title="Sandbox aktiv – zu den Einstellungen"
+        title="Sandbox aktiv – zu Einstellungen → Daten"
         style="-webkit-app-region: no-drag"
       >
         <FlaskConical class="size-3" />
@@ -109,5 +105,21 @@
     onDismiss={() => (onboardingOpen = false)}
   />
 {/if}
+
+<ConfirmDialog
+  bind:open={
+    () => pendingNavigation.target !== null,
+    (isOpen) => {
+      if (!isOpen && pendingNavigation.target !== null) stayOnPage();
+    }
+  }
+  title="Ungespeicherte Änderungen"
+  description="Wenn du diese Seite verlässt, gehen deine Änderungen verloren."
+  confirmLabel="Verwerfen und verlassen"
+  cancelLabel="Auf der Seite bleiben"
+  destructive
+  onConfirm={leavePage}
+  onCancel={stayOnPage}
+/>
 
 <Toaster />

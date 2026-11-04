@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { push, toast } = vi.hoisted(() => ({
+const { push, toast, markClean } = vi.hoisted(() => ({
   push: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
+  markClean: vi.fn(),
 }));
 vi.mock("svelte-spa-router", () => ({ push }));
 vi.mock("$lib/ui/toast.svelte", () => ({ toast }));
+vi.mock("$lib/utils/unsaved-guard.svelte", () => ({
+  guardUnsavedChanges: () => ({ dirty: false, markClean }),
+}));
 
 import { createEntityForm } from "./entity-form.svelte";
 
@@ -24,6 +28,7 @@ function build(overrides: { mode?: "new" | "edit"; fetchById?: (id: number) => P
     update,
     createdMessage: "Angelegt",
     listRoute: "/things",
+    unsavedState: () => ({}),
   });
   return { entity, create, update, onLoaded };
 }
@@ -81,6 +86,15 @@ describe("createEntityForm", () => {
     expect(entity.saving).toBe(false);
   });
 
+  it("marks the form clean before leaving after a save", async () => {
+    const { entity } = build({ mode: "new" });
+
+    await entity.save();
+
+    expect(markClean).toHaveBeenCalledOnce();
+    expect(markClean.mock.invocationCallOrder[0]).toBeLessThan(push.mock.invocationCallOrder[0]);
+  });
+
   it("continues to the route built from the saved record's ID", async () => {
     const { entity } = build({ mode: "new" });
 
@@ -120,6 +134,7 @@ describe("createEntityForm", () => {
     expect(entity.error).toBe("Error: unique");
     expect(toast.error).toHaveBeenCalledWith("Speichern fehlgeschlagen", "Error: unique");
     expect(push).not.toHaveBeenCalled();
+    expect(markClean).not.toHaveBeenCalled();
     expect(entity.saving).toBe(false);
   });
 

@@ -42,6 +42,7 @@
             onclick={() => revealItemInDir(v.path)}
             class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             title="Im Ordner zeigen"
+            aria-label="Im Ordner zeigen"
           >
             <FolderOpen class="size-3.5" />
           </button>

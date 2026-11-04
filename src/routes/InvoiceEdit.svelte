@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
   import { untrack } from "svelte";
   import { push, router } from "svelte-spa-router";
   import {
@@ -231,7 +232,9 @@
     saving = true;
     error = null;
     try {
-      push(`/invoices/${await persist(buildInput(customerId))}`);
+      const savedId = await persist(buildInput(customerId));
+      unsaved.markClean();
+      push(`/invoices/${savedId}`);
     } catch (err) {
       error = String(err);
       toast.error("Speichern fehlgeschlagen", String(err));
@@ -239,6 +242,29 @@
       saving = false;
     }
   }
+
+  const unsaved = guardUnsavedChanges(
+    () => ({
+      customerIdStr,
+      issueDateIso,
+      serviceMode,
+      deliveryDateIso,
+      servicePeriodStartIso,
+      servicePeriodEndIso,
+      dueDateIso,
+      notes,
+      paymentTerms,
+      reverseChargeType,
+      supplyKind,
+      isCreditNote,
+      items,
+      currency,
+      exchangeRate,
+      skonto,
+      pdfLanguage,
+    }),
+    () => !loading && reference.loaded,
+  );
 </script>
 
 <header class="mb-6">

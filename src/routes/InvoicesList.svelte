@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { link, push } from "svelte-spa-router";
   import {
     deleteInvoice,
     displayInvoiceNumber,
@@ -12,6 +12,7 @@
   } from "$lib/db/invoices";
   import type { Customer, InvoiceStatus } from "$lib/db/schema";
   import { listCustomers } from "$lib/db/queries";
+  import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate, nowUnix } from "$lib/utils/date";
   import {
@@ -21,7 +22,6 @@
     Checkbox,
     BulkActionBar,
     ConfirmDialog,
-    EmptyState,
     PageHeader,
     QueryBoundary,
     StatusBadge,
@@ -31,11 +31,13 @@
   import DocumentListFilters from "./invoice/DocumentListFilters.svelte";
   import { createRowSelection } from "./invoice/list-selection.svelte";
   import { pluralize } from "./parts/entity/format";
+  import { createListFilters } from "./parts/entity/list-filters.svelte";
+  import ListEmptyState from "./parts/entity/ListEmptyState.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
   import { ALL, numberOrAll, statusFilterItems } from "./invoice/list-support";
-  import { isOverdue as isInvoiceOverdue } from "./invoice/invoice-actions";
+  import { canRecordPayments, isOverdue as isInvoiceOverdue } from "./invoice/invoice-actions";
   import { INVOICE_STATUS } from "./invoice/status";
 
   const statusItems = statusFilterItems(INVOICE_STATUS);
@@ -44,24 +46,39 @@
   let customers = $state<Customer[]>([]);
   let years = $state<number[]>([]);
 
-  let status = $state<InvoiceStatus | typeof ALL>(ALL);
-  let year = $state(ALL);
-  let customerId = $state(ALL);
-  let search = $state("");
-  let onlyCreditNotes = $state(false);
-  let onlyFollowUp = $state(false);
+  type InvoiceListFilters = {
+    status: InvoiceStatus | typeof ALL;
+    year: string;
+    customerId: string;
+    search: string;
+    onlyCreditNotes: boolean;
+    onlyFollowUp: boolean;
+    onlyOpen: boolean;
+  };
+  const filters = createListFilters<InvoiceListFilters>("invoices", {
+    status: ALL,
+    year: ALL,
+    customerId: ALL,
+    search: "",
+    onlyCreditNotes: false,
+    onlyFollowUp: false,
+    onlyOpen: false,
+  });
+  const f = filters.values;
 
   const filter = $derived<InvoiceFilter>({
-    status,
-    year: numberOrAll(year),
-    customerId: numberOrAll(customerId),
-    search,
+    status: f.status,
+    year: numberOrAll(f.year),
+    customerId: numberOrAll(f.customerId),
+    search: f.search,
   });
 
   const invoices = createQueryState<InvoiceListRow[]>([], () => listInvoices(filter));
   const visibleInvoices = $derived(
     invoices.data.filter(
-      (i) => (!onlyCreditNotes || i.isCreditNote) && (!onlyFollowUp || i.followUpDate != null),
+      (i) => (!f.onlyCreditNotes || i.isCreditNote) &&
+        (!f.onlyFollowUp || i.followUpDate != null) &&
+        (!f.onlyOpen || canRecordPayments(i, i.hasCreditNote)),
     ),
   );
 
@@ -114,6 +131,11 @@
 
   const selectedLabel = $derived(pluralize(selection.selected.length, "Rechnung", "Rechnungen"));
 
+  async function bulkMarkSent() {
+    if (!(await ensureCompanyDataComplete())) return;
+    await selection.runBulk("als versendet markiert", (id) => markSent(id), invoices.reload);
+  }
+
   async function bulkDelete() {
     bulkDeleteConfirmOpen = false;
     await selection.runBulk("gelöscht", deleteInvoice, invoices.reload);
@@ -134,11 +156,11 @@
 
 <div class="mb-3">
   <DocumentListFilters
-    bind:status
+    bind:status={f.status}
     {statusItems}
-    bind:year
-    bind:customerId
-    bind:search
+    bind:year={f.year}
+    bind:customerId={f.customerId}
+    bind:search={f.search}
     {years}
     {customers}
   />
@@ -146,18 +168,29 @@
 
 <div class="mb-5 flex flex-wrap items-center gap-4">
   <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-    <Checkbox bind:checked={onlyCreditNotes} />
+    <Checkbox bind:checked={f.onlyCreditNotes} />
     Nur Stornorechnungen
   </label>
   <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-    <Checkbox bind:checked={onlyFollowUp} />
+    <Checkbox bind:checked={f.onlyFollowUp} />
     Nur mit Wiedervorlage
+  </label>
+  <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+    <Checkbox bind:checked={f.onlyOpen} />
+    Nur offene Posten
   </label>
 </div>
 
 <QueryBoundary query={invoices} isEmpty={visibleInvoices.length === 0}>
   {#snippet empty()}
-    <EmptyState variant={search ? "no-results" : "empty"} message="Keine Rechnungen gefunden." />
+    <ListEmptyState
+      filtered={filters.isFiltered}
+      onResetFilters={filters.reset}
+      filteredMessage="Keine Rechnungen für diese Filter."
+      emptyMessage="Noch keine Rechnungen angelegt."
+      createLabel="Neue Rechnung"
+      onCreate={() => push("/invoices/new")}
+    />
   {/snippet}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
@@ -177,7 +210,14 @@
             </td>
             <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">
               <span class="inline-flex items-center gap-1.5">
-                {displayInvoiceNumber(inv)}
+                <a
+                  href={`/invoices/${inv.id}`}
+                  use:link
+                  onclick={(e) => e.stopPropagation()}
+                  class="hover:underline focus-visible:underline"
+                >
+                  {displayInvoiceNumber(inv)}
+                </a>
                 {#if inv.isCreditNote}
                   <Badge variant="destructive" class="text-[10px] px-1.5 py-0">Storno</Badge>
                 {/if}
@@ -194,16 +234,12 @@
               </span>
             </td>
             <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
-              {#if inv.status !== "draft"}
-                <span class="inline-flex items-center gap-1.5">
-                  <StatusBadge status={inv.status} table={INVOICE_STATUS} />
-                  {#if isInvoiceOverdue(inv, inv.hasCreditNote, now)}
-                    <Badge variant="destructive">Überfällig</Badge>
-                  {/if}
-                </span>
-              {:else}
-                <span class="text-muted-foreground">—</span>
-              {/if}
+              <span class="inline-flex items-center gap-1.5">
+                <StatusBadge status={inv.status} table={INVOICE_STATUS} />
+                {#if isInvoiceOverdue(inv, inv.hasCreditNote, now)}
+                  <Badge variant="destructive">Überfällig</Badge>
+                {/if}
+              </span>
             </td>
             <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
               {inv.isCreditNote ? "—" : formatDate(inv.dueDate)}
@@ -220,11 +256,11 @@
     <Button
       size="sm"
       variant="outline"
-      onclick={() => selection.runBulk("als versandt markiert", (id) => markSent(id), invoices.reload)}
+      onclick={bulkMarkSent}
       disabled={selection.busy}
     >
       <Send class="size-3.5" />
-      Versenden
+      Als versendet markieren
     </Button>
   {/if}
   {#if canBulkMarkPaid}

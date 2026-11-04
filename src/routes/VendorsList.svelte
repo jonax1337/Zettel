@@ -2,20 +2,23 @@
   import { push } from "svelte-spa-router";
   import { deleteVendor, listVendors } from "$lib/db/queries";
   import type { Vendor } from "$lib/db/schema";
-  import { Button, Card, ConfirmDialog, EmptyState, PageHeader, QueryBoundary } from "$lib/ui";
+  import { Button, Card, ConfirmDialog, PageHeader, QueryBoundary } from "$lib/ui";
   import { Plus } from "$lib/brand-icons";
   import { applySort } from "$lib/utils/sort";
   import RowActionsMenu from "./parts/entity/RowActionsMenu.svelte";
   import SearchInput from "./parts/entity/SearchInput.svelte";
   import { pluralize } from "./parts/entity/format";
   import { createDeleteFlow } from "./parts/entity/delete-flow.svelte";
+  import { createListFilters } from "./parts/entity/list-filters.svelte";
+  import ListEmptyState from "./parts/entity/ListEmptyState.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
 
-  let search = $state("");
+  const filters = createListFilters<{ search: string }>("vendors", { search: "" });
+  const f = filters.values;
 
-  const vendors = createQueryState<Vendor[]>([], () => listVendors(search));
+  const vendors = createQueryState<Vendor[]>([], () => listVendors(f.search));
   $effect(() => {
     vendors.reload();
   });
@@ -63,16 +66,19 @@
 </PageHeader>
 
 <SearchInput
-  bind:value={search}
+  bind:value={f.search}
   placeholder="Suche (Name, Nummer, Ort, E-Mail)…"
   class="mb-4 max-w-md"
 />
 
 <QueryBoundary query={vendors} isEmpty={vendors.data.length === 0}>
   {#snippet empty()}
-    <EmptyState
-      variant={search ? "no-results" : "empty"}
-      message={search ? "Keine Treffer." : "Noch keine Lieferanten angelegt."}
+    <ListEmptyState
+      filtered={filters.isFiltered}
+      onResetFilters={filters.reset}
+      emptyMessage="Noch keine Lieferanten angelegt."
+      createLabel="Neuer Lieferant"
+      onCreate={() => push("/vendors/new")}
     />
   {/snippet}
   <Card class="overflow-hidden py-0">

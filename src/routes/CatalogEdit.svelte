@@ -59,6 +59,7 @@
     update: (id) => updateCatalogItem(id, form),
     createdMessage: "Eintrag angelegt",
     listRoute: LIST_ROUTE,
+    unsavedState: () => [form, priceText],
   });
 
   $effect(() => {

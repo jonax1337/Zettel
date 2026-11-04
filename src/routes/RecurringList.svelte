@@ -58,7 +58,7 @@
 
   const deletion = createDeleteFlow<RecurringListRow>({
     remove: (row) => deleteRecurring(row.id),
-    entityLabel: "Vorlage",
+    entityLabel: "Wiederkehrende Rechnung",
     reload: templates.reload,
   });
 
@@ -83,19 +83,23 @@
 
 <PageHeader
   title="Wiederkehrende Rechnungen"
-  subtitle="Vorlagen für Retainer- oder Abo-Modelle. Erzeugung erfolgt manuell pro Fälligkeit."
+  subtitle="Wiederkehrende Rechnungen für Retainer- oder Abo-Modelle. Erzeugung erfolgt manuell pro Fälligkeit."
 >
   {#snippet actions()}
     <Button href="/recurring/new">
       <Plus class="size-4" />
-      Neue Vorlage
+      Neue wiederkehrende Rechnung
     </Button>
   {/snippet}
 </PageHeader>
 
 <QueryBoundary query={templates} isEmpty={templates.data.length === 0}>
   {#snippet empty()}
-    <EmptyState message="Noch keine Vorlagen. Erstelle die erste über „Neue Vorlage“." />
+    <EmptyState
+      message="Noch keine wiederkehrenden Rechnungen."
+      actionLabel="Neue wiederkehrende Rechnung"
+      onAction={() => push("/recurring/new")}
+    />
   {/snippet}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
@@ -159,8 +163,8 @@
 
 <ConfirmDialog
   bind:open={deletion.open}
-  title="Vorlage löschen?"
-  description="Die Vorlage wird unwiderruflich entfernt. Bereits erzeugte Rechnungen bleiben bestehen."
+  title="Wiederkehrende Rechnung löschen?"
+  description="Die wiederkehrende Rechnung wird unwiderruflich entfernt. Bereits erzeugte Rechnungen bleiben bestehen."
   confirmLabel="Löschen"
   destructive
   onConfirm={deletion.confirm}

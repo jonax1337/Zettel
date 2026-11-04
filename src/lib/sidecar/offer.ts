@@ -13,6 +13,7 @@ import {
   skontoPayload,
 } from "./payload";
 import { renderDocumentPdf, storePdfPath } from "./render-document";
+import { companyIncompleteResponse } from "./company-guard";
 import type { SidecarResponse } from "./types";
 
 export function buildOfferPayload(opts: {
@@ -66,6 +67,8 @@ export async function generateOfferPdf(offerId: number): Promise<SidecarResponse
   const data = await getOffer(offerId);
   if (!data) throw new Error(`Offer ${offerId} not found`);
   const company = await loadSettings();
+  const blocked = companyIncompleteResponse(company);
+  if (blocked) return blocked;
   const customer = parseCustomerSnapshot(data.offer.customerSnapshot);
   const outputPath = await documentOutputPath("Angebote", data.offer.number);
   const payload = buildOfferPayload({

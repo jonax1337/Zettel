@@ -22,6 +22,7 @@ import {
   skontoPayload,
 } from "./payload";
 import { renderDocumentPdf } from "./render-document";
+import { companyIncompleteResponse } from "./company-guard";
 import type { SidecarSuccess, SidecarResponse } from "./types";
 
 export type { SidecarResponse } from "./types";
@@ -129,8 +130,11 @@ async function validateAndRecord(response: SidecarSuccess, invoiceId: number): P
 }
 
 export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResponse> {
-  const { invoice, items } = await loadInvoiceForRendering(invoiceId);
+  // Checked before loadInvoiceForRendering, which issues a draft (draws a real invoice number).
   const company = await loadSettings();
+  const blocked = companyIncompleteResponse(company);
+  if (blocked) return blocked;
+  const { invoice, items } = await loadInvoiceForRendering(invoiceId);
   const customer = parseCustomerSnapshot(invoice.customerSnapshot);
   const outputPath = await documentOutputPath("Rechnungen", invoice.number);
 

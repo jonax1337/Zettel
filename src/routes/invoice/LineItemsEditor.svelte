@@ -178,6 +178,7 @@
                     type="button"
                     class="{subtleButton} hover:bg-accent hover:text-destructive"
                     title="Detail entfernen"
+                    aria-label="Detail entfernen"
                     onclick={() => {
                       it.showDetail = false;
                       it.longDescription = "";
@@ -191,6 +192,7 @@
                     type="button"
                     class="{subtleButton} hover:bg-accent hover:text-foreground"
                     title="Detail-Beschreibung hinzufügen"
+                    aria-label="Detail-Beschreibung hinzufügen"
                     onclick={() => (it.showDetail = true)}
                     disabled={readOnly}
                   >

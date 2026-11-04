@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
   import { push } from "svelte-spa-router";
   import { untrack } from "svelte";
   import { listVendors, type VendorInput } from "$lib/db/queries";
@@ -381,7 +382,8 @@
     const savedId = await saveExpense();
     if (savedId === null) return;
     if (next === "again") resetForNextExpense();
-    else push("/expenses");
+    unsaved.markClean();
+    if (next === "leave") push("/expenses");
   }
 
   /** A lookup failure must not block saving, so it counts as "no duplicate". */
@@ -433,6 +435,7 @@
     try {
       await action(id);
       toast.success(successMessage);
+      unsaved.markClean();
       push("/expenses");
     } catch (e) {
       toast.error(failureTitle, String(e));
@@ -457,6 +460,11 @@
   }
   const onCancel = () => updateStatusAndLeave(cancelExpense, "Storniert", "Fehler");
   const onDelete = () => updateStatusAndLeave(deleteExpense, "Gelöscht", "Löschen fehlgeschlagen");
+
+  const unsaved = guardUnsavedChanges(
+    () => [form, pdfPath],
+    () => !loading,
+  );
 </script>
 
 <header class="mb-6 flex items-start justify-between gap-4">

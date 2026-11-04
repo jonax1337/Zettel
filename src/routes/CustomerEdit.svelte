@@ -37,6 +37,7 @@
     update: (id) => updateCustomer(id, form),
     createdMessage: "Kunde angelegt",
     listRoute: LIST_ROUTE,
+    unsavedState: () => [form, followUpIso],
   });
 
   $effect(() => {

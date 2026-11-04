@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { link, push } from "svelte-spa-router";
   import {
     deleteExpense,
     getExpenseYears,
@@ -20,7 +20,6 @@
     BulkActionBar,
     ConfirmDialog,
     toast,
-    EmptyState,
     PageHeader,
     QueryBoundary,
     StatusBadge,
@@ -32,6 +31,8 @@
   import { createRowSelection } from "./invoice/list-selection.svelte";
   import { ALL, numberOrAll, statusFilterItems } from "./invoice/list-support";
   import { pluralize } from "./parts/entity/format";
+  import { createListFilters } from "./parts/entity/list-filters.svelte";
+  import ListEmptyState from "./parts/entity/ListEmptyState.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
@@ -42,16 +43,19 @@
   let vendors = $state<Vendor[]>([]);
   let years = $state<number[]>([]);
 
-  let status = $state<ExpenseStatus | typeof ALL>(ALL);
-  let year = $state(ALL);
-  let vendorId = $state(ALL);
-  let search = $state("");
+  const filters = createListFilters<{
+    status: ExpenseStatus | typeof ALL;
+    year: string;
+    vendorId: string;
+    search: string;
+  }>("expenses", { status: ALL, year: ALL, vendorId: ALL, search: "" });
+  const f = filters.values;
 
   const filter = $derived<ExpenseFilter>({
-    status,
-    year: numberOrAll(year),
-    vendorId: numberOrAll(vendorId),
-    search,
+    status: f.status,
+    year: numberOrAll(f.year),
+    vendorId: numberOrAll(f.vendorId),
+    search: f.search,
   });
 
   const expenses = createQueryState<ExpenseListRow[]>([], () => listExpenses(filter));
@@ -145,11 +149,11 @@
 
 <div class="mb-5">
   <DocumentListFilters
-    bind:status
+    bind:status={f.status}
     {statusItems}
-    bind:year
-    bind:customerId={vendorId}
-    bind:search
+    bind:year={f.year}
+    bind:customerId={f.vendorId}
+    bind:search={f.search}
     {years}
     customers={vendors}
     counterparty={VENDOR_COUNTERPARTY}
@@ -158,7 +162,14 @@
 
 <QueryBoundary query={expenses} isEmpty={expenses.data.length === 0}>
   {#snippet empty()}
-    <EmptyState variant={search ? "no-results" : "empty"} message="Keine Eingangsrechnungen gefunden." />
+    <ListEmptyState
+      filtered={filters.isFiltered}
+      onResetFilters={filters.reset}
+      filteredMessage="Keine Eingangsrechnungen für diese Filter."
+      emptyMessage="Noch keine Eingangsrechnungen erfasst."
+      createLabel="Neue Eingangsrechnung"
+      onCreate={() => push("/expenses/new")}
+    />
   {/snippet}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
@@ -176,7 +187,16 @@
                 aria-label={`Eingangsrechnung ${e.internalNumber} auswählen`}
               />
             </td>
-            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">{e.internalNumber}</td>
+            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">
+              <a
+                href={`/expenses/${e.id}`}
+                use:link
+                onclick={(ev) => ev.stopPropagation()}
+                class="hover:underline focus-visible:underline"
+              >
+                {e.internalNumber}
+              </a>
+            </td>
             <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{e.number ?? "—"}</td>
             <td class="px-3 @3xl:px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(e.issueDate)}</td>
             <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={e.vendorName}>{e.vendorName}</span></td>

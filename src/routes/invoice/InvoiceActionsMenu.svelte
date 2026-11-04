@@ -56,7 +56,7 @@
   {/if}
   {#if !invoice.isCreditNote}
     <DropdownItem onSelect={() => push(`/recurring/new?fromInvoice=${invoice.id}`)}>
-      <Repeat /> Als Vorlage speichern
+      <Repeat /> Als wiederkehrende Rechnung speichern
     </DropdownItem>
   {/if}
   {#if canReopenDraft}

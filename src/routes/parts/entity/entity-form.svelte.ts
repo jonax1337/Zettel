@@ -1,5 +1,6 @@
 import { push } from "svelte-spa-router";
 import { toast } from "$lib/ui/toast.svelte";
+import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
 import { fetchEditTarget } from "./edit-target";
 
 type Options<T> = {
@@ -14,6 +15,8 @@ type Options<T> = {
   createdMessage: string;
   /** Where a saved or cancelled form returns to. */
   listRoute: string;
+  /** Everything the user edits; leaving with changes asks for confirmation. */
+  unsavedState: () => unknown;
 };
 
 /** Load/save lifecycle shared by the customer, vendor and catalog edit pages. */
@@ -24,6 +27,7 @@ export function createEntityForm<T>(options: Options<T>) {
   let error = $state<string | null>(null);
 
   const loading = $derived(options.mode() === "edit" && !loaded);
+  const unsaved = guardUnsavedChanges(options.unsavedState, () => !loading);
 
   async function loadTarget(rawId: string | undefined) {
     try {
@@ -64,6 +68,7 @@ export function createEntityForm<T>(options: Options<T>) {
     error = null;
     try {
       const savedId = await persist();
+      unsaved.markClean();
       push(nextRoute ? nextRoute(savedId) : options.listRoute);
     } catch (e) {
       reject("Speichern fehlgeschlagen", String(e));

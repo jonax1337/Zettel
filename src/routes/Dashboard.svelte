@@ -9,7 +9,6 @@
     Plus,
     UserPlus,
     FileSignature,
-    Wallet,
     Scale,
   } from "$lib/brand-icons";
   import PeriodSwitcher from "$lib/components/PeriodSwitcher.svelte";
@@ -17,16 +16,23 @@
   import { loadDefaultPeriod, type Period } from "$lib/dashboard/period";
   import type { Kpis } from "$lib/dashboard/queries";
   import { computeTaxRücklage, type TaxRücklageResult } from "$lib/dashboard/tax";
+  import { buildSetupChecklist, isSetupComplete } from "$lib/dashboard/setup-checklist";
   import { isSandboxActive } from "$lib/db/client";
+  import { getInvoiceYears } from "$lib/db/invoices";
+  import { loadSettings } from "$lib/db/queries";
+  import { missingCompanyData } from "$lib/utils/company-completeness";
+  import { saveFilters } from "$lib/utils/list-filters";
   import { centsToEur } from "$lib/utils/money";
   import { pluralize } from "./parts/entity/format";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import CashFlowCard from "./parts/dashboard/CashFlowCard.svelte";
+  import CompanyDataBanner from "./parts/dashboard/CompanyDataBanner.svelte";
   import DueTemplatesSection from "./parts/dashboard/DueTemplatesSection.svelte";
   import FollowUpsCard from "./parts/dashboard/FollowUpsCard.svelte";
   import KpiCard from "./parts/dashboard/KpiCard.svelte";
   import ReceivablesCard from "./parts/dashboard/ReceivablesCard.svelte";
   import SandboxBanner from "./parts/dashboard/SandboxBanner.svelte";
+  import SetupChecklist from "./parts/dashboard/SetupChecklist.svelte";
   import TaxReserveCard from "./parts/dashboard/TaxReserveCard.svelte";
   import TopCustomersCard from "./parts/dashboard/TopCustomersCard.svelte";
   import { loadDashboardData, type DashboardData } from "./parts/dashboard/dashboard-data";
@@ -41,9 +47,19 @@
     computeTaxRücklage(taxYearOfPeriod(period)),
   );
 
+  // Independent of the period: it describes whether the installation is ready to issue documents.
+  const setup = createQueryState<{ missingCompany: string[]; hasInvoices: boolean } | null>(
+    null,
+    async () => {
+      const [settings, invoiceYears] = await Promise.all([loadSettings(), getInvoiceYears()]);
+      return { missingCompany: missingCompanyData(settings), hasInvoices: invoiceYears.length > 0 };
+    },
+  );
+
   $effect(() => {
     dashboard.reload();
     taxReserve.reload();
+    setup.reload();
   });
 
   $effect(() => {
@@ -65,6 +81,21 @@
   );
   const formatKpi = (pick: (k: Kpis) => number) => (kpis ? centsToEur(pick(kpis)) : null);
 
+  const setupSteps = $derived(
+    setup.data && settled
+      ? buildSetupChecklist({
+          missingCompany: setup.data.missingCompany,
+          customerCount: settled.customerCount,
+          hasInvoices: setup.data.hasInvoices,
+        })
+      : null,
+  );
+
+  function openUnpaidInvoices() {
+    saveFilters("invoices", { onlyOpen: true });
+    push("/invoices");
+  }
+
   // Breakpoints follow the content area (@container in Layout), not the window,
   // because the sidebar eats 240px. Five cards only share one row once each one
   // fits a six-digit amount; in between they split 3 + 2 on a six-column grid.
@@ -77,6 +108,14 @@
 
 {#if sandbox}
   <SandboxBanner />
+{/if}
+
+{#if setup.data && setup.data.missingCompany.length > 0}
+  <CompanyDataBanner missing={setup.data.missingCompany} />
+{/if}
+
+{#if setupSteps && !isSetupComplete(setupSteps)}
+  <SetupChecklist steps={setupSteps} />
 {/if}
 
 <header class="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -123,6 +162,7 @@
     label="Aufwand netto"
     icon={TrendingDown}
     value={formatKpi((k) => k.expenseNet)}
+    onclick={() => push("/expenses")}
   />
   <KpiCard
     class={KPI_BOTTOM_ROW}
@@ -137,6 +177,7 @@
     icon={Clock}
     value={formatKpi((k) => k.openTotal)}
     iconClass={kpis && kpis.openCount > 0 ? "text-warning" : undefined}
+    onclick={openUnpaidInvoices}
   >
     {#snippet caption()}
       {kpis?.openCount ?? 0} {pluralize(kpis?.openCount ?? 0, "Rechnung", "Rechnungen")}
@@ -144,11 +185,12 @@
   </KpiCard>
 </div>
 
-<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 stagger">
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 stagger">
   <KpiCard
     label="Kunden"
     icon={Users}
     value={settled ? String(settled.customerCount) : null}
+    onclick={() => push("/customers")}
   />
   <KpiCard
     label="Offene Angebote"
@@ -163,14 +205,6 @@
         <span class="text-warning"> · {settled.offerStats.unconvertedCount} ohne Wechselkurs nicht in der Summe</span>
       {/if}
     {/snippet}
-  </KpiCard>
-  <KpiCard
-    label="Eingangsrechnungen"
-    icon={Wallet}
-    value={formatKpi((k) => k.expenseNet)}
-    onclick={() => push("/expenses")}
-  >
-    {#snippet caption()}netto im Zeitraum{/snippet}
   </KpiCard>
 </div>
 

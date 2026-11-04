@@ -22,19 +22,32 @@ const storedInvoice = vi.hoisted(() => ({
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/path", () => ({ join: async (...parts: string[]) => parts.join("/") }));
+vi.mock("$lib/db/queries", () => ({ loadSettings }));
 vi.mock("$lib/db/invoices", () => ({
-  getInvoice: vi.fn(async () => ({ invoice: storedInvoice, items: [] })),
+  getInvoice,
   isDraftNumber: () => false,
   issueInvoice: vi.fn(),
   recordGeneratedPdf: vi.fn(),
 }));
-vi.mock("$lib/db/queries", () => ({ loadSettings: vi.fn(async () => ({})) }));
+const completeCompany = vi.hoisted(() => ({
+  companyName: "Muster GmbH",
+  street: "Hauptstr. 1",
+  postalCode: "10115",
+  city: "Berlin",
+  taxNumber: "12/345/67890",
+  vatId: null,
+}));
+const loadSettings = vi.hoisted(() => vi.fn(async () => completeCompany));
+const getInvoice = vi.hoisted(() => vi.fn(async () => ({ invoice: storedInvoice, items: [] })));
 vi.mock("$lib/validator", () => ({ validatePdf: vi.fn() }));
 
 import { generateInvoicePdf } from "./invoice";
 
 describe("generateInvoicePdf", () => {
-  beforeEach(() => invoke.mockClear());
+  beforeEach(() => {
+    invoke.mockClear();
+    getInvoice.mockClear();
+  });
 
   it("hands the stored PDF path to the archive, so a PDF from an older root stays in the version chain", async () => {
     await generateInvoicePdf(1);
@@ -43,5 +56,15 @@ describe("generateInvoicePdf", () => {
       path: "C:/Users/x/OneDrive/Dokumente/Zettel/Rechnungen/RE-2026-0001.pdf",
       previous: "C:/Users/x/Documents/Zettel/Rechnungen/RE-2026-0001.pdf",
     });
+  });
+
+  it("refuses incomplete company data before the invoice is loaded for issuing", async () => {
+    loadSettings.mockResolvedValueOnce({ ...completeCompany, companyName: "" });
+
+    const res = await generateInvoicePdf(1);
+
+    expect(res).toMatchObject({ success: false, error: { code: "company_incomplete" } });
+    expect(getInvoice).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalledWith("generate_invoice", expect.anything());
   });
 });

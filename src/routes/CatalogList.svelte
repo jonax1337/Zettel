@@ -93,6 +93,8 @@
     <EmptyState
       variant={search ? "no-results" : "empty"}
       message={search ? "Keine Treffer." : "Noch keine Katalog-Einträge."}
+      actionLabel={search ? undefined : "Neuer Katalog-Eintrag"}
+      onAction={() => push("/catalog/new")}
     />
   {/snippet}
   <Card class="overflow-hidden py-0">

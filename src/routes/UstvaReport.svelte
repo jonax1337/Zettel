@@ -21,7 +21,8 @@
   } from "$lib/reports/ustva";
   import { loadSettings } from "$lib/db/queries";
   import { formatDate } from "$lib/utils/date";
-  import { Download, AlertTriangle } from "$lib/brand-icons";
+  import { Download, AlertTriangle, ArrowRight } from "$lib/brand-icons";
+  import BackLink from "./parts/entity/BackLink.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import { saveTextFileWithDialog } from "./parts/reports/save-text-file";
 
@@ -77,7 +78,17 @@
 <PageHeader
   title="UStVA-Vorbereitung"
   subtitle="Quartalsweise Aggregation der wichtigsten Kennzahlen für die Umsatzsteuer-Voranmeldung. Werte zum Abtippen in ELSTER — kein direkter Upload. Bemessungsgrundlagen sind wie in ELSTER auf volle Euro abgeschnitten, Steuerbeträge mit Cent."
-/>
+>
+  {#snippet back()}
+    <BackLink href="/">Dashboard</BackLink>
+  {/snippet}
+  {#snippet actions()}
+    <Button href="/reports/taxes" variant="outline" size="sm">
+      Steuer-Rücklage ansehen
+      <ArrowRight class="size-4" />
+    </Button>
+  {/snippet}
+</PageHeader>
 
 <div class="mb-6 rounded-md border border-warning/40 bg-warning/5 p-3 flex items-start gap-3">
   <AlertTriangle class="size-5 text-warning shrink-0 mt-0.5" />

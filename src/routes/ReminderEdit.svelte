@@ -19,6 +19,8 @@
   import { formatMoney } from "$lib/utils/currency";
   import { eurStringToCents } from "$lib/utils/money";
   import { generateReminderPdf } from "$lib/sidecar/reminder";
+  import { COMPANY_INCOMPLETE_CODE } from "$lib/sidecar/company-guard";
+  import { ensureCompanyDataComplete, notifyCompanyIncomplete } from "$lib/utils/company-guard";
   import {
     Button,
     ConfirmDialog,
@@ -194,7 +196,8 @@
     try {
       const res = await generateReminderPdf(savedId);
       if (!res.success) {
-        toast.error("PDF konnte nicht erstellt werden", res.error.message);
+        if (res.error.code === COMPANY_INCOMPLETE_CODE) notifyCompanyIncomplete(res.error.message);
+        else toast.error("PDF konnte nicht erstellt werden", res.error.message);
       } else {
         pdfPath = res.pdfPath;
         toast.success("PDF erstellt");
@@ -215,6 +218,7 @@
 
   async function confirmSend() {
     sendDialogOpen = false;
+    if (!(await ensureCompanyDataComplete())) return;
     const savedId = await save();
     if (savedId === null) return;
     try {
@@ -354,8 +358,8 @@
   title="Als versendet markieren"
   description="Danach ist die Mahnung schreibgeschützt und kann nicht mehr bearbeitet oder gelöscht werden."
   dateInputId="reminder-send-date"
-  dateLabel="Versanddatum"
-  hint="Standard ist heute. Für Nacherfassung das tatsächliche Versanddatum eintragen."
+  dateLabel="Versendet am"
+  hint="Standard ist heute. Für Nacherfassung das tatsächliche Datum eintragen."
   confirmLabel="Als versendet markieren"
   warning={sendWarning}
   onConfirm={confirmSend}
