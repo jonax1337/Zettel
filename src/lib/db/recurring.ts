@@ -300,7 +300,7 @@ export async function generateInvoiceFromRecurring(
   id: number,
 ): Promise<number> {
   const tmpl = await getRecurring(id);
-  if (!tmpl) throw new Error(`Vorlage ${id} nicht gefunden.`);
+  if (!tmpl) throw new Error(`Wiederkehrende Rechnung ${id} nicht gefunden.`);
   const { recurring } = tmpl;
 
   const now = nowUnix();

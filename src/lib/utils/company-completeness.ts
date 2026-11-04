@@ -24,7 +24,7 @@ export function missingCompanyData(company: CompanyFields): string[] {
 }
 
 export function companyIncompleteMessage(missing: string[]): string {
-  return `Firmendaten unvollständig: ${missing.join(", ")}. Bitte unter Einstellungen → Firma ergänzen.`;
+  return `Firmendaten unvollständig: ${missing.join(", ")}. Bitte unter Einstellungen → Unternehmen ergänzen.`;
 }
 
 function isBlank(value: string | null | undefined): boolean {

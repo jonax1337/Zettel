@@ -1,8 +1,8 @@
 import { SECONDS_PER_DAY } from "$lib/utils/date";
 
-const MESSAGE_SEND_BEFORE_ISSUE = "Versanddatum liegt vor dem Rechnungsdatum.";
-const MESSAGE_SEND_IN_FUTURE = "Versanddatum liegt in der Zukunft.";
-const MESSAGE_PAID_BEFORE_SENT = "Zahldatum liegt vor dem Versand-/Rechnungsdatum.";
+const MESSAGE_SEND_BEFORE_ISSUE = "„Versendet am“ liegt vor dem Rechnungsdatum.";
+const MESSAGE_SEND_IN_FUTURE = "„Versendet am“ liegt in der Zukunft.";
+const MESSAGE_PAID_BEFORE_SENT = "Zahldatum liegt vor dem Rechnungs- bzw. Versendedatum.";
 const MESSAGE_PAID_IN_FUTURE = "Zahldatum liegt in der Zukunft.";
 
 /** One day of slack so "today" never counts as future across timezones. */

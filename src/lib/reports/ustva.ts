@@ -243,7 +243,7 @@ async function loadDomesticNet(
       net19: outgoing.net19,
       net7: outgoing.net7,
       computedFrom: (rate) =>
-        `Rechnungen mit USt-Satz ${rate} % (Status versandt/bezahlt), Stornos negativ.`,
+        `Rechnungen mit USt-Satz ${rate} % (Status versendet/bezahlt), Stornos negativ.`,
     };
   }
   const netByRate = cashBasisNetByRate(await loadCashBasisRows(from, to));

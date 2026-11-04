@@ -42,4 +42,8 @@ describe("companyIncompleteMessage", () => {
   it("names the missing fields", () => {
     expect(companyIncompleteMessage(["Firmenname", "Anschrift"])).toContain("Firmenname, Anschrift");
   });
+
+  it("points to the settings category by its UI name", () => {
+    expect(companyIncompleteMessage(["Anschrift"])).toContain("Einstellungen → Unternehmen");
+  });
 });

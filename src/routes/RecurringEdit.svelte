@@ -141,7 +141,7 @@
 
   $effect(() => {
     if (mode !== "edit") return;
-    fetchEditTarget(params?.id, getRecurring, "Vorlage nicht gefunden.")
+    fetchEditTarget(params?.id, getRecurring, "Wiederkehrende Rechnung nicht gefunden.")
       .then((target) => {
         if ("error" in target) {
           error = target.error;
@@ -204,7 +204,7 @@
   async function persist(input: RecurringFormInput) {
     if (mode === "new") {
       await createRecurring(input);
-      toast.success("Vorlage erstellt");
+      toast.success("Wiederkehrende Rechnung erstellt");
     } else if (id !== null) {
       await updateRecurring(id, input);
       toast.success("Änderungen gespeichert");
@@ -258,7 +258,7 @@
 <header class="mb-6">
   <BackLink href="/recurring">Wiederkehrende Rechnungen</BackLink>
   <h1 class="text-3xl font-semibold tracking-tight mt-2">
-    {mode === "new" ? "Neue Vorlage" : "Vorlage bearbeiten"}
+    {mode === "new" ? "Neue wiederkehrende Rechnung" : "Wiederkehrende Rechnung bearbeiten"}
   </h1>
 </header>
 

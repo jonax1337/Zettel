@@ -56,7 +56,7 @@
     if (confirmDeleteId === null) return;
     try {
       await deleteRecurring(confirmDeleteId);
-      toast.success("Vorlage gelöscht");
+      toast.success("Wiederkehrende Rechnung gelöscht");
       await templates.reload();
     } catch (e) {
       toast.error("Löschen fehlgeschlagen", String(e));
@@ -70,13 +70,13 @@
   <div>
     <h1 class="text-3xl font-semibold tracking-tight">Wiederkehrende Rechnungen</h1>
     <p class="text-sm text-muted-foreground mt-1">
-      Vorlagen für Retainer- oder Abo-Modelle. Erzeugung erfolgt manuell pro Fälligkeit.
+      Wiederkehrende Rechnungen für Retainer- oder Abo-Modelle. Erzeugung erfolgt manuell pro Fälligkeit.
     </p>
   </div>
   <a href="/recurring/new" use:link>
     <Button>
       <Plus class="size-4" />
-      Neue Vorlage
+      Neue wiederkehrende Rechnung
     </Button>
   </a>
 </header>
@@ -88,7 +88,7 @@
 {:else if templates.data.length === 0}
   <EmptyState
     message="Noch keine wiederkehrenden Rechnungen."
-    actionLabel="Neue Vorlage"
+    actionLabel="Neue wiederkehrende Rechnung"
     onAction={() => push("/recurring/new")}
   />
 {:else}
@@ -165,8 +165,8 @@
 
 <ConfirmDialog
   bind:open={confirmOpen}
-  title="Vorlage löschen?"
-  description="Die Vorlage wird unwiderruflich entfernt. Bereits erzeugte Rechnungen bleiben bestehen."
+  title="Wiederkehrende Rechnung löschen?"
+  description="Die wiederkehrende Rechnung wird unwiderruflich entfernt. Bereits erzeugte Rechnungen bleiben bestehen."
   confirmLabel="Löschen"
   destructive
   onConfirm={onConfirmDelete}

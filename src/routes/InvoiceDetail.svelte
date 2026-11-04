@@ -519,8 +519,8 @@
     title="Als versendet markieren"
     description="Festschreiben unter neuer Rechnungsnummer."
     dateInputId="send-date"
-    dateLabel="Versanddatum"
-    hint="Standard ist heute. Für Nacherfassung das tatsächliche Versanddatum eintragen."
+    dateLabel="Versendet am"
+    hint="Standard ist heute. Für Nacherfassung das tatsächliche Datum eintragen."
     confirmLabel="Als versendet markieren"
     warning={dialogWarning}
     onConfirm={confirmSend}
