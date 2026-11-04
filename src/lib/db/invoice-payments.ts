@@ -111,26 +111,3 @@ export async function deletePayment(id: number): Promise<void> {
   await execute("DELETE FROM invoice_payments WHERE id = ?", [id]);
   if (payment) await recomputeInvoiceStatus(payment.invoice_id);
 }
-
-export async function updatePayment(
-  id: number,
-  patch: { paidAt?: number; amountCent?: number; notes?: string | null },
-): Promise<void> {
-  const [existing] = await select<PaymentRow>(
-    "SELECT * FROM invoice_payments WHERE id = ?",
-    [id],
-  );
-  if (!existing) return;
-  await execute(
-    `UPDATE invoice_payments
-       SET paid_at = ?, amount_cent = ?, notes = ?
-     WHERE id = ?`,
-    [
-      patch.paidAt ?? existing.paid_at,
-      patch.amountCent ?? existing.amount_cent,
-      patch.notes !== undefined ? patch.notes : existing.notes,
-      id,
-    ],
-  );
-  await recomputeInvoiceStatus(existing.invoice_id);
-}

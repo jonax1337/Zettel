@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SidecarErrorInfo } from "./types";
 
-export type ExtractedParty = {
+type ExtractedParty = {
   name: string | null;
   street: string;
   postalCode: string;
@@ -47,7 +47,7 @@ export type ExtractedInvoice = {
   totals: { subtotal: number; net: number; vatAmount: number; total: number };
 };
 
-export type ExtractResultFound = {
+type ExtractResultFound = {
   success: true;
   found: true;
   profile: string;
@@ -55,12 +55,12 @@ export type ExtractResultFound = {
   data: ExtractedInvoice;
 };
 
-export type ExtractResultNotFound = {
+type ExtractResultNotFound = {
   success: true;
   found: false;
 };
 
-export type ExtractResultError = {
+type ExtractResultError = {
   success: false;
   error: SidecarErrorInfo;
 };

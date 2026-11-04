@@ -33,7 +33,7 @@ export { displayInvoiceNumber, isDraftNumber };
 // --- Input types ---
 
 /** No id/invoiceId/lineTotal: those are derived. */
-export type InvoiceItemInput = {
+type InvoiceItemInput = {
   description: string;
   quantity: number;
   unit: string;

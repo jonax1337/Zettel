@@ -2,7 +2,7 @@ import type { CatalogItem } from "$lib/db/schema";
 import { fromIsoDate, toIsoDate } from "$lib/utils/date";
 import { centsToPriceText } from "../parts/entity/format";
 
-export const DEFAULT_UNIT = "Stk";
+const DEFAULT_UNIT = "Stk";
 
 export type LineItemInput = {
   description: string;

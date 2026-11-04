@@ -4,7 +4,7 @@
  * <1000 Rows sind realistisch).
  */
 
-export type SortDirection = "asc" | "desc" | null;
+type SortDirection = "asc" | "desc" | null;
 
 export type SortState<K extends string> = {
   key: K | null;

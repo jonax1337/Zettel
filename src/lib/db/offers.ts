@@ -114,7 +114,7 @@ function mapItem(r: OfferItemRow): OfferItem {
   return { id: r.id, offerId: r.offer_id, ...mapDatedLineItem(r) };
 }
 
-export type OfferItemInput = {
+type OfferItemInput = {
   description: string;
   quantity: number;
   unit: string;

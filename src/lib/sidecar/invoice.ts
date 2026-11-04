@@ -24,7 +24,7 @@ import {
 import { renderDocumentPdf } from "./render-document";
 import type { SidecarSuccess, SidecarResponse } from "./types";
 
-export type { SidecarError, SidecarResponse, SidecarSuccess } from "./types";
+export type { SidecarResponse } from "./types";
 
 type InvoiceWithItems = { invoice: Invoice; items: InvoiceItem[] };
 type CorrectedInvoice = { number: string; issueDate: number };
@@ -159,8 +159,4 @@ export type PdfVersion = {
 /** All preserved versions of an invoice PDF (current + archived), newest first. */
 export async function listPdfVersions(pdfPath: string): Promise<PdfVersion[]> {
   return invoke<PdfVersion[]>("list_pdf_versions", { path: pdfPath });
-}
-
-export async function pingSidecar(): Promise<SidecarResponse> {
-  return invoke<SidecarResponse>("ping_sidecar");
 }
