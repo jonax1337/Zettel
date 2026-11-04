@@ -2,8 +2,9 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { open, save } from "@tauri-apps/plugin-dialog";
-  import { execute } from "$lib/db/client";
+  import { execute, isSandboxActive } from "$lib/db/client";
   import { loadSettings } from "$lib/db/queries";
+  import { relaunchApp } from "$lib/utils/relaunch";
   import { version as appVersion } from "../../../package.json";
   import {
     Button,
@@ -39,6 +40,10 @@
   let companyName = $state("");
   let manageOpen = $state(false);
   let busy = $state(false);
+  // The open DB is the sandbox DB, so moving or switching would mix sandbox
+  // data into a real tenant.
+  let sandbox = $state(false);
+  const actionsLocked = $derived(busy || sandbox);
 
   let newLabel = $state("");
   let newPath = $state("");
@@ -61,11 +66,12 @@
       tenants = await invoke<TenantEntry[]>("list_tenants");
     } catch (e) {
       tenants = [];
-      toast.error("Tenants konnten nicht geladen werden", String(e));
+      toast.error("Mandanten konnten nicht geladen werden", String(e));
     }
   }
 
   onMount(async () => {
+    sandbox = await isSandboxActive();
     await loadTenants();
     try {
       companyName = (await loadSettings()).companyName ?? "";
@@ -77,11 +83,6 @@
   // The default tenant has no label of its own; the company name stands in for it.
   function tenantDisplayName(t: TenantEntry): string {
     return t.id === DEFAULT_TENANT_ID ? companyName || t.label : t.label;
-  }
-
-  async function relaunchApp() {
-    const { relaunch } = await import("@tauri-apps/plugin-process");
-    await relaunch();
   }
 
   async function changeTenantAndRelaunch(failureTitle: string, change: () => Promise<unknown>) {
@@ -96,7 +97,7 @@
   }
 
   async function switchTenant(id: string) {
-    if (busy) return;
+    if (actionsLocked) return;
     const target = tenants.find((t) => t.id === id);
     if (!target || target.current) return;
     await changeTenantAndRelaunch("Wechsel fehlgeschlagen", () =>
@@ -124,8 +125,8 @@
   }
 
   async function addAndSwitch() {
-    if (busy || !newLabel.trim() || !newPath) return;
-    await changeTenantAndRelaunch("Tenant konnte nicht angelegt werden", async () => {
+    if (actionsLocked || !newLabel.trim() || !newPath) return;
+    await changeTenantAndRelaunch("Mandant konnte nicht angelegt werden", async () => {
       const id = await invoke<string>("add_tenant", {
         label: newLabel.trim(),
         path: newPath,
@@ -138,7 +139,7 @@
   // VACUUM INTO for a consistent copy of the open DB; the old local file
   // stays behind as a backup.
   async function moveToCloud(t: TenantEntry) {
-    if (busy || !t.current) return;
+    if (actionsLocked || !t.current) return;
     const label = tenantDisplayName(t);
     const dest = await save({
       title: "Datenbank verschieben",
@@ -153,10 +154,11 @@
   }
 
   async function removeTenant(id: string) {
+    if (actionsLocked) return;
     try {
       await invoke("remove_tenant", { id });
       await loadTenants();
-      toast.success("Tenant entfernt", "Die DB-Datei selbst bleibt erhalten.");
+      toast.success("Mandant entfernt", "Die DB-Datei selbst bleibt erhalten.");
     } catch (e) {
       toast.error("Entfernen fehlgeschlagen", String(e));
     }
@@ -170,25 +172,24 @@
 </script>
 
 <div class="p-2">
-  <DropdownMenu align="start" side="top" class="w-56" triggerClass="w-full min-w-0">
+  <DropdownMenu
+    align="start"
+    side="top"
+    class="w-56"
+    triggerClass="flex w-full min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left hover:bg-accent transition-colors"
+  >
     {#snippet trigger()}
-      <button
-        type="button"
-        class="flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left hover:bg-accent transition-colors"
-        title={current?.path || "Lokale Datenbank"}
-      >
-        <span class="min-w-0 flex-1 truncate text-sm font-medium">
-          {current?.label ?? "Standard"}
-        </span>
-        <ChevronsUpDown class="size-4 shrink-0 text-muted-foreground" />
-      </button>
+      <span class="min-w-0 flex-1 truncate text-sm font-medium" title={current?.path || "Lokale Datenbank"}>
+        {current?.label ?? "Standard"}
+      </span>
+      <ChevronsUpDown class="size-4 shrink-0 text-muted-foreground" />
     {/snippet}
 
     <div class="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-      Tenants
+      Mandanten
     </div>
     {#each tenants as t (t.id)}
-      <DropdownItem onSelect={() => switchTenant(t.id)}>
+      <DropdownItem onSelect={() => switchTenant(t.id)} disabled={sandbox && !t.current}>
         <span class="min-w-0 flex-1 truncate">{t.label}</span>
         {#if t.current}
           <Check class="ml-auto size-4 shrink-0 text-primary" />
@@ -197,7 +198,7 @@
     {/each}
     <DropdownItem onSelect={openManage}>
       <Plus class="size-4" />
-      <span>Tenants verwalten…</span>
+      <span>Mandanten verwalten…</span>
     </DropdownItem>
 
     <DropdownSeparator />
@@ -207,10 +208,16 @@
 
 <Dialog
   bind:open={manageOpen}
-  title="Tenants"
+  title="Mandanten"
   description="Mehrere getrennte Datenbanken — z. B. pro Mandant. Lege die DB-Datei in einem Cloud-Ordner (OneDrive o. ä.) ab, um sie geräteübergreifend zu nutzen. Wichtig: nicht gleichzeitig auf zwei Geräten öffnen."
 >
   <div class="min-w-0 space-y-4">
+    {#if sandbox}
+      <p class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+        Die Sandbox ist aktiv. Mandanten lassen sich erst wieder wechseln, verschieben, anlegen oder
+        entfernen, wenn du die Sandbox verlassen hast (Einstellungen → Daten).
+      </p>
+    {/if}
     <div class="space-y-1">
       {#each tenants as t (t.id)}
         <div class="flex items-center gap-2 rounded-md border px-3 py-2">
@@ -229,11 +236,11 @@
             </div>
           </div>
           {#if t.current}
-            <Button variant="outline" size="sm" disabled={busy} onclick={() => moveToCloud(t)} title="Datenbank an einen neuen Ort verschieben (z. B. OneDrive)">
+            <Button variant="outline" size="sm" disabled={actionsLocked} onclick={() => moveToCloud(t)} title="Datenbank an einen neuen Ort verschieben (z. B. OneDrive)">
               <Upload class="size-4" /> Verschieben…
             </Button>
           {:else}
-            <Button variant="outline" size="sm" disabled={busy} onclick={() => switchTenant(t.id)}>
+            <Button variant="outline" size="sm" disabled={actionsLocked} onclick={() => switchTenant(t.id)}>
               Wechseln
             </Button>
           {/if}
@@ -241,9 +248,10 @@
             <button
               type="button"
               onclick={() => removeTenant(t.id)}
-              class="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-              title="Tenant entfernen (Datei bleibt erhalten)"
-              aria-label="Tenant entfernen"
+              disabled={actionsLocked}
+              class="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:pointer-events-none disabled:opacity-50"
+              title="Mandant entfernen (Datei bleibt erhalten)"
+              aria-label="Mandant entfernen"
             >
               <Trash2 class="size-4" />
             </button>
@@ -258,7 +266,7 @@
 
     <div class="space-y-3 rounded-md border border-dashed p-3">
       <div class="flex items-center gap-2 text-sm font-medium">
-        <Database class="size-4" /> Neuen Tenant hinzufügen
+        <Database class="size-4" /> Neuen Mandanten hinzufügen
       </div>
       <div class="space-y-1.5">
         <Label>Bezeichnung</Label>
@@ -286,7 +294,7 @@
 
   {#snippet footer()}
     <Button variant="ghost" onclick={() => (manageOpen = false)}>Schließen</Button>
-    <Button disabled={busy || !newLabel.trim() || !newPath} onclick={addAndSwitch}>
+    <Button disabled={actionsLocked || !newLabel.trim() || !newPath} onclick={addAndSwitch}>
       Hinzufügen & wechseln
     </Button>
   {/snippet}

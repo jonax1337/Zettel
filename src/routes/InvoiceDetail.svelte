@@ -12,21 +12,35 @@
     markSent,
     reopenDraft,
   } from "$lib/db/invoices";
+  import { creditedCentOf, isSettledByCreditNote, openBalanceCent } from "$lib/db/invoice-lifecycle";
   import { listPayments } from "$lib/db/invoice-payments";
   import { listRemindersForInvoice } from "$lib/db/reminders";
   import type { Invoice, InvoiceItem, InvoicePayment, Reminder } from "$lib/db/schema";
-  import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
+  import { formatMoney } from "$lib/utils/currency";
+  import { formatDate, formatDateTime, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { generateInvoicePdf, listPdfVersions, type PdfVersion } from "$lib/sidecar/invoice";
+  import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import { validatePdf, type ValidationReport } from "$lib/validator";
   import { Badge, Button, ConfirmDialog, toast } from "$lib/ui";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
   import { CheckCircle2, Send } from "$lib/brand-icons";
   import BackLink from "./parts/entity/BackLink.svelte";
+  import { createDocumentActions, type PdfPreparation } from "./parts/entity/document-actions.svelte";
+  import DocumentLoadMessage from "./parts/entity/DocumentLoadMessage.svelte";
+  import PdfLocation from "./parts/entity/PdfLocation.svelte";
   import { parseCustomerSnapshot, UNREADABLE_SNAPSHOT_MESSAGE } from "./invoice/customer-snapshot";
   import CustomerSnapshotCard from "./invoice/CustomerSnapshotCard.svelte";
   import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
   import { paidDateWarning, sendDateWarning } from "./invoice/date-warnings";
   import InternalNotesCard from "./invoice/InternalNotesCard.svelte";
+  import {
+    canCreateCreditNote as creditNoteAllowed,
+    canRecordPayments,
+    canReopenAsDraft,
+    creditNoteCoverage,
+    isOverdue as isInvoiceOverdue,
+    showsPayments,
+  } from "./invoice/invoice-actions";
   import InvoiceActionsMenu from "./invoice/InvoiceActionsMenu.svelte";
   import InvoiceFactsCard from "./invoice/InvoiceFactsCard.svelte";
   import InvoicePdfActions from "./invoice/InvoicePdfActions.svelte";
@@ -41,6 +55,7 @@
   import SkontoCard from "./invoice/SkontoCard.svelte";
   import { INVOICE_STATUS_LABEL, INVOICE_STATUS_VARIANT } from "./invoice/status";
   import TextSection from "./invoice/TextSection.svelte";
+  import ValidationFindingsDialog from "./invoice/ValidationFindingsDialog.svelte";
   import { storeInvoiceValidation } from "./invoice/validation-store";
 
   type Props = { params?: { id?: string } };
@@ -49,61 +64,68 @@
   let invoice = $state<Invoice | null>(null);
   let items = $state<InvoiceItem[]>([]);
   let originalInvoice = $state<Invoice | null>(null);
-  let cancelledByCreditNote = $state<Invoice | null>(null);
+  let creditNote = $state<Invoice | null>(null);
+  const creditedCent = $derived(creditedCentOf(creditNote));
+  const settledByCreditNote = $derived(!!invoice && isSettledByCreditNote({ ...invoice, creditedCent }));
+  const coverage = $derived(invoice ? creditNoteCoverage(invoice, creditedCent) : "none");
+  const openCent = $derived(invoice ? Math.max(0, openBalanceCent({ ...invoice, creditedCent })) : 0);
   let payments = $state<InvoicePayment[]>([]);
   let reminders = $state<Reminder[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let busy = $state(false);
+  let loadToken = 0;
+
+  const actions = createDocumentActions({ reload: load });
 
   let lastPdfPath = $state<string | null>(null);
   let pdfVersions = $state<PdfVersion[]>([]);
-  let pdfError = $state<string | null>(null);
-  let generating = $state(false);
-  let revalidating = $state(false);
+  // Findings only exist in memory: the DB keeps status and count, not the report.
+  let validationResult = $state<{ invoiceId: number; report: ValidationReport } | null>(null);
   // Invoices validated by an older build carry a stale 'unavailable' status; each is re-checked once.
   let autoRevalidatedId: number | null = null;
 
   let confirmDeleteOpen = $state(false);
+  let confirmCancelOpen = $state(false);
+  let confirmReopenOpen = $state(false);
   let confirmCreditNoteOpen = $state(false);
-  let creatingCreditNote = $state(false);
+  let findingsDialogOpen = $state(false);
   let sendDialogOpen = $state(false);
+  let issueForPdfDialogOpen = $state(false);
   let paidDialogOpen = $state(false);
   let dialogDate = $state(toIsoDate(nowUnix()));
 
   const customer = $derived(invoice ? parseCustomerSnapshot(invoice.customerSnapshot) : null);
+  const revalidating = $derived(actions.task === "validate");
+  const currentValidationReport = $derived(
+    validationResult && validationResult.invoiceId === invoice?.id ? validationResult.report : null,
+  );
 
   const dialogWarning = $derived.by(() => {
     if (!invoice || !dialogDate) return null;
     const ts = fromIsoDate(dialogDate);
-    if (sendDialogOpen) return sendDateWarning(ts, invoice.issueDate, nowUnix());
+    if (sendDialogOpen || issueForPdfDialogOpen) return sendDateWarning(ts, invoice.issueDate, nowUnix());
     if (paidDialogOpen) return paidDateWarning(ts, invoice, nowUnix());
     return null;
   });
 
-  const showPayments = $derived(
-    !!invoice &&
-      (invoice.status === "sent" || invoice.status === "partial" || invoice.status === "paid") &&
-      (payments.length > 0 || invoice.status === "partial"),
+  const paymentCardVisible = $derived(
+    !!invoice && showsPayments(invoice, payments.length, settledByCreditNote),
   );
-
+  const canMarkPaid = $derived(!!invoice && canRecordPayments(invoice, settledByCreditNote));
   const canCreateCreditNote = $derived(
-    !!invoice &&
-      !invoice.isCreditNote &&
-      (invoice.status === "sent" || invoice.status === "paid") &&
-      !cancelledByCreditNote,
+    !!invoice && creditNoteAllowed(invoice, !!creditNote),
   );
-
+  const canReopenDraft = $derived(
+    !!invoice && canReopenAsDraft(invoice, payments.length, !!creditNote),
+  );
   const isOverdue = $derived(
-    !!invoice &&
-      !invoice.isCreditNote &&
-      invoice.status === "sent" &&
-      invoice.dueDate < nowUnix(),
+    !!invoice && isInvoiceOverdue(invoice, settledByCreditNote, nowUnix()),
   );
   const existingReminderLevels = $derived(reminders.map((r) => r.level).filter(isReminderLevel));
   const creatableReminderLevel = $derived(
     isOverdue && !existingReminderLevels.includes(3) ? nextReminderLevel(existingReminderLevels) : null,
   );
+  const settlesRemainder = $derived(invoice?.status === "partial" || creditedCent > 0);
 
   $effect(() => {
     void params?.id;
@@ -118,88 +140,81 @@
       loading = false;
       return;
     }
-    loading = true;
+    const token = ++loadToken;
+    // Reloading the invoice that is already shown keeps the page (scroll, dialogs) in place.
+    if (invoice?.id !== invoiceId) {
+      loading = true;
+      actions.clearPdfError();
+    }
     error = null;
     try {
       const res = await getInvoice(invoiceId);
+      if (token !== loadToken) return;
       if (!res) {
         invoice = null;
         error = "Rechnung nicht gefunden.";
         return;
       }
+      const [versions, related, loadedPayments, loadedReminders] = await Promise.all([
+        fetchPdfVersions(res.invoice.pdfPath),
+        fetchRelatedInvoices(res.invoice),
+        fetchPayments(res.invoice),
+        fetchReminders(res.invoice),
+      ]);
+      if (token !== loadToken) return;
       invoice = res.invoice;
       items = res.items;
       lastPdfPath = res.invoice.pdfPath;
-      await Promise.all([
-        refreshPdfVersions(),
-        loadRelatedInvoices(res.invoice),
-        loadPayments(res.invoice),
-        loadReminders(res.invoice),
-      ]);
+      pdfVersions = versions;
+      originalInvoice = related.original;
+      creditNote = related.creditNote;
+      payments = loadedPayments;
+      reminders = loadedReminders;
       void maybeAutoRevalidate();
     } catch (e) {
-      error = String(e);
+      if (token === loadToken) {
+        if (invoice?.id !== invoiceId) invoice = null;
+        error = String(e);
+      }
     } finally {
-      loading = false;
+      if (token === loadToken) loading = false;
     }
   }
 
-  async function loadRelatedInvoices(inv: Invoice) {
+  async function fetchRelatedInvoices(inv: Invoice) {
     const [original, creditNote] = await Promise.all([
       inv.correctsInvoiceId ? getInvoice(inv.correctsInvoiceId) : null,
       inv.isCreditNote ? null : findCreditNoteFor(inv.id),
     ]);
-    originalInvoice = original?.invoice ?? null;
-    cancelledByCreditNote = creditNote;
+    return { original: original?.invoice ?? null, creditNote };
   }
 
-  async function loadPayments(inv: Invoice) {
+  async function fetchPayments(inv: Invoice): Promise<InvoicePayment[]> {
     try {
-      payments = await listPayments(inv.id);
+      return await listPayments(inv.id);
     } catch (e) {
-      payments = [];
       toast.error("Zahlungen konnten nicht geladen werden", String(e));
+      return [];
     }
   }
 
-  async function loadReminders(inv: Invoice) {
-    if (inv.isCreditNote) {
-      reminders = [];
-      return;
-    }
+  async function fetchReminders(inv: Invoice): Promise<Reminder[]> {
+    if (inv.isCreditNote) return [];
     try {
-      reminders = await listRemindersForInvoice(inv.id);
+      return await listRemindersForInvoice(inv.id);
     } catch (e) {
-      reminders = [];
       toast.error("Mahnungen konnten nicht geladen werden", String(e));
+      return [];
     }
   }
 
-  async function refreshPdfVersions() {
-    if (!lastPdfPath) {
-      pdfVersions = [];
-      return;
-    }
+  async function fetchPdfVersions(pdfPath: string | null): Promise<PdfVersion[]> {
+    if (!pdfPath) return [];
     try {
-      pdfVersions = await listPdfVersions(lastPdfPath);
+      return await listPdfVersions(pdfPath);
     } catch (e) {
-      pdfVersions = [];
       toast.error("PDF-Versionen konnten nicht geladen werden", String(e));
-    }
-  }
-
-  async function action(label: string, fn: () => Promise<unknown>) {
-    busy = true;
-    error = null;
-    try {
-      await fn();
-      await load();
-      toast.success(label);
-    } catch (e) {
-      error = String(e);
-      toast.error("Aktion fehlgeschlagen", String(e));
-    } finally {
-      busy = false;
+      return [];
     }
   }
 
@@ -214,104 +229,147 @@
   }
 
   async function confirmSend() {
-    if (!invoice) return;
+    if (!invoice || actions.busy) return;
     const { id } = invoice;
     const sentAt = fromIsoDate(dialogDate);
     sendDialogOpen = false;
-    await action("Als versendet markiert", () => markSent(id, sentAt));
+    if (!(await ensureCompanyDataComplete())) return;
+    await actions.run("Als versendet markiert", () => markSent(id, sentAt));
   }
 
   async function confirmPaid() {
-    if (!invoice) return;
+    if (!invoice || actions.busy) return;
     const { id } = invoice;
     const paidAt = fromIsoDate(dialogDate);
     paidDialogOpen = false;
-    await action("Als bezahlt markiert", () => markPaid(id, paidAt));
+    await actions.run(settlesRemainder ? "Restbetrag als bezahlt markiert" : "Als bezahlt markiert", () =>
+      markPaid(id, paidAt),
+    );
   }
 
   async function performDelete() {
     if (!invoice) return;
-    try {
-      await deleteInvoice(invoice.id);
-      toast.success("Rechnung gelöscht");
-      push("/invoices");
-    } catch (e) {
-      toast.error("Löschen fehlgeschlagen", String(e));
-    }
+    const { id } = invoice;
+    await actions.remove({
+      remove: () => deleteInvoice(id),
+      deletedLabel: "Rechnung gelöscht",
+      redirectTo: "/invoices",
+    });
   }
 
   async function performCreateCreditNote() {
     if (!invoice) return;
-    creatingCreditNote = true;
-    try {
-      const newId = await createCreditNoteFromInvoice(invoice.id);
-      const created = await getInvoice(newId);
-      toast.success(`Stornorechnung ${created?.invoice.number ?? `#${newId}`} als Entwurf erstellt`);
-      push(`/invoices/${newId}/edit`);
-    } catch (e) {
-      toast.error("Stornorechnung fehlgeschlagen", String(e));
-    } finally {
-      creatingCreditNote = false;
-    }
+    const { id } = invoice;
+    await actions.exclusive("credit-note", async () => {
+      try {
+        const newId = await createCreditNoteFromInvoice(id);
+        const created = await getInvoice(newId);
+        const label = created ? displayInvoiceNumber(created.invoice) : `#${newId}`;
+        toast.success(`Stornorechnung ${label} erstellt`);
+        push(`/invoices/${newId}/edit`);
+      } catch (e) {
+        toast.error("Stornorechnung fehlgeschlagen", String(e));
+      }
+    });
+  }
+
+  function rememberValidation(invoiceId: number, report: ValidationReport) {
+    validationResult = { invoiceId, report };
   }
 
   async function maybeAutoRevalidate() {
     if (!invoice || !lastPdfPath) return;
     if (invoice.lastValidationStatus !== "unavailable") return;
     if (autoRevalidatedId === invoice.id) return;
-    autoRevalidatedId = invoice.id;
+    const invoiceId = invoice.id;
+    autoRevalidatedId = invoiceId;
     try {
       const report = await validatePdf(lastPdfPath);
-      const lastValidationStatus = await storeInvoiceValidation(invoice.id, report);
+      const lastValidationStatus = await storeInvoiceValidation(invoiceId, report);
+      // The route may have moved on to another invoice while the validator was running.
+      if (invoice?.id !== invoiceId) return;
+      rememberValidation(invoiceId, report);
       invoice = { ...invoice, lastValidationStatus };
     } catch {
       // Validator still unavailable or PDF without XML: keep the old status, no noise.
     }
   }
 
+  /** Validates the current PDF and returns the report, or null when validation failed or was skipped. */
+  async function revalidate(): Promise<ValidationReport | null> {
+    if (!invoice || !lastPdfPath) return null;
+    const invoiceId = invoice.id;
+    const pdfPath = lastPdfPath;
+    let report: ValidationReport | null = null;
+    await actions.exclusive("validate", async () => {
+      try {
+        const validated = await validatePdf(pdfPath);
+        await storeInvoiceValidation(invoiceId, validated);
+        if (invoice?.id !== invoiceId) return;
+        rememberValidation(invoiceId, validated);
+        await load();
+        report = validated;
+      } catch (e) {
+        toast.error("Validierung fehlgeschlagen", String(e));
+      }
+    });
+    return report;
+  }
+
   async function onRevalidate() {
-    if (!invoice || !lastPdfPath || revalidating) return;
-    revalidating = true;
-    try {
-      const report = await validatePdf(lastPdfPath);
-      await storeInvoiceValidation(invoice.id, report);
-      await load();
-      announceValidation(report);
-    } catch (e) {
-      toast.error("Validierung fehlgeschlagen", String(e));
-    } finally {
-      revalidating = false;
-    }
+    const report = await revalidate();
+    if (report) announceValidation(report);
+  }
+
+  function openFindingsDialog() {
+    findingsDialogOpen = true;
+    if (!currentValidationReport && lastPdfPath && !actions.busy) void revalidate();
   }
 
   function announceValidation(report: ValidationReport) {
     if (report.valid) {
       toast.success("Validierung bestanden", `Szenario: ${report.scenario ?? "—"}`);
     } else {
-      toast.warning(`${report.findings.length} Findings`, report.findings[0]?.message ?? "Details unter /validate");
+      toast.action(
+        `${report.findings.length} Findings`,
+        { label: "Details", onClick: openFindingsDialog },
+        { description: report.findings[0]?.message },
+      );
     }
   }
 
-  async function onGeneratePdf() {
-    if (!invoice) return;
-    generating = true;
-    pdfError = null;
-    try {
-      const res = await generateInvoicePdf(invoice.id);
-      if (res.success) {
-        lastPdfPath = res.pdfPath;
-        await load();
-        announcePdfCreated(res.pdfPath, res.kositReport);
-      } else {
-        pdfError = `${res.error.code}: ${res.error.message}`;
-        toast.error("PDF-Generierung fehlgeschlagen", res.error.message);
-      }
-    } catch (e) {
-      pdfError = String(e);
-      toast.error("PDF-Generierung fehlgeschlagen", String(e));
-    } finally {
-      generating = false;
+  function requestPdf() {
+    if (!invoice || actions.busy) return;
+    if (invoice.status === "draft") {
+      dialogDate = toIsoDate(nowUnix());
+      issueForPdfDialogOpen = true;
+      return;
     }
+    void generatePdf();
+  }
+
+  async function confirmIssueAndGeneratePdf() {
+    if (!invoice || actions.busy) return;
+    const { id } = invoice;
+    const sentAt = fromIsoDate(dialogDate);
+    issueForPdfDialogOpen = false;
+    if (!(await ensureCompanyDataComplete())) return;
+    await generatePdf({ run: () => markSent(id, sentAt), failureTitle: "Festschreiben fehlgeschlagen" });
+  }
+
+  async function generatePdf(issueFirst?: PdfPreparation) {
+    if (!invoice) return;
+    const { id } = invoice;
+    await actions.generatePdf(
+      () => generateInvoicePdf(id),
+      async ({ pdfPath, kositReport }) => {
+        lastPdfPath = pdfPath;
+        if (kositReport) rememberValidation(id, kositReport);
+        await load();
+        announcePdfCreated(pdfPath, kositReport);
+      },
+      issueFirst,
+    );
   }
 
   function announcePdfCreated(pdfPath: string, report: ValidationReport | null | undefined) {
@@ -324,28 +382,21 @@
       toast.action(report?.valid ? "PDF erstellt · ZUGFeRD-konform" : "PDF erstellt", openAction);
     }
   }
-
-  async function usePdfFile(open: (path: string) => Promise<void>) {
-    if (!lastPdfPath) return;
-    try {
-      await open(lastPdfPath);
-    } catch (e) {
-      pdfError = String(e);
-    }
-  }
 </script>
 
 <header class="mb-6">
   <BackLink href="/invoices">Rechnungen</BackLink>
 </header>
 
-{#if loading}
-  <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if error && !invoice}
-  <p class="text-sm text-destructive">{error}</p>
-{:else if invoice && !customer}
-  <p class="text-sm text-destructive">{UNREADABLE_SNAPSHOT_MESSAGE}</p>
-{:else if invoice && customer}
+<DocumentLoadMessage
+  {loading}
+  {error}
+  hasDocument={!!invoice}
+  unreadable={!customer}
+  unreadableMessage={UNREADABLE_SNAPSHOT_MESSAGE}
+/>
+
+{#if !loading && invoice && customer}
   {#if invoice.isCreditNote}
     <NoticeCard tone="warning" title="Stornorechnung">
       <div class="mt-0.5 text-muted-foreground">
@@ -364,17 +415,35 @@
     </NoticeCard>
   {/if}
 
-  {#if cancelledByCreditNote}
-    <NoticeCard tone="warning" title="Storniert">
-      <div class="mt-0.5 text-muted-foreground">
-        Wurde storniert durch
-        <a
-          href={`/invoices/${cancelledByCreditNote.id}`}
-          use:link
-          class="font-mono font-medium text-foreground hover:underline"
-        >{cancelledByCreditNote.number}</a>.
-      </div>
-    </NoticeCard>
+  {#if creditNote}
+    {#snippet creditNoteLink(note: Invoice)}
+      <a
+        href={`/invoices/${note.id}`}
+        use:link
+        class="font-mono font-medium text-foreground hover:underline"
+      >{displayInvoiceNumber(note)}</a>
+    {/snippet}
+    {#if coverage === "full"}
+      <NoticeCard tone="warning" title="Storniert">
+        <div class="mt-0.5 text-muted-foreground">
+          Wurde storniert durch {@render creditNoteLink(creditNote)}.
+        </div>
+      </NoticeCard>
+    {:else if coverage === "partial"}
+      <NoticeCard tone="warning" title="Teilweise storniert">
+        <div class="mt-0.5 text-muted-foreground">
+          Teilweise storniert durch {@render creditNoteLink(creditNote)}
+          (−{formatMoney(creditedCent, invoice.currency)}). Offen: {formatMoney(openCent, invoice.currency)}
+        </div>
+      </NoticeCard>
+    {:else}
+      <NoticeCard tone="warning" title="Storno in Vorbereitung">
+        <div class="mt-0.5 text-muted-foreground">
+          Die Stornorechnung {@render creditNoteLink(creditNote)} ist noch ein Entwurf. Bis sie
+          ausgestellt ist, bleibt diese Rechnung offen.
+        </div>
+      </NoticeCard>
+    {/if}
   {/if}
 
   <div class="flex flex-col @3xl:flex-row @3xl:items-start @3xl:justify-between gap-4 mb-6">
@@ -390,46 +459,51 @@
               : INVOICE_STATUS_LABEL[invoice.status]}
           </Badge>
         {/if}
+        {#if isOverdue}
+          <Badge variant="destructive">Überfällig</Badge>
+        {/if}
         {#if invoice.lastValidationStatus || lastPdfPath}
-          <ValidationBadge
-            status={invoice.lastValidationStatus}
-            findingsCount={invoice.lastValidationFindingsCount}
-          />
+          <button
+            type="button"
+            class="inline-flex cursor-pointer rounded-md focus-visible:outline-2 focus-visible:outline-ring"
+            aria-label="Validierungsdetails anzeigen"
+            onclick={openFindingsDialog}
+          >
+            <ValidationBadge
+              status={invoice.lastValidationStatus}
+              findingsCount={invoice.lastValidationFindingsCount}
+            />
+          </button>
         {/if}
       </div>
       <p class="text-sm text-muted-foreground mt-1.5">
         {customer.name} · {formatDate(invoice.issueDate)}
         {#if invoice.lastValidatedAt}
-          · validiert {new Date(invoice.lastValidatedAt * 1000).toLocaleString("de-DE", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+          · validiert {formatDateTime(invoice.lastValidatedAt)}
         {/if}
       </p>
     </div>
     <div class="flex flex-wrap gap-2">
       <InvoicePdfActions
         hasPdf={!!lastPdfPath}
-        {generating}
+        busy={actions.busy}
+        generating={actions.generating}
         {revalidating}
-        onGenerate={onGeneratePdf}
-        onOpen={() => usePdfFile(openPath)}
-        onReveal={() => usePdfFile(revealItemInDir)}
+        onGenerate={requestPdf}
+        onOpen={() => actions.usePdfFile(lastPdfPath, openPath)}
+        onReveal={() => actions.usePdfFile(lastPdfPath, revealItemInDir)}
         {onRevalidate}
       />
 
       {#if invoice.status === "draft"}
-        <Button disabled={busy} onclick={openSendDialog}>
+        <Button disabled={actions.busy} onclick={openSendDialog}>
           <Send />
-          Versenden
+          Als versendet markieren
         </Button>
-      {:else if invoice.status === "sent"}
-        <Button disabled={busy} onclick={openPaidDialog}>
+      {:else if canMarkPaid}
+        <Button disabled={actions.busy} onclick={openPaidDialog}>
           <CheckCircle2 />
-          Bezahlt
+          {settlesRemainder ? "Restbetrag bezahlt" : "Bezahlt"}
         </Button>
       {/if}
 
@@ -437,22 +511,23 @@
         {invoice}
         {creatableReminderLevel}
         {canCreateCreditNote}
-        {creatingCreditNote}
-        onReopenDraft={() => action("Zurück zu Entwurf", () => reopenDraft(invoice!.id))}
-        onCancelInvoice={() => action("Storniert", () => cancelInvoice(invoice!.id))}
+        {canReopenDraft}
+        busy={actions.busy}
+        onRequestReopenDraft={() => (confirmReopenOpen = true)}
+        onRequestCancel={() => (confirmCancelOpen = true)}
         onRequestCreditNote={() => (confirmCreditNoteOpen = true)}
         onRequestDelete={() => (confirmDeleteOpen = true)}
       />
     </div>
   </div>
 
-  {#if pdfError}
-    <PdfErrorNotice message={pdfError} />
+  {#if actions.pdfError}
+    <PdfErrorNotice message={actions.pdfError} />
   {:else if lastPdfPath}
     {#if pdfVersions.length > 0}
       <PdfVersionList versions={pdfVersions} />
     {:else}
-      <p class="text-xs text-muted-foreground mb-4 font-mono">PDF: {lastPdfPath}</p>
+      <PdfLocation path={lastPdfPath} />
     {/if}
   {/if}
 
@@ -477,8 +552,8 @@
     <TextSection title="Notizen (auf der Rechnung)" text={invoice.notes} />
   {/if}
 
-  {#if showPayments}
-    <PaymentsCard {invoice} {payments} onChanged={load} />
+  {#if paymentCardVisible}
+    <PaymentsCard {invoice} {creditedCent} {payments} canAddPayment={canMarkPaid} onChanged={load} />
   {/if}
 
   <SkontoCard {invoice} />
@@ -503,6 +578,24 @@
   />
 
   <ConfirmDialog
+    bind:open={confirmCancelOpen}
+    title="Entwurf stornieren?"
+    description={`${displayInvoiceNumber(invoice)} wird als storniert markiert und lässt sich nicht mehr bearbeiten.`}
+    confirmLabel="Stornieren"
+    destructive
+    onConfirm={() => actions.run("Storniert", () => cancelInvoice(invoice!.id))}
+  />
+
+  <ConfirmDialog
+    bind:open={confirmReopenOpen}
+    title="Zurück zu Entwurf?"
+    description={`${displayInvoiceNumber(invoice)} gilt danach wieder als unversendet. Die vergebene Rechnungsnummer bleibt bestehen; bereits verschickte PDFs stimmen nicht mehr mit dem Entwurf überein.`}
+    confirmLabel="Zu Entwurf machen"
+    destructive
+    onConfirm={() => actions.run("Zurück zu Entwurf", () => reopenDraft(invoice!.id))}
+  />
+
+  <ConfirmDialog
     bind:open={confirmCreditNoteOpen}
     title="Stornorechnung erstellen?"
     description={`Erstellt einen Entwurf, der ${displayInvoiceNumber(invoice)} vollständig storniert. Mengen lassen sich anschließend für Teilstornos anpassen.`}
@@ -517,23 +610,49 @@
     title="Als versendet markieren"
     description="Festschreiben unter neuer Rechnungsnummer."
     dateInputId="send-date"
-    dateLabel="Versanddatum"
-    hint="Standard ist heute. Für Nacherfassung das tatsächliche Versanddatum eintragen."
-    confirmLabel="Versenden"
+    dateLabel="Versendet am"
+    hint="Standard ist heute. Für Nacherfassung das tatsächliche Datum eintragen."
+    confirmLabel="Als versendet markieren"
     warning={dialogWarning}
+    busy={actions.busy}
     onConfirm={confirmSend}
+  />
+
+  <DateConfirmDialog
+    bind:open={issueForPdfDialogOpen}
+    bind:date={dialogDate}
+    title="Rechnung festschreiben?"
+    description="Vergibt die Rechnungsnummer und setzt den Status auf Versendet. Erst danach wird die PDF erzeugt."
+    dateInputId="issue-pdf-date"
+    dateLabel="Versendet am"
+    hint="Standard ist heute. Für Nacherfassung das tatsächliche Datum eintragen."
+    confirmLabel="Festschreiben und PDF erzeugen"
+    warning={dialogWarning}
+    busy={actions.busy}
+    onConfirm={confirmIssueAndGeneratePdf}
   />
 
   <DateConfirmDialog
     bind:open={paidDialogOpen}
     bind:date={dialogDate}
-    title="Als bezahlt markieren"
-    description="Zahldatum für Statistik und DATEV-Export."
+    title={settlesRemainder ? "Restbetrag als bezahlt markieren" : "Als bezahlt markieren"}
+    description={settlesRemainder
+      ? "Der offene Restbetrag wird als Zahlung erfasst."
+      : "Zahldatum für Statistik und DATEV-Export."}
     dateInputId="paid-date"
     dateLabel="Zahldatum"
     hint="Standard ist heute. Bei Nacherfassung das echte Zahldatum eintragen — Dashboard und Monats-Charts hängen davon ab."
     confirmLabel="Bestätigen"
     warning={dialogWarning}
+    busy={actions.busy}
     onConfirm={confirmPaid}
+  />
+
+  <ValidationFindingsDialog
+    bind:open={findingsDialogOpen}
+    report={currentValidationReport}
+    running={revalidating}
+    hasPdf={!!lastPdfPath}
+    onRevalidate={revalidate}
   />
 {/if}

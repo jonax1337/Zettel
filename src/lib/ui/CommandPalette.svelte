@@ -10,6 +10,8 @@
     Users,
     Truck,
     History,
+    ArrowRight,
+    Plus,
   } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
   import {
@@ -25,7 +27,14 @@
     pickerRowClass,
   } from "./dialog-classes";
   import { cycleIndex } from "./list-navigation";
-  import { groupSearchResults, hitsInDisplayOrder } from "./search-groups";
+  import {
+    buildPaletteCommands,
+    filterCommands,
+    PALETTE_GROUP_LABEL,
+    type PaletteCommand,
+    type PaletteCommandGroup,
+  } from "./palette-commands";
+  import { groupSearchResults } from "./search-groups";
   import { toast } from "./toast.svelte";
 
   type Props = {
@@ -36,6 +45,7 @@
 
   const RECENTS_KEY = "zettel.search.recents";
   const MAX_RECENTS = 5;
+  const MAX_COMMANDS_WHILE_SEARCHING = 6;
   const SEARCH_DEBOUNCE_MS = 150;
 
   const HIT_ICONS: Record<SearchHitKind, typeof FileText> = {
@@ -46,6 +56,14 @@
     customer: Users,
     vendor: Truck,
   };
+
+  type PaletteItem =
+    | { kind: "hit"; hit: SearchHit }
+    | { kind: "command"; command: PaletteCommand };
+  type Section = { key: string; label: string; items: PaletteItem[] };
+
+  const allCommands = buildPaletteCommands();
+  const COMMAND_GROUPS: PaletteCommandGroup[] = ["create", "navigate"];
 
   function emptyResults(): SearchResults {
     return {
@@ -93,15 +111,37 @@
   });
 
   const hasQuery = $derived(query.trim() !== "");
-  const groups = $derived(hasQuery ? groupSearchResults(results) : []);
-  const visibleHits = $derived(hasQuery ? hitsInDisplayOrder(groups) : recents);
-  const showingRecents = $derived(!hasQuery && recents.length > 0);
+  const hitItems = (hits: SearchHit[]): PaletteItem[] => hits.map((hit) => ({ kind: "hit", hit }));
+
+  const commandSections = $derived.by<Section[]>(() => {
+    const matched = filterCommands(allCommands, query);
+    const shown = hasQuery ? matched.slice(0, MAX_COMMANDS_WHILE_SEARCHING) : matched;
+    return COMMAND_GROUPS.map((group) => ({
+      key: group,
+      label: PALETTE_GROUP_LABEL[group],
+      items: shown
+        .filter((c) => c.group === group)
+        .map((command): PaletteItem => ({ kind: "command", command })),
+    })).filter((section) => section.items.length > 0);
+  });
+  const hitSections = $derived<Section[]>(
+    hasQuery
+      ? groupSearchResults(results).map((g) => ({ key: g.key, label: g.label, items: hitItems(g.hits) }))
+      : [],
+  );
+  const recentSections = $derived<Section[]>(
+    !hasQuery && recents.length > 0
+      ? [{ key: "recents", label: "Zuletzt geöffnet", items: hitItems(recents) }]
+      : [],
+  );
+  const sections = $derived([...recentSections, ...commandSections, ...hitSections]);
+  const visibleItems = $derived(sections.flatMap((s) => s.items));
 
   $effect(() => {
+    activeIndex = 0;
     if (query.trim() === "") {
       searchTask.cancel();
       results = emptyResults();
-      activeIndex = 0;
       return;
     }
     searchTask.schedule(query);
@@ -124,15 +164,23 @@
     saveRecents(recents);
   }
 
-  function selectHit(hit: SearchHit) {
-    pushRecent(hit);
+  function closeAndGo(route: string) {
     open = false;
     onOpenChange?.(false);
-    push(hit.route);
+    push(route);
+  }
+
+  function selectItem(item: PaletteItem) {
+    if (item.kind === "hit") {
+      pushRecent(item.hit);
+      closeAndGo(item.hit.route);
+    } else {
+      closeAndGo(item.command.route);
+    }
   }
 
   function moveActive(delta: number) {
-    activeIndex = cycleIndex(activeIndex, delta, visibleHits.length);
+    activeIndex = cycleIndex(activeIndex, delta, visibleItems.length);
     queueMicrotask(() => {
       listEl
         ?.querySelector<HTMLElement>(`[data-hit-index="${activeIndex}"]`)
@@ -150,35 +198,44 @@
     } else if (e.key === "Tab") {
       e.preventDefault();
       moveActive(e.shiftKey ? -1 : 1);
-    } else if (e.key === "Enter" && visibleHits.length > 0) {
+    } else if (e.key === "Enter" && visibleItems.length > 0) {
       e.preventDefault();
-      selectHit(visibleHits[activeIndex]);
+      selectItem(visibleItems[activeIndex]);
     }
   }
 
-  function flatIndex(groupIdx: number, withinGroupIdx: number): number {
+  function flatIndex(sectionIdx: number, withinSectionIdx: number): number {
     let acc = 0;
-    for (let i = 0; i < groupIdx; i++) acc += groups[i].hits.length;
-    return acc + withinGroupIdx;
+    for (let i = 0; i < sectionIdx; i++) acc += sections[i].items.length;
+    return acc + withinSectionIdx;
   }
 </script>
 
-{#snippet hitRow(hit: SearchHit, idx: number)}
-  {@const Icon = HIT_ICONS[hit.kind]}
+{#snippet itemRow(item: PaletteItem, idx: number)}
   <button
     type="button"
     data-hit-index={idx}
-    onclick={() => selectHit(hit)}
+    onclick={() => selectItem(item)}
     onmouseenter={() => (activeIndex = idx)}
     class={cn(pickerRowClass(activeIndex === idx), "text-sm")}
   >
-    <Icon class="size-4 shrink-0 text-muted-foreground" />
-    <span class="font-mono text-xs text-muted-foreground shrink-0 w-24 truncate">
-      {hit.number}
-    </span>
-    <span class="flex-1 truncate">{hit.primary}</span>
-    {#if hit.secondary}
-      <span class="text-xs text-muted-foreground truncate">{hit.secondary}</span>
+    {#if item.kind === "hit"}
+      {@const Icon = HIT_ICONS[item.hit.kind]}
+      <Icon class="size-4 shrink-0 text-muted-foreground" />
+      <span class="font-mono text-xs text-muted-foreground shrink-0 w-24 truncate">
+        {item.hit.number}
+      </span>
+      <span class="flex-1 truncate">{item.hit.primary}</span>
+      {#if item.hit.secondary}
+        <span class="text-xs text-muted-foreground truncate">{item.hit.secondary}</span>
+      {/if}
+    {:else}
+      {#if item.command.group === "create"}
+        <Plus class="size-4 shrink-0 text-muted-foreground" />
+      {:else}
+        <ArrowRight class="size-4 shrink-0 text-muted-foreground" />
+      {/if}
+      <span class="flex-1 truncate">{item.command.label}</span>
     {/if}
   </button>
 {/snippet}
@@ -204,7 +261,7 @@
           bind:value={query}
           onkeydown={onKey}
           type="text"
-          placeholder="Suchen — Rechnungen, Kunden, Lieferanten…"
+          placeholder="Suchen oder Aktion wählen — Rechnungen, Kunden, „Neue Rechnung“…"
           class="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           autocomplete="off"
           spellcheck="false"
@@ -219,29 +276,20 @@
         bind:this={listEl}
         class="max-h-[60vh] overflow-y-auto p-2"
       >
-        {#if showingRecents}
-          <div class="px-2 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1.5">
-            <History class="size-3" />
-            Zuletzt geöffnet
-          </div>
-          {#each recents as hit, i (hit.kind + "-" + hit.id)}
-            {@render hitRow(hit, i)}
-          {/each}
-        {:else if !hasQuery}
-          <div class="px-3 py-10 text-center text-sm text-muted-foreground">
-            Tippen, um zu suchen…
-          </div>
-        {:else if groups.length === 0}
+        {#if sections.length === 0}
           <div class="px-3 py-10 text-center text-sm text-muted-foreground">
             Keine Treffer für „{query.trim()}".
           </div>
         {:else}
-          {#each groups as group, gi (group.key)}
-            <div class="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-              {group.label}
+          {#each sections as section, si (section.key)}
+            <div class="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1.5">
+              {#if section.key === "recents"}
+                <History class="size-3" />
+              {/if}
+              {section.label}
             </div>
-            {#each group.hits as hit, hi (hit.kind + "-" + hit.id)}
-              {@render hitRow(hit, flatIndex(gi, hi))}
+            {#each section.items as item, ii (section.key + "-" + (item.kind === "hit" ? item.hit.kind + item.hit.id : item.command.id))}
+              {@render itemRow(item, flatIndex(si, ii))}
             {/each}
           {/each}
         {/if}

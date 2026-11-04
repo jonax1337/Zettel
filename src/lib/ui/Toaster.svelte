@@ -12,6 +12,18 @@
     warning: { icon: AlertCircle, border: "border-warning/40", iconColor: "text-warning" },
   };
 
+  let copiedId = $state<number | null>(null);
+
+  async function copyDetails(t: Toast) {
+    const text = t.description ? `${t.title}\n${t.description}` : t.title;
+    try {
+      await navigator.clipboard.writeText(text);
+      copiedId = t.id;
+    } catch {
+      copiedId = null;
+    }
+  }
+
   async function runAction(t: Toast) {
     const action = t.action;
     if (!action) return;
@@ -28,7 +40,7 @@
     {@const Icon = style.icon}
     <div
       class="pointer-events-auto bg-card flex items-start gap-3 rounded-lg border p-4 shadow-lg {style.border}"
-      role="status"
+      role={t.variant === "error" ? "alert" : "status"}
       in:fly={{ y: 24, duration: 260, easing: cubicOut }}
       out:fly={{ x: 320, duration: 220, easing: cubicIn }}
       animate:flip={{ duration: 240, easing: cubicOut }}
@@ -38,6 +50,15 @@
         <div class="text-sm font-medium">{t.title}</div>
         {#if t.description}
           <div class="text-xs text-muted-foreground mt-1">{t.description}</div>
+        {/if}
+        {#if t.variant === "error"}
+          <button
+            type="button"
+            onclick={() => copyDetails(t)}
+            class="mt-2 mr-3 text-xs font-medium text-primary hover:underline"
+          >
+            {copiedId === t.id ? "Kopiert" : "Kopieren"}
+          </button>
         {/if}
         {#if t.action}
           <button

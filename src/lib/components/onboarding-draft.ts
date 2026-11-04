@@ -17,7 +17,8 @@ export type OnboardingDraft = {
   country: string;
   taxNumber: string;
   vatId: string;
-  isKleinunternehmer: boolean;
+  /** null until the user chooses: the tax status is never assumed. */
+  isKleinunternehmer: boolean | null;
   bankName: string;
   bankIban: string;
   bankBic: string;
@@ -34,7 +35,7 @@ export function emptyDraft(): OnboardingDraft {
     country: DEFAULT_COUNTRY,
     taxNumber: "",
     vatId: "",
-    isKleinunternehmer: true,
+    isKleinunternehmer: null,
     bankName: "",
     bankIban: "",
     bankBic: "",
@@ -47,8 +48,13 @@ export function validateStep(step: number, draft: OnboardingDraft): string | nul
     const required = [draft.companyName, draft.street, draft.postalCode, draft.city];
     if (required.some((value) => !value.trim())) return "Bitte alle Pflichtfelder ausfüllen.";
   }
-  if (step === TAX_STEP && !draft.taxNumber.trim() && !draft.vatId.trim()) {
-    return "EN-16931 verlangt mindestens eine Steuernummer ODER USt-IdNr. (BR-CO-26).";
+  if (step === TAX_STEP) {
+    if (!draft.taxNumber.trim() && !draft.vatId.trim()) {
+      return "EN-16931 verlangt mindestens eine Steuernummer ODER USt-IdNr. (BR-CO-26).";
+    }
+    if (draft.isKleinunternehmer === null) {
+      return "Bitte wähle, ob du Kleinunternehmer:in nach § 19 UStG bist.";
+    }
   }
   return null;
 }
@@ -66,7 +72,7 @@ export function applyDraft(current: Settings, draft: OnboardingDraft): Settings 
       draft.country.trim().toUpperCase().slice(0, COUNTRY_CODE_LENGTH) || DEFAULT_COUNTRY,
     taxNumber: draft.taxNumber.trim(),
     vatId: draft.vatId.trim() || null,
-    isKleinunternehmer: draft.isKleinunternehmer,
+    isKleinunternehmer: draft.isKleinunternehmer ?? current.isKleinunternehmer,
     bankName: draft.bankName.trim(),
     bankIban: draft.bankIban.trim(),
     bankBic: draft.bankBic.trim(),

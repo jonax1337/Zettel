@@ -2,15 +2,21 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader
+from markupsafe import Markup, escape
 
 from .i18n import t as translate
 
 
 DISPLAY_DATE_FORMAT = "%d.%m.%Y"
+
+# The app stores calendar dates as local midnight (CLI: local noon), so they
+# must be read back in the same zone; UTC would shift them one day early.
+DOCUMENT_TIMEZONE = ZoneInfo("Europe/Berlin")
 
 
 def templates_dir() -> Path:
@@ -40,14 +46,23 @@ def fmt_qty(q: float | int) -> str:
     return f"{q:.2f}".replace(".", ",")
 
 
-def format_unix_utc(unix_seconds: int | None, pattern: str) -> str:
+def fmt_rate(rate: float | int) -> str:
+    return f"{rate:g}".replace(".", ",")
+
+
+def nl2br(text: str | None) -> Markup:
+    """Escape user text and turn line breaks into <br>."""
+    return escape(text or "").replace("\n", Markup("<br>"))
+
+
+def format_unix_local(unix_seconds: int | None, pattern: str) -> str:
     if not unix_seconds:
         return ""
-    return datetime.fromtimestamp(int(unix_seconds), tz=timezone.utc).strftime(pattern)
+    return datetime.fromtimestamp(int(unix_seconds), tz=DOCUMENT_TIMEZONE).strftime(pattern)
 
 
 def fmt_date_unix(unix_seconds: int | None) -> str:
-    return format_unix_utc(unix_seconds, DISPLAY_DATE_FORMAT)
+    return format_unix_local(unix_seconds, DISPLAY_DATE_FORMAT)
 
 
 def build_env() -> Environment:
@@ -61,6 +76,8 @@ def build_env() -> Environment:
     )
     env.filters["eur"] = cents_to_eur
     env.filters["qty"] = fmt_qty
+    env.filters["rate"] = fmt_rate
+    env.filters["nl2br"] = nl2br
     env.filters["date_unix"] = fmt_date_unix
     # `t()` ist als globale Funktion verfügbar; Templates rufen
     # {{ t('schluessel', language) }} oder mit kwargs für Interpolation.

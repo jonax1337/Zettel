@@ -18,7 +18,7 @@ vi.mock("$lib/db/client", () => ({
 
 import { fromIsoDate } from "$lib/utils/date";
 import type { Period } from "./period";
-import { monthlyRevenueInPeriod, oldestOverdue } from "./queries";
+import { cashFlowForecast30d, loadKpis, monthlyRevenueInPeriod, oldestOverdue } from "./queries";
 
 type InvoiceSeed = {
   status?: string;
@@ -28,13 +28,16 @@ type InvoiceSeed = {
   subtotal?: number;
   eurTotalCent?: number | null;
   amountPaidCent?: number | null;
+  isCreditNote?: boolean;
+  correctsInvoiceId?: number | null;
 };
 
-function seedInvoice(inv: InvoiceSeed): void {
-  sqlite
+function seedInvoice(inv: InvoiceSeed): number {
+  const result = sqlite
     .current!.prepare(
-      `INSERT INTO invoices (status, issue_date, due_date, total, subtotal, eur_total_cent, amount_paid_cent)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO invoices (status, issue_date, due_date, total, subtotal, eur_total_cent, amount_paid_cent,
+                             is_credit_note, corrects_invoice_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       inv.status ?? "sent",
@@ -44,7 +47,16 @@ function seedInvoice(inv: InvoiceSeed): void {
       inv.subtotal ?? inv.total,
       inv.eurTotalCent ?? null,
       inv.amountPaidCent ?? null,
-    );
+      inv.isCreditNote ? 1 : 0,
+      inv.correctsInvoiceId ?? null,
+    ) as { lastInsertRowid: number | bigint };
+  return Number(result.lastInsertRowid);
+}
+
+/** An invoice fully offset by an issued credit note: both rows stay 'sent'. */
+function seedCancelledByCreditNote(total: number): void {
+  const originalId = seedInvoice({ total });
+  seedInvoice({ total: -total, isCreditNote: true, correctsInvoiceId: originalId });
 }
 
 beforeEach(() => {
@@ -52,7 +64,11 @@ beforeEach(() => {
   sqlite.current = new DatabaseSync(":memory:") as SqliteDatabase;
   sqlite.current.exec(`CREATE TABLE invoices (
     id INTEGER PRIMARY KEY, status TEXT, issue_date INTEGER, due_date INTEGER,
-    total INTEGER, subtotal INTEGER, eur_total_cent INTEGER, amount_paid_cent INTEGER)`);
+    total INTEGER, subtotal INTEGER, eur_total_cent INTEGER, amount_paid_cent INTEGER,
+    is_credit_note INTEGER, corrects_invoice_id INTEGER, currency TEXT NOT NULL DEFAULT 'EUR');
+  CREATE TABLE expenses (status TEXT, issue_date INTEGER, subtotal INTEGER);
+  CREATE TABLE recurring_invoices (id INTEGER PRIMARY KEY, active INTEGER, next_due_date INTEGER, is_reverse_charge INTEGER);
+  CREATE TABLE recurring_invoice_items (recurring_id INTEGER, quantity REAL, unit_price INTEGER, vat_rate REAL)`);
 });
 
 describe("oldestOverdue open balance", () => {
@@ -82,10 +98,102 @@ describe("oldestOverdue open balance", () => {
     expect((await oldestOverdue()).openTotal).toBe(92_000);
   });
 
-  it("keeps credit notes negative", async () => {
-    seedInvoice({ total: -10_000, eurTotalCent: -9_200 });
+});
 
-    expect((await oldestOverdue()).openTotal).toBe(-9_200);
+describe("open receivables and credit notes", () => {
+  const wholeHistory: Period = { type: "custom", start: 0, end: 4_000_000_000, label: "alles" };
+
+  it("leaves an invoice offset by an issued credit note and the credit note itself out of the overdue summary", async () => {
+    seedCancelledByCreditNote(10_000);
+    seedInvoice({ total: 5_000, dueDate: 100 });
+
+    expect(await oldestOverdue()).toMatchObject({ openCount: 1, openTotal: 5_000 });
+  });
+
+  it("does not count them as open in the KPIs", async () => {
+    seedCancelledByCreditNote(10_000);
+
+    expect(await loadKpis(wholeHistory)).toMatchObject({ openCount: 0, openTotal: 0 });
+  });
+
+  it("does not forecast them as overdue cash", async () => {
+    seedCancelledByCreditNote(10_000);
+
+    expect(await cashFlowForecast30d()).toMatchObject({ overdue: 0, overdueCount: 0 });
+  });
+
+  it.each(["draft", "cancelled"])("keeps an invoice open while its credit note is %s", async (status) => {
+    const originalId = seedInvoice({ total: 10_000 });
+    seedInvoice({ status, total: -10_000, isCreditNote: true, correctsInvoiceId: originalId });
+
+    expect(await oldestOverdue()).toMatchObject({ openCount: 1, openTotal: 10_000 });
+  });
+
+  describe("a credit note issued in a later period than its invoice", () => {
+    const invoicePeriod: Period = { type: "custom", start: 0, end: 5_000, label: "Rechnungsperiode" };
+    const CREDIT_NOTE_ISSUED = 10_000_000;
+
+    function seedCreditedInLaterPeriod(creditCent: number): void {
+      const originalId = seedInvoice({ total: 10_000, issueDate: 1_000 });
+      seedInvoice({ total: -creditCent, issueDate: CREDIT_NOTE_ISSUED, isCreditNote: true, correctsInvoiceId: originalId });
+    }
+
+    it("still takes a full credit note off the open receivables of the invoice's period", async () => {
+      seedCreditedInLaterPeriod(10_000);
+
+      expect(await loadKpis(invoicePeriod)).toMatchObject({ openCount: 0, openTotal: 0 });
+    });
+
+    it("still reduces the open receivables of the invoice's period by a partial credit note", async () => {
+      seedCreditedInLaterPeriod(3_000);
+
+      expect(await loadKpis(invoicePeriod)).toMatchObject({ openCount: 1, openTotal: 7_000 });
+    });
+  });
+
+  describe("a partially credited invoice", () => {
+    function seedPartlyCredited(opts: { amountPaidCent?: number } = {}): void {
+      const originalId = seedInvoice({ total: 10_000, status: opts.amountPaidCent ? "partial" : "sent", ...opts });
+      seedInvoice({ total: -3_000, isCreditNote: true, correctsInvoiceId: originalId });
+    }
+
+    it("stays in the overdue summary with what the credit note leaves open", async () => {
+      seedPartlyCredited();
+
+      expect(await oldestOverdue()).toMatchObject({ openCount: 1, openTotal: 7_000 });
+    });
+
+    it("counts its remainder as open in the KPIs", async () => {
+      seedPartlyCredited();
+
+      expect(await loadKpis(wholeHistory)).toMatchObject({ openCount: 1, openTotal: 7_000 });
+    });
+
+    it("forecasts its remainder as overdue cash", async () => {
+      seedPartlyCredited();
+
+      expect(await cashFlowForecast30d()).toMatchObject({ overdue: 7_000, overdueCount: 1 });
+    });
+
+    it("deducts payments as well", async () => {
+      seedPartlyCredited({ amountPaidCent: 4_000 });
+
+      expect(await oldestOverdue()).toMatchObject({ openCount: 1, openTotal: 3_000 });
+    });
+
+    it("drops out once payments and the credit note cover the total", async () => {
+      seedPartlyCredited({ amountPaidCent: 7_000 });
+
+      expect(await oldestOverdue()).toMatchObject({ openCount: 0, openTotal: 0 });
+    });
+
+    it("converts the credited share of a foreign-currency invoice into EUR", async () => {
+      // 1000,00 USD frozen at 920,00 EUR; 250,00 USD paid and 250,00 USD credited -> 460,00 EUR open.
+      const originalId = seedInvoice({ total: 100_000, eurTotalCent: 92_000, amountPaidCent: 25_000, status: "partial" });
+      seedInvoice({ total: -25_000, eurTotalCent: -23_000, isCreditNote: true, correctsInvoiceId: originalId });
+
+      expect((await oldestOverdue()).openTotal).toBe(46_000);
+    });
   });
 });
 

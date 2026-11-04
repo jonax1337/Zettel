@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Download, FileSpreadsheet } from "$lib/brand-icons";
+  import BackLink from "./parts/entity/BackLink.svelte";
   import {
     Button,
     Card,
@@ -12,6 +13,7 @@
     Select,
     Checkbox,
     DatePicker,
+    PageHeader,
     toast,
   } from "$lib/ui";
   import { loadInvoicesForExport } from "$lib/db/invoices";
@@ -21,6 +23,7 @@
   import {
     ACCOUNT_MAPS,
     buildDatevCsv,
+    datevRangeError,
     defaultDatevFilename,
     type Skr,
   } from "$lib/export/datev";
@@ -31,22 +34,27 @@
     fiscalYearStart,
     resolveItemAccounts,
   } from "./parts/reports/datev-export";
+  import {
+    DATEV_LABEL_MAX_LENGTH,
+    loadDatevExportSettings,
+    saveDatevExportSettings,
+  } from "./parts/reports/export-settings";
   import { saveTextFileWithDialog } from "./parts/reports/save-text-file";
 
   const DATEV_ACCOUNT_LENGTH = 4;
-  const DEFAULT_ADVISOR_NUMBER = 1001;
-  const DEFAULT_CLIENT_NUMBER = 1;
+  const remembered = loadDatevExportSettings();
 
   let dateFromIso = $state(toIsoDate(toUnix(fiscalYearStart(nowUnix()))));
   let dateToIso = $state(toIsoDate(nowUnix()));
   let skr = $state<Skr>("SKR03");
-  let beraternr = $state(DEFAULT_ADVISOR_NUMBER);
-  let mandantennr = $state(DEFAULT_CLIENT_NUMBER);
-  let bezeichnung = $state("Zettel-Export");
+  let beraternr = $state<number | null>(remembered.beraternr);
+  let mandantennr = $state<number | null>(remembered.mandantennr);
+  let bezeichnung = $state(remembered.bezeichnung);
   let includeInvoices = $state(true);
   let includeExpenses = $state(true);
   let includeCancelled = $state(true);
   let busy = $state(false);
+  let preview = $state<{ invoices: number; expenses: number } | null>(null);
 
   const skrItems = [
     { value: "SKR03", label: "SKR03 (Standard)" },
@@ -73,6 +81,31 @@
     return { invoices, expenses };
   }
 
+  $effect(() => {
+    saveDatevExportSettings({ beraternr, mandantennr, bezeichnung });
+  });
+
+  // Every input the loader depends on is read here, because it reads some of them only after an await.
+  $effect(() => {
+    const [from, to] = [dateFromIso, dateToIso];
+    void [includeInvoices, includeExpenses, includeCancelled, skr];
+    if (!from || !to) {
+      preview = null;
+      return;
+    }
+    let stale = false;
+    loadDocuments(fromIsoDate(from), endOfDayUnix(fromIsoDate(to)))
+      .then((documents) => {
+        if (!stale) preview = { invoices: documents.invoices.length, expenses: documents.expenses.length };
+      })
+      .catch(() => {
+        if (!stale) preview = null;
+      });
+    return () => {
+      stale = true;
+    };
+  });
+
   async function onExport() {
     if (!includeInvoices && !includeExpenses) {
       toast.error(
@@ -85,17 +118,26 @@
     try {
       const from = fromIsoDate(dateFromIso);
       const to = endOfDayUnix(fromIsoDate(dateToIso));
+      const rangeError = datevRangeError({
+        wjBeginn: fiscalYearStart(from),
+        dateFrom: new Date(from * 1000),
+        dateTo: new Date(to * 1000),
+      });
+      if (rangeError) {
+        toast.error("Zeitraum zu groß", rangeError);
+        return;
+      }
       const documents = await loadDocuments(from, to);
       if (documents.invoices.length + documents.expenses.length === 0) {
         toast.error(
           "Keine Belege im Zeitraum",
-          "Rechnungen müssen 'Versandt' oder 'Bezahlt' sein. Eingangsrechnungen 'Offen' oder 'Bezahlt'.",
+          "Rechnungen müssen 'Versendet' oder 'Bezahlt' sein. Eingangsrechnungen 'Offen' oder 'Bezahlt'.",
         );
         return;
       }
       const csv = buildDatevCsv(documents, {
-        beraternr,
-        mandantennr,
+        beraternr: beraternr ?? remembered.beraternr,
+        mandantennr: mandantennr ?? remembered.mandantennr,
         wjBeginn: fiscalYearStart(from),
         dateFrom: new Date(from * 1000),
         dateTo: new Date(to * 1000),
@@ -122,13 +164,14 @@
   }
 </script>
 
-<header class="mb-6">
-  <h1 class="text-3xl font-semibold tracking-tight">Export</h1>
-  <p class="text-sm text-muted-foreground mt-1">
-    DATEV-konformer Buchungsstapel für deinen Steuerberater. Exportiert Rechnungen
-    (Erlöse) und/oder Eingangsrechnungen (Aufwände) inklusive Stornos.
-  </p>
-</header>
+<PageHeader
+  title="DATEV-Export"
+  subtitle="DATEV-konformer Buchungsstapel für deinen Steuerberater. Exportiert Rechnungen (Erlöse) und/oder Eingangsrechnungen (Aufwände) inklusive Stornos."
+>
+  {#snippet back()}
+    <BackLink href="/">Dashboard</BackLink>
+  {/snippet}
+</PageHeader>
 
 <div class="space-y-6">
   <Card>
@@ -158,8 +201,8 @@
           <Select bind:value={() => skr, (v) => (skr = v as Skr)} items={skrItems} />
         </div>
         <div class="flex flex-col gap-1.5">
-          <Label>Bezeichnung (max. 30)</Label>
-          <Input bind:value={bezeichnung} maxlength={30} />
+          <Label>Bezeichnung (max. {DATEV_LABEL_MAX_LENGTH})</Label>
+          <Input bind:value={bezeichnung} maxlength={DATEV_LABEL_MAX_LENGTH} />
         </div>
         <div class="flex flex-col gap-1.5">
           <Label>Beraternr. (Platzhalter)</Label>
@@ -174,7 +217,7 @@
       <div class="grid grid-cols-1 gap-2 rounded-md border border-border bg-muted/20 p-3">
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
           <Checkbox bind:checked={includeInvoices} />
-          Rechnungen (Erlöse — Status „Versandt" oder „Bezahlt")
+          Rechnungen (Erlöse — Status „Versendet" oder „Bezahlt")
         </label>
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
           <Checkbox bind:checked={includeExpenses} />
@@ -185,6 +228,16 @@
           Stornierte Eingangsrechnungen mit aufnehmen
         </label>
       </div>
+
+      {#if preview}
+        <p class="text-sm" aria-live="polite">
+          {#if preview.invoices + preview.expenses === 0}
+            <span class="text-muted-foreground">Keine exportierbaren Belege im gewählten Zeitraum.</span>
+          {:else}
+            Im Zeitraum: <strong>{describeExportCounts(preview.invoices, preview.expenses)}</strong>
+          {/if}
+        </p>
+      {/if}
 
       <div class="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
         <p>

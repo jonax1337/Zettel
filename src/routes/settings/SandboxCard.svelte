@@ -12,6 +12,7 @@
     toast,
   } from "$lib/ui";
   import { FlaskConical } from "$lib/brand-icons";
+  import { relaunchApp } from "$lib/utils/relaunch";
 
   let sandbox = $state(false);
   let busy = $state(false);
@@ -35,8 +36,7 @@
     busy = true;
     try {
       await invoke("set_sandbox", { enabled: pendingSandbox });
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
+      await relaunchApp();
     } catch (e) {
       toast.error("Sandbox konnte nicht umgeschaltet werden", String(e));
     } finally {

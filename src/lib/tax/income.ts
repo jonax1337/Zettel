@@ -2,8 +2,8 @@
 //
 // Quelle der Konstanten: amtliche BMF-Bekanntmachung der Tarifformel,
 // jeweils im Anschluss an das Gesetzgebungsverfahren (Tarifformel 2024
-// per Inflationsausgleichsgesetz Nov 2022; Tarifformel 2025 + 2026 per
-// Steuerfortentwicklungsgesetz Dez 2024).
+// per Gesetz zur Freistellung des Existenzminimums 2024, Dez 2024; Tarifformel
+// 2025 + 2026 per Steuerfortentwicklungsgesetz Dez 2024).
 //
 // Die § 32a-Formel ist strukturell stabil: 5 Zonen (Grundfreibetrag,
 // Einstiegsprogression, lineare Progression, Spitzensteuersatz 42 %,
@@ -54,21 +54,22 @@ interface Tarif {
   z5Offset: number;
 }
 
-// VZ 2024 — Tarifformel laut amtl. Bekanntmachung BMF/BGBl.
-// Verifiziert gegen 6 Eckpunkte des amtlichen Tarifrechners (siehe Tests).
+// VZ 2024 — § 32a EStG in der Fassung des Gesetzes zur steuerlichen Freistellung
+// des Existenzminimums 2024 (BGBl. 2024 I Nr. 386, rückwirkend ab 1.1.2024):
+// Grundfreibetrag 11.784 € statt 11.604 € aus dem Inflationsausgleichsgesetz.
 const TARIF_2024: Tarif = {
-  grundfreibetrag: 11_604,
+  grundfreibetrag: 11_784,
   zone2End: 17_005,
   zone3End: 66_760,
   zone4End: 277_825,
   soliFreigrenze: 18_130,
-  z2a: 922.98,
+  z2a: 954.80,
   z2b: 1_400,
   z3a: 181.19,
   z3b: 2_397,
-  z3c: 1_025.38,
-  z4Offset: 10_602.13,
-  z5Offset: 18_936.88,
+  z3c: 991.21,
+  z4Offset: 10_636.31,
+  z5Offset: 18_971.06,
 };
 
 // VZ 2025 — Steuerfortentwicklungsgesetz Dez 2024.

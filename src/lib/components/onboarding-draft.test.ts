@@ -18,9 +18,18 @@ describe("validateStep", () => {
   });
 
   it("requires a tax number or a VAT id on the tax step (BR-CO-26)", () => {
-    expect(validateStep(TAX_STEP, filledCompany)).toMatch(/BR-CO-26/);
-    expect(validateStep(TAX_STEP, { ...filledCompany, taxNumber: "12/345/67890" })).toBeNull();
-    expect(validateStep(TAX_STEP, { ...filledCompany, vatId: "DE123456789" })).toBeNull();
+    const chosen = { ...filledCompany, isKleinunternehmer: false };
+    expect(validateStep(TAX_STEP, chosen)).toMatch(/BR-CO-26/);
+    expect(validateStep(TAX_STEP, { ...chosen, taxNumber: "12/345/67890" })).toBeNull();
+    expect(validateStep(TAX_STEP, { ...chosen, vatId: "DE123456789" })).toBeNull();
+  });
+
+  it("requires an explicit Kleinunternehmer choice instead of assuming one", () => {
+    expect(emptyDraft().isKleinunternehmer).toBeNull();
+    const withTaxId = { ...filledCompany, taxNumber: "12/345/67890" };
+    expect(validateStep(TAX_STEP, withTaxId)).toMatch(/Kleinunternehmer/);
+    expect(validateStep(TAX_STEP, { ...withTaxId, isKleinunternehmer: true })).toBeNull();
+    expect(validateStep(TAX_STEP, { ...withTaxId, isKleinunternehmer: false })).toBeNull();
   });
 
   it("does not block the bank and summary steps", () => {
@@ -36,6 +45,12 @@ describe("applyDraft", () => {
     const result = applyDraft(current, { ...filledCompany, companyName: "  Muster GmbH " });
     expect(result.companyName).toBe("Muster GmbH");
     expect(result.pdfTheme).toBe("modern");
+  });
+
+  it("applies the chosen Kleinunternehmer status", () => {
+    const settings = { companyName: "", isKleinunternehmer: true } as Settings;
+    expect(applyDraft(settings, { ...filledCompany, isKleinunternehmer: false }).isKleinunternehmer).toBe(false);
+    expect(applyDraft(settings, { ...filledCompany, isKleinunternehmer: true }).isKleinunternehmer).toBe(true);
   });
 
   it("stores an empty VAT id as null", () => {

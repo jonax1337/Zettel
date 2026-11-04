@@ -1,21 +1,7 @@
 <script lang="ts">
   import { link, router } from "svelte-spa-router";
-  import {
-    LayoutDashboard,
-    Users,
-    Truck,
-    FileText,
-    FileSignature,
-    FileInput,
-    FileWarning,
-    Repeat,
-    Download,
-    BarChart3,
-    Package,
-    Landmark,
-    Search,
-    Settings as SettingsIcon,
-  } from "$lib/brand-icons";
+  import { Search } from "$lib/brand-icons";
+  import { NAV_GROUPS } from "$lib/navigation";
   import { cn } from "$lib/utils";
   import { isMac } from "$lib/utils/platform";
   import { theme } from "$lib/theme.svelte";
@@ -27,51 +13,6 @@
   let { onOpenSearch }: Props = $props();
 
   const searchShortcut = isMac ? "⌘K" : "Strg K";
-
-  type NavGroup = {
-    label: string | null;
-    items: { href: string; label: string; icon: typeof LayoutDashboard }[];
-  };
-
-  const navGroups: NavGroup[] = [
-    {
-      label: null,
-      items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }],
-    },
-    {
-      label: "Stammdaten",
-      items: [
-        { href: "/customers", label: "Kunden", icon: Users },
-        { href: "/vendors", label: "Lieferanten", icon: Truck },
-        { href: "/catalog", label: "Katalog", icon: Package },
-      ],
-    },
-    {
-      label: "Ausgangsbelege",
-      items: [
-        { href: "/offers", label: "Angebote", icon: FileSignature },
-        { href: "/invoices", label: "Rechnungen", icon: FileText },
-        { href: "/reminders", label: "Mahnungen", icon: FileWarning },
-        { href: "/recurring", label: "Vorlagen", icon: Repeat },
-      ],
-    },
-    {
-      label: "Eingangsbelege",
-      items: [{ href: "/expenses", label: "Eingangsrechnungen", icon: FileInput }],
-    },
-    {
-      label: "Auswertung",
-      items: [
-        { href: "/reports/ustva", label: "UStVA", icon: BarChart3 },
-        { href: "/bank-import", label: "Bank-Import", icon: Landmark },
-        { href: "/export", label: "DATEV-Export", icon: Download },
-      ],
-    },
-    {
-      label: "System",
-      items: [{ href: "/settings", label: "Einstellungen", icon: SettingsIcon }],
-    },
-  ];
 
   function isActive(href: string): boolean {
     const location = router.location;
@@ -102,7 +43,7 @@
     </button>
   </div>
   <nav class="flex-1 p-2 flex flex-col gap-4 pt-4 overflow-y-auto">
-    {#each navGroups as group (group.label ?? "root")}
+    {#each NAV_GROUPS as group (group.label ?? "root")}
       <div class="flex flex-col gap-0.5">
         {#if group.label}
           <div class="px-3 pb-1 text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground/80">
@@ -123,7 +64,7 @@
             )}
           >
             <item.icon class={cn("size-4 shrink-0 transition-transform duration-200", active && "scale-110")} />
-            <span>{item.label}</span>
+            <span class="truncate" title={item.label}>{item.label}</span>
           </a>
         {/each}
       </div>

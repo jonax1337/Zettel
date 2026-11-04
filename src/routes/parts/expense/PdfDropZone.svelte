@@ -4,12 +4,20 @@
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { toast } from "$lib/ui";
   import { FileUp, Loader2 } from "$lib/brand-icons";
+  import { pickDroppedPdf } from "./dropped-files";
 
   type Props = {
     importing: boolean;
     onFile: (path: string) => void;
+    hint?: string;
+    busyLabel?: string;
   };
-  let { importing, onFile }: Props = $props();
+  let {
+    importing,
+    onFile,
+    hint = "ZUGFeRD/Factur-X-Daten werden automatisch übernommen.",
+    busyLabel = "ZUGFeRD-Daten werden gelesen…",
+  }: Props = $props();
 
   let dropHover = $state(false);
 
@@ -21,14 +29,19 @@
         : "border-muted-foreground/25 hover:border-muted-foreground/50",
   );
 
-  function isPdf(path: string): boolean {
-    return path.toLowerCase().endsWith(".pdf");
-  }
-
   function handleDrop(paths: string[]) {
-    const [firstPdf] = paths.filter(isPdf);
-    if (firstPdf) onFile(firstPdf);
-    else if (paths.length > 0) toast.warning("Nur PDF-Dateien werden unterstützt.");
+    const { pdf, ignoredCount } = pickDroppedPdf(paths);
+    if (!pdf) {
+      if (paths.length > 0) toast.warning("Nur PDF-Dateien werden unterstützt.");
+      return;
+    }
+    if (ignoredCount > 0) {
+      toast.warning(
+        "Nur eine PDF pro Vorgang",
+        `${ignoredCount} weitere ${ignoredCount === 1 ? "Datei wurde" : "Dateien wurden"} ignoriert — bitte einzeln nacheinander ablegen.`,
+      );
+    }
+    onFile(pdf);
   }
 
   async function pickFile() {
@@ -76,7 +89,7 @@
   {#if importing}
     <div class="flex items-center justify-center gap-2 text-sm text-muted-foreground">
       <Loader2 class="size-4 animate-spin" />
-      <span>ZUGFeRD-Daten werden gelesen…</span>
+      <span>{busyLabel}</span>
     </div>
   {:else}
     <div class="flex flex-col items-center gap-3">
@@ -88,9 +101,7 @@
           Datei auswählen
         </button>
       </div>
-      <p class="text-xs text-muted-foreground">
-        ZUGFeRD/Factur-X-Daten werden automatisch übernommen.
-      </p>
+      <p class="text-xs text-muted-foreground">{hint}</p>
     </div>
   {/if}
 </div>

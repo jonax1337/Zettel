@@ -10,6 +10,7 @@ use tauri::{AppHandle, Manager};
 const APP_IDENTIFIER: &str = "digital.laux.zettel";
 
 pub const DOCUMENTS_SUBDIR: &str = "Zettel";
+const FALLBACK_DOCUMENTS_DIR: &str = "Documents";
 
 pub fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path().app_data_dir().map_err(|e| e.to_string())
@@ -31,11 +32,9 @@ pub fn app_config_dir_static() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join(APP_IDENTIFIER))
 }
 
-pub fn documents_zettel_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let documents = app.path().document_dir().map_err(|e| e.to_string())?;
-    Ok(documents.join(DOCUMENTS_SUBDIR))
-}
-
-pub fn documents_zettel_dir_static() -> Option<PathBuf> {
-    dirs::document_dir().map(|d| d.join(DOCUMENTS_SUBDIR))
+/// The user's documents folder. On Windows this is the Known Folder, which
+/// follows a OneDrive redirection that `~/Documents` would miss. Linux
+/// without XDG user dirs has none, so `~/Documents` stands in.
+pub fn documents_dir() -> Option<PathBuf> {
+    dirs::document_dir().or_else(|| dirs::home_dir().map(|home| home.join(FALLBACK_DOCUMENTS_DIR)))
 }

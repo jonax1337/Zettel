@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sqlite3
 import sys
 import time
@@ -97,12 +98,17 @@ CREATE TABLE settings (
     updated_at INTEGER
 );
 INSERT INTO settings VALUES (1, 0, 'RE-{YYYY}-{NNNN}', 0);
+CREATE TABLE customers (
+    id INTEGER PRIMARY KEY, customer_number TEXT, name TEXT, contact_person TEXT, street TEXT,
+    postal_code TEXT, city TEXT, country TEXT, email TEXT, vat_id TEXT
+);
+INSERT INTO customers (id, customer_number, name, city) VALUES (1, 'K-0001', 'Acme GmbH', 'Berlin');
 CREATE TABLE invoices (
     id INTEGER PRIMARY KEY AUTOINCREMENT, number TEXT, customer_id INTEGER, customer_snapshot TEXT,
     issue_date INTEGER, delivery_date INTEGER, due_date INTEGER, status TEXT,
     subtotal INTEGER, vat_amount INTEGER, total INTEGER, is_kleinunternehmer INTEGER,
     is_reverse_charge INTEGER, reverse_charge_type TEXT, supply_kind TEXT, notes TEXT, payment_terms TEXT,
-    is_credit_note INTEGER, corrects_invoice_id INTEGER, currency TEXT, exchange_rate TEXT,
+    is_credit_note INTEGER, corrects_invoice_id INTEGER, currency TEXT NOT NULL DEFAULT 'EUR', exchange_rate TEXT,
     eur_total_cent INTEGER, notes_internal TEXT, follow_up_date INTEGER,
     service_period_start INTEGER, service_period_end INTEGER, skonto_percent REAL,
     skonto_days INTEGER, pdf_language TEXT, pdf_path TEXT,
@@ -142,10 +148,15 @@ class SharedConnection:
 
 def insert_invoice(con, *, status, total=11900, amount_paid=0, number="RE-2026-0001", issue_date=1_700_000_000):
     cur = con.execute(
-        "INSERT INTO invoices (number, status, total, amount_paid_cent, issue_date, due_date, is_credit_note) "
-        "VALUES (?, ?, ?, ?, ?, ?, 0)",
+        "INSERT INTO invoices (number, customer_id, customer_snapshot, status, total, amount_paid_cent, "
+        "issue_date, due_date, is_credit_note) VALUES (?, 1, '{}', ?, ?, ?, ?, ?, 0)",
         (number, status, total, amount_paid, issue_date, issue_date),
     )
+    if amount_paid:
+        con.execute(
+            "INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent, source) VALUES (?, ?, ?, 'manual')",
+            (cur.lastrowid, issue_date, amount_paid),
+        )
     return cur.lastrowid
 
 
@@ -177,8 +188,20 @@ class TestMarkPaid:
     def test_partial_invoice_logs_only_the_open_remainder(self, cli, con):
         invoice_id = insert_invoice(con, status="partial", amount_paid=4000)
         cli.mark_invoice_paid(con, invoice_id, PAID_AT)
-        assert payments_of(con, invoice_id) == [(PAID_AT, 7900, "auto")]
+        assert payments_of(con, invoice_id)[-1] == (PAID_AT, 7900, "auto")
         assert row_of(con, invoice_id)["amount_paid_cent"] == 11900
+
+    def test_open_remainder_comes_from_the_recorded_payments_not_the_cached_amount(self, cli, con):
+        invoice_id = insert_invoice(con, status="partial", amount_paid=4000)
+        con.execute("UPDATE invoices SET amount_paid_cent = 0 WHERE id = ?", (invoice_id,))
+        cli.mark_invoice_paid(con, invoice_id, PAID_AT)
+        assert payments_of(con, invoice_id)[-1] == (PAID_AT, 7900, "auto")
+
+    def test_overpayment_stays_visible_in_the_paid_amount(self, cli, con):
+        invoice_id = insert_invoice(con, status="partial", amount_paid=12500)
+        cli.mark_invoice_paid(con, invoice_id, PAID_AT)
+        assert len(payments_of(con, invoice_id)) == 1
+        assert row_of(con, invoice_id)["amount_paid_cent"] == 12500
 
     @pytest.mark.parametrize("status", ["cancelled", "paid"])
     def test_cancelled_or_paid_invoice_is_left_untouched(self, cli, con, status):
@@ -187,6 +210,45 @@ class TestMarkPaid:
         assert payments_of(con, invoice_id) == []
         invoice = row_of(con, invoice_id)
         assert (invoice["status"], invoice["amount_paid_cent"]) == (status, 0)
+
+    @staticmethod
+    def add_credit_note(con, invoice_id, status, total=-11900):
+        con.execute(
+            "INSERT INTO invoices (number, customer_id, customer_snapshot, status, total, is_credit_note, "
+            "corrects_invoice_id) VALUES ('RE-2026-0099', 1, '{}', ?, ?, 1, ?)",
+            (status, total, invoice_id),
+        )
+
+    @pytest.mark.parametrize("status", ["sent", "paid"])
+    def test_invoice_offset_by_an_issued_credit_note_is_refused(self, cli, con, status):
+        invoice_id = insert_invoice(con, status="sent")
+        self.add_credit_note(con, invoice_id, status)
+        with pytest.raises(SystemExit, match="Stornorechnung"):
+            cli.mark_invoice_paid(con, invoice_id, PAID_AT)
+        assert payments_of(con, invoice_id) == []
+        assert row_of(con, invoice_id)["status"] == "sent"
+
+    @pytest.mark.parametrize("status", ["draft", "cancelled"])
+    def test_draft_or_discarded_credit_note_does_not_block_payment(self, cli, con, status):
+        invoice_id = insert_invoice(con, status="sent")
+        self.add_credit_note(con, invoice_id, status)
+        assert cli.mark_invoice_paid(con, invoice_id, PAID_AT) is not None
+        assert row_of(con, invoice_id)["status"] == "paid"
+        assert payments_of(con, invoice_id) == [(PAID_AT, 11900, "auto")]
+
+    def test_partial_credit_note_leaves_the_rest_payable_and_books_exactly_it(self, cli, con):
+        invoice_id = insert_invoice(con, status="partial", amount_paid=5000)
+        self.add_credit_note(con, invoice_id, "sent", total=-3000)
+        assert cli.mark_invoice_paid(con, invoice_id, PAID_AT) is not None
+        assert payments_of(con, invoice_id)[-1] == (PAID_AT, 3900, "auto")
+        invoice = row_of(con, invoice_id)
+        assert (invoice["status"], invoice["amount_paid_cent"]) == ("paid", 8900)
+
+    def test_payments_and_partial_credit_note_covering_the_total_are_settled(self, cli, con):
+        invoice_id = insert_invoice(con, status="partial", amount_paid=8900)
+        self.add_credit_note(con, invoice_id, "sent", total=-3000)
+        with pytest.raises(SystemExit, match="Stornorechnung"):
+            cli.mark_invoice_paid(con, invoice_id, PAID_AT)
 
     def test_draft_is_issued_with_a_real_number_before_payment(self, cli, con):
         invoice_id = insert_invoice(con, status="draft", number=cli.draft_placeholder())
@@ -214,6 +276,62 @@ class TestIssuedNumberUsesIssueDate:
 
     def test_format_without_date_placeholders_is_unchanged(self, cli, con):
         assert self.issued_number(cli, con, local_timestamp(2024, 3, 15), "K-{NNNN}") == "K-0001"
+
+
+class TestIssueInvoice:
+    def test_freezes_the_current_customer_data(self, cli, con):
+        invoice_id = insert_invoice(con, status="draft", number=cli.draft_placeholder())
+        cli.issue_invoice(con, invoice_id)
+        snapshot = json.loads(row_of(con, invoice_id)["customer_snapshot"])
+        assert (snapshot["name"], snapshot["city"]) == ("Acme GmbH", "Berlin")
+
+    def test_issued_invoice_keeps_its_number_and_draws_none(self, cli, con):
+        invoice_id = insert_invoice(con, status="sent", number="RE-2026-0007")
+        assert cli.issue_invoice(con, invoice_id) == "RE-2026-0007"
+        assert con.execute("SELECT invoice_number_counter FROM settings").fetchone()[0] == 0
+
+    def test_lost_claim_returns_the_number_the_other_process_assigned(self, cli, con):
+        invoice_id = insert_invoice(con, status="sent", number="RE-2026-0008")
+        assert cli.number_issued_concurrently(con, invoice_id) == "RE-2026-0008"
+
+    def test_lost_claim_refuses_to_report_a_placeholder_as_the_number(self, cli, con):
+        invoice_id = insert_invoice(con, status="sent", number=cli.draft_placeholder())
+        with pytest.raises(SystemExit, match="gerade ausgestellt"):
+            cli.number_issued_concurrently(con, invoice_id)
+
+
+MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "src" / "lib" / "db" / "migrations"
+
+
+@pytest.mark.skipif(sqlite3.sqlite_version_info < (3, 38), reason="migrations use unixepoch() (SQLite 3.38+)")
+class TestOnMigratedSchema:
+    """The CLI against the real schema, after the migration that allowed 'partial'."""
+
+    @pytest.fixture
+    def app_db(self):
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
+            connection.executescript(migration.read_text(encoding="utf-8"))
+        connection.execute("INSERT INTO customers (id, customer_number, name) VALUES (1, 'K-0001', 'Acme')")
+        connection.commit()
+        yield connection
+        connection.close()
+
+    def test_pays_off_a_partially_paid_invoice(self, cli, app_db):
+        invoice_id = insert_invoice(app_db, status="sent", amount_paid=4000)
+        app_db.execute("UPDATE invoices SET status = 'partial' WHERE id = ?", (invoice_id,))
+        assert cli.mark_invoice_paid(app_db, invoice_id, PAID_AT) is not None
+        invoice = row_of(app_db, invoice_id)
+        assert (invoice["status"], invoice["amount_paid_cent"]) == ("paid", 11900)
+
+    def test_issues_a_draft_with_a_reverse_charge_type(self, cli, app_db):
+        invoice_id = insert_invoice(app_db, status="draft", number=cli.draft_placeholder())
+        app_db.execute("UPDATE invoices SET reverse_charge_type = 'third_country' WHERE id = ?", (invoice_id,))
+        number = cli.issue_invoice(app_db, invoice_id)
+        assert number.startswith("RE-")
+        assert row_of(app_db, invoice_id)["reverse_charge_type"] == "third_country"
 
 
 class TestAddDaysUnix:
@@ -251,8 +369,19 @@ class TestSkonto:
     def test_deadline_counts_calendar_days(self, cli):
         assert cli.skonto_of(self.invoice())["deadlineUnix"] == local_timestamp(2026, 4, 4)
 
-    def test_discount_is_rounded_down_like_the_app(self, cli):
-        assert cli.skonto_of(self.invoice(total=1010, skonto_percent=2.5))["discountCent"] == 25
+    @pytest.mark.parametrize(
+        "total, percent, expected",
+        [(1010, 2.5, 25), (3070, 2.5, 77), (3070, 2, 61), (3075, 2, 62), (10000, 2.5, 250)],
+    )
+    def test_discount_is_rounded_half_up_like_the_app(self, cli, total, percent, expected):
+        assert cli.skonto_of(self.invoice(total=total, skonto_percent=percent))["discountCent"] == expected
+
+    @pytest.mark.parametrize(
+        "total, percent, expected",
+        [(3000, 2.3, 69), (10000, 1.1, 110), (5800, 2.5, 145), (1000, 0.7, 7), (11900, 3.5, 417)],
+    )
+    def test_fractional_percent_is_exact(self, cli, total, percent, expected):
+        assert cli.skonto_of(self.invoice(total=total, skonto_percent=percent))["discountCent"] == expected
 
     @pytest.mark.parametrize(
         "overrides",
@@ -270,12 +399,118 @@ class TestSkonto:
         assert cli.skonto_of(self.invoice(**overrides)) is None
 
 
+class TestStats:
+    YEAR = 2026
+    ISSUED = local_timestamp(2026, 3, 1)
+
+    @staticmethod
+    def add(con, **values):
+        row = {
+            "status": "sent", "issue_date": TestStats.ISSUED, "total": 0, "amount_paid_cent": 0,
+            "eur_total_cent": None, "currency": "EUR", **values,
+        }
+        con.execute(
+            "INSERT INTO invoices (status, issue_date, total, amount_paid_cent, eur_total_cent, currency) "
+            "VALUES (:status, :issue_date, :total, :amount_paid_cent, :eur_total_cent, :currency)",
+            row,
+        )
+
+    def test_open_balance_subtracts_payments(self, cli, con):
+        self.add(con, status="partial", total=10_000, amount_paid_cent=4_000)
+        self.add(con, status="sent", total=5_000)
+        self.add(con, status="paid", total=7_000, amount_paid_cent=7_000)
+
+        revenue, open_count, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert (open_count, open_total) == (2, 11_000)
+        assert revenue == 22_000
+
+    def test_foreign_currency_counts_in_eur(self, cli, con):
+        self.add(con, total=11_900, eur_total_cent=11_000)
+
+        revenue, _, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert revenue == 11_000
+        assert open_total == 11_000
+
+    def test_foreign_currency_open_balance_converts_the_paid_share(self, cli, con):
+        self.add(con, status="partial", total=10_000, amount_paid_cent=2_500, eur_total_cent=9_200)
+
+        _, _, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert open_total == 9_200 - 2_300
+
+    def credit(self, con, invoice_id, total, status="sent", **values):
+        self.add(con, status=status, total=total, **values)
+        con.execute(
+            "UPDATE invoices SET is_credit_note = 1, corrects_invoice_id = ? WHERE id = last_insert_rowid()",
+            (invoice_id,),
+        )
+
+    def last_id(self, con):
+        return con.execute("SELECT MAX(id) FROM invoices").fetchone()[0]
+
+    def test_partial_credit_note_on_a_foreign_currency_invoice_is_converted_with_the_frozen_rate(self, cli, con):
+        # 100,00 USD frozen at 92,00 EUR; 25,00 USD paid and 30,00 USD credited (frozen at 27,60 EUR) -> 41,40 EUR open.
+        self.add(con, status="partial", total=10_000, amount_paid_cent=2_500, eur_total_cent=9_200, currency="USD")
+        self.credit(con, self.last_id(con), -3_000, eur_total_cent=-2_760, currency="USD")
+
+        revenue, open_count, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert (open_count, open_total) == (1, 4_140)
+        assert revenue == 9_200 - 2_760
+
+    def test_credit_note_in_another_currency_is_ignored(self, cli, con):
+        self.add(con, total=10_000)
+        invoice_id = self.last_id(con)
+        self.credit(con, invoice_id, -10_000, currency="USD")
+
+        _, open_count, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert (open_count, open_total) == (1, 10_000)
+
+    def test_full_credit_note_removes_invoice_and_credit_note_from_open_receivables(self, cli, con):
+        self.add(con, total=10_000)
+        self.credit(con, self.last_id(con), -10_000)
+
+        _, open_count, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert (open_count, open_total) == (0, 0)
+
+    def test_partial_credit_note_keeps_the_remainder_open(self, cli, con):
+        self.add(con, status="partial", total=10_000, amount_paid_cent=4_000)
+        self.credit(con, self.last_id(con), -3_000)
+
+        _, open_count, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert (open_count, open_total) == (1, 3_000)
+
+    @pytest.mark.parametrize("status", ["draft", "cancelled"])
+    def test_draft_or_cancelled_credit_note_is_ignored(self, cli, con, status):
+        self.add(con, total=10_000)
+        self.credit(con, self.last_id(con), -10_000, status=status)
+
+        _, open_count, open_total = cli.compute_stats(con, self.YEAR)
+
+        assert (open_count, open_total) == (1, 10_000)
+
+    def test_drafts_cancelled_and_other_years_do_not_count_as_revenue(self, cli, con):
+        self.add(con, status="draft", total=1_000)
+        self.add(con, status="cancelled", total=2_000)
+        self.add(con, status="paid", total=4_000, issue_date=local_timestamp(2025, 6, 1))
+
+        revenue, open_count, _ = cli.compute_stats(con, self.YEAR)
+
+        assert (revenue, open_count) == (0, 0)
+
+
 class TestDraftDueDate:
     def test_due_date_is_payment_terms_in_calendar_days(self, cli, con):
         args = SimpleNamespace(
             issue_date="2026-03-20", due_date=None, delivery_date=None, payment_terms=14,
             reverse_charge="none", supply_kind="services", notes=None, service_start=None, service_end=None,
-            skonto_percent=None, skonto_days=None, pdf_language="de",
+            skonto_percent=None, skonto_days=None, no_skonto=False, pdf_language="de",
+            currency="EUR", exchange_rate=None,
         )
         customer = {
             "id": 1, "customer_number": "K-0001", "name": "A", "contact_person": None,

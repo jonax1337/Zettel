@@ -13,6 +13,8 @@
     children?: Snippet;
     trigger?: Snippet;
     footer?: Snippet;
+    /** false blocks Escape, outside clicks and the close button, e.g. while an action is running. */
+    dismissible?: boolean;
     onOpenChange?: (open: boolean) => void;
   };
 
@@ -24,6 +26,7 @@
     children,
     trigger,
     footer,
+    dismissible = true,
     onOpenChange,
   }: Props = $props();
 </script>
@@ -38,6 +41,8 @@
   <DialogPrimitive.Portal>
     <DialogPrimitive.Overlay class={DIALOG_OVERLAY_CLASS} />
     <DialogPrimitive.Content
+      escapeKeydownBehavior={dismissible ? "close" : "ignore"}
+      interactOutsideBehavior={dismissible ? "close" : "ignore"}
       class={cn(
         DIALOG_CONTENT_ANIMATION_CLASS,
         "bg-background fixed top-[50%] left-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg outline-none",
@@ -67,12 +72,14 @@
         </div>
       {/if}
 
-      <DialogPrimitive.Close
-        class="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
-      >
-        <X class="size-4" />
-        <span class="sr-only">Schließen</span>
-      </DialogPrimitive.Close>
+      {#if dismissible}
+        <DialogPrimitive.Close
+          class="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+        >
+          <X class="size-4" />
+          <span class="sr-only">Schließen</span>
+        </DialogPrimitive.Close>
+      {/if}
     </DialogPrimitive.Content>
   </DialogPrimitive.Portal>
 </DialogPrimitive.Root>

@@ -32,21 +32,17 @@ describe("drawNextNumber", () => {
 
     expect(await drawNextNumber(sequence, DOCUMENT_DATE)).toBe("X-0007");
 
-    expect(execute.mock.calls[0][0]).toContain(`SET ${counter} = ${counter} + 1`);
-    expect(select.mock.calls[0][0]).toContain(`SELECT ${counter} AS counter, ${format} AS format`);
+    expect(select.mock.calls[0][0]).toContain(`SET ${counter} = ${counter} + 1`);
+    expect(select.mock.calls[0][0]).toContain(`RETURNING ${counter} AS counter, ${format} AS format`);
   });
 
-  it("increments before reading, so the drawn number is the new counter value", async () => {
-    const order: string[] = [];
-    execute.mockImplementation(async () => void order.push("update"));
-    select.mockImplementation(async () => {
-      order.push("select");
-      return [{ counter: 1, format: "RE-{NNNN}" }];
-    });
+  it("bumps and reads in one statement, so concurrent draws cannot read the same counter", async () => {
+    select.mockResolvedValueOnce([{ counter: 1, format: "RE-{NNNN}" }]);
 
     await drawNextNumber("invoice", DOCUMENT_DATE);
 
-    expect(order).toEqual(["update", "select"]);
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it.each<[NumberSequence, string]>([

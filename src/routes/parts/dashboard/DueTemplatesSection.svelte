@@ -3,7 +3,7 @@
   import { FileText, Repeat } from "$lib/brand-icons";
   import type { RecurringListRow } from "$lib/db/recurring";
   import { formatDate } from "$lib/utils/date";
-  import { generateInvoiceAndOpen } from "../entity/recurring";
+  import { generateInvoiceAndOpen, generatingRecurringIds } from "../entity/recurring";
 
   type Props = { templates: RecurringListRow[] };
   let { templates }: Props = $props();
@@ -13,7 +13,7 @@
   <div class="flex items-center justify-between mb-3">
     <h2 class="text-sm font-semibold uppercase text-muted-foreground tracking-wider flex items-center gap-2">
       <Repeat class="size-4" />
-      Fällige Vorlagen
+      Fällige wiederkehrende Rechnungen
     </h2>
     <span class="text-xs text-muted-foreground">{templates.length} fällig</span>
   </div>
@@ -28,7 +28,11 @@
               fällig {formatDate(template.nextDueDate)}
             </td>
             <td class="px-4 py-3 text-right">
-              <Button size="sm" onclick={() => generateInvoiceAndOpen(template.id)}>
+              <Button
+                size="sm"
+                disabled={generatingRecurringIds.has(template.id)}
+                onclick={() => generateInvoiceAndOpen(template.id)}
+              >
                 <FileText class="size-3.5" />
                 Jetzt erzeugen
               </Button>

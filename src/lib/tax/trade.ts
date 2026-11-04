@@ -16,8 +16,11 @@
 
 const GEWERBEERTRAG_ROUNDING_EURO = 100;
 const FREIBETRAG_EURO = 24_500;
-const STEUERMESSZAHL = 0.035;
-const ANRECHNUNGS_FAKTOR = 4.0;
+// Integer ratios: 3,5 % = 35 ‰, Hebesatz 4,1 = 410 %. Float products like 30 * 4.1 land at 122.999… and floor wrongly.
+const STEUERMESSZAHL_PROMILLE = 35;
+const PROMILLE = 1000;
+const PERCENT = 100;
+const ANRECHNUNGS_FAKTOR = 4;
 const CENTS_PER_EURO = 100;
 
 export interface TradeTaxResult {
@@ -48,9 +51,10 @@ export function estimateTradeTax(
     Math.floor(profitCent / CENTS_PER_EURO / GEWERBEERTRAG_ROUNDING_EURO) *
     GEWERBEERTRAG_ROUNDING_EURO;
   const ueberFreibetrag = Math.max(0, gewerbeertragEuro - FREIBETRAG_EURO);
-  const messbetragEuro = Math.floor(ueberFreibetrag * STEUERMESSZAHL);
-  const tradeTaxEuro = Math.floor(messbetragEuro * hebesatz);
-  const creditEuro = Math.min(tradeTaxEuro, Math.floor(messbetragEuro * ANRECHNUNGS_FAKTOR));
+  const messbetragEuro = Math.floor((ueberFreibetrag * STEUERMESSZAHL_PROMILLE) / PROMILLE);
+  const hebesatzPercent = Math.round(hebesatz * PERCENT);
+  const tradeTaxEuro = Math.floor((messbetragEuro * hebesatzPercent) / PERCENT);
+  const creditEuro = Math.min(tradeTaxEuro, messbetragEuro * ANRECHNUNGS_FAKTOR);
 
   return {
     tradeTax: tradeTaxEuro * CENTS_PER_EURO,

@@ -2,6 +2,7 @@
   import { Badge, Button, Card, CardContent, DatePicker, Dialog, Input, Label, toast } from "$lib/ui";
   import { Plus, Trash2 } from "$lib/brand-icons";
   import type { Invoice, InvoicePayment } from "$lib/db/schema";
+  import { canRemovePayment, openBalanceCent } from "$lib/db/invoice-lifecycle";
   import { addPayment, deletePayment } from "$lib/db/invoice-payments";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
@@ -10,11 +11,14 @@
 
   type Props = {
     invoice: Invoice;
+    /** What issued credit notes take off the invoice; it is no longer owed. */
+    creditedCent: number;
     payments: InvoicePayment[];
+    canAddPayment: boolean;
     /** Called after a payment was added or removed, so the parent can reload. */
     onChanged: () => Promise<void>;
   };
-  let { invoice, payments, onChanged }: Props = $props();
+  let { invoice, creditedCent, payments, canAddPayment, onChanged }: Props = $props();
 
   let dialogOpen = $state(false);
   let paidAtIso = $state(toIsoDate(nowUnix()));
@@ -24,9 +28,8 @@
 
   const totalCent = $derived(Math.abs(invoice.total));
   const paidCent = $derived(invoice.amountPaidCent ?? 0);
-  const remainingCent = $derived(Math.max(0, totalCent - paidCent));
-  const canAddPayment = $derived(invoice.status !== "paid" && !invoice.isCreditNote);
-  const canRemovePayment = $derived(invoice.status !== "paid" || payments.length > 1);
+  const remainingCent = $derived(Math.max(0, openBalanceCent({ ...invoice, creditedCent })));
+  const removable = $derived(canRemovePayment({ ...invoice, creditedCent }, payments.length));
 
   function openDialog() {
     paidAtIso = toIsoDate(nowUnix());
@@ -84,11 +87,17 @@
       {/if}
     </div>
 
-    <div class="grid grid-cols-3 gap-4 mb-3 text-sm">
+    <div class="grid {creditedCent > 0 ? 'grid-cols-4' : 'grid-cols-3'} gap-4 mb-3 text-sm">
       <div>
         <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Total</div>
         <div class="font-medium tabular-nums">{formatMoney(totalCent, invoice.currency)}</div>
       </div>
+      {#if creditedCent > 0}
+        <div>
+          <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Storniert</div>
+          <div class="font-medium tabular-nums">−{formatMoney(creditedCent, invoice.currency)}</div>
+        </div>
+      {/if}
       <div>
         <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Bezahlt</div>
         <div class="font-medium tabular-nums text-success">{formatMoney(paidCent, invoice.currency)}</div>
@@ -115,7 +124,7 @@
                 <span class="text-xs text-muted-foreground truncate">{p.notes}</span>
               {/if}
             </div>
-            {#if canRemovePayment}
+            {#if removable}
               <button
                 type="button"
                 onclick={() => remove(p)}
@@ -135,7 +144,7 @@
 <Dialog
   bind:open={dialogOpen}
   title="Zahlung erfassen"
-  description="Wird als invoice_payments-Eintrag protokolliert. Voller Saldo → Rechnung wird automatisch als bezahlt markiert."
+  description="Die Zahlung wird an der Rechnung protokolliert. Ist der volle Betrag beglichen, wird die Rechnung automatisch als bezahlt markiert."
 >
   <div class="flex flex-col gap-3">
     <div class="flex flex-col gap-1.5">

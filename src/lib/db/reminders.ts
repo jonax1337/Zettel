@@ -1,5 +1,13 @@
 import { execute, insert, select } from "./client";
-import { getInvoice } from "./invoices";
+import { DEFAULT_CURRENCY, MISSING_NAME } from "./doc-queries";
+import {
+  creditedCentSql,
+  isSettledByCreditNote,
+  notSettledByCreditNoteSql,
+  openBalanceCent,
+  type SettlementFacts,
+} from "./invoice-lifecycle";
+import { getInvoice, loadCreditedCent } from "./invoices";
 import { drawNextNumber } from "./numbering";
 import { loadSettings } from "./queries";
 import type {
@@ -13,9 +21,9 @@ import type {
   Settings,
 } from "./schema";
 import { parseSnapshot } from "./snapshot-json";
+import { eurCentsToCurrency } from "$lib/utils/currency";
 import { addDaysUnix, nowUnix, SECONDS_PER_DAY } from "$lib/utils/date";
 
-const MISSING_VALUE = "—";
 const DEFAULT_COUNTRY = "DE";
 const REMINDER_LEVELS: readonly ReminderLevel[] = [1, 2, 3];
 const REMINDABLE_STATUSES: readonly InvoiceStatus[] = ["sent", "partial"];
@@ -73,18 +81,24 @@ function mapReminder(r: ReminderRow): Reminder {
 export type ReminderListRow = Reminder & {
   invoiceNumber: string;
   customerName: string;
+  /** Currency of the reminded invoice; the reminder amounts are in it. */
+  currency: string;
 };
 
 export async function listReminders(): Promise<ReminderListRow[]> {
-  const rows = await select<ReminderRow>(
-    "SELECT * FROM reminders ORDER BY issue_date DESC, id DESC",
+  const rows = await select<ReminderRow & { invoice_currency: string | null }>(
+    `SELECT r.*, i.currency AS invoice_currency
+     FROM reminders r
+     LEFT JOIN invoices i ON i.id = r.invoice_id
+     ORDER BY r.issue_date DESC, r.id DESC`,
   );
   return rows.map((r) => {
     const snapshot = parseSnapshot<ReminderInvoiceSnapshot>(r.invoice_snapshot, `Mahnungssnapshot ${r.number}`);
     return {
       ...mapReminder(r),
-      invoiceNumber: snapshot.invoiceNumber ?? MISSING_VALUE,
-      customerName: snapshot.customerName ?? MISSING_VALUE,
+      invoiceNumber: snapshot.invoiceNumber ?? MISSING_NAME,
+      customerName: snapshot.customerName ?? MISSING_NAME,
+      currency: r.invoice_currency ?? DEFAULT_CURRENCY,
     };
   });
 }
@@ -108,7 +122,7 @@ export async function listRemindersForInvoice(
 }
 
 export type OverdueInvoice = {
-  invoice: Pick<Invoice, "id" | "number" | "dueDate" | "total">;
+  invoice: Pick<Invoice, "id" | "number" | "dueDate" | "currency"> & SettlementFacts;
   customerName: string;
   daysOverdue: number;
   existingReminderLevels: ReminderLevel[];
@@ -119,6 +133,9 @@ type OverdueInvoiceRow = {
   number: string;
   due_date: number;
   total: number;
+  amount_paid_cent: number;
+  credited_cent: number;
+  currency: string;
   customer_name: string | null;
 };
 
@@ -146,10 +163,12 @@ async function loadReminderLevelsByInvoice(
 export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
   const now = nowUnix();
   const rows = await select<OverdueInvoiceRow>(
-    `SELECT i.id, i.number, i.due_date, i.total, c.name AS customer_name
+    `SELECT i.id, i.number, i.due_date, i.total, i.amount_paid_cent, i.currency, c.name AS customer_name,
+            ${creditedCentSql("i")} AS credited_cent
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
      WHERE i.status IN ('sent','partial') AND i.due_date < ? AND (i.is_credit_note IS NULL OR i.is_credit_note = 0)
+       AND ${notSettledByCreditNoteSql("i")}
      ORDER BY i.due_date ASC`,
     [now],
   );
@@ -157,8 +176,16 @@ export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
 
   const levelsByInvoice = await loadReminderLevelsByInvoice(rows.map((r) => r.id));
   return rows.map((r) => ({
-    invoice: { id: r.id, number: r.number, dueDate: r.due_date, total: r.total },
-    customerName: r.customer_name ?? MISSING_VALUE,
+    invoice: {
+      id: r.id,
+      number: r.number,
+      dueDate: r.due_date,
+      total: r.total,
+      amountPaidCent: r.amount_paid_cent,
+      creditedCent: r.credited_cent,
+      currency: r.currency,
+    },
+    customerName: r.customer_name ?? MISSING_NAME,
     daysOverdue: Math.max(0, Math.floor((now - r.due_date) / SECONDS_PER_DAY)),
     existingReminderLevels: levelsByInvoice.get(r.id) ?? [],
   }));
@@ -214,12 +241,14 @@ export async function buildReminderDraft(
   const settings = await loadSettings();
   const defaults = levelDefaults(settings, level);
   const now = nowUnix();
+  // The fee setting is in EUR, the reminder is in the invoice currency; without a usable rate the user enters the fee.
+  const feeCents = eurCentsToCurrency(defaults.feeCents, data.invoice.currency, data.invoice.exchangeRate) ?? 0;
   return {
     invoiceId,
     level,
     issueDate: now,
     dueDate: addDaysUnix(now, defaults.days),
-    feeCents: defaults.feeCents,
+    feeCents,
     interestCents: 0,
     bodyText: defaults.text,
     notes: null,
@@ -232,7 +261,7 @@ function buildInvoiceSnapshot(invoice: Invoice): ReminderInvoiceSnapshot {
     invoiceNumber: invoice.number,
     invoiceIssueDate: invoice.issueDate,
     invoiceDueDate: invoice.dueDate,
-    customerName: customer.name ?? MISSING_VALUE,
+    customerName: customer.name ?? MISSING_NAME,
     customerStreet: customer.street ?? "",
     customerPostalCode: customer.postalCode ?? "",
     customerCity: customer.city ?? "",
@@ -241,11 +270,9 @@ function buildInvoiceSnapshot(invoice: Invoice): ReminderInvoiceSnapshot {
   };
 }
 
-/** A reminder may only demand what is still open, so partial payments are deducted. */
-export function remindableAmountCents(
-  invoice: Pick<Invoice, "total" | "amountPaidCent">,
-): number {
-  return invoice.total - invoice.amountPaidCent;
+/** A reminder may only demand what is still open, so partial payments and credit notes are deducted. */
+export function remindableAmountCents(invoice: SettlementFacts): number {
+  return openBalanceCent(invoice);
 }
 
 function totalDueCents(
@@ -263,10 +290,14 @@ export async function createReminder(draft: ReminderDraft): Promise<number> {
   if (data.invoice.isCreditNote) {
     throw new Error("Für Stornorechnungen können keine Mahnungen erstellt werden.");
   }
+  const settlement = { ...data.invoice, creditedCent: await loadCreditedCent(draft.invoiceId) };
+  if (isSettledByCreditNote(settlement)) {
+    throw new Error("Die Rechnung wurde storniert und kann nicht gemahnt werden.");
+  }
 
   const number = await drawNextNumber("reminder", draft.issueDate);
   const snapshot = buildInvoiceSnapshot(data.invoice);
-  const originalTotalCents = remindableAmountCents(data.invoice);
+  const originalTotalCents = remindableAmountCents(settlement);
 
   return insert(
     `INSERT INTO reminders
@@ -333,10 +364,10 @@ export async function updateReminder(id: number, patch: ReminderPatch): Promise<
   );
 }
 
-export async function markReminderSent(id: number): Promise<void> {
+export async function markReminderSent(id: number, sentAt: number = nowUnix()): Promise<void> {
   await execute(
-    "UPDATE reminders SET status = 'sent', sent_at = unixepoch(), updated_at = unixepoch() WHERE id = ? AND status = 'draft'",
-    [id],
+    "UPDATE reminders SET status = 'sent', sent_at = ?, updated_at = unixepoch() WHERE id = ? AND status = 'draft'",
+    [sentAt, id],
   );
 }
 

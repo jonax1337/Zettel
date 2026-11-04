@@ -1,22 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { execute, insert, select, getInvoice, drawNextNumber } = vi.hoisted(() => ({
+const { execute, insert, select, getInvoice, loadCreditedCent, drawNextNumber, loadSettings } = vi.hoisted(() => ({
   execute: vi.fn(),
   insert: vi.fn(),
   select: vi.fn(),
   getInvoice: vi.fn(),
+  loadCreditedCent: vi.fn(),
   drawNextNumber: vi.fn(),
+  loadSettings: vi.fn(),
 }));
 vi.mock("./client", () => ({ execute, insert, select }));
-vi.mock("./invoices", () => ({ getInvoice }));
+vi.mock("./invoices", () => ({ getInvoice, loadCreditedCent }));
 vi.mock("./numbering", () => ({ drawNextNumber }));
-vi.mock("./queries", () => ({ loadSettings: vi.fn() }));
+vi.mock("./queries", () => ({ loadSettings }));
 
 import {
+  buildReminderDraft,
   createReminder,
   levelLabel,
   listOverdueInvoices,
   listReminders,
+  remindableAmountCents,
   updateReminder,
   type ReminderDraft,
 } from "./reminders";
@@ -77,6 +81,7 @@ beforeEach(() => {
   insert.mockReset();
   select.mockReset();
   getInvoice.mockReset();
+  loadCreditedCent.mockReset();
   drawNextNumber.mockReset();
 });
 
@@ -120,6 +125,7 @@ describe("createReminder", () => {
   beforeEach(() => {
     drawNextNumber.mockResolvedValue("MA-2026-0001");
     insert.mockResolvedValue(42);
+    loadCreditedCent.mockResolvedValue(0);
   });
 
   it.each(["sent", "partial"])("creates a reminder for a %s invoice", async (status) => {
@@ -155,9 +161,72 @@ describe("createReminder", () => {
 
     await expect(createReminder(draft)).rejects.toThrow("Stornorechnungen");
   });
+
+  it("rejects an invoice offset by an issued credit note without drawing a number", async () => {
+    getInvoice.mockResolvedValue(remindableInvoice());
+    loadCreditedCent.mockResolvedValue(10000);
+
+    await expect(createReminder(draft)).rejects.toThrow("storniert");
+    expect(drawNextNumber).not.toHaveBeenCalled();
+  });
+
+  it("demands only what payments and a partial credit note leave open", async () => {
+    getInvoice.mockResolvedValue(remindableInvoice({ status: "partial", amountPaidCent: 4000 }));
+    loadCreditedCent.mockResolvedValue(2500);
+
+    await createReminder(draft);
+
+    const [, binds] = insert.mock.calls[0];
+    expect(binds).toContain(3500);
+    expect(binds).toContain(4100);
+  });
+});
+
+describe("buildReminderDraft", () => {
+  const settings = {
+    reminderFeeL1Cents: 500,
+    reminderDaysL1: 7,
+    reminderTextL1: "Bitte zahlen",
+  };
+
+  beforeEach(() => {
+    loadSettings.mockResolvedValue(settings);
+  });
+
+  it("takes the EUR fee setting unchanged for a EUR invoice", async () => {
+    getInvoice.mockResolvedValue(remindableInvoice({ currency: "EUR", exchangeRate: null }));
+
+    expect((await buildReminderDraft(3, 1)).feeCents).toBe(500);
+  });
+
+  it("converts the EUR fee setting into the invoice currency with the invoice's rate", async () => {
+    getInvoice.mockResolvedValue(remindableInvoice({ currency: "USD", exchangeRate: "1.0832" }));
+
+    const draft = await buildReminderDraft(3, 1);
+
+    expect(draft.feeCents).toBe(542);
+    expect(draft.interestCents).toBe(0);
+  });
+
+  it("leaves the fee empty for a foreign-currency invoice without a usable rate", async () => {
+    getInvoice.mockResolvedValue(remindableInvoice({ currency: "USD", exchangeRate: null }));
+
+    expect((await buildReminderDraft(3, 1)).feeCents).toBe(0);
+  });
 });
 
 describe("listReminders", () => {
+  it("carries the currency of the reminded invoice and defaults to EUR", async () => {
+    select.mockResolvedValueOnce([
+      { ...draftReminderRow, invoice_currency: "USD" },
+      { ...draftReminderRow, id: 8, invoice_currency: null },
+    ]);
+
+    const rows = await listReminders();
+
+    expect(rows.map((r) => r.currency)).toEqual(["USD", "EUR"]);
+  });
+
   it("falls back to dashes and warns for an unreadable invoice snapshot", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     select.mockResolvedValueOnce([{ ...draftReminderRow, invoice_snapshot: "{" }]);
@@ -178,11 +247,22 @@ describe("listOverdueInvoices", () => {
     expect(select).toHaveBeenCalledTimes(1);
   });
 
+  it("lists sent and partially paid invoices but leaves out those offset by an issued credit note", async () => {
+    select.mockResolvedValueOnce([]);
+
+    await listOverdueInvoices();
+
+    const [sql] = select.mock.calls[0];
+    expect(sql).toContain("i.status IN ('sent','partial')");
+    expect(sql).toContain("credit_note.corrects_invoice_id = i.id");
+    expect(sql).toContain("credit_note.status NOT IN ('draft','cancelled')");
+  });
+
   it("attaches the existing reminder levels and ignores unknown ones", async () => {
     const dayAgo = Math.floor(Date.now() / 1000) - 3 * 86400 - 60;
     select
       .mockResolvedValueOnce([
-        { id: 3, number: "RE-1", due_date: dayAgo, total: 10000, customer_name: null },
+        { id: 3, number: "RE-1", due_date: dayAgo, total: 10000, credited_cent: 0, customer_name: null },
       ])
       .mockResolvedValueOnce([
         { invoice_id: 3, level: 1 },
@@ -194,6 +274,19 @@ describe("listOverdueInvoices", () => {
     expect(overdue.existingReminderLevels).toEqual([1]);
     expect(overdue.daysOverdue).toBe(3);
     expect(overdue.customerName).toBe("—");
+  });
+
+  it("carries what issued credit notes take off, so the list shows the reduced open amount", async () => {
+    const dayAgo = Math.floor(Date.now() / 1000) - 86400;
+    select
+      .mockResolvedValueOnce([
+        { id: 3, number: "RE-1", due_date: dayAgo, total: 10000, amount_paid_cent: 1000, credited_cent: 2500, customer_name: "Acme" },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const [overdue] = await listOverdueInvoices();
+
+    expect(remindableAmountCents(overdue.invoice)).toBe(6500);
   });
 });
 

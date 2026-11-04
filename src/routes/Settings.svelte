@@ -1,6 +1,6 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
-  import { Card, CardContent, Button, toast } from "$lib/ui";
+  import { Card, CardContent, Button, PageHeader, toast, PERSISTENT_TOAST } from "$lib/ui";
   import {
     Building2,
     FileText,
@@ -56,8 +56,8 @@
       href: "/settings/advanced",
       icon: AlertTriangle,
       title: "Erweitert",
-      description: "Gefahrenzone — Daten löschen und Counter zurücksetzen.",
-      items: ["Daten löschen", "Tabellen leeren", "Counter-Reset"],
+      description: "Gefahrenbereich — Daten löschen und Nummernzähler zurücksetzen.",
+      items: ["Daten löschen", "Tabellen leeren", "Zähler zurücksetzen"],
       danger: true,
     },
   ];
@@ -75,7 +75,7 @@
             label: "Installieren",
             onClick: () => result.install(),
           },
-          { description: "Klick zum Herunterladen und Neustarten." },
+          { description: "Klick zum Herunterladen und Neustarten.", duration: PERSISTENT_TOAST },
         );
       } else {
         toast.success("Bereits aktuell.", `Installierte Version: v${appVersion}`);
@@ -88,13 +88,8 @@
   }
 </script>
 
-<header class="mb-6 flex items-end justify-between gap-4">
-  <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Einstellungen</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      {categories.length} Kategorien
-    </p>
-  </div>
+<PageHeader title="Einstellungen" subtitle="{categories.length} Kategorien">
+  {#snippet actions()}
   <div class="flex items-center gap-3 text-sm">
     <span class="text-muted-foreground">
       Version <code class="text-foreground">v{appVersion}</code>
@@ -110,7 +105,8 @@
       {updateChecking ? "Prüfe…" : "Nach Updates suchen"}
     </Button>
   </div>
-</header>
+  {/snippet}
+</PageHeader>
 
 <div class="grid grid-cols-1 sm:grid-cols-2 @4xl:grid-cols-3 gap-4 stagger">
   {#each categories as cat (cat.href)}

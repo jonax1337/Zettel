@@ -12,10 +12,11 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
+use tauri::AppHandle;
 
-use crate::paths::DOCUMENTS_SUBDIR;
+use crate::tenants::active_documents_root_for;
 
-const INCOMING_INVOICES_DIR: &str = "Eingangsrechnungen";
+pub(crate) const INCOMING_INVOICES_DIR: &str = "Eingangsrechnungen";
 const VERSIONS_DIR: &str = "Versionen";
 /// Separates the PDF's own name from the mtime in archived file names.
 const VERSION_SEPARATOR: &str = "__";
@@ -34,19 +35,17 @@ pub async fn save_text_file(path: String, content: String) -> Result<String, Str
     Ok(path_string(&target))
 }
 
-/// Copy an incoming PDF into the user's Zettel/Eingangsrechnungen/ folder.
+/// Copy an incoming PDF into the active DB's Eingangsrechnungen/ folder.
 /// Returns the final destination path. On filename collisions, appends `-2`,
 /// `-3`, etc. — never overwrites an existing file. `vendor_slug` is an
 /// optional sub-folder for organization.
 #[tauri::command]
 pub async fn import_expense_pdf(
+    app: AppHandle,
     src_path: String,
     vendor_slug: Option<String>,
 ) -> Result<String, String> {
-    let documents = dirs::document_dir()
-        .or_else(dirs::home_dir)
-        .ok_or_else(|| "Kein Documents-Verzeichnis ermittelbar.".to_string())?;
-    let incoming_root = documents.join(DOCUMENTS_SUBDIR).join(INCOMING_INVOICES_DIR);
+    let incoming_root = active_documents_root_for(&app)?.join(INCOMING_INVOICES_DIR);
     let destination = import_pdf(Path::new(&src_path), &incoming_root, vendor_slug.as_deref())?;
     Ok(path_string(&destination))
 }
@@ -85,9 +84,22 @@ pub struct PdfVersion {
 /// generation is preserved (audit trail for invoices paid in steps). Moves
 /// `<dir>/<name>.pdf` to `<dir>/Versionen/<name>__<mtime_epoch>.pdf`. Returns
 /// the archived path, or None if there was nothing to archive.
+///
+/// `previous` is the PDF path the document stored so far. When it lies in
+/// another folder (written before the documents root moved), that PDF and
+/// its archived versions move into `path`'s `Versionen/` as well; left
+/// behind, nothing would reference them any more, so they would drop out of
+/// the version list and out of every later backup.
 #[tauri::command]
-pub async fn archive_pdf_version(path: String) -> Result<Option<String>, String> {
-    let archived = archive_pdf(Path::new(&path))?;
+pub async fn archive_pdf_version(
+    path: String,
+    previous: Option<String>,
+) -> Result<Option<String>, String> {
+    let target = Path::new(&path);
+    let archived = archive_pdf(target)?;
+    if let Some(previous) = previous.filter(|p| !p.is_empty()) {
+        adopt_pdf_versions(Path::new(&previous), target)?;
+    }
     Ok(archived.map(|p| path_string(&p)))
 }
 
@@ -105,6 +117,60 @@ fn archive_pdf(src: &Path) -> Result<Option<PathBuf>, String> {
     Ok(Some(destination))
 }
 
+/// Moves `previous` and its archived versions into the `Versionen/` folder
+/// next to `target`, named after `target` and keeping their mtime suffix.
+/// Every file is attempted; the ones that fail stay where they are.
+fn adopt_pdf_versions(previous: &Path, target: &Path) -> Result<(), String> {
+    if is_same_dir(parent_dir(previous)?, parent_dir(target)?) {
+        return Ok(());
+    }
+    let versions_dir = parent_dir(target)?.join(VERSIONS_DIR);
+    let target_stem = file_stem(target).unwrap_or(DEFAULT_ARCHIVE_STEM);
+    let previous_stem = file_stem(previous).unwrap_or_default();
+    let mut failures = Vec::new();
+    for version in pdf_versions(previous)? {
+        let source = PathBuf::from(&version.path);
+        let suffix = if version.current {
+            format!("{VERSION_SEPARATOR}{}", version.modified_unix)
+        } else {
+            file_stem(&source)
+                .and_then(|stem| stem.strip_prefix(previous_stem))
+                .unwrap_or_default()
+                .to_string()
+        };
+        let moved = fs::create_dir_all(&versions_dir).and_then(|()| {
+            let destination =
+                first_free_path(&versions_dir, &format!("{target_stem}{suffix}"), extension_of(&source));
+            move_file(&source, &destination)
+        });
+        if let Err(e) = moved {
+            failures.push(format!("{}: {e}", source.display()));
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
+}
+
+/// Paths that do not exist (yet) are compared as written.
+fn is_same_dir(a: &Path, b: &Path) -> bool {
+    match (fs::canonicalize(a), fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+/// Renames, or copies and deletes when `destination` is on another volume.
+fn move_file(source: &Path, destination: &Path) -> io::Result<()> {
+    if fs::rename(source, destination).is_ok() {
+        return Ok(());
+    }
+    fs::copy(source, destination)?;
+    fs::remove_file(source)
+}
+
 /// List all preserved versions of a generated PDF (current + archived),
 /// newest first. `path` is the canonical `<dir>/<name>.pdf`.
 #[tauri::command]
@@ -112,7 +178,7 @@ pub async fn list_pdf_versions(path: String) -> Result<Vec<PdfVersion>, String> 
     pdf_versions(Path::new(&path))
 }
 
-fn pdf_versions(src: &Path) -> Result<Vec<PdfVersion>, String> {
+pub(crate) fn pdf_versions(src: &Path) -> Result<Vec<PdfVersion>, String> {
     let dir = parent_dir(src)?;
     let mut versions = Vec::new();
     if src.is_file() {
@@ -195,7 +261,8 @@ fn path_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn sanitize_segment(s: &str) -> String {
+/// `s` made safe as a single path segment.
+pub(crate) fn sanitize_segment(s: &str) -> String {
     s.chars()
         .map(|c| match c {
             '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
@@ -279,6 +346,51 @@ mod tests {
         let second = archive_pdf(&pdf).unwrap().unwrap();
         assert_ne!(first, second);
         assert_eq!(fs::read(&second).unwrap(), b"v2");
+    }
+
+    #[test]
+    fn a_pdf_stored_in_a_previous_root_joins_the_version_chain_of_the_new_path() {
+        let dir = TempDir::new("adopt-legacy");
+        let legacy = dir.path().join("home/Documents/Zettel/Rechnungen/RE-1.pdf");
+        let legacy_versions = dir.path().join("home/Documents/Zettel/Rechnungen").join(VERSIONS_DIR);
+        fs::create_dir_all(&legacy_versions).unwrap();
+        fs::write(&legacy, b"issued").unwrap();
+        fs::write(legacy_versions.join("RE-1__100.pdf"), b"first").unwrap();
+        fs::write(legacy_versions.join("RE-2__100.pdf"), b"other invoice").unwrap();
+        let target = dir.path().join("onedrive/Dokumente/Zettel/Rechnungen/RE-1.pdf");
+
+        tauri::async_runtime::block_on(archive_pdf_version(
+            path_string(&target),
+            Some(path_string(&legacy)),
+        ))
+        .unwrap();
+
+        let versions = pdf_versions(&target).unwrap();
+        let contents: Vec<Vec<u8>> = versions.iter().map(|v| fs::read(&v.path).unwrap()).collect();
+        assert_eq!(versions.len(), 2);
+        assert!(contents.contains(&b"issued".to_vec()));
+        assert!(contents.contains(&b"first".to_vec()));
+        assert!(versions.iter().all(|v| !v.current));
+        assert!(!legacy.exists());
+        assert!(legacy_versions.join("RE-2__100.pdf").exists());
+    }
+
+    #[test]
+    fn a_previous_pdf_in_the_same_folder_is_archived_once() {
+        let dir = TempDir::new("adopt-same-dir");
+        let pdf = dir.path().join("RE-1.pdf");
+        fs::write(&pdf, b"v1").unwrap();
+
+        tauri::async_runtime::block_on(archive_pdf_version(
+            path_string(&pdf),
+            Some(path_string(&pdf)),
+        ))
+        .unwrap();
+
+        let versions = pdf_versions(&pdf).unwrap();
+        assert_eq!(versions.len(), 1);
+        assert_eq!(fs::read(&versions[0].path).unwrap(), b"v1");
+        assert!(!versions[0].path.ends_with("-2.pdf"), "{}", versions[0].path);
     }
 
     #[test]

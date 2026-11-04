@@ -1,14 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { execute, select, createInvoice, loadSettings } = vi.hoisted(() => ({
+const { execute, select, createInvoice, deleteInvoice, loadSettings, getCustomer } = vi.hoisted(() => ({
   execute: vi.fn(),
   select: vi.fn(),
   createInvoice: vi.fn(),
+  deleteInvoice: vi.fn(),
   loadSettings: vi.fn(),
+  getCustomer: vi.fn(),
 }));
-vi.mock("./client", () => ({ execute, insert: vi.fn(), select }));
-vi.mock("./invoices", () => ({ createInvoice }));
-vi.mock("./queries", () => ({ loadSettings, getCustomer: vi.fn() }));
+vi.mock("./client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./client")>()),
+  execute,
+  insert: vi.fn(),
+  select,
+}));
+vi.mock("./invoices", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./invoices")>()),
+  createInvoice,
+  deleteInvoice,
+}));
+vi.mock("./queries", () => ({ loadSettings, getCustomer }));
 
 import {
   convertToInvoice,
@@ -18,6 +29,8 @@ import {
   listOffers,
   mapOffer,
   openOffersStats,
+  updateOffer,
+  type OfferFormInput,
 } from "./offers";
 
 const NOW = new Date(2026, 10, 3, 15, 30); // 3 Nov 2026, 15:30 local
@@ -37,6 +50,7 @@ const offerRow = {
   total: 11900,
   is_kleinunternehmer: 0,
   is_reverse_charge: 1,
+  reverse_charge_type: "intra_eu",
   supply_kind: "services",
   notes: "Hinweis",
   intro_text: null,
@@ -102,14 +116,34 @@ describe("expireDueOffers", () => {
 describe("openOffersStats", () => {
   it("counts offers expiring today as expiring soon, up to a week ahead", async () => {
     select
-      .mockResolvedValueOnce([{ c: 3, t: 30000 }])
+      .mockResolvedValueOnce([
+        { total: 10000, currency: "EUR", exchange_rate: null },
+        { total: 10000, currency: null, exchange_rate: null },
+        { total: 10000, currency: "EUR", exchange_rate: null },
+      ])
       .mockResolvedValueOnce([{ c: 1 }]);
 
     const stats = await openOffersStats();
 
     const [, binds] = select.mock.calls[1];
     expect(binds).toEqual([START_OF_TODAY, START_OF_TODAY + 7 * DAY]);
-    expect(stats).toEqual({ count: 3, total: 30000, expiringSoonCount: 1 });
+    expect(stats).toEqual({ count: 3, total: 30000, unconvertedCount: 0, expiringSoonCount: 1 });
+  });
+
+  it("sums foreign-currency offers in EUR and skips those without a usable rate", async () => {
+    select
+      .mockResolvedValueOnce([
+        { total: 10000, currency: "EUR", exchange_rate: null },
+        { total: 10800, currency: "USD", exchange_rate: "1.08" },
+        { total: 5000, currency: "USD", exchange_rate: null },
+      ])
+      .mockResolvedValueOnce([{ c: 0 }]);
+
+    const stats = await openOffersStats();
+
+    expect(stats.count).toBe(3);
+    expect(stats.total).toBe(20000);
+    expect(stats.unconvertedCount).toBe(1);
   });
 });
 
@@ -170,6 +204,10 @@ describe("deleteOffer", () => {
 });
 
 describe("convertToInvoice", () => {
+  beforeEach(() => {
+    execute.mockResolvedValue({ rowsAffected: 1 });
+  });
+
   it("copies offer data into a draft invoice due after the payment terms and links it back", async () => {
     select.mockResolvedValueOnce([offerRow]).mockResolvedValueOnce([itemRow]);
     loadSettings.mockResolvedValueOnce({ defaultPaymentTermsDays: 14 });
@@ -225,5 +263,92 @@ describe("convertToInvoice", () => {
     select.mockResolvedValueOnce([{ ...offerRow, status: "rejected" }]).mockResolvedValueOnce([]);
     await expect(convertToInvoice(5)).rejects.toThrow("Abgelehnte");
     expect(createInvoice).not.toHaveBeenCalled();
+  });
+
+  it.each(["intra_eu", "third_country"] as const)(
+    "hands the reverse-charge type %s of the offer to the invoice",
+    async (reverseChargeType) => {
+      select
+        .mockResolvedValueOnce([{ ...offerRow, reverse_charge_type: reverseChargeType }])
+        .mockResolvedValueOnce([itemRow]);
+      loadSettings.mockResolvedValueOnce({ defaultPaymentTermsDays: 14 });
+      createInvoice.mockResolvedValueOnce(77);
+
+      await convertToInvoice(5);
+
+      expect(createInvoice.mock.calls[0][0].reverseChargeType).toBe(reverseChargeType);
+    },
+  );
+
+  it("links only an unconverted offer and drops its own draft when a concurrent click won", async () => {
+    select
+      .mockResolvedValueOnce([offerRow])
+      .mockResolvedValueOnce([itemRow])
+      .mockResolvedValueOnce([{ ...offerRow, converted_invoice_id: 76 }])
+      .mockResolvedValueOnce([itemRow]);
+    loadSettings.mockResolvedValueOnce({ defaultPaymentTermsDays: 14 });
+    createInvoice.mockResolvedValueOnce(77);
+    execute.mockResolvedValueOnce({ rowsAffected: 0 });
+
+    expect(await convertToInvoice(5)).toBe(76);
+
+    expect(execute.mock.calls[0][0]).toContain("converted_invoice_id IS NULL");
+    expect(deleteInvoice).toHaveBeenCalledWith(77);
+  });
+});
+
+describe("mapOffer reverse-charge type", () => {
+  it("reads the stored type and falls back to intra-EU for legacy boolean-only rows", () => {
+    expect(mapOffer({ ...offerRow, reverse_charge_type: "third_country" } as never).reverseChargeType).toBe(
+      "third_country",
+    );
+    expect(mapOffer({ ...offerRow, reverse_charge_type: "none" } as never).reverseChargeType).toBe("intra_eu");
+    expect(
+      mapOffer({ ...offerRow, is_reverse_charge: 0, reverse_charge_type: "none" } as never).reverseChargeType,
+    ).toBe("none");
+  });
+});
+
+describe("updateOffer", () => {
+  const formInput: OfferFormInput = {
+    customerId: 2,
+    issueDate: 100,
+    validUntil: 200,
+    notes: null,
+    introText: null,
+    reverseChargeType: "third_country",
+    supplyKind: "goods",
+    items: [],
+  };
+
+  beforeEach(() => {
+    select.mockResolvedValueOnce([{ ...offerRow, status: "draft" }]).mockResolvedValueOnce([]);
+    getCustomer.mockResolvedValue({ id: 2, customerNumber: "K-0002", name: "Neu GmbH", country: "US" });
+  });
+
+  function updateBinds(): Record<string, unknown> {
+    const [sql, binds] = execute.mock.calls.find(([s]) => String(s).startsWith("UPDATE offers"))!;
+    const columns = [...String(sql).matchAll(/(\w+) = \?/g)].map((m) => m[1]);
+    return Object.fromEntries(columns.map((column, i) => [column, binds[i]]));
+  }
+
+  it("clears the exchange rate when the offer is switched back to EUR", async () => {
+    await updateOffer(5, { ...formInput, currency: "EUR", exchangeRate: null });
+
+    expect(updateBinds()).toMatchObject({ currency: "EUR", exchange_rate: null });
+  });
+
+  it("keeps the exchange rate the form does not send", async () => {
+    await updateOffer(5, formInput);
+
+    expect(updateBinds()).toMatchObject({ exchange_rate: "1.08" });
+  });
+
+  it("stores the reverse-charge type and refreshes the customer snapshot of the draft", async () => {
+    await updateOffer(5, formInput);
+
+    const binds = updateBinds();
+    expect(binds).toMatchObject({ reverse_charge_type: "third_country", is_reverse_charge: 1 });
+    expect(JSON.parse(String(binds.customer_snapshot))).toMatchObject({ name: "Neu GmbH" });
   });
 });
