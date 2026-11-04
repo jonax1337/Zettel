@@ -33,21 +33,27 @@ ZUGFeRD- / Factur-X-konforme PDF/A-3 mit eingebettetem EN-16931-XML — lokal, o
 
 <!--
   Bilder leben unter `docs/screenshots/` — siehe `docs/screenshots/README.md` für Konventionen.
-  Wenn du Screenshots beisteuern magst, gerne PR mit anonymisierten Sandbox-Daten.
+  Alle Aufnahmen stammen aus dem Sandbox-Modus mit fiktiven Daten (Musterstudio Webdesign).
 -->
+
+<p align="center">
+  <img src="./docs/screenshots/zettel-demo.gif" alt="Rundgang durch Zettel: Dashboard, Rechnungen, ZUGFeRD-Validierung, PDF, Eingangsrechnungen und UStVA" width="960" />
+</p>
 
 <table>
   <tr>
-    <td align="center"><a href="./docs/screenshots/dashboard.png"><img src="./docs/screenshots/dashboard.png" alt="Dashboard mit KPIs, Steuer-Rücklage und Period-Switcher" /></a><br /><sub>Dashboard</sub></td>
-    <td align="center"><a href="./docs/screenshots/invoice-edit.png"><img src="./docs/screenshots/invoice-edit.png" alt="Rechnungs-Editor mit Multi-Currency und Leistungszeitraum" /></a><br /><sub>Rechnung erstellen</sub></td>
+    <td align="center"><a href="./docs/screenshots/dashboard.png"><img src="./docs/screenshots/dashboard.png" alt="Dashboard mit Umsatz, Aufwand, offenen Posten und Top-Kunden" /></a><br /><sub>Dashboard</sub></td>
+    <td align="center"><a href="./docs/screenshots/invoices.png"><img src="./docs/screenshots/invoices.png" alt="Rechnungsliste mit Status und Filtern" /></a><br /><sub>Rechnungen</sub></td>
   </tr>
   <tr>
-    <td align="center"><a href="./docs/screenshots/expense-drop-zone.png"><img src="./docs/screenshots/expense-drop-zone.png" alt="Eingangsrechnungen-Drop-Zone mit ZUGFeRD-Auto-Parse" /></a><br /><sub>Eingangsrechnungen</sub></td>
-    <td align="center"><a href="./docs/screenshots/pdf-preview.png"><img src="./docs/screenshots/pdf-preview.png" alt="PDF/A-3 mit eingebettetem Factur-X-XML" /></a><br /><sub>PDF/A-3 + ZUGFeRD</sub></td>
+    <td align="center"><a href="./docs/screenshots/invoice-validated.png"><img src="./docs/screenshots/invoice-validated.png" alt="Rechnung mit bestandener KoSIT-Prüfung (ZUGFeRD-konform)" /></a><br /><sub>KoSIT-geprüft</sub></td>
+    <td align="center"><a href="./docs/screenshots/pdf-preview.png"><img src="./docs/screenshots/pdf-preview.png" alt="Erzeugtes PDF/A-3 mit Girocode, Factur-X-XML eingebettet" /></a><br /><sub>PDF/A-3 + ZUGFeRD</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="./docs/screenshots/expenses.png"><img src="./docs/screenshots/expenses.png" alt="Eingangsrechnungen mit Lieferanten und Status" /></a><br /><sub>Eingangsrechnungen</sub></td>
+    <td align="center"><a href="./docs/screenshots/ustva.png"><img src="./docs/screenshots/ustva.png" alt="UStVA-Vorbereitung mit Kennzahlen pro Quartal" /></a><br /><sub>UStVA-Vorbereitung</sub></td>
   </tr>
 </table>
-
-> Die Bilder im Repo sind noch Platzhalter — wer ein paar saubere Sandbox-Screenshots erzeugen mag: PR willkommen. Konventionen in [`docs/screenshots/README.md`](./docs/screenshots/README.md).
 
 ## Warum Zettel?
 
