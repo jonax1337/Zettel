@@ -15,11 +15,13 @@
 //!     initializes; if the marker file exists it moves staged files into
 //!     place and removes the pending dir.
 
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use walkdir::WalkDir;
@@ -59,15 +61,26 @@ const PASSWORD_REQUIRED: &str = "password_required";
 
 const CUSTOMER_TABLES: [&str; 1] = ["customers"];
 /// Children before their parents, so deleting in this order is FK-safe.
-const INVOICE_TABLES: [&str; 6] = [
-    "invoice_items",
-    "invoices",
+/// Offers point at the invoice they were converted into, payments and
+/// reminders (without a declared FK) at the invoice they belong to.
+const INVOICE_TABLES: [&str; 9] = [
     "offer_items",
     "offers",
+    "invoice_payments",
+    "invoice_attachments",
+    "reminders",
+    "invoice_items",
+    "invoices",
     "recurring_invoice_items",
     "recurring_invoices",
 ];
 const SETTINGS_TABLES: [&str; 1] = ["settings"];
+/// Restorable tables created after `MIN_PARTIAL_RESTORE_SCHEMA`: a backup
+/// without them simply had no rows yet.
+const TABLES_NEWER_THAN_MIN_PARTIAL_SCHEMA: [&str; 1] = ["invoice_payments"];
+const SETTINGS_ROW_ID: i64 = 1;
+/// `settings` columns holding the last drawn document number.
+const NUMBER_COUNTER_SUFFIX: &str = "_number_counter";
 /// Oldest backup schema a partial restore accepts. Migration 0018 (schema 19)
 /// is the last one that rewrites data in restorable tables; an older backup
 /// copied column by column would skip those fixes. A full restore still works,
@@ -678,7 +691,8 @@ fn restore_staged_sections(
 }
 
 /// Replaces the selected sections of `live_db` with those of `staged_db`.
-/// All-or-nothing: any failure rolls the transaction back.
+/// All-or-nothing: any failure, including a reference the restored rows
+/// leave dangling, rolls the transaction back.
 fn restore_sections(
     live_db: &Path,
     staged_db: &Path,
@@ -698,19 +712,109 @@ fn restore_sections(
     ensure_partially_restorable(&conn)?;
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let violations_before = foreign_key_violations(&tx)?;
+    let live_counters = number_counters(&tx, "main")?;
     for table in &tables {
         tx.execute_batch(&format!("DELETE FROM main.{table};"))
             .map_err(|e| format!("{table}: {e}"))?;
     }
     // Parents before children — the reverse of the deletion order.
     for table in tables.iter().rev() {
+        if TABLES_NEWER_THAN_MIN_PARTIAL_SCHEMA.contains(table)
+            && table_columns(&tx, "bak", table)?.is_empty()
+        {
+            continue;
+        }
         let columns = shared_columns(&tx, table).map_err(|e| format!("{table}: {e}"))?;
         tx.execute_batch(&format!(
             "INSERT INTO main.{table} ({columns}) SELECT {columns} FROM bak.{table};"
         ))
         .map_err(|e| format!("{table}: {e}"))?;
     }
+    keep_number_counters_ahead(&tx, &live_counters, sections.invoices)?;
+    ensure_no_new_dangling_references(&tx, &violations_before)?;
     tx.commit().map_err(|e| e.to_string())
+}
+
+/// One row of `PRAGMA foreign_key_check`: table, rowid, parent table, FK id.
+type ForeignKeyViolation = (String, Option<i64>, String, i64);
+
+fn foreign_key_violations(
+    conn: &rusqlite::Connection,
+) -> Result<HashSet<ForeignKeyViolation>, String> {
+    let mut statement = conn
+        .prepare("PRAGMA main.foreign_key_check")
+        .map_err(|e| e.to_string())?;
+    let violations = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(|e| e.to_string())?;
+    Ok(violations)
+}
+
+/// Violations that existed before the restore are the live DB's own and do
+/// not block it; new ones mean the restored rows point at rows of a section
+/// that was not restored.
+fn ensure_no_new_dangling_references(
+    conn: &rusqlite::Connection,
+    before: &HashSet<ForeignKeyViolation>,
+) -> Result<(), String> {
+    let after = foreign_key_violations(conn)?;
+    let mut new = after.difference(before);
+    let Some((table, _, parent, _)) = new.next() else {
+        return Ok(());
+    };
+    Err(format!(
+        "Teil-Wiederherstellung abgebrochen: {} Verweise würden ins Leere zeigen (z. B. {table} → {parent}). Bitte die zugehörigen Bereiche gemeinsam wiederherstellen.",
+        new.count() + 1
+    ))
+}
+
+/// Document number counters in `schema.settings` as (column, value).
+fn number_counters(conn: &rusqlite::Connection, schema: &str) -> Result<Vec<(String, i64)>, String> {
+    let columns = table_columns(conn, schema, "settings")?;
+    let mut counters = Vec::new();
+    for column in columns.into_iter().filter(|c| c.ends_with(NUMBER_COUNTER_SUFFIX)) {
+        let value: Option<i64> = conn
+            .query_row(
+                &format!("SELECT \"{column}\" FROM {schema}.settings WHERE id = ?1"),
+                [SETTINGS_ROW_ID],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("settings.{column}: {e}"))?
+            .flatten();
+        counters.push((column, value.unwrap_or(0)));
+    }
+    Ok(counters)
+}
+
+/// A number already drawn must never be drawn again: the live counters cover
+/// every number issued live (also from invoices the restore replaced), and
+/// restored invoices carry numbers up to the backup's counters.
+fn keep_number_counters_ahead(
+    conn: &rusqlite::Connection,
+    live_counters: &[(String, i64)],
+    invoices_restored: bool,
+) -> Result<(), String> {
+    let backup_counters = if invoices_restored {
+        number_counters(conn, "bak")?
+    } else {
+        Vec::new()
+    };
+    for (column, live) in live_counters {
+        let backup = backup_counters
+            .iter()
+            .find(|(c, _)| c == column)
+            .map_or(0, |(_, value)| *value);
+        conn.execute(
+            &format!("UPDATE main.settings SET \"{column}\" = ?1 WHERE id = ?2"),
+            [(*live).max(backup), SETTINGS_ROW_ID],
+        )
+        .map_err(|e| format!("settings.{column}: {e}"))?;
+    }
+    Ok(())
 }
 
 fn ensure_partially_restorable(conn: &rusqlite::Connection) -> Result<(), String> {
@@ -729,14 +833,8 @@ fn ensure_partially_restorable(conn: &rusqlite::Connection) -> Result<(), String
 /// `bak.table`. A backup from an older schema lacks newer columns; those fall
 /// back to their DB defaults instead of failing the column-count match.
 fn shared_columns(conn: &rusqlite::Connection, table: &str) -> Result<String, String> {
-    let columns_of = |schema: &str| -> rusqlite::Result<Vec<String>> {
-        conn.prepare("SELECT name FROM pragma_table_info(?1, ?2)")?
-            .query_map([table, schema], |row| row.get(0))?
-            .collect()
-    };
-    let backup_columns = columns_of("bak").map_err(|e| e.to_string())?;
-    let shared: Vec<String> = columns_of("main")
-        .map_err(|e| e.to_string())?
+    let backup_columns = table_columns(conn, "bak", table)?;
+    let shared: Vec<String> = table_columns(conn, "main", table)?
         .into_iter()
         .filter(|column| backup_columns.contains(column))
         .map(|column| format!("\"{}\"", column.replace('"', "\"\"")))
@@ -745,6 +843,20 @@ fn shared_columns(conn: &rusqlite::Connection, table: &str) -> Result<String, St
         return Err("Tabelle fehlt im Backup.".into());
     }
     Ok(shared.join(", "))
+}
+
+/// Column names of `schema.table`; empty when the table does not exist.
+fn table_columns(
+    conn: &rusqlite::Connection,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<String>, String> {
+    let read = || -> rusqlite::Result<Vec<String>> {
+        conn.prepare("SELECT name FROM pragma_table_info(?1, ?2)")?
+            .query_map([table, schema], |row| row.get(0))?
+            .collect()
+    };
+    read().map_err(|e| format!("{schema}.{table}: {e}"))
 }
 
 fn path_string(path: &Path) -> String {
@@ -758,16 +870,9 @@ mod tests {
     use crate::testutil::TempDir;
     use rusqlite::Connection;
 
-    const ALL_TABLES: [&str; 8] = [
-        "customers",
-        "invoice_items",
-        "invoices",
-        "offer_items",
-        "offers",
-        "recurring_invoice_items",
-        "recurring_invoices",
-        "settings",
-    ];
+    fn all_tables() -> impl Iterator<Item = &'static str> {
+        CUSTOMER_TABLES.into_iter().chain(INVOICE_TABLES).chain(SETTINGS_TABLES)
+    }
 
     fn sections(customers: bool, invoices: bool, settings: bool) -> PartialRestoreSections {
         PartialRestoreSections { customers, invoices, settings }
@@ -787,7 +892,7 @@ mod tests {
     /// DB with every restorable table holding one row tagged `tag`.
     fn create_db(path: &Path, tag: &str) {
         let conn = open_current_db(path);
-        for table in ALL_TABLES {
+        for table in all_tables() {
             conn.execute_batch(&format!(
                 "CREATE TABLE {table} (id INTEGER PRIMARY KEY, tag TEXT);
                  INSERT INTO {table} (tag) VALUES ('{tag}');"
@@ -885,6 +990,158 @@ mod tests {
             assert_eq!(tag_of(&live, table), "backup", "{table}");
         }
         assert_eq!(tag_of(&live, "customers"), "live");
+    }
+
+    #[test]
+    fn restoring_invoices_keeps_payments_reminders_and_attachments_with_their_invoices() {
+        let dir = TempDir::new("restore-invoice-children");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+
+        restore_sections(&live, &staged, sections(false, true, false)).unwrap();
+
+        for table in ["invoice_payments", "reminders", "invoice_attachments"] {
+            assert_eq!(tag_of(&live, table), "backup", "{table}");
+        }
+    }
+
+    #[test]
+    fn restoring_invoices_from_a_backup_without_payments_clears_the_live_payments() {
+        let dir = TempDir::new("restore-without-payments");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+        Connection::open(&staged)
+            .unwrap()
+            .execute_batch("DROP TABLE invoice_payments;")
+            .unwrap();
+
+        restore_sections(&live, &staged, sections(false, true, false)).unwrap();
+
+        let payments: i64 = Connection::open(&live)
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM invoice_payments", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(payments, 0);
+        assert_eq!(tag_of(&live, "invoices"), "backup");
+    }
+
+    /// Customers and invoices with the real foreign key between them.
+    fn create_linked_db(path: &Path, customer_ids: &[i64], invoice_customer_id: i64) {
+        let conn = open_current_db(path);
+        conn.execute_batch(
+            "PRAGMA foreign_keys=OFF;
+             CREATE TABLE customers (id INTEGER PRIMARY KEY, tag TEXT);
+             CREATE TABLE invoices (id INTEGER PRIMARY KEY, tag TEXT,
+               customer_id INTEGER NOT NULL REFERENCES customers(id));",
+        )
+        .unwrap();
+        for table in INVOICE_TABLES.into_iter().filter(|t| *t != "invoices").chain(SETTINGS_TABLES) {
+            conn.execute_batch(&format!("CREATE TABLE {table} (id INTEGER PRIMARY KEY, tag TEXT);"))
+                .unwrap();
+        }
+        for id in customer_ids {
+            conn.execute("INSERT INTO customers (id, tag) VALUES (?1, 'c')", [id]).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO invoices (tag, customer_id) VALUES ('invoice', ?1)",
+            [invoice_customer_id],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn restoring_invoices_whose_customer_is_missing_live_is_rolled_back() {
+        let dir = TempDir::new("restore-dangling-fk");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_linked_db(&live, &[1], 1);
+        create_linked_db(&staged, &[1, 2], 2);
+
+        let err = restore_sections(&live, &staged, sections(false, true, false)).unwrap_err();
+
+        assert!(err.contains("invoices → customers"), "{err}");
+        let customer_id: i64 = Connection::open(&live)
+            .unwrap()
+            .query_row("SELECT customer_id FROM invoices", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(customer_id, 1);
+    }
+
+    #[test]
+    fn restoring_customers_and_invoices_together_satisfies_the_foreign_key() {
+        let dir = TempDir::new("restore-linked");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_linked_db(&live, &[1], 1);
+        create_linked_db(&staged, &[1, 2], 2);
+
+        restore_sections(&live, &staged, sections(true, true, false)).unwrap();
+    }
+
+    #[test]
+    fn dangling_references_the_live_db_already_had_do_not_block_a_restore() {
+        let dir = TempDir::new("restore-old-dangling");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_linked_db(&live, &[], 7);
+        create_linked_db(&staged, &[], 7);
+
+        restore_sections(&live, &staged, sections(false, false, true)).unwrap();
+    }
+
+    /// DB whose settings row carries an invoice counter.
+    fn create_db_with_counter(path: &Path, tag: &str, invoice_counter: i64) {
+        create_db(path, tag);
+        Connection::open(path)
+            .unwrap()
+            .execute_batch(&format!(
+                "ALTER TABLE settings ADD COLUMN invoice_number_counter INTEGER NOT NULL DEFAULT 0;
+                 UPDATE settings SET invoice_number_counter = {invoice_counter};"
+            ))
+            .unwrap();
+    }
+
+    fn invoice_counter_of(path: &Path) -> i64 {
+        Connection::open(path)
+            .unwrap()
+            .query_row("SELECT invoice_number_counter FROM settings", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn restoring_settings_keeps_the_live_counter_ahead_of_an_older_backup() {
+        let dir = TempDir::new("restore-counter-settings");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db_with_counter(&live, "live", 7);
+        create_db_with_counter(&staged, "backup", 3);
+
+        restore_sections(&live, &staged, sections(false, false, true)).unwrap();
+
+        assert_eq!(tag_of(&live, "settings"), "backup");
+        assert_eq!(invoice_counter_of(&live), 7);
+    }
+
+    #[test]
+    fn restoring_invoices_raises_the_counter_to_the_backups_numbers() {
+        let dir = TempDir::new("restore-counter-invoices");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db_with_counter(&live, "live", 4);
+        create_db_with_counter(&staged, "backup", 9);
+
+        restore_sections(&live, &staged, sections(false, true, false)).unwrap();
+
+        assert_eq!(invoice_counter_of(&live), 9);
+    }
+
+    #[test]
+    fn restoring_invoices_never_lowers_the_counter() {
+        let dir = TempDir::new("restore-counter-no-rollback");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db_with_counter(&live, "live", 12);
+        create_db_with_counter(&staged, "backup", 9);
+
+        restore_sections(&live, &staged, sections(false, true, true)).unwrap();
+
+        assert_eq!(invoice_counter_of(&live), 12);
     }
 
     #[test]
