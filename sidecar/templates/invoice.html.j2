@@ -1,23 +1,15 @@
 <!doctype html>
+{% from '_partials.j2' import masthead, addressee, meta_row, items_table, totals_table, notes_block, footer %}
 {% set lang = invoice.pdfLanguage or 'de' %}
+{% set doctype = t('doctype_credit_note' if invoice.isCreditNote else 'doctype_invoice', lang) %}
 <html lang="{{ lang }}">
 <head>
   <meta charset="utf-8" />
-  <title>{{ t('doctype_credit_note' if invoice.isCreditNote else 'doctype_invoice', lang) }} {{ invoice.number }}</title>
+  <title>{{ doctype }} {{ invoice.number }}</title>
 </head>
 <body class="theme-{{ settings.pdf_theme if settings and settings.pdf_theme else 'classic' }}">
 
-  <header class="masthead">
-    <div class="brand">
-      {% if company.logoDataUri %}<img class="brand-logo" src="{{ company.logoDataUri }}" alt="" />{% endif %}
-      <div class="brand-name">{{ company.companyName }}</div>
-      {% if company.ownerName %}<div class="brand-owner">{{ company.ownerName }}</div>{% endif %}
-    </div>
-    <div class="title-block">
-      <div class="doctype">{{ t('doctype_credit_note' if invoice.isCreditNote else 'doctype_invoice', lang) }}</div>
-      <div class="docnumber">{{ invoice.number }}</div>
-    </div>
-  </header>
+  {{ masthead(company, doctype, invoice.number) }}
 
   {% if invoice.isCreditNote and invoice.correctsInvoice %}
   <section class="callout">
@@ -26,118 +18,29 @@
   {% endif %}
 
   <section class="parties">
-    <div class="addressee">
-      <div class="sender-line">
-        {{ company.companyName }}
-        {%- if company.street %} · {{ company.street }}{% endif %}
-        {%- if company.postalCode %} · {{ company.postalCode }} {{ company.city }}{% endif %}
-      </div>
-      <div class="addressee-name">{{ customer.name }}</div>
-      {% if customer.contactPerson %}<div>{{ t('addr_attention', lang) }} {{ customer.contactPerson }}</div>{% endif %}
-      <div>{{ customer.street }}</div>
-      <div>{{ customer.postalCode }} {{ customer.city }}</div>
-      {% if customer.country and customer.country != "DE" %}<div>{{ customer.country }}</div>{% endif %}
-    </div>
+    {{ addressee(company, customer, t('addr_attention', lang)) }}
 
     <div class="meta">
-      <div class="meta-row">
-        <span class="meta-label">{{ t('meta_invoice_no', lang) }}</span>
-        <span class="meta-value">{{ invoice.number }}</span>
-      </div>
-      <div class="meta-row">
-        <span class="meta-label">{{ t('meta_issue_date', lang) }}</span>
-        <span class="meta-value">{{ invoice.issueDate | date_unix }}</span>
-      </div>
+      {{ meta_row(t('meta_invoice_no', lang), invoice.number) }}
+      {{ meta_row(t('meta_issue_date', lang), invoice.issueDate | date_unix) }}
       {% if invoice.servicePeriodStart and invoice.servicePeriodEnd %}
-      <div class="meta-row">
-        <span class="meta-label">{{ t('meta_service_period', lang) }}</span>
-        <span class="meta-value">{{ invoice.servicePeriodStart | date_unix }} – {{ invoice.servicePeriodEnd | date_unix }}</span>
-      </div>
+      {{ meta_row(t('meta_service_period', lang), (invoice.servicePeriodStart | date_unix) ~ ' – ' ~ (invoice.servicePeriodEnd | date_unix)) }}
       {% elif invoice.deliveryDate %}
-      <div class="meta-row">
-        <span class="meta-label">{{ t('meta_delivery_date', lang) }}</span>
-        <span class="meta-value">{{ invoice.deliveryDate | date_unix }}</span>
-      </div>
+      {{ meta_row(t('meta_delivery_date', lang), invoice.deliveryDate | date_unix) }}
       {% endif %}
       {% if not invoice.isCreditNote %}
-      <div class="meta-row">
-        <span class="meta-label">{{ t('meta_due_date', lang) }}</span>
-        <span class="meta-value">{{ invoice.dueDate | date_unix }}</span>
-      </div>
+      {{ meta_row(t('meta_due_date', lang), invoice.dueDate | date_unix) }}
       {% endif %}
       {% if customer.vatId %}
-      <div class="meta-row">
-        <span class="meta-label">{{ t('meta_customer_vatid', lang) }}</span>
-        <span class="meta-value">{{ customer.vatId }}</span>
-      </div>
+      {{ meta_row(t('meta_customer_vatid', lang), customer.vatId) }}
       {% endif %}
     </div>
   </section>
 
-  <table class="items">
-    <thead>
-      <tr>
-        <th class="col-pos">{{ t('col_pos', lang) }}</th>
-        <th class="col-desc">{{ t('col_desc', lang) }}</th>
-        <th class="col-qty">{{ t('col_qty', lang) }}</th>
-        <th class="col-unit">{{ t('col_unit', lang) }}</th>
-        <th class="col-price">{{ t('col_price', lang) }}</th>
-        {% if not invoice.isKleinunternehmer and not invoice.isReverseCharge %}<th class="col-vat">{{ t('col_vat', lang) }}</th>{% endif %}
-        <th class="col-total">{{ t('col_total', lang) }}</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for it in items %}
-        <tr>
-          <td class="col-pos">{{ it.position }}</td>
-          <td class="col-desc">
-            <div class="item-name">{{ it.description }}</div>
-            {% if it.longDescription %}
-            <div class="item-detail">{{ it.longDescription | replace('\n', '<br>') | safe }}</div>
-            {% endif %}
-            {% if it.linePeriodStart and it.linePeriodEnd %}
-              {% if it.linePeriodStart == it.linePeriodEnd %}
-            <div class="item-period">{{ t('item_period_single', lang) }} {{ it.linePeriodStart | date_unix }}</div>
-              {% else %}
-            <div class="item-period">{{ t('item_period_range', lang) }} {{ it.linePeriodStart | date_unix }} – {{ it.linePeriodEnd | date_unix }}</div>
-              {% endif %}
-            {% endif %}
-          </td>
-          <td class="col-qty">{{ it.quantity | qty }}</td>
-          <td class="col-unit">{{ it.unit }}</td>
-          <td class="col-price">{{ it.unitPrice | eur(invoice.currency) }}</td>
-          {% if not invoice.isKleinunternehmer and not invoice.isReverseCharge %}<td class="col-vat">{{ it.vatRate }}</td>{% endif %}
-          <td class="col-total">{{ (it.lineTotal * -1 if invoice.isCreditNote else it.lineTotal) | eur(invoice.currency) }}</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  {{ items_table(items, invoice, lang, -1 if invoice.isCreditNote else 1) }}
 
-  <section class="totals-wrap">
-    <table class="totals">
-      <tr>
-        <th>{{ t('totals_subtotal', lang) }}</th>
-        <td>{{ invoice.subtotal | eur(invoice.currency) }}</td>
-      </tr>
-      {% if not invoice.isKleinunternehmer and not invoice.isReverseCharge %}
-        {% for group in vat_groups %}
-          {% if vat_groups | length > 1 %}
-          <tr>
-            <th>{{ t('totals_net_at_rate', lang, rate=group.rate | rate) }}</th>
-            <td>{{ group.basis | eur(invoice.currency) }}</td>
-          </tr>
-          {% endif %}
-          <tr>
-            <th>{{ t('totals_vat_at_rate', lang, rate=group.rate | rate) }}</th>
-            <td>{{ group.tax | eur(invoice.currency) }}</td>
-          </tr>
-        {% endfor %}
-      {% endif %}
-      <tr class="grand">
-        <th>{{ t('totals_grand', lang) }}</th>
-        <td>{{ invoice.total | eur(invoice.currency) }}</td>
-      </tr>
-      {% if paid_cent %}
+  {% call totals_table(invoice, vat_groups, lang) %}
+    {% if paid_cent %}
       <tr class="paid-line">
         {% if invoice.isCreditNote %}
         <th>{{ t('totals_already_refunded', lang) }}</th>
@@ -151,9 +54,8 @@
         <th>{{ t('totals_remaining', lang) }}</th>
         <td>{{ open_cent | eur(invoice.currency) }}</td>
       </tr>
-      {% endif %}
-    </table>
-  </section>
+    {% endif %}
+  {% endcall %}
 
   {% if invoice.isKleinunternehmer and company.kleinunternehmerNote %}
     <p class="callout">{{ company.kleinunternehmerNote }}</p>
@@ -196,37 +98,10 @@
   {% endif %}
 
   {% if invoice.notes %}
-    <section class="block">
-      <div class="block-title">{{ t('block_notes', lang) }}</div>
-      <div class="notes">{{ invoice.notes | replace('\n', '<br>') | safe }}</div>
-    </section>
+    {{ notes_block(invoice.notes, lang) }}
   {% endif %}
 
-  <footer class="doc-footer">
-    <div class="col">
-      <div class="col-title">{{ company.companyName }}</div>
-      {% if company.ownerName %}<div>{{ company.ownerName }}</div>{% endif %}
-      <div>{{ company.street }}</div>
-      <div>{{ company.postalCode }} {{ company.city }}</div>
-    </div>
-    <div class="col">
-      <div class="col-title">{{ t('footer_contact', lang) }}</div>
-      {% if company.email %}<div>{{ company.email }}</div>{% endif %}
-      {% if company.phone %}<div>{{ company.phone }}</div>{% endif %}
-      {% if company.website %}<div>{{ company.website }}</div>{% endif %}
-    </div>
-    <div class="col">
-      <div class="col-title">{{ t('footer_tax', lang) }}</div>
-      {% if company.taxNumber %}<div>{{ t('footer_tax_no', lang) }} {{ company.taxNumber }}</div>{% endif %}
-      {% if company.vatId %}<div>{{ t('footer_vat_id', lang) }} {{ company.vatId }}</div>{% endif %}
-    </div>
-    <div class="col">
-      <div class="col-title">{{ t('footer_bank', lang) }}</div>
-      {% if company.bankName %}<div>{{ company.bankName }}</div>{% endif %}
-      {% if company.bankIban %}<div class="iban">{{ company.bankIban }}</div>{% endif %}
-      {% if company.bankBic %}<div>{{ company.bankBic }}</div>{% endif %}
-    </div>
-  </footer>
+  {{ footer(company, lang, with_bank=true) }}
 
 </body>
 </html>

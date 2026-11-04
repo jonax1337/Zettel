@@ -7,6 +7,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader
+from markupsafe import Markup, escape
 
 from .i18n import t as translate
 
@@ -49,6 +50,11 @@ def fmt_rate(rate: float | int) -> str:
     return f"{rate:g}".replace(".", ",")
 
 
+def nl2br(text: str | None) -> Markup:
+    """Escape user text and turn line breaks into <br>."""
+    return escape(text or "").replace("\n", Markup("<br>"))
+
+
 def format_unix_local(unix_seconds: int | None, pattern: str) -> str:
     if not unix_seconds:
         return ""
@@ -71,6 +77,7 @@ def build_env() -> Environment:
     env.filters["eur"] = cents_to_eur
     env.filters["qty"] = fmt_qty
     env.filters["rate"] = fmt_rate
+    env.filters["nl2br"] = nl2br
     env.filters["date_unix"] = fmt_date_unix
     # `t()` ist als globale Funktion verfügbar; Templates rufen
     # {{ t('schluessel', language) }} oder mit kwargs für Interpolation.

@@ -124,11 +124,14 @@ def render_reminder_html(payload: dict[str, Any]) -> str:
 
 
 def render_offer_html(payload: dict[str, Any]) -> str:
+    offer = payload["offer"]
+    items = payload["items"]
     return _render_html(
         "offer.html.j2",
         payload,
-        offer=payload["offer"],
-        items=payload["items"],
+        offer=offer,
+        items=items,
+        vat_groups=vat_groups(items, bool(offer.get("isKleinunternehmer"))),
     )
 
 

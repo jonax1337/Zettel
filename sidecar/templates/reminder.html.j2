@@ -1,4 +1,5 @@
 <!doctype html>
+{% from '_partials.j2' import masthead, addressee, meta_row %}
 {% set currency = invoice.currency or 'EUR' %}
 {# Fee and interest are EUR settings, so for other invoice currencies they are
    stated in EUR next to the amount instead of being added to it. #}
@@ -10,45 +11,15 @@
 </head>
 <body class="theme-{{ settings.pdf_theme if settings and settings.pdf_theme else 'classic' }}">
 
-  <header class="masthead">
-    <div class="brand">
-      {% if company.logoDataUri %}<img class="brand-logo" src="{{ company.logoDataUri }}" alt="" />{% endif %}
-      <div class="brand-name">{{ company.companyName }}</div>
-      {% if company.ownerName %}<div class="brand-owner">{{ company.ownerName }}</div>{% endif %}
-    </div>
-    <div class="title-block">
-      <div class="doctype">{{ reminder.levelLabel }}</div>
-      <div class="docnumber">{{ reminder.number }}</div>
-    </div>
-  </header>
+  {{ masthead(company, reminder.levelLabel, reminder.number) }}
 
   <section class="parties">
-    <div class="addressee">
-      <div class="sender-line">
-        {{ company.companyName }}
-        {%- if company.street %} · {{ company.street }}{% endif %}
-        {%- if company.postalCode %} · {{ company.postalCode }} {{ company.city }}{% endif %}
-      </div>
-      <div class="addressee-name">{{ customer.name }}</div>
-      {% if customer.contactPerson %}<div>z. Hd. {{ customer.contactPerson }}</div>{% endif %}
-      <div>{{ customer.street }}</div>
-      <div>{{ customer.postalCode }} {{ customer.city }}</div>
-      {% if customer.country and customer.country != "DE" %}<div>{{ customer.country }}</div>{% endif %}
-    </div>
+    {{ addressee(company, customer, 'z. Hd.') }}
 
     <div class="meta">
-      <div class="meta-row">
-        <span class="meta-label">{{ reminder.levelLabel }}-Nr.</span>
-        <span class="meta-value">{{ reminder.number }}</span>
-      </div>
-      <div class="meta-row">
-        <span class="meta-label">Datum</span>
-        <span class="meta-value">{{ reminder.issueDate | date_unix }}</span>
-      </div>
-      <div class="meta-row">
-        <span class="meta-label">Neue Frist</span>
-        <span class="meta-value">{{ reminder.dueDate | date_unix }}</span>
-      </div>
+      {{ meta_row(reminder.levelLabel ~ '-Nr.', reminder.number) }}
+      {{ meta_row('Datum', reminder.issueDate | date_unix) }}
+      {{ meta_row('Neue Frist', reminder.dueDate | date_unix) }}
     </div>
   </section>
 
