@@ -1,5 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
-import { execute } from "$lib/db/client";
 import { getOffer } from "$lib/db/offers";
 import { loadSettings } from "$lib/db/queries";
 import type { CustomerSnapshot, Offer, OfferItem, Settings } from "$lib/db/schema";
@@ -14,9 +12,10 @@ import {
   pdfSettingsPayload,
   skontoPayload,
 } from "./payload";
+import { renderDocumentPdf, storePdfPath } from "./render-document";
 import type { SidecarResponse } from "./types";
 
-function buildPayload(opts: {
+export function buildOfferPayload(opts: {
   offer: Offer;
   items: OfferItem[];
   customer: CustomerSnapshot;
@@ -39,6 +38,8 @@ function buildPayload(opts: {
       subtotal: offer.subtotal,
       vatAmount: offer.vatAmount,
       total: offer.total,
+      currency: offer.currency ?? "EUR",
+      exchangeRate: offer.exchangeRate,
       isKleinunternehmer: offer.isKleinunternehmer,
       isReverseCharge: offer.isReverseCharge,
       supplyKind: offer.supplyKind,
@@ -66,21 +67,12 @@ export async function generateOfferPdf(offerId: number): Promise<SidecarResponse
   const company = await loadSettings();
   const customer = parseCustomerSnapshot(data.offer.customerSnapshot);
   const outputPath = await documentOutputPath("Angebote", data.offer.number);
-  const payload = buildPayload({
+  const payload = buildOfferPayload({
     offer: data.offer,
     items: data.items,
     customer,
     company,
     outputPath,
   });
-
-  const response = await invoke<SidecarResponse>("generate_offer", { payload });
-
-  if (response.success) {
-    await execute("UPDATE offers SET pdf_path = ?, updated_at = unixepoch() WHERE id = ?", [
-      response.pdfPath,
-      offerId,
-    ]);
-  }
-  return response;
+  return renderDocumentPdf("generate_offer", payload, storePdfPath("offers", offerId));
 }

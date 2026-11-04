@@ -1,0 +1,154 @@
+{#- Building blocks shared by invoice, offer and reminder templates.
+    Import with: {% from '_partials.j2' import masthead, ... %}
+    Document-specific parts (meta rows, totals extras, notices) stay in the
+    templates themselves. -#}
+
+{% macro masthead(company, doctype, number) %}
+  <header class="masthead">
+    <div class="brand">
+      {% if company.logoDataUri %}<img class="brand-logo" src="{{ company.logoDataUri }}" alt="" />{% endif %}
+      <div class="brand-name">{{ company.companyName }}</div>
+      {% if company.ownerName %}<div class="brand-owner">{{ company.ownerName }}</div>{% endif %}
+    </div>
+    <div class="title-block">
+      <div class="doctype">{{ doctype }}</div>
+      <div class="docnumber">{{ number }}</div>
+    </div>
+  </header>
+{% endmacro %}
+
+{# Sender line (DIN 5008 window) plus the customer's address block. #}
+{% macro addressee(company, customer, attention_label) %}
+    <div class="addressee">
+      <div class="sender-line">
+        {{ company.companyName }}
+        {%- if company.street %} · {{ company.street }}{% endif %}
+        {%- if company.postalCode %} · {{ company.postalCode }} {{ company.city }}{% endif %}
+      </div>
+      <div class="addressee-name">{{ customer.name }}</div>
+      {% if customer.contactPerson %}<div>{{ attention_label }} {{ customer.contactPerson }}</div>{% endif %}
+      <div>{{ customer.street }}</div>
+      <div>{{ customer.postalCode }} {{ customer.city }}</div>
+      {% if customer.country and customer.country != "DE" %}<div>{{ customer.country }}</div>{% endif %}
+    </div>
+{% endmacro %}
+
+{% macro meta_row(label, value) %}
+      <div class="meta-row">
+        <span class="meta-label">{{ label }}</span>
+        <span class="meta-value">{{ value }}</span>
+      </div>
+{% endmacro %}
+
+{# Position table of invoices and offers. `line_sign` is -1 for credit notes,
+   whose positions are stored positive but print negative. #}
+{% macro items_table(items, doc, lang, line_sign=1) %}
+  {% set show_vat = not doc.isKleinunternehmer and not doc.isReverseCharge %}
+  <table class="items">
+    <thead>
+      <tr>
+        <th class="col-pos">{{ t('col_pos', lang) }}</th>
+        <th class="col-desc">{{ t('col_desc', lang) }}</th>
+        <th class="col-qty">{{ t('col_qty', lang) }}</th>
+        <th class="col-unit">{{ t('col_unit', lang) }}</th>
+        <th class="col-price">{{ t('col_price', lang) }}</th>
+        {% if show_vat %}<th class="col-vat">{{ t('col_vat', lang) }}</th>{% endif %}
+        <th class="col-total">{{ t('col_total', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in items %}
+        <tr>
+          <td class="col-pos">{{ it.position }}</td>
+          <td class="col-desc">
+            <div class="item-name">{{ it.description }}</div>
+            {% if it.longDescription %}
+            <div class="item-detail">{{ it.longDescription | nl2br }}</div>
+            {% endif %}
+            {% if it.linePeriodStart and it.linePeriodEnd %}
+              {% if it.linePeriodStart == it.linePeriodEnd %}
+            <div class="item-period">{{ t('item_period_single', lang) }} {{ it.linePeriodStart | date_unix }}</div>
+              {% else %}
+            <div class="item-period">{{ t('item_period_range', lang) }} {{ it.linePeriodStart | date_unix }} – {{ it.linePeriodEnd | date_unix }}</div>
+              {% endif %}
+            {% endif %}
+          </td>
+          <td class="col-qty">{{ it.quantity | qty }}</td>
+          <td class="col-unit">{{ it.unit }}</td>
+          <td class="col-price">{{ it.unitPrice | eur(doc.currency) }}</td>
+          {% if show_vat %}<td class="col-vat">{{ it.vatRate }}</td>{% endif %}
+          <td class="col-total">{{ (it.lineTotal * line_sign) | eur(doc.currency) }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endmacro %}
+
+{# Subtotal, VAT per rate (net and tax rows when several rates apply) and grand
+   total. Extra rows, e.g. payments, are passed in through a `call` block. #}
+{% macro totals_table(doc, vat_groups, lang) %}
+  <section class="totals-wrap">
+    <table class="totals">
+      <tr>
+        <th>{{ t('totals_subtotal', lang) }}</th>
+        <td>{{ doc.subtotal | eur(doc.currency) }}</td>
+      </tr>
+      {% if not doc.isKleinunternehmer and not doc.isReverseCharge %}
+        {% for group in vat_groups %}
+          {% if vat_groups | length > 1 %}
+          <tr>
+            <th>{{ t('totals_net_at_rate', lang, rate=group.rate | rate) }}</th>
+            <td>{{ group.basis | eur(doc.currency) }}</td>
+          </tr>
+          {% endif %}
+          <tr>
+            <th>{{ t('totals_vat_at_rate', lang, rate=group.rate | rate) }}</th>
+            <td>{{ group.tax | eur(doc.currency) }}</td>
+          </tr>
+        {% endfor %}
+      {% endif %}
+      <tr class="grand">
+        <th>{{ t('totals_grand', lang) }}</th>
+        <td>{{ doc.total | eur(doc.currency) }}</td>
+      </tr>
+      {% if caller %}{{ caller() }}{% endif %}
+    </table>
+  </section>
+{% endmacro %}
+
+{% macro notes_block(text, lang) %}
+    <section class="block">
+      <div class="block-title">{{ t('block_notes', lang) }}</div>
+      <div class="notes">{{ text | nl2br }}</div>
+    </section>
+{% endmacro %}
+
+{% macro footer(company, lang, with_bank=false) %}
+  <footer class="doc-footer">
+    <div class="col">
+      <div class="col-title">{{ company.companyName }}</div>
+      {% if company.ownerName %}<div>{{ company.ownerName }}</div>{% endif %}
+      <div>{{ company.street }}</div>
+      <div>{{ company.postalCode }} {{ company.city }}</div>
+    </div>
+    <div class="col">
+      <div class="col-title">{{ t('footer_contact', lang) }}</div>
+      {% if company.email %}<div>{{ company.email }}</div>{% endif %}
+      {% if company.phone %}<div>{{ company.phone }}</div>{% endif %}
+      {% if company.website %}<div>{{ company.website }}</div>{% endif %}
+    </div>
+    <div class="col">
+      <div class="col-title">{{ t('footer_tax', lang) }}</div>
+      {% if company.taxNumber %}<div>{{ t('footer_tax_no', lang) }} {{ company.taxNumber }}</div>{% endif %}
+      {% if company.vatId %}<div>{{ t('footer_vat_id', lang) }} {{ company.vatId }}</div>{% endif %}
+    </div>
+    {% if with_bank %}
+    <div class="col">
+      <div class="col-title">{{ t('footer_bank', lang) }}</div>
+      {% if company.bankName %}<div>{{ company.bankName }}</div>{% endif %}
+      {% if company.bankIban %}<div class="iban">{{ company.bankIban }}</div>{% endif %}
+      {% if company.bankBic %}<div>{{ company.bankBic }}</div>{% endif %}
+    </div>
+    {% endif %}
+  </footer>
+{% endmacro %}

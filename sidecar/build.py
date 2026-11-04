@@ -65,6 +65,7 @@ def run_pyinstaller() -> None:
         "--collect-all", "facturx",
         "--collect-data", "iso4217",
         "--collect-data", "stdnum",
+        "--collect-data", "tzdata",
         "--collect-all", "pydyf",
         "--collect-all", "fontTools",
         "--collect-submodules", "jinja2",

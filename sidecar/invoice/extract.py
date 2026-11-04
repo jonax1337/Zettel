@@ -6,7 +6,8 @@ via `facturx.get_xml_from_pdf`, parses the CII XML with lxml, and maps the
 fields onto Zettel's expense data model.
 
 All monetary amounts in the XML are decimal strings (e.g. "123.45"). We round
-to cents (integers). All dates are `format="102"` (YYYYMMDD) and converted to
+half up to cents (integers). Line totals are read from the XML, never derived
+from the (cent-rounded) unit price. All dates are `format="102"` (YYYYMMDD) and converted to
 local-midnight Unix seconds.
 
 Defensive throughout — incoming invoices come from foreign tools and may use
@@ -15,6 +16,7 @@ BASIC / EN16931 / EXTENDED with varying optional fields filled.
 from __future__ import annotations
 
 import datetime as _dt
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -59,8 +61,22 @@ def _number(raw: str | None, default: float) -> float:
         return default
 
 
+def _decimal(raw: str | None) -> Decimal | None:
+    if not raw:
+        return None
+    try:
+        return Decimal(raw.replace(",", "."))
+    except InvalidOperation:
+        return None
+
+
+def _to_cents(amount: Decimal) -> int:
+    return int((amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
 def _cents(node, xpath: str) -> int:
-    return round(_number(_text(node, xpath), 0.0) * 100)
+    amount = _decimal(_text(node, xpath))
+    return _to_cents(amount) if amount is not None else 0
 
 
 def _yyyymmdd_to_unix(s: str | None) -> int | None:
@@ -88,6 +104,50 @@ def _parse_party(node) -> dict[str, Any]:
     }
 
 
+def _unit_price(line) -> Decimal:
+    """Net price per unit in euros, honoring BT-149 (price quoted per N units)."""
+    price_node = "ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice"
+    charge = _decimal(_text(line, f"{price_node}/ram:ChargeAmount")) or Decimal(0)
+    basis_quantity = _decimal(_text(line, f"{price_node}/ram:BasisQuantity"))
+    if basis_quantity:
+        return charge / basis_quantity
+    return charge
+
+
+def _line_total(line, quantity: float, unit_price: Decimal) -> int:
+    """BT-131 as stated by the supplier — it already includes line allowances
+    and charges. Only a missing value falls back to quantity x price."""
+    stated = _decimal(
+        _text(
+            line,
+            "ram:SpecifiedLineTradeSettlement/"
+            "ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount",
+        )
+    )
+    if stated is not None:
+        return _to_cents(stated)
+    return _to_cents(Decimal(str(quantity)) * unit_price)
+
+
+def _parse_tax_groups(settlement) -> list[dict[str, Any]]:
+    """Header VAT breakdown (BG-23): the amounts the supplier actually owes the tax office."""
+    if settlement is None:
+        return []
+    groups = []
+    for tax in settlement.findall("ram:ApplicableTradeTax", NS):
+        if _decimal(_text(tax, "ram:BasisAmount")) is None:
+            continue
+        groups.append(
+            {
+                "vatRate": round(_number(_text(tax, "ram:RateApplicablePercent"), 0.0)),
+                "basis": _cents(tax, "ram:BasisAmount"),
+                "tax": _cents(tax, "ram:CalculatedAmount"),
+                "categoryCode": _text(tax, "ram:CategoryCode"),
+            }
+        )
+    return groups
+
+
 def _parse_line(line) -> dict[str, Any]:
     description = _text(line, "ram:SpecifiedTradeProduct/ram:Name") or ""
     quantity = _number(
@@ -101,15 +161,8 @@ def _parse_line(line) -> dict[str, Any]:
         )
         or [DEFAULT_UNIT_CODE]
     )[0]
-    unit_price = _cents(
-        line,
-        "ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount",
-    )
-    line_total = _cents(
-        line,
-        "ram:SpecifiedLineTradeSettlement/"
-        "ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount",
-    )
+    unit_price = _unit_price(line)
+    line_total = _line_total(line, quantity, unit_price)
     vat_rate = round(
         _number(
             _text(
@@ -127,7 +180,8 @@ def _parse_line(line) -> dict[str, Any]:
         "description": description,
         "quantity": quantity,
         "unit": _unece_to_label(unit),
-        "unitPrice": unit_price,
+        "unitPrice": _to_cents(unit_price),
+        "unitPriceDecimal": format(unit_price.normalize(), "f"),
         "vatRate": vat_rate,
         "lineTotal": line_total,
         "categoryCode": category,
@@ -261,8 +315,10 @@ def _map_invoice(root) -> dict[str, Any]:
         "seller": _parse_party(_child(agreement, "ram:SellerTradeParty")),
         "buyer": _parse_party(_child(agreement, "ram:BuyerTradeParty")),
         "lineItems": [_parse_line(n) for n in line_nodes],
+        "taxGroups": _parse_tax_groups(settlement),
         "totals": {
             "subtotal": _cents(summary, "ram:LineTotalAmount"),
+            "net": _cents(summary, "ram:TaxBasisTotalAmount"),
             "vatAmount": _cents(summary, "ram:TaxTotalAmount"),
             "total": _cents(summary, "ram:GrandTotalAmount"),
         },

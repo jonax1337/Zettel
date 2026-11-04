@@ -10,6 +10,7 @@ from typing import Any
 from weasyprint import CSS, HTML
 
 from .templates import build_env, templates_dir
+from .vat import open_balance_cent, signed_paid_cent, vat_groups
 from .zugferd import render_zugferd_xml, resolve_profile
 from .qr import build_epc_payload, epc_qr_svg_data_uri, should_emit_qr
 
@@ -41,7 +42,7 @@ def _maybe_epc_qr(invoice: dict[str, Any], company: dict[str, Any]) -> str | Non
     """Build the EPC-QR data URI if the invoice qualifies, else None."""
     iban = (company.get("bankIban") or "").strip()
     currency = invoice.get("currency") or "EUR"
-    amount_cent = int(invoice.get("total") or 0)
+    amount_cent = open_balance_cent(invoice)
     if not should_emit_qr(
         currency=currency,
         iban=iban,
@@ -61,24 +62,26 @@ def _maybe_epc_qr(invoice: dict[str, Any], company: dict[str, Any]) -> str | Non
     return epc_qr_svg_data_uri(payload)
 
 
-def _render_pdf(template_name: str, payload: dict[str, Any], **context: Any) -> bytes:
-    """Render a Jinja template with WeasyPrint as PDF/A-3b.
-
-    PDF/A-3b is the variant required for ZUGFeRD/Factur-X attachments; for
-    offers and reminders it keeps the file long-term archivable (WeasyPrint
-    emits the XMP packet and sRGB OutputIntent and embeds all fonts).
-    """
+def _render_html(template_name: str, payload: dict[str, Any], **context: Any) -> str:
     template = build_env().get_template(template_name)
     company = dict(payload["company"])
     company["logoDataUri"] = _logo_data_uri(company.get("logoPath"))
     settings = payload.get("settings") or {"pdf_theme": DEFAULT_PDF_THEME}
-    html_str = template.render(
+    return template.render(
         company=company,
         customer=payload["customer"],
         settings=settings,
         **context,
     )
 
+
+def _html_to_pdf(html_str: str) -> bytes:
+    """Render HTML with WeasyPrint as PDF/A-3b.
+
+    PDF/A-3b is the variant required for ZUGFeRD/Factur-X attachments; for
+    offers and reminders it keeps the file long-term archivable (WeasyPrint
+    emits the XMP packet and sRGB OutputIntent and embeds all fonts).
+    """
     css_path = templates_dir() / STYLESHEET_FILENAME
     buf = io.BytesIO()
     HTML(string=html_str, base_url=str(css_path.parent)).write_pdf(
@@ -111,29 +114,54 @@ def _write_output(payload: dict[str, Any], pdf_bytes: bytes) -> Path:
     return output_path
 
 
-def render_reminder_pdf(payload: dict[str, Any]) -> Path:
-    """Render a payment reminder (Zahlungserinnerung/Mahnung) to PDF/A-3b.
-
-    No embedded ZUGFeRD XML — reminders aren't e-invoices per EN16931.
-    """
-    pdf_bytes = _render_pdf(
+def render_reminder_html(payload: dict[str, Any]) -> str:
+    return _render_html(
         "reminder.html.j2",
         payload,
         reminder=payload["reminder"],
         invoice=payload["invoice"],
     )
-    return _write_output(payload, pdf_bytes)
+
+
+def render_offer_html(payload: dict[str, Any]) -> str:
+    offer = payload["offer"]
+    items = payload["items"]
+    return _render_html(
+        "offer.html.j2",
+        payload,
+        offer=offer,
+        items=items,
+        vat_groups=vat_groups(items, bool(offer.get("isKleinunternehmer"))),
+    )
+
+
+def render_invoice_html(payload: dict[str, Any]) -> str:
+    invoice = payload["invoice"]
+    items = payload["items"]
+    sign = -1 if invoice.get("isCreditNote") else 1
+    return _render_html(
+        "invoice.html.j2",
+        payload,
+        invoice=invoice,
+        items=items,
+        vat_groups=vat_groups(items, bool(invoice.get("isKleinunternehmer")), sign),
+        paid_cent=signed_paid_cent(invoice),
+        open_cent=open_balance_cent(invoice),
+        epc_qr_uri=_maybe_epc_qr(invoice, payload["company"]),
+    )
+
+
+def render_reminder_pdf(payload: dict[str, Any]) -> Path:
+    """Render a payment reminder (Zahlungserinnerung/Mahnung) to PDF/A-3b.
+
+    No embedded ZUGFeRD XML — reminders aren't e-invoices per EN16931.
+    """
+    return _write_output(payload, _html_to_pdf(render_reminder_html(payload)))
 
 
 def render_offer_pdf(payload: dict[str, Any]) -> Path:
     """Render an offer (Angebot) to PDF/A-3b — no ZUGFeRD XML embedded."""
-    pdf_bytes = _render_pdf(
-        "offer.html.j2",
-        payload,
-        offer=payload["offer"],
-        items=payload["items"],
-    )
-    return _write_output(payload, pdf_bytes)
+    return _write_output(payload, _html_to_pdf(render_offer_html(payload)))
 
 
 def render_invoice_pdf(payload: dict[str, Any]) -> Path:
@@ -141,13 +169,7 @@ def render_invoice_pdf(payload: dict[str, Any]) -> Path:
 
     payload schema — see sidecar/README.md for the full list of fields.
     """
-    pdf_bytes = _render_pdf(
-        "invoice.html.j2",
-        payload,
-        invoice=payload["invoice"],
-        items=payload["items"],
-        epc_qr_uri=_maybe_epc_qr(payload["invoice"], payload["company"]),
-    )
+    pdf_bytes = _html_to_pdf(render_invoice_html(payload))
     xml_str = render_zugferd_xml(payload)
     final_pdf = _embed_xml(pdf_bytes, xml_str, resolve_profile(payload))
     return _write_output(payload, final_pdf)
