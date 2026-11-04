@@ -43,7 +43,8 @@ Der CLI repliziert bewusst die App-Logik aus `src/lib/db/invoices.ts`:
 - **Fristen** (Fälligkeit, Skonto) zählen Kalendertage in lokaler Zeit (DST-sicher),
   Skonto-Betrag wird abgerundet; Jahresfilter/-statistik gruppieren nach lokalem Jahr
 - **PDF-Versionierung**: existierendes PDF wird vor Regeneration nach
-  `Versionen/<stem>__<mtime>.pdf` verschoben (wie `archive_pdf_version`)
+  `Versionen/<stem>__<mtime>.pdf` verschoben (wie `archive_pdf_version`); ein
+  bisher in einem anderen Ordner gespeichertes PDF wandert samt Versionen mit
 - **Sidecar**: JSON-RPC über stdin/stdout, Dev-Venv oder `ZETTEL_SIDECAR`-Binary
 
 Bei Änderungen an der App-Logik (Migrationen, Payload-Format) müssen beide

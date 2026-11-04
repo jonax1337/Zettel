@@ -100,12 +100,13 @@ async function loadInvoiceForRendering(invoiceId: number): Promise<InvoiceWithIt
 
 /**
  * Keeps the previous PDF (if any) before the sidecar overwrites it, so every
- * generation stays available as a version (audit trail). A failed archive must
- * never block PDF generation.
+ * generation stays available as a version (audit trail). `storedPdfPath` may
+ * lie in an older documents root; its chain moves next to `outputPath`. A
+ * failed archive must never block PDF generation.
  */
-async function archivePreviousPdf(outputPath: string): Promise<void> {
+async function archivePreviousPdf(outputPath: string, storedPdfPath: string | null): Promise<void> {
   try {
-    await invoke("archive_pdf_version", { path: outputPath });
+    await invoke("archive_pdf_version", { path: outputPath, previous: storedPdfPath });
   } catch (error) {
     console.warn(`Could not archive previous PDF version of ${outputPath}:`, error);
   }
@@ -145,7 +146,7 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
   const company = await loadSettings();
   const customer = parseCustomerSnapshot(invoice.customerSnapshot);
   const outputPath = await documentOutputPath("Rechnungen", invoice.number);
-  await archivePreviousPdf(outputPath);
+  await archivePreviousPdf(outputPath, invoice.pdfPath);
 
   const payload = buildPayload({
     invoice,

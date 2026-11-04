@@ -25,6 +25,7 @@ import argparse
 import json
 import math
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -495,21 +496,64 @@ def safe_filename(s: str) -> str:
     return "".join(c if c not in '\\/:*?"<>|' else "_" for c in s)
 
 
-def archive_pdf_version(path: Path) -> str | None:
-    """Spiegel von fs_export.rs archive_pdf_version: bestehendes PDF vor dem
-    Überschreiben nach <dir>/Versionen/<stem>__<mtime>.pdf verschieben."""
-    if not path.is_file():
-        return None
-    versions_dir = path.parent / "Versionen"
-    versions_dir.mkdir(parents=True, exist_ok=True)
-    mtime = int(path.stat().st_mtime)
-    dest = versions_dir / f"{path.stem}__{mtime}.pdf"
+PDF_VERSIONS_DIR = "Versionen"
+PDF_VERSION_SEPARATOR = "__"
+
+
+def _first_free_pdf_path(directory: Path, base: str) -> Path:
+    dest = directory / f"{base}.pdf"
     n = 2
     while dest.exists():
-        dest = versions_dir / f"{path.stem}__{mtime}-{n}.pdf"
+        dest = directory / f"{base}-{n}.pdf"
         n += 1
-    path.rename(dest)
-    return str(dest)
+    return dest
+
+
+def _archive_into(source: Path, versions_dir: Path, archived_stem: str) -> Path:
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    dest = _first_free_pdf_path(versions_dir, archived_stem)
+    shutil.move(str(source), str(dest))
+    return dest
+
+
+def archive_pdf_version(path: Path, previous: Path | None = None) -> str | None:
+    """Spiegel von fs_export.rs archive_pdf_version: bestehendes PDF vor dem
+    Überschreiben nach <dir>/Versionen/<stem>__<mtime>.pdf verschieben. Liegt
+    das bisher gespeicherte PDF (`previous`) in einem anderen Ordner, wandern
+    es und seine Versionen mit, sonst fielen sie aus Versionsliste und Backup."""
+    versions_dir = path.parent / PDF_VERSIONS_DIR
+    archived = None
+    if path.is_file():
+        stem = f"{path.stem}{PDF_VERSION_SEPARATOR}{int(path.stat().st_mtime)}"
+        archived = str(_archive_into(path, versions_dir, stem))
+    if previous is not None:
+        _adopt_pdf_versions(previous, path)
+    return archived
+
+
+def _same_dir(a: Path, b: Path) -> bool:
+    try:
+        return a.samefile(b)
+    except OSError:
+        return a == b
+
+
+def _adopt_pdf_versions(previous: Path, target: Path) -> None:
+    """Spiegel von fs_export.rs adopt_pdf_versions."""
+    if _same_dir(previous.parent, target.parent):
+        return
+    versions_dir = target.parent / PDF_VERSIONS_DIR
+    moves = []
+    if previous.is_file():
+        moves.append((previous, f"{PDF_VERSION_SEPARATOR}{int(previous.stat().st_mtime)}"))
+    old_versions_dir = previous.parent / PDF_VERSIONS_DIR
+    prefix = f"{previous.stem}{PDF_VERSION_SEPARATOR}"
+    if previous.stem and old_versions_dir.is_dir():
+        for archived in old_versions_dir.iterdir():
+            if archived.is_file() and archived.name.startswith(prefix) and archived.suffix.lower() == ".pdf":
+                moves.append((archived, archived.stem[len(previous.stem):]))
+    for source, suffix in moves:
+        _archive_into(source, versions_dir, f"{target.stem}{suffix}")
 
 
 def _windows_documents_dir() -> Path | None:
@@ -587,7 +631,7 @@ def generate_pdf_for(con, invoice_id: int) -> tuple[str, str]:
     out_dir = pdf_output_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / f"{safe_filename(inv['number'])}.pdf"
-    archive_pdf_version(output_path)
+    archive_pdf_version(output_path, Path(inv["pdf_path"]) if inv["pdf_path"] else None)
     payload = build_pdf_payload(inv, items, cust, settings, str(output_path))
     resp = call_sidecar("generate_invoice", payload)
     if not resp.get("success"):
