@@ -50,7 +50,18 @@ describe("computeSkonto", () => {
     expect(r!.discountCent).toBe(199);
   });
 
-  it("computes deadline = issueDate + days * SECONDS_PER_DAY", () => {
+  it.each([
+    [3000, 2.3, 69],
+    [10000, 1.1, 110],
+    [5800, 2.5, 145],
+    [1000, 0.7, 7],
+    [11900, 3.5, 416],
+  ])("is exact for fractional percents: %i cent x %f %% = %i cent", (totalCent, percent, expected) => {
+    const r = computeSkonto({ totalCent, percent, days: 7, issueDate: ISSUE });
+    expect(r!.discountCent).toBe(expected);
+  });
+
+  it("computes deadline =issueDate + days * SECONDS_PER_DAY", () => {
     const r = computeSkonto({ totalCent: 10000, percent: 2, days: 7, issueDate: ISSUE });
     expect(r!.deadlineUnix).toBe(ISSUE + 7 * SECONDS_PER_DAY);
   });

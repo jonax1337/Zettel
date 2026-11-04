@@ -255,6 +255,13 @@ class TestSkonto:
         assert cli.skonto_of(self.invoice(total=1010, skonto_percent=2.5))["discountCent"] == 25
 
     @pytest.mark.parametrize(
+        "total, percent, expected",
+        [(3000, 2.3, 69), (10000, 1.1, 110), (5800, 2.5, 145), (1000, 0.7, 7), (11900, 3.5, 416)],
+    )
+    def test_fractional_percent_is_exact(self, cli, total, percent, expected):
+        assert cli.skonto_of(self.invoice(total=total, skonto_percent=percent))["discountCent"] == expected
+
+    @pytest.mark.parametrize(
         "overrides",
         [
             {"skonto_percent": None},
