@@ -5,9 +5,15 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("$lib/db/client", () => ({ execute }));
 
 import { renderDocumentPdf, storePdfPath } from "./render-document";
+import type { SidecarSuccess } from "./types";
 
 const PAYLOAD = { outputPath: "/docs/Angebote/AN-1.pdf" };
-const SUCCESS = { success: true, pdfPath: "/docs/Angebote/AN-1.pdf", validationWarnings: [], validationErrors: [] };
+const SUCCESS: SidecarSuccess = {
+  success: true,
+  pdfPath: "/docs/Angebote/AN-1.pdf",
+  validationWarnings: [],
+  validationErrors: [],
+};
 
 describe("renderDocumentPdf", () => {
   beforeEach(() => {
