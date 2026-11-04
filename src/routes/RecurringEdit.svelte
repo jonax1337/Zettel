@@ -243,6 +243,7 @@
             {settings}
             customer={reference.selectedCustomer}
             allowThirdCountry={false}
+            note="Wird bei jeder erzeugten Rechnung übernommen."
           />
         </section>
       </CardContent>

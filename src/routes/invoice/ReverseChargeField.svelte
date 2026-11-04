@@ -12,6 +12,7 @@
     customer: Customer | null;
     disabled?: boolean;
     allowThirdCountry?: boolean;
+    note?: string;
   };
   let {
     type = $bindable(),
@@ -20,6 +21,7 @@
     customer,
     disabled = false,
     allowThirdCountry = true,
+    note,
   }: Props = $props();
 
   const HINTS: Record<ReverseChargeType, string> = {
@@ -51,7 +53,7 @@
   <div class="col-span-2 flex flex-col gap-1.5">
     <Label>Reverse-Charge</Label>
     <Select bind:value={type} items={typeItems} disabled={disabled || !rc.canThirdCountry} />
-    <p class="text-xs text-muted-foreground">{HINTS[type]}</p>
+    <p class="text-xs text-muted-foreground">{HINTS[type]}{#if note && type !== "none"} {note}{/if}</p>
     {#if rc.blockedReason}
       <p class="text-xs text-warning">{rc.blockedReason}</p>
     {/if}

@@ -287,6 +287,8 @@
             bind:endIso={servicePeriodEndIso}
           />
           <CurrencyFields bind:currency bind:exchangeRate totalCent={totals.total} />
+          <!-- Not mounted for credit notes: the field's reset effect must not alter the
+               reverse-charge type a Storno inherited from its original invoice. -->
           {#if !isCreditNote}
             <ReverseChargeField
               bind:type={reverseChargeType}

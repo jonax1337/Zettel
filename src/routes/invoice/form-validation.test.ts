@@ -79,7 +79,18 @@ describe("reverseChargeState", () => {
   it("allows third-country export without a customer VAT-ID but not intra-EU", () => {
     const state = reverseChargeState("third_country", sender, privateCustomer);
     expect(state).toMatchObject({ canIntraEu: false, canThirdCountry: true, allowedType: "third_country" });
-    expect(state.blockedReason).toContain("Kunde benötigt USt-IdNr.");
+    expect(state.blockedReason).toBe("");
+  });
+
+  it("explains the missing customer VAT-ID only for intra-EU", () => {
+    expect(reverseChargeState("intra_eu", sender, privateCustomer).blockedReason).toContain(
+      "Kunde benötigt USt-IdNr.",
+    );
+    expect(reverseChargeState("intra_eu", sender, null).blockedReason).toBe("Erst Kunden auswählen.");
+  });
+
+  it("stays quiet for an ordinary document to a customer without VAT-ID", () => {
+    expect(reverseChargeState("none", sender, privateCustomer).blockedReason).toBe("");
   });
 
   it("resets intra-EU when the customer has no VAT-ID or none is selected", () => {

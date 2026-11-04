@@ -58,18 +58,22 @@ export function reverseChargeState(
   return {
     canIntraEu,
     canThirdCountry,
-    blockedReason: reverseChargeBlockedReason(sender, customer),
+    blockedReason: reverseChargeBlockedReason(type, sender, customer),
     allowedType: permitted ? type : "none",
   };
 }
 
 function reverseChargeBlockedReason(
+  type: ReverseChargeType,
   sender: ReverseChargeSender,
   customer: ReverseChargeCustomer | null,
 ): string {
   if (sender.isKleinunternehmer) return "Nicht verfügbar für Kleinunternehmer (§ 19 UStG).";
   if (!sender.vatId) return "Eigene USt-IdNr. in den Einstellungen fehlt.";
-  if (customer && !customer.vatId) return "EU-Reverse-Charge: Kunde benötigt USt-IdNr.";
+  if (type === "intra_eu") {
+    if (!customer) return "Erst Kunden auswählen.";
+    if (!customer.vatId) return "EU-Reverse-Charge: Kunde benötigt USt-IdNr.";
+  }
   return "";
 }
 
