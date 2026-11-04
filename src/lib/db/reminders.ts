@@ -1,4 +1,5 @@
 import { execute, insert, select } from "./client";
+import { notSettledByCreditNoteSql } from "./invoice-lifecycle";
 import { getInvoice } from "./invoices";
 import { drawNextNumber } from "./numbering";
 import { loadSettings } from "./queries";
@@ -150,6 +151,7 @@ export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
      WHERE i.status IN ('sent','partial') AND i.due_date < ? AND (i.is_credit_note IS NULL OR i.is_credit_note = 0)
+       AND ${notSettledByCreditNoteSql("i")}
      ORDER BY i.due_date ASC`,
     [now],
   );
@@ -254,6 +256,14 @@ function totalDueCents(
   return r.originalTotalCents + r.feeCents + r.interestCents;
 }
 
+async function isSettledByCreditNote(invoiceId: number): Promise<boolean> {
+  const open = await select<{ id: number }>(
+    `SELECT i.id FROM invoices i WHERE i.id = ? AND ${notSettledByCreditNoteSql("i")}`,
+    [invoiceId],
+  );
+  return open.length === 0;
+}
+
 export async function createReminder(draft: ReminderDraft): Promise<number> {
   const data = await getInvoice(draft.invoiceId);
   if (!data) throw new Error(`Rechnung ${draft.invoiceId} nicht gefunden.`);
@@ -262,6 +272,9 @@ export async function createReminder(draft: ReminderDraft): Promise<number> {
   }
   if (data.invoice.isCreditNote) {
     throw new Error("Für Stornorechnungen können keine Mahnungen erstellt werden.");
+  }
+  if (await isSettledByCreditNote(draft.invoiceId)) {
+    throw new Error("Die Rechnung wurde storniert und kann nicht gemahnt werden.");
   }
 
   const number = await drawNextNumber("reminder", draft.issueDate);

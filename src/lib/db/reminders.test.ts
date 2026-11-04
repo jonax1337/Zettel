@@ -120,6 +120,7 @@ describe("createReminder", () => {
   beforeEach(() => {
     drawNextNumber.mockResolvedValue("MA-2026-0001");
     insert.mockResolvedValue(42);
+    select.mockResolvedValue([{ id: 3 }]);
   });
 
   it.each(["sent", "partial"])("creates a reminder for a %s invoice", async (status) => {
@@ -155,6 +156,14 @@ describe("createReminder", () => {
 
     await expect(createReminder(draft)).rejects.toThrow("Stornorechnungen");
   });
+
+  it("rejects an invoice offset by an issued credit note without drawing a number", async () => {
+    getInvoice.mockResolvedValue(remindableInvoice());
+    select.mockResolvedValue([]);
+
+    await expect(createReminder(draft)).rejects.toThrow("storniert");
+    expect(drawNextNumber).not.toHaveBeenCalled();
+  });
 });
 
 describe("listReminders", () => {
@@ -176,6 +185,17 @@ describe("listOverdueInvoices", () => {
 
     expect(await listOverdueInvoices()).toEqual([]);
     expect(select).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists sent and partially paid invoices but leaves out those offset by an issued credit note", async () => {
+    select.mockResolvedValueOnce([]);
+
+    await listOverdueInvoices();
+
+    const [sql] = select.mock.calls[0];
+    expect(sql).toContain("i.status IN ('sent','partial')");
+    expect(sql).toContain("credit_note.corrects_invoice_id = i.id");
+    expect(sql).toContain("credit_note.status NOT IN ('draft','cancelled')");
   });
 
   it("attaches the existing reminder levels and ignores unknown ones", async () => {
