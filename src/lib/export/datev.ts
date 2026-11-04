@@ -238,7 +238,8 @@ function bookingsForInvoice(input: DatevInvoiceInput, accounts: DatevAccountMap)
   const isForeignCurrency =
     !!invoice.currency && invoice.currency !== "EUR" && invoice.eurTotalCent != null;
   if (isForeignCurrency) {
-    groups = apportionEurTotal(groups, invoice.eurTotalCent!);
+    // Credit-note items are stored positive while eurTotalCent is negative; the direction comes from sollHaben.
+    groups = apportionEurTotal(groups, Math.abs(invoice.eurTotalCent!));
   }
 
   const belegdatum = new Date(invoice.issueDate * 1000);

@@ -144,6 +144,26 @@ describe("buildDatevCsv (bookings)", () => {
     expect(rows.map((r) => r[COLUMN_SOLL_HABEN])).toEqual(['"S"', '"H"']);
   });
 
+  it("books a foreign-currency credit note (negative eurTotalCent, positive items) as Haben", () => {
+    const input = invoiceInput({ isCreditNote: true, currency: "USD", eurTotalCent: -11000 }, [
+      { lineTotal: 10000, vatRate: 19 },
+    ]);
+    const rows = bookingRows(buildDatevCsv([input], opts, now));
+    expect(rows.map((r) => [r[COLUMN_AMOUNT], r[COLUMN_SOLL_HABEN]])).toEqual([["110,00", '"H"']]);
+  });
+
+  it("keeps the direction of a negative group on a foreign-currency credit note", () => {
+    const input = invoiceInput({ isCreditNote: true, currency: "USD", eurTotalCent: -9760 }, [
+      { lineTotal: 10000, vatRate: 19 },
+      { lineTotal: -2000, vatRate: 7 },
+    ]);
+    const rows = bookingRows(buildDatevCsv([input], opts, now));
+    expect(rows.map((r) => [r[COLUMN_AMOUNT], r[COLUMN_SOLL_HABEN]])).toEqual([
+      ["21,40", '"S"'],
+      ["119,00", '"H"'],
+    ]);
+  });
+
   it("flips a negative expense group against the Soll/Haben of its document", () => {
     const expense = {
       expense: {
