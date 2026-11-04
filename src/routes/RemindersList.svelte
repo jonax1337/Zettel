@@ -9,7 +9,6 @@
     type OverdueInvoice,
   } from "$lib/db/reminders";
   import type { ReminderLevel } from "$lib/db/schema";
-  import { centsToEur } from "$lib/utils/money";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
   import { applySort } from "$lib/utils/sort";
@@ -144,7 +143,7 @@
                 <td class="px-4 py-3 font-mono text-xs whitespace-nowrap">{r.invoiceNumber}</td>
                 <td class="px-4 py-3 min-w-32"><span class="line-clamp-2" title={r.customerName}>{r.customerName}</span></td>
                 <td class="hidden @3xl:table-cell px-4 py-3 whitespace-nowrap">{levelLabel(r.level as ReminderLevel)}</td>
-                <td class="px-4 py-3 text-right font-mono whitespace-nowrap">{centsToEur(r.totalDueCents)}</td>
+                <td class="px-4 py-3 text-right font-mono whitespace-nowrap">{formatMoney(r.totalDueCents, r.currency)}</td>
                 <td class="px-4 py-3 whitespace-nowrap">
                   <StatusBadge status={r.status} table={REMINDER_STATUS} />
                 </td>

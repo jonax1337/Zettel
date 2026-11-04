@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type ValidationFinding = {
+type ValidationFinding = {
   severity: "error" | "warning" | "info" | string;
   code: string | null;
   message: string;

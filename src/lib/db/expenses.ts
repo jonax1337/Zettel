@@ -1,4 +1,5 @@
 import { execute, insert, select } from "./client";
+import { buildDocumentFilter, listYears, MISSING_NAME, writeLineItems } from "./doc-queries";
 import { drawNextNumber } from "./numbering";
 import type {
   Expense,
@@ -9,11 +10,7 @@ import type {
 import { parseSnapshot } from "./snapshot-json";
 import { buildVendorSnapshot } from "./snapshots";
 import { nowUnix } from "$lib/utils/date";
-import { computeLineTotal, computeTotals as computeTotalsPure, type Totals } from "$lib/utils/totals";
-
-export { computeLineTotal };
-
-const MISSING_VENDOR_NAME = "—";
+import { computeTotals as computeTotalsPure, type Totals } from "$lib/utils/totals";
 
 type ExpenseRow = {
   id: number;
@@ -142,31 +139,12 @@ export type ExpenseFilter = {
 
 export type ExpenseListRow = Expense & { vendorName: string };
 
-function buildExpenseFilter(filter: ExpenseFilter): { where: string; binds: unknown[] } {
-  const wheres: string[] = [];
-  const binds: unknown[] = [];
-
-  if (filter.status && filter.status !== "all") {
-    wheres.push(`e.status = ?`);
-    binds.push(filter.status);
-  }
-  if (filter.vendorId && filter.vendorId !== "all") {
-    wheres.push(`e.vendor_id = ?`);
-    binds.push(filter.vendorId);
-  }
-  if (filter.year && filter.year !== "all") {
-    const start = Math.floor(new Date(filter.year, 0, 1).getTime() / 1000);
-    const end = Math.floor(new Date(filter.year + 1, 0, 1).getTime() / 1000);
-    wheres.push(`e.issue_date >= ? AND e.issue_date < ?`);
-    binds.push(start, end);
-  }
-  if (filter.search && filter.search.trim() !== "") {
-    wheres.push(`(e.internal_number LIKE ? OR e.number LIKE ? OR v.name LIKE ?)`);
-    const q = `%${filter.search.trim()}%`;
-    binds.push(q, q, q);
-  }
-
-  return { where: wheres.length ? `WHERE ${wheres.join(" AND ")}` : "", binds };
+function buildExpenseFilter(filter: ExpenseFilter) {
+  const { vendorId, ...rest } = filter;
+  return buildDocumentFilter("e", "vendor_id", ["e.internal_number", "e.number", "v.name"], {
+    ...rest,
+    partyId: vendorId,
+  });
 }
 
 export async function listExpenses(filter: ExpenseFilter = {}): Promise<ExpenseListRow[]> {
@@ -181,7 +159,7 @@ export async function listExpenses(filter: ExpenseFilter = {}): Promise<ExpenseL
   );
   return rows.map((r) => ({
     ...mapExpense(r),
-    vendorName: r.vendor_name ?? MISSING_VENDOR_NAME,
+    vendorName: r.vendor_name ?? MISSING_NAME,
   }));
 }
 
@@ -197,12 +175,7 @@ export async function getExpense(
   return { expense: mapExpense(rows[0]), items: itemRows.map(mapItem) };
 }
 
-export async function getExpenseYears(): Promise<number[]> {
-  const rows = await select<{ y: number }>(
-    "SELECT DISTINCT CAST(strftime('%Y', issue_date, 'unixepoch', 'localtime') AS INTEGER) AS y FROM expenses ORDER BY y DESC",
-  );
-  return rows.map((r) => r.y).filter((y) => Number.isFinite(y));
-}
+export const getExpenseYears = () => listYears("expenses");
 
 export async function listCategories(): Promise<string[]> {
   const rows = await select<{ category: string }>(
@@ -211,31 +184,12 @@ export async function listCategories(): Promise<string[]> {
   return rows.map((r) => r.category);
 }
 
-async function writeItems(expenseId: number, items: ExpenseItemInput[]): Promise<void> {
-  await execute("DELETE FROM expense_items WHERE expense_id = ?", [expenseId]);
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i];
-    const line = computeLineTotal(it);
-    await execute(
-      `INSERT INTO expense_items
-        (expense_id, position, description, category, category_id, datev_account,
-         quantity, unit, unit_price, vat_rate, line_total)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        expenseId,
-        i + 1,
-        it.description,
-        it.category,
-        it.categoryId ?? null,
-        it.datevAccount,
-        it.quantity,
-        it.unit,
-        it.unitPrice,
-        it.vatRate,
-        line,
-      ],
-    );
-  }
+function writeItems(expenseId: number, items: ExpenseItemInput[]): Promise<void> {
+  return writeLineItems("expense_items", "expense_id", expenseId, items, (item) => ({
+    category: item.category,
+    category_id: item.categoryId ?? null,
+    datev_account: item.datevAccount,
+  }));
 }
 
 export type CreateExpenseOptions = {
@@ -404,7 +358,7 @@ export async function loadExpensesForExport(
     return {
       expense: mapExpense(r),
       items: itemsByExpense.get(r.id) ?? [],
-      vendorName: vendor.name ?? MISSING_VENDOR_NAME,
+      vendorName: vendor.name ?? MISSING_NAME,
       vendorVatId: vendor.vatId ?? null,
     };
   });

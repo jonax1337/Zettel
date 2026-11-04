@@ -1,4 +1,5 @@
 import { execute, insert, select } from "./client";
+import { DEFAULT_CURRENCY, MISSING_NAME } from "./doc-queries";
 import { getInvoice } from "./invoices";
 import { drawNextNumber } from "./numbering";
 import { loadSettings } from "./queries";
@@ -15,7 +16,6 @@ import type {
 import { parseSnapshot } from "./snapshot-json";
 import { addDaysUnix, nowUnix, SECONDS_PER_DAY } from "$lib/utils/date";
 
-const MISSING_VALUE = "—";
 const DEFAULT_COUNTRY = "DE";
 const REMINDER_LEVELS: readonly ReminderLevel[] = [1, 2, 3];
 const REMINDABLE_STATUSES: readonly InvoiceStatus[] = ["sent", "partial"];
@@ -73,18 +73,24 @@ function mapReminder(r: ReminderRow): Reminder {
 export type ReminderListRow = Reminder & {
   invoiceNumber: string;
   customerName: string;
+  /** Currency of the reminded invoice; the reminder amounts are in it. */
+  currency: string;
 };
 
 export async function listReminders(): Promise<ReminderListRow[]> {
-  const rows = await select<ReminderRow>(
-    "SELECT * FROM reminders ORDER BY issue_date DESC, id DESC",
+  const rows = await select<ReminderRow & { invoice_currency: string | null }>(
+    `SELECT r.*, i.currency AS invoice_currency
+     FROM reminders r
+     LEFT JOIN invoices i ON i.id = r.invoice_id
+     ORDER BY r.issue_date DESC, r.id DESC`,
   );
   return rows.map((r) => {
     const snapshot = parseSnapshot<ReminderInvoiceSnapshot>(r.invoice_snapshot, `Mahnungssnapshot ${r.number}`);
     return {
       ...mapReminder(r),
-      invoiceNumber: snapshot.invoiceNumber ?? MISSING_VALUE,
-      customerName: snapshot.customerName ?? MISSING_VALUE,
+      invoiceNumber: snapshot.invoiceNumber ?? MISSING_NAME,
+      customerName: snapshot.customerName ?? MISSING_NAME,
+      currency: r.invoice_currency ?? DEFAULT_CURRENCY,
     };
   });
 }
@@ -167,7 +173,7 @@ export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
       amountPaidCent: r.amount_paid_cent,
       currency: r.currency,
     },
-    customerName: r.customer_name ?? MISSING_VALUE,
+    customerName: r.customer_name ?? MISSING_NAME,
     daysOverdue: Math.max(0, Math.floor((now - r.due_date) / SECONDS_PER_DAY)),
     existingReminderLevels: levelsByInvoice.get(r.id) ?? [],
   }));
@@ -241,7 +247,7 @@ function buildInvoiceSnapshot(invoice: Invoice): ReminderInvoiceSnapshot {
     invoiceNumber: invoice.number,
     invoiceIssueDate: invoice.issueDate,
     invoiceDueDate: invoice.dueDate,
-    customerName: customer.name ?? MISSING_VALUE,
+    customerName: customer.name ?? MISSING_NAME,
     customerStreet: customer.street ?? "",
     customerPostalCode: customer.postalCode ?? "",
     customerCity: customer.city ?? "",

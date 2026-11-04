@@ -6,7 +6,12 @@ const { execute, select, createInvoice, loadSettings } = vi.hoisted(() => ({
   createInvoice: vi.fn(),
   loadSettings: vi.fn(),
 }));
-vi.mock("./client", () => ({ execute, insert: vi.fn(), select }));
+vi.mock("./client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./client")>()),
+  execute,
+  insert: vi.fn(),
+  select,
+}));
 vi.mock("./invoices", () => ({ createInvoice }));
 vi.mock("./queries", () => ({ loadSettings, getCustomer: vi.fn() }));
 

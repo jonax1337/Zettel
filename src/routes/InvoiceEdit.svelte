@@ -1,7 +1,6 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
   import {
-    computeTotals,
     createInvoice,
     getInvoice,
     updateInvoice,
@@ -12,6 +11,8 @@
   import type { Invoice, InvoiceItem, Settings } from "$lib/db/schema";
   import { computeEurTotalCent } from "$lib/utils/currency";
   import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
+  import { defaultPaymentTermsText } from "$lib/utils/payment-terms";
+  import { computeTotals } from "$lib/utils/totals";
   import { Button, Card, CardContent, DatePicker, Label, Select, Textarea, toast } from "$lib/ui";
   import { AlertTriangle } from "$lib/brand-icons";
   import BackLink from "./parts/entity/BackLink.svelte";
@@ -121,7 +122,7 @@
   });
 
   function applyNewInvoiceDefaults(s: Settings) {
-    paymentTerms = `Zahlbar innerhalb von ${s.defaultPaymentTermsDays} Tagen ohne Abzug.`;
+    paymentTerms = defaultPaymentTermsText(s.defaultPaymentTermsDays);
     for (const item of items) item.vatRate = vatRateForNewItem(s.isKleinunternehmer);
     skonto = skontoFormFromSettings(s);
     pdfLanguage = s.defaultPdfLanguage;

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { computeLineTotal } from "$lib/db/expenses";
+  import { computeLineTotal } from "$lib/utils/totals";
   import { accountForSkr } from "$lib/db/expense-categories";
   import type { ExpenseCategory } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";

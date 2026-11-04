@@ -25,6 +25,7 @@ import argparse
 import json
 import math
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -53,6 +54,13 @@ ERROR_TAIL_CHARS = 2000
 ERROR_DETAIL_CHARS = 800
 MIN_ITEM_FIELDS = 4
 CENTS_PER_EUR = 100
+BASE_CURRENCY = "EUR"
+# Spiegel von SUPPORTED_CURRENCIES in src/lib/utils/currency.ts
+SUPPORTED_CURRENCIES = ("EUR", "USD", "GBP", "CHF", "AUD", "CAD", "JPY", "NOK", "SEK", "DKK", "PLN", "CZK")
+RATE_FRACTION_DIGITS = 8
+RATE_SCALE = 10**RATE_FRACTION_DIGITS
+DEFAULT_SKONTO_PERCENT = 2.0
+DEFAULT_SKONTO_DAYS = 7
 # unixepoch() needs SQLite 3.38+; older Python builds ship an older SQLite.
 SQL_NOW = "CAST(strftime('%s', 'now') AS INTEGER)"
 
@@ -142,6 +150,58 @@ def compute_totals(items: list[dict], is_kleinunternehmer: bool, is_reverse_char
     return {"subtotal": subtotal, "vatAmount": vat_amount, "total": subtotal + vat_amount}
 
 
+def parse_exchange_rate_scaled(text: str | None) -> int | None:
+    """Spiegel von parseExchangeRateScaled(): "1,0832" -> Rate * 1e8, None bei ungültig/nicht positiv."""
+    if not text:
+        return None
+    normalized = text.strip().replace(",", ".", 1)
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", normalized):
+        return None
+    whole, _, fraction = normalized.partition(".")
+    scaled = int(whole + fraction.ljust(RATE_FRACTION_DIGITS, "0")[:RATE_FRACTION_DIGITS])
+    return scaled if scaled > 0 else None
+
+
+def to_eur_cents(total_cent: int, rate_scaled: int) -> int:
+    """Spiegel von toEurCents(): "1 EUR = X Fremdwährung", half-up auf dem Betrag, Vorzeichen bleibt."""
+    numerator = abs(total_cent) * RATE_SCALE
+    quotient, remainder = divmod(numerator, rate_scaled)
+    rounded = quotient + 1 if remainder * 2 >= rate_scaled else quotient
+    return -rounded if total_cent < 0 else rounded
+
+
+def compute_eur_total_cent(currency: str, total_cent: int, exchange_rate: str | None) -> int | None:
+    """Spiegel von computeEurTotalCent(): None bei Fremdwährung ohne gültigen Kurs."""
+    if currency == BASE_CURRENCY:
+        return total_cent
+    rate_scaled = parse_exchange_rate_scaled(exchange_rate)
+    return None if rate_scaled is None else to_eur_cents(total_cent, rate_scaled)
+
+
+def payment_terms_text(days: int) -> str:
+    """Spiegel von defaultPaymentTermsText() in src/lib/utils/payment-terms.ts."""
+    return f"Zahlbar innerhalb von {days} Tagen ohne Abzug."
+
+
+def resolve_skonto(args, settings: dict) -> tuple[float | None, int | None]:
+    """Wie ein neues Rechnungsformular: Skonto-Voreinstellung aus den Settings, explizite Flags gewinnen."""
+    if args.no_skonto:
+        return None, None
+    if args.skonto_percent is not None or args.skonto_days is not None:
+        percent = args.skonto_percent if args.skonto_percent is not None else settings.get("default_skonto_percent")
+        days = args.skonto_days if args.skonto_days is not None else settings.get("default_skonto_days")
+        return (
+            DEFAULT_SKONTO_PERCENT if percent is None else percent,
+            DEFAULT_SKONTO_DAYS if days is None else days,
+        )
+    if settings.get("default_skonto_active"):
+        return (
+            settings.get("default_skonto_percent") or DEFAULT_SKONTO_PERCENT,
+            settings.get("default_skonto_days") or DEFAULT_SKONTO_DAYS,
+        )
+    return None, None
+
+
 def format_invoice_number(pattern: str, counter: int, dt: datetime) -> str:
     yyyy = str(dt.year)
     yy = yyyy[2:]
@@ -198,10 +258,17 @@ def add_days_unix(unix_seconds: int, days: int) -> int:
     return int(shifted.timestamp())
 
 
-def fmt_eur(cent) -> str:
+def fmt_money(cent, currency: str | None = None) -> str:
+    """Betrag in der Belegwährung; EUR bleibt "1.234,56 €"."""
     if cent is None:
         return "—"
-    return f"{cent / 100:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+    code = currency or BASE_CURRENCY
+    amount = f"{cent / 100:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"{amount} {'€' if code == BASE_CURRENCY else code}"
+
+
+def fmt_eur(cent) -> str:
+    return fmt_money(cent)
 
 
 def fmt_date(unix) -> str:
@@ -436,7 +503,7 @@ def cmd_invoice_list(args) -> None:
     for r in rows:
         print(
             f"{r['id']:>3}  {display_number(r['number'], r['status']):<15} "
-            f"{fmt_date(r['issue_date'])}  {fmt_eur(r['total']):>12}  {r['status']:<9} "
+            f"{fmt_date(r['issue_date'])}  {fmt_money(r['total'], r['currency']):>12}  {r['status']:<9} "
             f"{'PDF' if r['pdf_path'] else '—':<3} fällig {fmt_date(r['due_date'])}"
         )
 
@@ -637,8 +704,10 @@ def generate_pdf_for(con, invoice_id: int) -> tuple[str, str]:
     if not resp.get("success"):
         err = resp.get("error", {})
         sys.exit(f"PDF-Fehler [{err.get('code')}]: {err.get('message')}\n{err.get('details', '')[:ERROR_DETAIL_CHARS]}")
+    # Der CLI validiert nicht (Java/KoSIT läuft über die App); ein alter Status gehörte zum vorherigen PDF.
     con.execute(
-        f"UPDATE invoices SET pdf_path = ?, updated_at = {SQL_NOW} WHERE id = ?",
+        "UPDATE invoices SET pdf_path = ?, last_validation_status = NULL, last_validated_at = NULL, "
+        f"last_validation_findings_count = NULL, updated_at = {SQL_NOW} WHERE id = ?",
         (resp["pdfPath"], invoice_id),
     )
     con.commit()
@@ -705,7 +774,10 @@ def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, total
         else (settings["default_payment_terms_days"] or DEFAULT_PAYMENT_TERMS_DAYS)
     )
     due_ts = parse_date(args.due_date) or add_days_unix(issue_ts, terms_days)
-    payment_terms = f"Zahlbar innerhalb von {terms_days} Tagen ohne Abzug."
+    payment_terms = payment_terms_text(terms_days)
+    skonto_percent, skonto_days = resolve_skonto(args, settings)
+    pdf_language = args.pdf_language or settings.get("default_pdf_language") or DEFAULT_PDF_LANGUAGE
+    eur_total_cent = compute_eur_total_cent(args.currency, totals["total"], args.exchange_rate)
     cur = con.execute(
         """INSERT INTO invoices
            (number, customer_id, customer_snapshot, issue_date, delivery_date, due_date,
@@ -714,7 +786,7 @@ def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, total
             currency, exchange_rate, eur_total_cent, notes_internal, follow_up_date,
             service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language)
            VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL,
-                   'EUR', NULL, ?, NULL, NULL, ?, ?, ?, ?, ?)""",
+                   ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)""",
         (
             draft_placeholder(),
             customer["id"],
@@ -731,12 +803,14 @@ def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, total
             args.supply_kind,
             args.notes,
             payment_terms,
-            totals["total"],
+            args.currency,
+            args.exchange_rate,
+            eur_total_cent,
             parse_date(args.service_start),
             parse_date(args.service_end),
-            args.skonto_percent,
-            args.skonto_days,
-            args.pdf_language,
+            skonto_percent,
+            skonto_days,
+            pdf_language,
         ),
     )
     return cur.lastrowid
@@ -767,6 +841,8 @@ def cmd_invoice_create(args) -> None:
     items = parse_items_arg(args.items)
     if not items:
         sys.exit("Keine Positionen angegeben (siehe --items).")
+    if args.currency != BASE_CURRENCY and parse_exchange_rate_scaled(args.exchange_rate) is None:
+        sys.exit(f"Wechselkurs erforderlich für {args.currency}: --exchange-rate (1 EUR = X {args.currency}).")
     with connect() as con:
         settings = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
         customer = resolve_customer(con, args.customer)
@@ -775,7 +851,7 @@ def cmd_invoice_create(args) -> None:
         invoice_id = insert_draft_invoice(con, args, customer, settings, totals, is_reverse_charge)
         insert_invoice_items(con, invoice_id, items)
         con.commit()
-        print(f"Draft erstellt: id={invoice_id}  {fmt_eur(totals['total'])}  Kunde: {customer['name']}")
+        print(f"Draft erstellt: id={invoice_id}  {fmt_money(totals['total'], args.currency)}  Kunde: {customer['name']}")
         if args.issue:
             print(f"Bereitgestellt: {issue_invoice(con, invoice_id)}")
         if args.pdf:
@@ -795,9 +871,13 @@ def cmd_invoice_show(args) -> None:
     print()
     for it in items:
         print(f"  {it['position']}. {it['description']}")
-        print(f"     {it['quantity']:g} {it['unit']} × {fmt_eur(it['unit_price'])} = {fmt_eur(it['line_total'])}")
+        print(f"     {it['quantity']:g} {it['unit']} × {fmt_money(it['unit_price'], inv['currency'])} = {fmt_money(it['line_total'], inv['currency'])}")
     print()
-    print(f"Netto: {fmt_eur(inv['subtotal'])}  ·  USt: {fmt_eur(inv['vat_amount'])}  ·  Gesamt: {fmt_eur(inv['total'])}")
+    currency = inv["currency"]
+    print(
+        f"Netto: {fmt_money(inv['subtotal'], currency)}  ·  USt: {fmt_money(inv['vat_amount'], currency)}  "
+        f"·  Gesamt: {fmt_money(inv['total'], currency)}"
+    )
     if inv["pdf_path"]:
         print(f"PDF:   {inv['pdf_path']}")
 
@@ -842,7 +922,7 @@ def cmd_invoice_paid(args) -> None:
         if inv is None:
             status = fetch_invoice(con, args.id)["status"]
             sys.exit(f"Rechnung {args.id} hat Status '{status}' und kann nicht als bezahlt markiert werden.")
-    print(f"Als bezahlt markiert: {inv['number']} ({fmt_eur(abs(inv['total']))})")
+    print(f"Als bezahlt markiert: {inv['number']} ({fmt_money(abs(inv['total']), inv['currency'])})")
 
 
 # Spiegel von REVENUE_AMOUNT_SQL / OPEN_BALANCE_SQL in src/lib/dashboard/queries.ts:
@@ -903,9 +983,12 @@ def main() -> None:
     p_new.add_argument("--payment-terms", type=int, help="Tage (Default aus Settings)")
     p_new.add_argument("--reverse-charge", default="none", choices=["none", "intra_eu", "third_country"])
     p_new.add_argument("--supply-kind", default="services", choices=["goods", "services"], help="Lieferung oder sonstige Leistung (nur bei Reverse-Charge relevant)")
-    p_new.add_argument("--skonto-percent", type=float)
-    p_new.add_argument("--skonto-days", type=int)
-    p_new.add_argument("--pdf-language", default=DEFAULT_PDF_LANGUAGE)
+    p_new.add_argument("--skonto-percent", type=float, help="Default aus den Settings, falls dort aktiv")
+    p_new.add_argument("--skonto-days", type=int, help="Default aus den Settings, falls dort aktiv")
+    p_new.add_argument("--no-skonto", action="store_true", help="Kein Skonto, auch wenn die Settings es vorbelegen")
+    p_new.add_argument("--pdf-language", choices=["de", "en"], help="Default aus den Settings")
+    p_new.add_argument("--currency", default=BASE_CURRENCY, choices=SUPPORTED_CURRENCIES)
+    p_new.add_argument("--exchange-rate", help="1 EUR = X Fremdwährung (Pflicht außer bei EUR)")
     p_new.add_argument("--notes")
     p_new.add_argument("--issue", action="store_true", help="Direkt bereitstellen (Nummer ziehen)")
     p_new.add_argument("--pdf", action="store_true", help="PDF generieren (impliziert --issue)")

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
   import {
-    computeTotals,
     createOffer,
     getOffer,
     updateOffer,
@@ -10,6 +9,7 @@
   import type { ReverseChargeType, SupplyKind } from "$lib/db/invoices";
   import type { Offer, OfferItem, Settings } from "$lib/db/schema";
   import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
+  import { computeTotals } from "$lib/utils/totals";
   import {
     Button,
     Card,

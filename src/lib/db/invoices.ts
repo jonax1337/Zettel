@@ -1,6 +1,13 @@
-import { containsPattern, execute, insert, select, toSqlBool } from "./client";
+import { execute, insert, select, toSqlBool } from "./client";
 import {
+  buildDocumentFilter,
+  datedLineColumns,
+  DEFAULT_CURRENCY,
+  listYears,
   MISSING_NAME,
+  writeLineItems,
+} from "./doc-queries";
+import {
   mapInvoice,
   mapItem,
   type InvoiceItemRow,
@@ -17,18 +24,16 @@ import type {
   InvoiceStatus,
   PdfLanguage,
 } from "./schema";
-import { nowUnix, toUnix } from "$lib/utils/date";
+import { nowUnix } from "$lib/utils/date";
 import { displayInvoiceNumber, draftPlaceholder, isDraftNumber } from "$lib/utils/invoice-number";
-import { computeLineTotal, computeTotals, type Totals } from "$lib/utils/totals";
+import { computeTotals, type Totals } from "$lib/utils/totals";
 
-// Pure math lives in lib/utils/totals.ts, re-exported for the callers of this module.
-export { computeLineTotal, computeTotals };
 export { displayInvoiceNumber, isDraftNumber };
 
 // --- Input types ---
 
 /** No id/invoiceId/lineTotal: those are derived. */
-export type InvoiceItemInput = {
+type InvoiceItemInput = {
   description: string;
   quantity: number;
   unit: string;
@@ -79,38 +84,12 @@ export type InvoiceFilter = {
 
 export type InvoiceListRow = Invoice & { customerName: string };
 
-export function buildInvoiceFilter(filter: InvoiceFilter): {
-  where: string;
-  binds: unknown[];
-} {
-  const conditions: string[] = [];
-  const binds: unknown[] = [];
-
-  if (filter.status && filter.status !== "all") {
-    conditions.push("i.status = ?");
-    binds.push(filter.status);
-  }
-  if (filter.customerId && filter.customerId !== "all") {
-    conditions.push("i.customer_id = ?");
-    binds.push(filter.customerId);
-  }
-  if (filter.year && filter.year !== "all") {
-    conditions.push("i.issue_date >= ? AND i.issue_date < ?");
-    binds.push(
-      toUnix(new Date(filter.year, 0, 1)),
-      toUnix(new Date(filter.year + 1, 0, 1)),
-    );
-  }
-  const pattern = containsPattern(filter.search ?? "");
-  if (pattern !== null) {
-    conditions.push("(i.number LIKE ? OR c.name LIKE ?)");
-    binds.push(pattern, pattern);
-  }
-
-  return {
-    where: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "",
-    binds,
-  };
+export function buildInvoiceFilter(filter: InvoiceFilter) {
+  const { customerId, ...rest } = filter;
+  return buildDocumentFilter("i", "customer_id", ["i.number", "c.name"], {
+    ...rest,
+    partyId: customerId,
+  });
 }
 
 export async function listInvoices(
@@ -148,42 +127,12 @@ export async function getInvoice(
   return { invoice, items: itemRows.map(mapItem) };
 }
 
-/** Years in local time, matching how issue dates are entered and filtered. */
-export async function getInvoiceYears(): Promise<number[]> {
-  const rows = await select<{ y: number }>(
-    "SELECT DISTINCT CAST(strftime('%Y', issue_date, 'unixepoch', 'localtime') AS INTEGER) AS y FROM invoices ORDER BY y DESC",
-  );
-  return rows.map((r) => r.y).filter((y) => Number.isFinite(y));
-}
+export const getInvoiceYears = () => listYears("invoices");
 
 // --- Create / update ---
 
-async function writeItems(
-  invoiceId: number,
-  items: InvoiceItemInput[],
-): Promise<void> {
-  await execute("DELETE FROM invoice_items WHERE invoice_id = ?", [invoiceId]);
-  for (const [index, item] of items.entries()) {
-    await execute(
-      `INSERT INTO invoice_items
-        (invoice_id, position, description, quantity, unit, unit_price, vat_rate, line_total,
-         long_description, line_period_start, line_period_end)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        invoiceId,
-        index + 1,
-        item.description,
-        item.quantity,
-        item.unit,
-        item.unitPrice,
-        item.vatRate,
-        computeLineTotal(item),
-        item.longDescription ?? null,
-        item.linePeriodStart ?? null,
-        item.linePeriodEnd ?? null,
-      ],
-    );
-  }
+function writeItems(invoiceId: number, items: InvoiceItemInput[]): Promise<void> {
+  return writeLineItems("invoice_items", "invoice_id", invoiceId, items, datedLineColumns);
 }
 
 /** Credit notes (Stornorechnungen) store all amounts negated. */
@@ -256,7 +205,7 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
       input.paymentTerms,
       toSqlBool(isCreditNote),
       input.correctsInvoiceId ?? null,
-      input.currency ?? "EUR",
+      input.currency ?? DEFAULT_CURRENCY,
       input.exchangeRate ?? null,
       signedOrNull(input.eurTotalCent, sign),
       input.notesInternal ?? null,

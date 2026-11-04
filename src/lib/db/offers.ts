@@ -1,4 +1,14 @@
 import { execute, insert, select } from "./client";
+import {
+  buildDocumentFilter,
+  DEFAULT_CURRENCY,
+  DEFAULT_PDF_LANGUAGE,
+  datedLineColumns,
+  listYears,
+  mapDatedLineItem,
+  MISSING_NAME,
+  writeLineItems,
+} from "./doc-queries";
 import { createInvoice } from "./invoices";
 import type { InvoiceFormInput, SupplyKind } from "./invoices";
 import { drawNextNumber } from "./numbering";
@@ -11,12 +21,8 @@ import type {
 } from "./schema";
 import { computeEurTotalCent } from "$lib/utils/currency";
 import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
-import { computeLineTotal, computeTotals } from "$lib/utils/totals";
+import { computeTotals } from "$lib/utils/totals";
 
-export { computeLineTotal, computeTotals };
-
-const DEFAULT_CURRENCY = "EUR";
-const MISSING_CUSTOMER_NAME = "—";
 const EXPIRING_SOON_DAYS = 7;
 const OPEN_STATUSES_SQL = "('draft','sent')";
 const DELETABLE_STATUSES: readonly OfferStatus[] = ["draft", "rejected", "expired"];
@@ -100,28 +106,15 @@ export function mapOffer(r: OfferRow): Offer {
     servicePeriodEnd: r.service_period_end,
     skontoPercent: r.skonto_percent,
     skontoDays: r.skonto_days,
-    pdfLanguage: (r.pdf_language ?? "de") as Offer["pdfLanguage"],
+    pdfLanguage: (r.pdf_language ?? DEFAULT_PDF_LANGUAGE) as Offer["pdfLanguage"],
   };
 }
 
 function mapItem(r: OfferItemRow): OfferItem {
-  return {
-    id: r.id,
-    offerId: r.offer_id,
-    position: r.position,
-    description: r.description,
-    quantity: r.quantity,
-    unit: r.unit,
-    unitPrice: r.unit_price,
-    vatRate: r.vat_rate,
-    lineTotal: r.line_total,
-    longDescription: r.long_description,
-    linePeriodStart: r.line_period_start,
-    linePeriodEnd: r.line_period_end,
-  };
+  return { id: r.id, offerId: r.offer_id, ...mapDatedLineItem(r) };
 }
 
-export type OfferItemInput = {
+type OfferItemInput = {
   description: string;
   quantity: number;
   unit: string;
@@ -161,31 +154,12 @@ export type OfferFilter = {
 
 export type OfferListRow = Offer & { customerName: string };
 
-function buildOfferFilter(filter: OfferFilter): { where: string; binds: unknown[] } {
-  const wheres: string[] = [];
-  const binds: unknown[] = [];
-
-  if (filter.status && filter.status !== "all") {
-    wheres.push(`o.status = ?`);
-    binds.push(filter.status);
-  }
-  if (filter.customerId && filter.customerId !== "all") {
-    wheres.push(`o.customer_id = ?`);
-    binds.push(filter.customerId);
-  }
-  if (filter.year && filter.year !== "all") {
-    const start = Math.floor(new Date(filter.year, 0, 1).getTime() / 1000);
-    const end = Math.floor(new Date(filter.year + 1, 0, 1).getTime() / 1000);
-    wheres.push(`o.issue_date >= ? AND o.issue_date < ?`);
-    binds.push(start, end);
-  }
-  if (filter.search && filter.search.trim() !== "") {
-    wheres.push(`(o.number LIKE ? OR c.name LIKE ?)`);
-    const q = `%${filter.search.trim()}%`;
-    binds.push(q, q);
-  }
-
-  return { where: wheres.length ? `WHERE ${wheres.join(" AND ")}` : "", binds };
+function buildOfferFilter(filter: OfferFilter) {
+  const { customerId, ...rest } = filter;
+  return buildDocumentFilter("o", "customer_id", ["o.number", "c.name"], {
+    ...rest,
+    partyId: customerId,
+  });
 }
 
 export async function listOffers(
@@ -202,7 +176,7 @@ export async function listOffers(
   );
   return rows.map((r) => ({
     ...mapOffer(r),
-    customerName: r.customer_name ?? MISSING_CUSTOMER_NAME,
+    customerName: r.customer_name ?? MISSING_NAME,
   }));
 }
 
@@ -221,43 +195,12 @@ export async function getOffer(
   return { offer: mapOffer(rows[0]), items: itemRows.map(mapItem) };
 }
 
-export async function getOfferYears(): Promise<number[]> {
-  const rows = await select<{ y: number }>(
-    "SELECT DISTINCT CAST(strftime('%Y', issue_date, 'unixepoch', 'localtime') AS INTEGER) AS y FROM offers ORDER BY y DESC",
-  );
-  return rows.map((r) => r.y).filter((y) => Number.isFinite(y));
-}
+export const getOfferYears = () => listYears("offers");
 
 // --- Mutations ---
 
-async function writeItems(
-  offerId: number,
-  items: OfferItemInput[],
-): Promise<void> {
-  await execute("DELETE FROM offer_items WHERE offer_id = ?", [offerId]);
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i];
-    const line = computeLineTotal(it);
-    await execute(
-      `INSERT INTO offer_items
-        (offer_id, position, description, quantity, unit, unit_price, vat_rate, line_total,
-         long_description, line_period_start, line_period_end)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        offerId,
-        i + 1,
-        it.description,
-        it.quantity,
-        it.unit,
-        it.unitPrice,
-        it.vatRate,
-        line,
-        it.longDescription ?? null,
-        it.linePeriodStart ?? null,
-        it.linePeriodEnd ?? null,
-      ],
-    );
-  }
+function writeItems(offerId: number, items: OfferItemInput[]): Promise<void> {
+  return writeLineItems("offer_items", "offer_id", offerId, items, datedLineColumns);
 }
 
 export async function createOffer(input: OfferFormInput): Promise<number> {

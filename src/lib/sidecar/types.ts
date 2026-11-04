@@ -11,7 +11,7 @@ export type SidecarSuccess = {
   kositReport?: ValidationReport | null;
 };
 
-export type SidecarError = {
+type SidecarError = {
   success: false;
   error: SidecarErrorInfo;
 };

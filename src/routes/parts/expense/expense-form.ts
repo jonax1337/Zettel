@@ -12,7 +12,7 @@ import { DEFAULT_UNIT } from "$lib/utils/units";
 import { centsToPriceText } from "../entity/format";
 import { STANDARD_VAT_RATE } from "../entity/vat";
 
-export type ReverseChargeType = Expense["reverseChargeType"];
+type ReverseChargeType = Expense["reverseChargeType"];
 
 export type ExpenseItemRow = ExpenseItemInput & { priceText: string };
 

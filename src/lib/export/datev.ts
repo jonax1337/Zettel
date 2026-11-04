@@ -99,7 +99,7 @@ export type DatevInvoiceInput = {
   customerVatId: string | null;
 };
 
-export type DatevExpenseInput = {
+type DatevExpenseInput = {
   expense: Expense;
   items: ExpenseItem[];
   vendorName: string;

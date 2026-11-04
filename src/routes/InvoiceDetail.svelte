@@ -15,7 +15,7 @@
   import { listPayments } from "$lib/db/invoice-payments";
   import { listRemindersForInvoice } from "$lib/db/reminders";
   import type { Invoice, InvoiceItem, InvoicePayment, Reminder } from "$lib/db/schema";
-  import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
+  import { formatDate, formatDateTime, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { generateInvoicePdf, listPdfVersions, type PdfVersion } from "$lib/sidecar/invoice";
   import { validatePdf, type ValidationReport } from "$lib/validator";
   import { Badge, Button, ConfirmDialog, toast } from "$lib/ui";
@@ -370,13 +370,7 @@
       <p class="text-sm text-muted-foreground mt-1.5">
         {customer.name} · {formatDate(invoice.issueDate)}
         {#if invoice.lastValidatedAt}
-          · validiert {new Date(invoice.lastValidatedAt * 1000).toLocaleString("de-DE", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+          · validiert {formatDateTime(invoice.lastValidatedAt)}
         {/if}
       </p>
     </div>

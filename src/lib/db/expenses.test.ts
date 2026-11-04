@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { execute, select } = vi.hoisted(() => ({ execute: vi.fn(), select: vi.fn() }));
-vi.mock("./client", () => ({ execute, insert: vi.fn(), select }));
+vi.mock("./client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./client")>()),
+  execute,
+  insert: vi.fn(),
+  select,
+}));
 vi.mock("./queries", () => ({ getVendor: vi.fn() }));
 
 import {
