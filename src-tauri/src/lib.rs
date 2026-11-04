@@ -60,6 +60,7 @@ fn build_migrations() -> Vec<Migration> {
         (25, "v0.16_pdf_language", "0024_v0.16_pdf_language"),
         (26, "v0.16_expense_categories", "0025_v0.16_expense_categories"),
         (27, "v0.22_tax_options", "0026_v0.22_tax_options"),
+        (28, "v0.23_lifecycle", "0027_v0.23_lifecycle"),
     ]
 }
 
@@ -183,6 +184,204 @@ mod tests {
                 "migration {} ({}) sets a different user_version",
                 migration.version, migration.description
             );
+        }
+    }
+
+    mod lifecycle_migration {
+        use super::*;
+        use crate::testutil::TempDir;
+        use rusqlite::Connection;
+
+        const LIFECYCLE_VERSION: i64 = 28;
+
+        fn open(path: &std::path::Path) -> Connection {
+            let conn = Connection::open(path).unwrap();
+            conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+            conn
+        }
+
+        /// Mirrors sqlx: each migration in its own transaction, foreign keys enforced.
+        fn migrate(conn: &mut Connection, versions: std::ops::RangeInclusive<i64>) {
+            for migration in build_migrations() {
+                if !versions.contains(&migration.version) {
+                    continue;
+                }
+                let tx = conn.transaction().unwrap();
+                tx.execute_batch(migration.sql)
+                    .unwrap_or_else(|e| panic!("migration {}: {e}", migration.version));
+                tx.commit().unwrap();
+            }
+        }
+
+        fn seed_version_27(conn: &Connection) {
+            conn.execute_batch(
+                "INSERT INTO customers (id, customer_number, name) VALUES (1, 'K-0001', 'Acme');
+                 INSERT INTO invoices (id, number, customer_id, issue_date, due_date, status, total)
+                   VALUES (1, 'RE-2026-0001', 1, 1, 1, 'sent', 10000),
+                          (2, 'RE-2026-0002', 1, 1, 1, 'paid', 5000);
+                 INSERT INTO invoices (id, number, customer_id, issue_date, due_date, status, total,
+                                       is_credit_note, corrects_invoice_id)
+                   VALUES (3, 'RE-2026-0003', 1, 1, 1, 'sent', -5000, 1, 2);
+                 INSERT INTO invoice_items (invoice_id, position, unit_price, line_total)
+                   VALUES (1, 1, 10000, 10000), (2, 1, 5000, 5000), (3, 1, -5000, -5000);
+                 INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent)
+                   VALUES (2, 1, 5000), (1, 1, 4000);
+                 INSERT INTO reminders (number, invoice_id, issue_date, due_date) VALUES ('MA-1', 1, 1, 1);
+                 INSERT INTO offers (id, number, customer_id, issue_date, valid_until,
+                                     is_reverse_charge, converted_invoice_id)
+                   VALUES (1, 'AN-1', 1, 1, 1, 1, 1);
+                 INSERT INTO recurring_invoices (id, name, customer_id, interval, start_date,
+                                                 next_due_date, is_reverse_charge)
+                   VALUES (1, 'Wartung', 1, 'monthly', 1, 1, 0);",
+            )
+            .unwrap();
+        }
+
+        fn count(conn: &Connection, sql: &str) -> i64 {
+            conn.query_row(sql, [], |row| row.get(0)).unwrap()
+        }
+
+        fn row_counts(conn: &Connection) -> Vec<i64> {
+            [
+                "SELECT COUNT(*) FROM invoices",
+                "SELECT COUNT(*) FROM invoice_items",
+                "SELECT COUNT(*) FROM invoice_payments",
+                "SELECT COUNT(*) FROM reminders",
+                "SELECT COUNT(*) FROM offers WHERE converted_invoice_id = 1",
+                "SELECT COUNT(*) FROM invoices WHERE corrects_invoice_id = 2",
+            ]
+            .iter()
+            .map(|sql| count(conn, sql))
+            .collect()
+        }
+
+        struct Migrated {
+            _dir: TempDir,
+            conn: Connection,
+            other_pool_connection: Connection,
+            counts_before: Vec<i64>,
+        }
+
+        fn migrated_from_version_27() -> Migrated {
+            let dir = TempDir::new("lifecycle-migration");
+            let path = dir.path().join("zettel.db");
+            let mut conn = open(&path);
+            migrate(&mut conn, 1..=LIFECYCLE_VERSION - 1);
+            seed_version_27(&conn);
+            let counts_before = row_counts(&conn);
+            // A second pooled connection that cached the old schema before the migration.
+            let other_pool_connection = open(&path);
+            count(&other_pool_connection, "SELECT COUNT(*) FROM invoices");
+
+            migrate(&mut conn, LIFECYCLE_VERSION..=LIFECYCLE_VERSION);
+            Migrated { _dir: dir, conn, other_pool_connection, counts_before }
+        }
+
+        #[test]
+        fn keeps_every_invoice_and_dependent_row() {
+            let m = migrated_from_version_27();
+            assert_eq!(row_counts(&m.conn), m.counts_before);
+            assert_eq!(count(&m.conn, "PRAGMA user_version"), LIFECYCLE_VERSION);
+        }
+
+        #[test]
+        fn aborts_when_the_check_text_differs_from_the_expected_one() {
+            let dir = TempDir::new("lifecycle-migration-guard");
+            let mut conn = open(&dir.path().join("zettel.db"));
+            migrate(&mut conn, 1..=LIFECYCLE_VERSION - 1);
+            conn.execute_batch(
+                "PRAGMA writable_schema = ON;
+                 UPDATE sqlite_master SET sql = replace(sql, 'CHECK (status IN', 'CHECK  (status IN')
+                  WHERE type = 'table' AND name = 'invoices';
+                 PRAGMA writable_schema = RESET;",
+            )
+            .unwrap();
+            let lifecycle = build_migrations()
+                .into_iter()
+                .find(|m| m.version == LIFECYCLE_VERSION)
+                .unwrap();
+
+            let tx = conn.transaction().unwrap();
+            assert!(tx.execute_batch(lifecycle.sql).is_err());
+        }
+
+        #[test]
+        fn passes_integrity_and_foreign_key_checks() {
+            let m = migrated_from_version_27();
+            let integrity: String = m
+                .conn
+                .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(integrity, "ok");
+            let violations = m
+                .conn
+                .prepare("PRAGMA foreign_key_check")
+                .unwrap()
+                .query_map([], |_| Ok(()))
+                .unwrap()
+                .count();
+            assert_eq!(violations, 0);
+        }
+
+        #[test]
+        fn accepts_partial_status_on_every_connection_but_still_rejects_unknown_ones() {
+            let m = migrated_from_version_27();
+            for conn in [&m.conn, &m.other_pool_connection] {
+                conn.execute("UPDATE invoices SET status = 'partial' WHERE id = 1", [])
+                    .expect("'partial' must be accepted");
+                assert!(conn
+                    .execute("UPDATE invoices SET status = 'bogus' WHERE id = 1", [])
+                    .is_err());
+            }
+        }
+
+        #[test]
+        fn repairs_sent_invoices_whose_partial_payment_was_recorded() {
+            let m = migrated_from_version_27();
+            let state = |id: i64| -> (String, i64) {
+                m.conn
+                    .query_row(
+                        "SELECT status, amount_paid_cent FROM invoices WHERE id = ?1",
+                        [id],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .unwrap()
+            };
+            assert_eq!(state(1), ("partial".to_string(), 4000));
+            assert_eq!(state(2), ("paid".to_string(), 0));
+            assert_eq!(state(3), ("sent".to_string(), 0));
+        }
+
+        #[test]
+        fn backfills_the_reverse_charge_type_of_offers_and_recurring_templates() {
+            let m = migrated_from_version_27();
+            let offer: String = m
+                .conn
+                .query_row("SELECT reverse_charge_type FROM offers WHERE id = 1", [], |r| r.get(0))
+                .unwrap();
+            let recurring: String = m
+                .conn
+                .query_row("SELECT reverse_charge_type FROM recurring_invoices WHERE id = 1", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!((offer.as_str(), recurring.as_str()), ("intra_eu", "none"));
+        }
+
+        #[test]
+        fn rejects_a_second_payment_for_the_same_bank_transaction() {
+            let m = migrated_from_version_27();
+            let book = |tx: Option<&str>| {
+                m.conn.execute(
+                    "INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent, bank_transaction_id)
+                     VALUES (1, 1, 100, ?1)",
+                    [tx],
+                )
+            };
+            book(Some("TX-1")).unwrap();
+            assert!(book(Some("TX-1")).is_err());
+            book(None).unwrap();
+            book(None).unwrap();
         }
     }
 }

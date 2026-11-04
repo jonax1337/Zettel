@@ -1,4 +1,4 @@
-import type { BookingMatch, MatchCandidate } from "$lib/bank/match";
+import { bankBookingKey, type BookingMatch, type MatchCandidate } from "$lib/bank/match";
 import type { AddPaymentInput } from "$lib/db/invoice-payments";
 import { fromIsoDate } from "$lib/utils/date";
 
@@ -36,7 +36,11 @@ export function bookingDateToUnix(isoDate: string, fallbackUnix: number): number
   return isoDate ? fromIsoDate(isoDate) : fallbackUnix;
 }
 
-/** The payment to record for a row, or null when the row is not ticked or has no chosen invoice. */
+/**
+ * The payment to record for a row, or null when the row is not ticked or has no
+ * chosen invoice. It carries the booking's dedupe key, so `addPayment` rejects a
+ * booking that an earlier import already recorded with `DuplicateBankBookingError`.
+ */
 export function paymentFor(
   row: ImportRow,
   format: StatementFormat,
@@ -51,5 +55,6 @@ export function paymentFor(
     amountCent: booking.amountCent,
     source: format === "mt940" ? "mt940" : "camt053",
     notes: booking.purpose || null,
+    bankTransactionId: bankBookingKey(booking),
   };
 }

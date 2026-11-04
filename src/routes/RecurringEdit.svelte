@@ -3,6 +3,7 @@
   import {
     createRecurring,
     getRecurring,
+    templatePrefillRejection,
     updateRecurring,
     type RecurringFormInput,
   } from "$lib/db/recurring";
@@ -103,8 +104,13 @@
     const source = await getInvoice(invoiceId);
     if (!source) return;
     const { invoice } = source;
+    const rejection = templatePrefillRejection(invoice);
+    if (rejection) {
+      error = rejection;
+      return;
+    }
     customerIdStr = String(invoice.customerId);
-    reverseChargeType = invoice.isReverseCharge ? "intra_eu" : "none";
+    reverseChargeType = invoice.reverseChargeType;
     supplyKind = invoice.supplyKind;
     paymentTerms = invoice.paymentTerms ?? "";
     paymentTermsDays = paymentTermDays(
@@ -137,7 +143,7 @@
     interval = recurring.interval;
     startDateIso = toIsoDate(recurring.startDate);
     paymentTermsDays = recurring.paymentTermsDays;
-    reverseChargeType = recurring.isReverseCharge ? "intra_eu" : "none";
+    reverseChargeType = recurring.reverseChargeType;
     supplyKind = recurring.supplyKind;
     active = recurring.active;
     notes = recurring.notes ?? "";
@@ -152,7 +158,7 @@
       interval,
       startDate: fromIsoDate(startDateIso),
       paymentTermsDays,
-      isReverseCharge,
+      reverseChargeType,
       supplyKind,
       notes: notes.trim() || null,
       paymentTerms: paymentTerms.trim() || null,
@@ -243,7 +249,6 @@
             bind:supplyKind
             {settings}
             customer={reference.selectedCustomer}
-            allowThirdCountry={false}
             note="Wird bei jeder erzeugten Rechnung übernommen."
           />
         </section>

@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { InvoiceListRow } from "$lib/db/invoices";
-import { matchBookings, openBalance, type Booking } from "./match";
+import { bankBookingKey, matchBookings, openBalance, type Booking } from "./match";
 
 function invoice(overrides: Partial<InvoiceListRow>): InvoiceListRow {
   return {
     id: 1,
     number: "RE-2026-0001",
     status: "sent",
+    currency: "EUR",
     isCreditNote: false,
+    correctsInvoiceId: null,
     total: 11_900,
     amountPaidCent: 0,
     customerName: "Muster GmbH",
@@ -81,6 +83,61 @@ describe("matchBookings", () => {
       [invoice({ status: "paid" }), invoice({ id: 2, isCreditNote: true })],
     );
     expect(match.candidates).toEqual([]);
+  });
+
+  it("matches partially paid invoices on their open balance", () => {
+    const [match] = matchBookings(
+      [booking({ amountCent: 7_900 })],
+      [invoice({ status: "partial", amountPaidCent: 4_000 })],
+    );
+    expect(match.candidates.map((c) => c.invoice.id)).toEqual([1]);
+  });
+
+  it("skips an invoice offset by an issued credit note", () => {
+    const creditNote = (status: InvoiceListRow["status"]) =>
+      invoice({ id: 2, isCreditNote: true, correctsInvoiceId: 1, status, total: -11_900 });
+
+    const [settled] = matchBookings([booking({})], [invoice({}), creditNote("sent")]);
+    const [draftOnly] = matchBookings([booking({})], [invoice({}), creditNote("draft")]);
+
+    expect(settled.candidates).toEqual([]);
+    expect(draftOnly.candidates.map((c) => c.invoice.id)).toEqual([1]);
+  });
+
+  it("only matches invoices in the booking's currency", () => {
+    const usdInvoice = invoice({ currency: "USD" });
+
+    const [eurBooking] = matchBookings([booking({ currency: "EUR" })], [usdInvoice]);
+    const [usdBooking] = matchBookings([booking({ currency: "USD" })], [usdInvoice]);
+
+    expect(eurBooking.candidates).toEqual([]);
+    expect(usdBooking.candidates).toHaveLength(1);
+  });
+
+  it("treats a booking without currency as EUR", () => {
+    const [match] = matchBookings([booking({ currency: "" })], [invoice({})]);
+    expect(match.candidates).toHaveLength(1);
+  });
+});
+
+describe("bankBookingKey", () => {
+  it("is the same for the same booking imported twice", () => {
+    expect(bankBookingKey(booking({}))).toBe(bankBookingKey(booking({})));
+  });
+
+  it("tells apart bookings that share a non-unique reference but differ in date or amount", () => {
+    const base = bankBookingKey(booking({ transactionId: "BANKREF" }));
+    expect(bankBookingKey(booking({ transactionId: "BANKREF", amountCent: 1 }))).not.toBe(base);
+    expect(bankBookingKey(booking({ transactionId: "BANKREF", valutaDate: "2026-05-18" }))).not.toBe(base);
+  });
+
+  it("falls back to purpose and payer when the reference is a placeholder", () => {
+    const key = (overrides: Partial<Booking>) =>
+      bankBookingKey(booking({ transactionId: "NOTPROVIDED", ...overrides }));
+
+    expect(key({ purpose: "RE-1  Danke" })).toBe(key({ purpose: "re-1 danke" }));
+    expect(key({ purpose: "RE-1" })).not.toBe(key({ purpose: "RE-2" }));
+    expect(bankBookingKey(booking({ transactionId: "", purpose: "RE-1" }))).toBe(key({ purpose: "RE-1" }));
   });
 });
 

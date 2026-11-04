@@ -148,7 +148,7 @@
     validUntilIso = toIsoDate(offer.validUntil);
     notes = offer.notes ?? "";
     introText = offer.introText ?? "";
-    reverseChargeType = offer.isReverseCharge ? "intra_eu" : "none";
+    reverseChargeType = offer.reverseChargeType;
     supplyKind = offer.supplyKind;
     currency = offer.currency;
     exchangeRate = offer.exchangeRate ?? "";
@@ -181,7 +181,7 @@
       validUntil: fromIsoDate(validUntilIso),
       notes: notes.trim() || null,
       introText: introText.trim() || null,
-      isReverseCharge,
+      reverseChargeType,
       supplyKind,
       items: toLineItemInputs(items),
       currency,
@@ -291,7 +291,6 @@
               {settings}
               customer={reference.selectedCustomer}
               disabled={readOnly}
-              allowThirdCountry={false}
             />
             <div class="col-span-2 flex flex-col gap-1.5">
               <Label>Einleitungstext (optional)</Label>
@@ -321,7 +320,7 @@
         <PdfLanguageSelect bind:value={pdfLanguage} disabled={readOnly} />
 
         <div class="flex flex-col gap-1.5">
-          <Label>Notizen (intern)</Label>
+          <Label>Bemerkungen (erscheinen auf dem Angebot)</Label>
           <Textarea rows={3} bind:value={notes} disabled={readOnly} />
         </div>
 

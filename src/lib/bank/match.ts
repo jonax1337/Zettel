@@ -9,6 +9,7 @@
  * Output ist eine Liste von Bookings mit jeweils 0..n Match-Kandidaten;
  * der User bestätigt im UI.
  */
+import { invoiceIdsSettledByCreditNote, PAYMENT_ROUNDING_TOLERANCE_CENT } from "$lib/db/invoice-lifecycle";
 import type { InvoiceListRow } from "$lib/db/invoices";
 import { isDraftNumber } from "$lib/utils/invoice-number";
 
@@ -34,9 +35,33 @@ export type BookingMatch = {
   defaultPick: number | null;
 };
 
-const AMOUNT_TOLERANCE_CENT = 1;
 const MIN_PARTY_NAME_LENGTH = 4;
 const MIN_CUSTOMER_WORD_LENGTH = 4;
+/** Bookings and invoices without a currency are EUR (German accounts, legacy rows). */
+const DEFAULT_CURRENCY = "EUR";
+/** References banks put in when there is none; they identify nothing. */
+const PLACEHOLDER_REFERENCES = new Set(["", "NONREF", "NOTPROVIDED"]);
+
+/**
+ * Stable identity of a booking across re-imports of the same statement. Bank
+ * references are not unique everywhere, so date, amount and currency are part
+ * of the key; without a usable reference the purpose and payer stand in.
+ */
+export function bankBookingKey(booking: Booking): string {
+  const reference = booking.transactionId.trim();
+  const identity = PLACEHOLDER_REFERENCES.has(reference.toUpperCase())
+    ? `text:${normalizeText(`${booking.purpose}|${booking.partyName}`)}`
+    : `ref:${reference}`;
+  return [booking.valutaDate, booking.amountCent, bookingCurrency(booking), identity].join("|");
+}
+
+function normalizeText(text: string): string {
+  return text.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function bookingCurrency(booking: Booking): string {
+  return booking.currency.trim().toUpperCase() || DEFAULT_CURRENCY;
+}
 
 const CONFIDENCE_RANK: Record<MatchCandidate["confidence"], number> = {
   high: 3,
@@ -68,7 +93,7 @@ function matchByInvoiceNumber(booking: Booking, invoices: InvoiceListRow[]): Mat
 /** Pass 2: Exakter Betrags-Match auf offenen Saldo. */
 function matchByOpenBalance(booking: Booking, invoices: InvoiceListRow[]): MatchCandidate[] {
   return invoices
-    .filter((inv) => Math.abs(openBalance(inv) - booking.amountCent) <= AMOUNT_TOLERANCE_CENT)
+    .filter((inv) => Math.abs(openBalance(inv) - booking.amountCent) <= PAYMENT_ROUNDING_TOLERANCE_CENT)
     .map((invoice): MatchCandidate => ({
       invoice,
       confidence: "medium",
@@ -100,10 +125,12 @@ function matchBooking(booking: Booking, openInvoices: InvoiceListRow[]): Booking
     return { booking, candidates: [], defaultPick: null };
   }
 
+  const currency = bookingCurrency(booking);
+  const sameCurrency = openInvoices.filter((inv) => (inv.currency || DEFAULT_CURRENCY) === currency);
   const passes = [matchByInvoiceNumber, matchByOpenBalance, matchByPartyName];
   let candidates: MatchCandidate[] = [];
   for (const pass of passes) {
-    candidates = pass(booking, openInvoices);
+    candidates = pass(booking, sameCurrency);
     if (candidates.length > 0) break;
   }
 
@@ -119,9 +146,12 @@ export function matchBookings(
   bookings: Booking[],
   invoices: InvoiceListRow[],
 ): BookingMatch[] {
-  // Wir interessieren uns nur für offene oder teilbezahlte Rechnungen.
+  // Wir interessieren uns nur für offene oder teilbezahlte Rechnungen, die
+  // nicht per Stornorechnung ausgeglichen sind.
+  const settled = invoiceIdsSettledByCreditNote(invoices);
   const openInvoices = invoices.filter(
-    (i) => (i.status === "sent" || i.status === "partial") && !i.isCreditNote,
+    (i) =>
+      (i.status === "sent" || i.status === "partial") && !i.isCreditNote && !settled.has(i.id),
   );
   return bookings.map((booking) => matchBooking(booking, openInvoices));
 }

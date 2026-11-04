@@ -42,6 +42,7 @@ export function buildOfferPayload(opts: {
       exchangeRate: offer.exchangeRate,
       isKleinunternehmer: offer.isKleinunternehmer,
       isReverseCharge: offer.isReverseCharge,
+      reverseChargeType: offer.reverseChargeType,
       supplyKind: offer.supplyKind,
       notes: offer.notes,
       introText: offer.introText,

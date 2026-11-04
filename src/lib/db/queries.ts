@@ -1,4 +1,5 @@
 import { containsPattern, execute, insert, select, toSqlBool } from "./client";
+import { assertCustomerDeletable, assertVendorDeletable } from "./references";
 import type { Customer, Settings, Vendor } from "./schema";
 
 // --- Settings (singleton row id=1) ---
@@ -438,6 +439,7 @@ export async function updateCustomer(
 }
 
 export async function deleteCustomer(id: number): Promise<void> {
+  await assertCustomerDeletable(id);
   await execute("DELETE FROM customers WHERE id = ?", [id]);
 }
 
@@ -570,5 +572,6 @@ export async function updateVendor(id: number, input: VendorInput): Promise<void
 }
 
 export async function deleteVendor(id: number): Promise<void> {
+  await assertVendorDeletable(id);
   await execute("DELETE FROM vendors WHERE id = ?", [id]);
 }

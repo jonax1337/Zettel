@@ -29,6 +29,7 @@ vi.mock("./queries", () => ({
 
 import {
   buildInvoiceFilter,
+  cancelInvoice,
   createCreditNoteFromInvoice,
   createInvoice,
   creditNoteInputFor,
@@ -40,6 +41,7 @@ import {
   markPaid,
   recordGeneratedPdf,
   recordInvoiceValidation,
+  reopenDraft,
   updateInvoice,
   type InvoiceFormInput,
 } from "./invoices";
@@ -200,13 +202,20 @@ describe("credit notes", () => {
   );
   const items = [mapItem(itemRow)];
 
+  function creditNoteSql(original: InvoiceRow, originalItems: InvoiceItemRow[] = [itemRow]) {
+    return async (sql: string) => {
+      if (sql.includes("FROM invoice_items")) return originalItems;
+      if (sql.includes("corrects_invoice_id")) return [];
+      return [original];
+    };
+  }
+
   it("carries the foreign-currency terms of the original into the credit note input", () => {
     const input = creditNoteInputFor(usdInvoice, items, 1_800_000_000);
 
     expect(input).toMatchObject({
       currency: "USD",
       exchangeRate: "1,08",
-      eurTotalCent: 9_259,
       isCreditNote: true,
       correctsInvoiceId: 7,
       issueDate: 1_800_000_000,
@@ -255,6 +264,61 @@ describe("credit notes", () => {
     );
 
     await expect(createCreditNoteFromInvoice(7)).rejects.toThrow("Stornorechnung");
+  });
+
+  it("derives the EUR total of a partial refund from the credit note's own total", async () => {
+    const halfRefund = { ...itemRow, quantity: 1, line_total: 5_000 };
+    db.select.mockImplementation(
+      creditNoteSql(invoiceRow({ currency: "USD", exchange_rate: "1,08", eur_total_cent: 9_259 }), [halfRefund]),
+    );
+
+    await createCreditNoteFromInvoice(7);
+
+    const [sql, binds] = db.insert.mock.calls[0];
+    expect(boundInsertColumns(sql, binds)).toMatchObject({ total: -5_000, eur_total_cent: -4_630 });
+  });
+
+  it("keeps the Kleinunternehmer treatment of the original although the setting changed since", async () => {
+    const vatItem = { ...itemRow, vat_rate: 19 };
+    db.select.mockImplementation(creditNoteSql(invoiceRow({ is_kleinunternehmer: 1 }), [vatItem]));
+
+    await createCreditNoteFromInvoice(7);
+
+    const [sql, binds] = db.insert.mock.calls[0];
+    expect(boundInsertColumns(sql, binds)).toMatchObject({ is_kleinunternehmer: 1, total: -10_000 });
+  });
+
+  it("can cancel a partially paid invoice", async () => {
+    db.select.mockImplementation(creditNoteSql(invoiceRow({ status: "partial", amount_paid_cent: 4_000 })));
+
+    await createCreditNoteFromInvoice(7);
+
+    expect(db.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a discarded credit note draft when checking for an existing one", async () => {
+    db.select.mockImplementation(creditNoteSql(invoiceRow()));
+
+    await createCreditNoteFromInvoice(7);
+
+    const lookup = db.select.mock.calls.find(([sql]) => String(sql).includes("corrects_invoice_id"))!;
+    expect(lookup[0]).toContain("status != 'cancelled'");
+  });
+});
+
+describe("createInvoice", () => {
+  it("freezes the EUR total of a foreign-currency invoice when the caller sends none", async () => {
+    await createInvoice({ ...formInput, currency: "USD", exchangeRate: "1,08" });
+
+    const [sql, binds] = db.insert.mock.calls[0];
+    expect(boundInsertColumns(sql, binds)).toMatchObject({ currency: "USD", eur_total_cent: 9_259 });
+  });
+
+  it("leaves the EUR total of a EUR invoice to the caller", async () => {
+    await createInvoice(formInput);
+
+    const [sql, binds] = db.insert.mock.calls[0];
+    expect(boundInsertColumns(sql, binds)).toMatchObject({ eur_total_cent: null });
   });
 });
 
@@ -349,26 +413,81 @@ describe("updateInvoice", () => {
 
     await expect(updateInvoice(7, formInput)).rejects.toThrow("Nur Entwürfe");
   });
+
+  it("refreshes the customer snapshot of a draft even when the customer stays the same", async () => {
+    db.select.mockResolvedValue([invoiceRow({ status: "draft", customer_snapshot: '{"name":"Alt"}' })]);
+
+    await updateInvoice(7, formInput);
+
+    expect(JSON.parse(String(updateBinds().customer_snapshot))).toMatchObject({ name: "Acme" });
+  });
 });
 
 describe("issueInvoice", () => {
-  it("draws the real number from the invoice counter for a DRAFT- placeholder", async () => {
+  const draftRow = invoiceRow({ status: "draft", number: "DRAFT-abc" });
+  const counterDraws = () =>
+    db.select.mock.calls.filter(([sql]) => String(sql).includes("invoice_number_counter"));
+  const claim = () => db.execute.mock.calls.find(([sql]) => String(sql).includes("status = 'sent'"))!;
+
+  it("claims the draft, then draws the real number for a DRAFT- placeholder", async () => {
     db.select
-      .mockResolvedValueOnce([invoiceRow({ status: "draft", number: "DRAFT-abc" })])
+      .mockResolvedValueOnce([draftRow])
       .mockResolvedValueOnce([{ counter: 12, format: "RE-{NNNN}" }]);
 
     const number = await issueInvoice(7, 1_750_000_000);
 
     expect(number).toBe("RE-0012");
-    const update = db.execute.mock.calls.find(([sql]) => String(sql).includes("SET number = ?"))!;
-    expect(update[1]).toEqual(["RE-0012", 1_750_000_000, 7]);
+    expect(claim()[0]).toContain("WHERE id = ? AND status = 'draft'");
+    const assign = db.execute.mock.calls.find(([sql]) => String(sql).includes("SET number = ?"))!;
+    expect(assign[1]).toEqual(["RE-0012", 7]);
+  });
+
+  it("freezes the customer's current master data when issuing", async () => {
+    db.select
+      .mockResolvedValueOnce([invoiceRow({ status: "draft", number: "RE-2026-0009", customer_snapshot: "{}" })]);
+
+    await issueInvoice(7, 1_750_000_000);
+
+    const [, binds] = claim();
+    expect(binds[0]).toBe(1_750_000_000);
+    expect(JSON.parse(String(binds[1]))).toMatchObject({ name: "Acme" });
   });
 
   it("keeps an already assigned number without touching the counter", async () => {
     db.select.mockResolvedValueOnce([invoiceRow({ status: "draft", number: "RE-2026-0009" })]);
 
     expect(await issueInvoice(7)).toBe("RE-2026-0009");
-    expect(db.execute.mock.calls.some(([sql]) => String(sql).includes("invoice_number_counter"))).toBe(false);
+    expect(counterDraws()).toHaveLength(0);
+  });
+
+  it("does not draw a second number when a concurrent click already issued the invoice", async () => {
+    db.select
+      .mockResolvedValueOnce([draftRow])
+      .mockResolvedValueOnce([invoiceRow({ status: "sent", number: "RE-2026-0012" })]);
+    db.execute.mockResolvedValueOnce({ rowsAffected: 0 });
+
+    expect(await issueInvoice(7)).toBe("RE-2026-0012");
+    expect(counterDraws()).toHaveLength(0);
+  });
+
+  it("asks to retry while the concurrent issue has not assigned the number yet", async () => {
+    db.select
+      .mockResolvedValueOnce([draftRow])
+      .mockResolvedValueOnce([invoiceRow({ status: "sent", number: "DRAFT-abc" })]);
+    db.execute.mockResolvedValueOnce({ rowsAffected: 0 });
+
+    await expect(issueInvoice(7)).rejects.toThrow("gerade ausgestellt");
+  });
+
+  it("returns the invoice to draft when no number could be drawn", async () => {
+    db.select
+      .mockResolvedValueOnce([draftRow])
+      .mockRejectedValueOnce(new Error("database is locked"));
+
+    await expect(issueInvoice(7)).rejects.toThrow("database is locked");
+
+    const revert = db.execute.mock.calls.at(-1)!;
+    expect(revert[0]).toContain("status = 'draft'");
   });
 });
 
@@ -394,15 +513,39 @@ describe("markPaid", () => {
   const insertedPayments = () =>
     db.execute.mock.calls.filter(([sql]) => String(sql).includes("INSERT INTO invoice_payments"));
 
+  function paidSoFar(invoice: InvoiceRow, paidCent: number) {
+    db.select.mockImplementation(async (sql: string) =>
+      sql.includes("SUM(amount_cent)") ? [{ paid_cent: paidCent }] : [invoice],
+    );
+  }
+  const paidUpdate = () =>
+    db.execute.mock.calls.find(([sql]) => String(sql).startsWith("UPDATE invoices SET status = 'paid'"))!;
+
   it("logs the open remainder as an auto payment and marks a sent invoice paid", async () => {
-    db.select.mockResolvedValue([invoiceRow({ status: "partial", total: 10_000, amount_paid_cent: 4_000 })]);
+    paidSoFar(invoiceRow({ status: "partial", total: 10_000, amount_paid_cent: 4_000 }), 4_000);
 
     await markPaid(7, 1_750_000_000);
 
     expect(insertedPayments()).toHaveLength(1);
     expect(insertedPayments()[0][1]).toEqual([7, 1_750_000_000, 6_000]);
-    const update = db.execute.mock.calls.find(([sql]) => String(sql).startsWith("UPDATE invoices SET status = 'paid'"))!;
-    expect(update[1]).toEqual([1_750_000_000, 10_000, 7]);
+    expect(paidUpdate()[1]).toEqual([1_750_000_000, 10_000, 7]);
+  });
+
+  it("takes the open remainder from the recorded payments, not the cached amount", async () => {
+    paidSoFar(invoiceRow({ status: "sent", total: 10_000, amount_paid_cent: 0 }), 4_000);
+
+    await markPaid(7, 1_750_000_000);
+
+    expect(insertedPayments()[0][1]).toEqual([7, 1_750_000_000, 6_000]);
+  });
+
+  it("keeps an overpayment visible instead of capping the paid amount at the total", async () => {
+    paidSoFar(invoiceRow({ status: "partial", total: 10_000 }), 12_000);
+
+    await markPaid(7, 1_750_000_000);
+
+    expect(insertedPayments()).toHaveLength(0);
+    expect(paidUpdate()[1]).toEqual([1_750_000_000, 12_000, 7]);
   });
 
   it("does not record a payment for a cancelled invoice", async () => {
@@ -416,7 +559,7 @@ describe("markPaid", () => {
 
 describe("deleteInvoice", () => {
   it("removes the payments of the deleted invoice, which have no FK cascade", async () => {
-    db.select.mockResolvedValue([invoiceRow({ status: "cancelled" })]);
+    db.select.mockResolvedValue([invoiceRow({ status: "cancelled", number: "DRAFT-abc" })]);
 
     await deleteInvoice(7);
 
@@ -427,10 +570,71 @@ describe("deleteInvoice", () => {
     ]);
   });
 
-  it("refuses to delete a sent invoice", async () => {
-    db.select.mockResolvedValue([invoiceRow({ status: "sent" })]);
+  it.each([
+    ["a sent invoice", invoiceRow({ status: "sent" })],
+    ["a cancelled numbered invoice", invoiceRow({ status: "cancelled" })],
+    ["a reopened draft that keeps its number", invoiceRow({ status: "draft" })],
+  ])("refuses to delete %s", async (_label, row) => {
+    db.select.mockResolvedValue([row]);
 
-    await expect(deleteInvoice(7)).rejects.toThrow("Nur Entwürfe");
+    await expect(deleteInvoice(7)).rejects.toThrow("ohne Rechnungsnummer");
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+});
+
+describe("cancelInvoice", () => {
+  it("discards an unnumbered draft", async () => {
+    db.select.mockResolvedValue([invoiceRow({ status: "draft", number: "DRAFT-abc" })]);
+
+    await cancelInvoice(7);
+
+    expect(db.execute.mock.calls[0][0]).toContain("SET status = 'cancelled'");
+  });
+
+  it.each([
+    ["a sent invoice", invoiceRow({ status: "sent" })],
+    ["a numbered draft", invoiceRow({ status: "draft" })],
+  ])("refuses %s, which needs a credit note", async (_label, row) => {
+    db.select.mockResolvedValue([row]);
+
+    await expect(cancelInvoice(7)).rejects.toThrow("Stornorechnung");
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+});
+
+describe("reopenDraft", () => {
+  function reopenSituation(invoice: InvoiceRow, payments: number, creditNote: InvoiceRow | null) {
+    db.select.mockImplementation(async (sql: string) => {
+      if (sql.includes("COUNT(*)")) return [{ c: payments }];
+      if (sql.includes("corrects_invoice_id")) return creditNote ? [creditNote] : [];
+      return [invoice];
+    });
+  }
+  const creditNoteFor7 = (status: InvoiceRow["status"]) =>
+    invoiceRow({ id: 8, is_credit_note: 1, corrects_invoice_id: 7, status });
+  const issuedCreditNote = creditNoteFor7("sent");
+
+  it("sends a sent invoice without payments back to draft, keeping its number", async () => {
+    reopenSituation(invoiceRow({ status: "sent" }), 0, null);
+
+    await reopenDraft(7);
+
+    const [sql, binds] = db.execute.mock.calls[0];
+    expect(sql).toContain("SET status = 'draft'");
+    expect(sql).not.toContain("number");
+    expect(binds).toEqual([7, "sent"]);
+  });
+
+  it.each([
+    ["with payments", invoiceRow({ status: "sent" }), 1, null],
+    ["with an issued credit note", invoiceRow({ status: "sent" }), 0, issuedCreditNote],
+    ["with a draft credit note", invoiceRow({ status: "sent" }), 0, creditNoteFor7("draft")],
+    ["that is paid", invoiceRow({ status: "paid" }), 0, null],
+    ["that is cancelled and numbered", invoiceRow({ status: "cancelled" }), 0, null],
+  ])("refuses an invoice %s", async (_label, invoice, payments, creditNote) => {
+    reopenSituation(invoice, payments, creditNote);
+
+    await expect(reopenDraft(7)).rejects.toThrow("wieder bearbeitet");
     expect(db.execute).not.toHaveBeenCalled();
   });
 });

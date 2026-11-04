@@ -9,8 +9,9 @@ import {
   MISSING_NAME,
   writeLineItems,
 } from "./doc-queries";
-import { createInvoice } from "./invoices";
-import type { InvoiceFormInput, SupplyKind } from "./invoices";
+import { createInvoice, deleteInvoice, orKeep } from "./invoices";
+import type { InvoiceFormInput, ReverseChargeType, SupplyKind } from "./invoices";
+import { storedReverseChargeType } from "./reverse-charge-type";
 import { drawNextNumber } from "./numbering";
 import { loadSettings } from "./queries";
 import { buildCustomerSnapshot } from "./snapshots";
@@ -42,6 +43,7 @@ type OfferRow = {
   total: number;
   is_kleinunternehmer: number;
   is_reverse_charge: number;
+  reverse_charge_type: string | null;
   supply_kind: string;
   notes: string | null;
   intro_text: string | null;
@@ -90,6 +92,7 @@ export function mapOffer(r: OfferRow): Offer {
     total: r.total,
     isKleinunternehmer: r.is_kleinunternehmer === 1,
     isReverseCharge: r.is_reverse_charge === 1,
+    reverseChargeType: storedReverseChargeType(r.reverse_charge_type, r.is_reverse_charge === 1),
     supplyKind: r.supply_kind as Offer["supplyKind"],
     notes: r.notes,
     introText: r.intro_text,
@@ -131,7 +134,7 @@ export type OfferFormInput = {
   validUntil: number;
   notes: string | null;
   introText: string | null;
-  isReverseCharge: boolean;
+  reverseChargeType: ReverseChargeType;
   supplyKind: SupplyKind;
   items: OfferItemInput[];
   currency?: string;
@@ -206,19 +209,20 @@ function writeItems(offerId: number, items: OfferItemInput[]): Promise<void> {
 export async function createOffer(input: OfferFormInput): Promise<number> {
   const settings = await loadSettings();
   const snapshot = await buildCustomerSnapshot(input.customerId);
+  const isReverseCharge = input.reverseChargeType !== "none";
   const totals = computeTotals(input.items, {
     isKleinunternehmer: settings.isKleinunternehmer,
-    isReverseCharge: input.isReverseCharge,
+    isReverseCharge,
   });
   const number = await drawNextNumber("offer", input.issueDate);
 
   const id = await insert(
     `INSERT INTO offers
       (number, customer_id, customer_snapshot, issue_date, valid_until,
-       status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge, supply_kind,
-       notes, intro_text, currency, exchange_rate,
+       status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
+       reverse_charge_type, supply_kind, notes, intro_text, currency, exchange_rate,
        service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language)
-     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.customerId,
@@ -229,7 +233,8 @@ export async function createOffer(input: OfferFormInput): Promise<number> {
       totals.vatAmount,
       totals.total,
       settings.isKleinunternehmer ? 1 : 0,
-      input.isReverseCharge ? 1 : 0,
+      isReverseCharge ? 1 : 0,
+      input.reverseChargeType,
       input.supplyKind,
       input.notes,
       input.introText,
@@ -255,22 +260,20 @@ export async function updateOffer(
   if (existing.offer.status !== "draft") {
     throw new Error("Nur Entwürfe können bearbeitet werden.");
   }
+  const isReverseCharge = input.reverseChargeType !== "none";
   const totals = computeTotals(input.items, {
     isKleinunternehmer: existing.offer.isKleinunternehmer,
-    isReverseCharge: input.isReverseCharge,
+    isReverseCharge,
   });
-
-  let snapshotJson = existing.offer.customerSnapshot;
-  if (input.customerId !== existing.offer.customerId) {
-    snapshotJson = JSON.stringify(await buildCustomerSnapshot(input.customerId));
-  }
+  // Drafts follow the customer's master data until they are sent.
+  const snapshotJson = JSON.stringify(await buildCustomerSnapshot(input.customerId));
 
   await execute(
     `UPDATE offers SET
       customer_id = ?, customer_snapshot = ?,
       issue_date = ?, valid_until = ?,
       subtotal = ?, vat_amount = ?, total = ?,
-      is_reverse_charge = ?, supply_kind = ?,
+      is_reverse_charge = ?, reverse_charge_type = ?, supply_kind = ?,
       notes = ?, intro_text = ?,
       currency = ?, exchange_rate = ?,
       service_period_start = ?, service_period_end = ?,
@@ -286,12 +289,13 @@ export async function updateOffer(
       totals.subtotal,
       totals.vatAmount,
       totals.total,
-      input.isReverseCharge ? 1 : 0,
+      isReverseCharge ? 1 : 0,
+      input.reverseChargeType,
       input.supplyKind,
       input.notes,
       input.introText,
       input.currency ?? existing.offer.currency,
-      input.exchangeRate ?? existing.offer.exchangeRate,
+      orKeep(input.exchangeRate, existing.offer.exchangeRate),
       input.servicePeriodStart ?? null,
       input.servicePeriodEnd ?? null,
       input.skontoPercent ?? null,
@@ -377,7 +381,7 @@ function invoiceInputFromOffer(
     dueDate,
     notes: offer.notes,
     paymentTerms: null,
-    reverseChargeType: offer.isReverseCharge ? "intra_eu" : "none",
+    reverseChargeType: offer.reverseChargeType,
     supplyKind: offer.supplyKind,
     items: items.map((it) => ({
       description: it.description,
@@ -402,6 +406,10 @@ function invoiceInputFromOffer(
 /**
  * Creates a fresh draft invoice from this offer's data and links it back.
  * Returns the new invoice ID. The offer is marked as accepted.
+ *
+ * The link is a conditional UPDATE: when a concurrent conversion (double
+ * click) linked its invoice first, this call's draft is deleted again (it has
+ * no number yet, so no gap) and the winner's invoice is returned.
  */
 export async function convertToInvoice(
   offerId: number,
@@ -422,11 +430,18 @@ export async function convertToInvoice(
   const invoiceId = await createInvoice(
     invoiceInputFromOffer(data.offer, data.items, issueDate, addDaysUnix(issueDate, paymentDays)),
   );
-  await execute(
-    "UPDATE offers SET status = 'accepted', accepted_at = COALESCE(accepted_at, unixepoch()), converted_invoice_id = ?, updated_at = unixepoch() WHERE id = ?",
+  const link = await execute(
+    `UPDATE offers SET status = 'accepted', accepted_at = COALESCE(accepted_at, unixepoch()),
+       converted_invoice_id = ?, updated_at = unixepoch()
+     WHERE id = ? AND converted_invoice_id IS NULL AND status != 'rejected'`,
     [invoiceId, offerId],
   );
-  return invoiceId;
+  if (link.rowsAffected === 1) return invoiceId;
+
+  await deleteInvoice(invoiceId);
+  const winner = (await getOffer(offerId))?.offer.convertedInvoiceId;
+  if (winner == null) throw new Error("Angebot konnte nicht umgewandelt werden.");
+  return winner;
 }
 
 // --- Dashboard ---

@@ -11,7 +11,6 @@
     settings: Settings | null;
     customer: Customer | null;
     disabled?: boolean;
-    allowThirdCountry?: boolean;
     note?: string;
   };
   let {
@@ -20,7 +19,6 @@
     settings,
     customer,
     disabled = false,
-    allowThirdCountry = true,
     note,
   }: Props = $props();
 
@@ -31,16 +29,11 @@
   };
 
   const rc = $derived(settings ? reverseChargeState(type, settings, customer) : null);
-  const typeItems = $derived.by(() => {
-    const items: { value: ReverseChargeType; label: string; disabled?: boolean }[] = [
-      { value: "none", label: "Keine" },
-      { value: "intra_eu", label: "Innergemeinschaftlich (EU-B2B)", disabled: !rc?.canIntraEu },
-    ];
-    if (allowThirdCountry) {
-      items.push({ value: "third_country", label: "Ausfuhrlieferung Drittland", disabled: !rc?.canThirdCountry });
-    }
-    return items;
-  });
+  const typeItems = $derived<{ value: ReverseChargeType; label: string; disabled?: boolean }[]>([
+    { value: "none", label: "Keine" },
+    { value: "intra_eu", label: "Innergemeinschaftlich (EU-B2B)", disabled: !rc?.canIntraEu },
+    { value: "third_country", label: "Ausfuhrlieferung Drittland", disabled: !rc?.canThirdCountry },
+  ]);
 
   // Judged only once settings and customers are known; otherwise a stored
   // type would be reset before the data it depends on arrives.
