@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { link, push } from "svelte-spa-router";
+  import { link, push, router } from "svelte-spa-router";
+  import { intQueryParam } from "./invoice/route-query";
   import { listCustomers, loadSettings } from "$lib/db/queries";
   import {
     createRecurring,
@@ -42,16 +43,12 @@
   type Props = {
     mode: "new" | "edit";
     params?: { id?: string };
-    querystring?: string;
   };
-  let { mode, params, querystring }: Props = $props();
+  let { mode, params }: Props = $props();
 
-  const fromInvoiceId = $derived.by(() => {
-    if (mode !== "new" || !querystring) return null;
-    const raw = new URLSearchParams(querystring).get("fromInvoice");
-    const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-    return Number.isFinite(parsed) ? parsed : null;
-  });
+  const fromInvoiceId = $derived(
+    mode === "new" ? intQueryParam(router.querystring, "fromInvoice") : null,
+  );
 
   let customers = $state<Customer[]>([]);
   let settings = $state<Settings | null>(null);

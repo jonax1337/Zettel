@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { push } from "svelte-spa-router";
+  import { push, router } from "svelte-spa-router";
   import { listCustomers, loadSettings } from "$lib/db/queries";
   import {
     computeTotals,
@@ -35,10 +35,12 @@
     restoreVatRates,
     reverseChargeAvailability,
     reverseChargeBlockedReason,
+    isSelectedReverseChargeBlocked,
     zeroVatRatesRemembering,
     type VatRateSnapshot,
   } from "./invoice/reverse-charge";
   import { INVALID_ROUTE_ID_MESSAGE, parseRouteId } from "./invoice/route-id";
+  import { preselectedCustomerId } from "./invoice/route-query";
   import {
     defaultSkontoForm,
     skontoFormFromSettings,
@@ -50,9 +52,8 @@
   type Props = {
     mode: "new" | "edit";
     params?: { id?: string };
-    querystring?: string;
   };
-  let { mode, params, querystring }: Props = $props();
+  let { mode, params }: Props = $props();
 
   const PDF_LANGUAGE_ITEMS: { value: "de" | "en"; label: string }[] = [
     { value: "de", label: "Deutsch" },
@@ -125,6 +126,9 @@
     })),
   );
   const reverseChargeBlockedHint = $derived(settings ? reverseChargeBlockedReason(reverseChargeInput) : "");
+  const selectedReverseChargeBlocked = $derived(
+    isSelectedReverseChargeBlocked(reverseChargeType, reverseChargeEnabled),
+  );
 
   const totals = $derived(
     settings ? computeTotals(items, { isKleinunternehmer, isReverseCharge }) : { subtotal: 0, vatAmount: 0, total: 0 },
@@ -174,13 +178,8 @@
       .finally(() => (loaded = true));
   });
 
-  function preselectedCustomerId(availableCustomers: Customer[]): string {
-    const requested = new URLSearchParams(querystring ?? "").get("customerId");
-    return availableCustomers.some((c) => String(c.id) === requested) ? (requested ?? "") : "";
-  }
-
   function applyNewInvoiceDefaults(s: Settings, availableCustomers: Customer[]) {
-    customerIdStr = preselectedCustomerId(availableCustomers);
+    customerIdStr = preselectedCustomerId(router.querystring, availableCustomers);
     paymentTerms = `Zahlbar innerhalb von ${s.defaultPaymentTermsDays} Tagen ohne Abzug.`;
     for (const item of items) item.vatRate = vatRateForNewItem(s.isKleinunternehmer);
     skonto = skontoFormFromSettings(s);
@@ -396,7 +395,9 @@
                 {/if}
               </p>
               {#if reverseChargeBlockedHint}
-                <p class="text-xs text-warning">{reverseChargeBlockedHint}</p>
+                <p class={selectedReverseChargeBlocked ? "text-xs text-warning" : "text-xs text-muted-foreground"}>
+                  {reverseChargeBlockedHint}
+                </p>
               {/if}
             </div>
             {#if reverseChargeType !== "none"}
