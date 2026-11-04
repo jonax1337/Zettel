@@ -42,6 +42,7 @@
     search: string;
     onlyCreditNotes: boolean;
     onlyFollowUp: boolean;
+    onlyOpen: boolean;
   };
   const filters = createListFilters<InvoiceListFilters>("invoices", {
     status: ALL,
@@ -50,6 +51,7 @@
     search: "",
     onlyCreditNotes: false,
     onlyFollowUp: false,
+    onlyOpen: false,
   });
   const f = filters.values;
 
@@ -63,7 +65,9 @@
   const invoices = createQueryState<InvoiceListRow[]>([], () => listInvoices(filter));
   const visibleInvoices = $derived(
     invoices.data.filter(
-      (i) => (!f.onlyCreditNotes || i.isCreditNote) && (!f.onlyFollowUp || i.followUpDate != null),
+      (i) => (!f.onlyCreditNotes || i.isCreditNote) &&
+        (!f.onlyFollowUp || i.followUpDate != null) &&
+        (!f.onlyOpen || i.status === "sent" || i.status === "partial"),
     ),
   );
 
@@ -147,6 +151,10 @@
   <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
     <Checkbox bind:checked={f.onlyFollowUp} />
     Nur mit Wiedervorlage
+  </label>
+  <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+    <Checkbox bind:checked={f.onlyOpen} />
+    Nur offene Posten
   </label>
 </div>
 
