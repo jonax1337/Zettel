@@ -10,11 +10,17 @@ const REVENUE_STATUSES = `('sent','partial','paid')`;
 const OPEN_STATUSES = `('sent','partial')`;
 
 // Non-EUR invoices prefer the frozen eur_total_cent, otherwise total as-is.
-const REVENUE_AMOUNT_SQL = `COALESCE(eur_total_cent, total)`;
-const REVENUE_NET_SQL = `(CASE
+export const REVENUE_AMOUNT_SQL = `COALESCE(eur_total_cent, total)`;
+// Net and VAT are the invoice's share of its frozen EUR total.
+export const REVENUE_NET_SQL = `(CASE
   WHEN eur_total_cent IS NOT NULL AND total <> 0 THEN
     CAST(eur_total_cent * subtotal AS REAL) / total
   ELSE subtotal
+END)`;
+export const REVENUE_VAT_SQL = `(CASE
+  WHEN eur_total_cent IS NOT NULL AND total <> 0 THEN
+    CAST(eur_total_cent * vat_amount AS REAL) / total
+  ELSE vat_amount
 END)`;
 // Offener Saldo in EUR-Cent. total und amount_paid_cent stehen in der
 // Rechnungswährung, eur_total_cent ist der eingefrorene EUR-Gegenwert von total:
