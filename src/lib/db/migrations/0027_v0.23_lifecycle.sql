@@ -19,10 +19,13 @@ UPDATE sqlite_master
 -- schema cookie, which makes every other pooled connection reload it as well.
 PRAGMA writable_schema = RESET;
 
--- Aborts the migration if the old CHECK text was not found and replaced.
-CREATE TEMP TABLE migration_0027_guard (old_check_removed INTEGER CHECK (old_check_removed = 1));
+-- Aborts the migration unless the old CHECK text was found and replaced. If the
+-- stored text differed (whitespace, a hand-repaired DB), replace() would silently
+-- do nothing and 'partial' would stay forbidden.
+CREATE TEMP TABLE migration_0027_guard (check_relaxed INTEGER CHECK (check_relaxed = 1));
 INSERT INTO migration_0027_guard
   SELECT instr(sql, 'CHECK (status IN (''draft'',''sent'',''paid'',''cancelled''))') = 0
+         AND instr(sql, 'CHECK (status IN (''draft'',''sent'',''partial'',''paid'',''cancelled''))') > 0
     FROM sqlite_master WHERE type = 'table' AND name = 'invoices';
 DROP TABLE migration_0027_guard;
 

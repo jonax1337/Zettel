@@ -284,6 +284,27 @@ mod tests {
         }
 
         #[test]
+        fn aborts_when_the_check_text_differs_from_the_expected_one() {
+            let dir = TempDir::new("lifecycle-migration-guard");
+            let mut conn = open(&dir.path().join("zettel.db"));
+            migrate(&mut conn, 1..=LIFECYCLE_VERSION - 1);
+            conn.execute_batch(
+                "PRAGMA writable_schema = ON;
+                 UPDATE sqlite_master SET sql = replace(sql, 'CHECK (status IN', 'CHECK  (status IN')
+                  WHERE type = 'table' AND name = 'invoices';
+                 PRAGMA writable_schema = RESET;",
+            )
+            .unwrap();
+            let lifecycle = build_migrations()
+                .into_iter()
+                .find(|m| m.version == LIFECYCLE_VERSION)
+                .unwrap();
+
+            let tx = conn.transaction().unwrap();
+            assert!(tx.execute_batch(lifecycle.sql).is_err());
+        }
+
+        #[test]
         fn passes_integrity_and_foreign_key_checks() {
             let m = migrated_from_version_27();
             let integrity: String = m
