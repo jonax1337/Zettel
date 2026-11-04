@@ -610,7 +610,9 @@ describe("reopenDraft", () => {
       return [invoice];
     });
   }
-  const issuedCreditNote = invoiceRow({ id: 8, is_credit_note: 1, corrects_invoice_id: 7, status: "sent" });
+  const creditNoteFor7 = (status: InvoiceRow["status"]) =>
+    invoiceRow({ id: 8, is_credit_note: 1, corrects_invoice_id: 7, status });
+  const issuedCreditNote = creditNoteFor7("sent");
 
   it("sends a sent invoice without payments back to draft, keeping its number", async () => {
     reopenSituation(invoiceRow({ status: "sent" }), 0, null);
@@ -626,7 +628,7 @@ describe("reopenDraft", () => {
   it.each([
     ["with payments", invoiceRow({ status: "sent" }), 1, null],
     ["with an issued credit note", invoiceRow({ status: "sent" }), 0, issuedCreditNote],
-    ["with a draft credit note", invoiceRow({ status: "sent" }), 0, { ...issuedCreditNote, status: "draft" }],
+    ["with a draft credit note", invoiceRow({ status: "sent" }), 0, creditNoteFor7("draft")],
     ["that is paid", invoiceRow({ status: "paid" }), 0, null],
     ["that is cancelled and numbered", invoiceRow({ status: "cancelled" }), 0, null],
   ])("refuses an invoice %s", async (_label, invoice, payments, creditNote) => {
