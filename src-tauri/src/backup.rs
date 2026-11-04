@@ -357,6 +357,9 @@ fn backup_pdf_entries(
         }
     }
     for (pdf, dir) in referenced_pdfs(snapshot)? {
+        if pdf.starts_with(documents_root) {
+            continue;
+        }
         let base = pdf_folder_of(&pdf, dir).or_else(|| pdf.parent()).unwrap_or(&pdf).to_path_buf();
         for version in pdf_versions(&pdf)? {
             let path = PathBuf::from(version.path);
