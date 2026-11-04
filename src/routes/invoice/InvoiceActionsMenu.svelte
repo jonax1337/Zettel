@@ -1,7 +1,7 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
-  import { DropdownItem, DropdownMenu, DropdownSeparator } from "$lib/ui";
-  import { Ban, FileWarning, MoreHorizontal, Pencil, Repeat, Trash2, Undo2 } from "$lib/brand-icons";
+  import { DropdownItem, DropdownMenu, DropdownSeparator, MoreActionsTrigger } from "$lib/ui";
+  import { Ban, FileWarning, Pencil, Repeat, Trash2, Undo2 } from "$lib/brand-icons";
   import type { Invoice, ReminderLevel } from "$lib/db/schema";
   import { REMINDER_CREATE_LABEL } from "./reminder-levels";
 
@@ -33,13 +33,7 @@
 
 <DropdownMenu>
   {#snippet trigger()}
-    <button
-      type="button"
-      class="inline-flex items-center justify-center size-9 rounded-md border border-border hover:bg-accent transition-colors cursor-pointer"
-      aria-label="Weitere Aktionen"
-    >
-      <MoreHorizontal class="size-4" />
-    </button>
+    <MoreActionsTrigger />
   {/snippet}
 
   {#if invoice.status === "draft"}

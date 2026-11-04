@@ -19,7 +19,6 @@
   import { generateReminderPdf } from "$lib/sidecar/reminder";
   import {
     Button,
-    Card,
     ConfirmDialog,
     DatePicker,
     Input,
@@ -34,6 +33,7 @@
   import BackLink from "./parts/entity/BackLink.svelte";
   import { parseId } from "./parts/entity/edit-target";
   import { centsToPriceText } from "./parts/entity/format";
+  import PdfLocation from "./parts/entity/PdfLocation.svelte";
   import SectionCard from "./parts/reminder/SectionCard.svelte";
   import {
     UNKNOWN_NAME,
@@ -317,17 +317,7 @@
   </SectionCard>
 
   {#if pdfPath}
-    <Card class="mb-4">
-      <div class="p-5 flex items-center justify-between gap-4">
-        <div class="text-sm">
-          <div class="font-medium">PDF</div>
-          <div class="text-xs text-muted-foreground font-mono">{pdfPath}</div>
-        </div>
-        <Button variant="outline" size="sm" onclick={() => openPdf(pdfPath!)}>
-          Öffnen
-        </Button>
-      </div>
-    </Card>
+    <PdfLocation path={pdfPath} onOpen={() => openPdf(pdfPath!)} />
   {/if}
 
   {#if reminderId !== null && !readonly}

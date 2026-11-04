@@ -1,20 +1,32 @@
 <script lang="ts">
   import { Button, DropdownItem, DropdownMenu } from "$lib/ui";
+  import type { ButtonVariant } from "$lib/ui/Button.svelte";
   import { ChevronDown, FileDown, FileText, FolderOpen, ShieldCheck } from "$lib/brand-icons";
 
   type Props = {
     hasPdf: boolean;
     generating: boolean;
-    revalidating: boolean;
+    revalidating?: boolean;
+    generateVariant?: ButtonVariant;
     onGenerate: () => void;
     onOpen: () => void;
     onReveal: () => void;
-    onRevalidate: () => void;
+    /** Documents without an e-invoice XML (offers) leave this out and get no "Validieren" entry. */
+    onRevalidate?: () => void;
   };
-  let { hasPdf, generating, revalidating, onGenerate, onOpen, onReveal, onRevalidate }: Props = $props();
+  let {
+    hasPdf,
+    generating,
+    revalidating = false,
+    generateVariant = "default",
+    onGenerate,
+    onOpen,
+    onReveal,
+    onRevalidate,
+  }: Props = $props();
 </script>
 
-<Button disabled={generating} onclick={onGenerate}>
+<Button variant={generateVariant} disabled={generating} onclick={onGenerate}>
   <FileDown />
   {generating ? "Erzeuge…" : hasPdf ? "PDF neu erzeugen" : "PDF erzeugen"}
 </Button>
@@ -35,9 +47,11 @@
       Öffnen
     </Button>
     <DropdownMenu trigger={moreTrigger}>
-      <DropdownItem onSelect={onRevalidate} disabled={revalidating}>
-        <ShieldCheck /> {revalidating ? "Prüfe…" : "Validieren"}
-      </DropdownItem>
+      {#if onRevalidate}
+        <DropdownItem onSelect={onRevalidate} disabled={revalidating}>
+          <ShieldCheck /> {revalidating ? "Prüfe…" : "Validieren"}
+        </DropdownItem>
+      {/if}
       <DropdownItem onSelect={onReveal}>
         <FolderOpen /> Im Explorer zeigen
       </DropdownItem>
