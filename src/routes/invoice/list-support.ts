@@ -16,8 +16,11 @@ export function yearFilterItems(years: number[]): FilterItem<string>[] {
   return [{ value: ALL, label: "Alle Jahre" }, ...years.map((y) => ({ value: String(y), label: String(y) }))];
 }
 
-export function customerFilterItems(customers: { id: number; name: string }[]): FilterItem<string>[] {
-  return [{ value: ALL, label: "Alle Kunden" }, ...customers.map((c) => ({ value: String(c.id), label: c.name }))];
+export function customerFilterItems(
+  customers: { id: number; name: string }[],
+  allLabel = "Alle Kunden",
+): FilterItem<string>[] {
+  return [{ value: ALL, label: allLabel }, ...customers.map((c) => ({ value: String(c.id), label: c.name }))];
 }
 
 export function numberOrAll(value: string): number | typeof ALL {

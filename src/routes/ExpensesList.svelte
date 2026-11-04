@@ -11,14 +11,12 @@
   import type { ExpenseStatus, Vendor } from "$lib/db/schema";
   import { listVendors } from "$lib/db/queries";
   import { centsToEur } from "$lib/utils/money";
-  import { formatDate } from "$lib/utils/date";
+  import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { applySort } from "$lib/utils/sort";
   import {
     Button,
     Card,
-    Select,
     Badge,
-    Label,
     Checkbox,
     SortableTh,
     BulkActionBar,
@@ -27,7 +25,11 @@
     EmptyState,
   } from "$lib/ui";
   import { Plus, CheckCircle2, Trash2 } from "$lib/brand-icons";
-  import SearchInput from "./parts/entity/SearchInput.svelte";
+  import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
+  import { paidDateWarning } from "./invoice/date-warnings";
+  import DocumentListFilters from "./invoice/DocumentListFilters.svelte";
+  import { createRowSelection } from "./invoice/list-selection.svelte";
+  import { ALL, numberOrAll, statusFilterItems } from "./invoice/list-support";
   import { pluralize } from "./parts/entity/format";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
@@ -37,30 +39,24 @@
     EXPENSE_STATUS_VARIANT,
   } from "./parts/expense/expense-status";
 
-  const ALL = "all";
+  const VENDOR_COUNTERPARTY = { label: "Lieferant", allLabel: "Alle Lieferanten" };
 
   let vendors = $state<Vendor[]>([]);
   let years = $state<number[]>([]);
 
-  let status = $state<string>(ALL);
-  let year = $state<string>(ALL);
-  let vendorId = $state<string>(ALL);
+  let status = $state<ExpenseStatus | typeof ALL>(ALL);
+  let year = $state(ALL);
+  let vendorId = $state(ALL);
   let search = $state("");
 
-  function numericFilter(value: string): number | typeof ALL {
-    return value === ALL ? ALL : Number.parseInt(value, 10);
-  }
+  const filter = $derived<ExpenseFilter>({
+    status,
+    year: numberOrAll(year),
+    vendorId: numberOrAll(vendorId),
+    search,
+  });
 
-  function currentFilter(): ExpenseFilter {
-    return {
-      status: status === ALL ? ALL : (status as ExpenseStatus),
-      year: numericFilter(year),
-      vendorId: numericFilter(vendorId),
-      search,
-    };
-  }
-
-  const expenses = createQueryState<ExpenseListRow[]>([], () => listExpenses(currentFilter()));
+  const expenses = createQueryState<ExpenseListRow[]>([], () => listExpenses(filter));
   $effect(() => {
     expenses.reload();
   });
@@ -74,20 +70,11 @@
       .catch((e) => toast.error("Jahre konnten nicht geladen werden", String(e)));
   });
 
-  const statusItems = [
-    { value: ALL, label: "Alle Status" },
-    ...EXPENSE_STATUS_FILTER_ORDER.map((s) => ({ value: s, label: EXPENSE_STATUS_LABEL[s] })),
-  ];
-
-  const yearItems = $derived([
-    { value: ALL, label: "Alle Jahre" },
-    ...years.map((y) => ({ value: String(y), label: String(y) })),
-  ]);
-
-  const vendorItems = $derived([
-    { value: ALL, label: "Alle Lieferanten" },
-    ...vendors.map((v) => ({ value: String(v.id), label: v.name })),
-  ]);
+  const statusItems = statusFilterItems(
+    Object.fromEntries(
+      EXPENSE_STATUS_FILTER_ORDER.map((s) => [s, EXPENSE_STATUS_LABEL[s]]),
+    ) as Record<ExpenseStatus, string>,
+  );
 
   type SortKey = "internalNumber" | "number" | "issueDate" | "vendor" | "total" | "status" | "dueDate";
   const sort = createListSort<SortKey>("expenses", { key: "issueDate", dir: "desc" });
@@ -103,50 +90,41 @@
     }),
   );
 
-  let selectedIds = $state<Set<number>>(new Set());
-  let bulkBusy = $state(false);
+  const selection = createRowSelection(() => sortedExpenses);
   let bulkDeleteConfirmOpen = $state(false);
+  let paidDialogOpen = $state(false);
+  let paidDate = $state(toIsoDate(nowUnix()));
 
-  const selectedExpenses = $derived(sortedExpenses.filter((e) => selectedIds.has(e.id)));
   const canBulkMarkPaid = $derived(
-    selectedExpenses.length > 0 && selectedExpenses.every((e) => e.status === "open"),
+    selection.selected.length > 0 && selection.selected.every((e) => e.status === "open"),
   );
   const canBulkDelete = $derived(
-    selectedExpenses.length > 0 &&
-      selectedExpenses.every((e) => e.status === "draft" || e.status === "cancelled"),
+    selection.selected.length > 0 &&
+      selection.selected.every((e) => e.status === "draft" || e.status === "cancelled"),
   );
   const selectionLabel = $derived(
-    pluralize(selectedIds.size, "Eingangsrechnung", "Eingangsrechnungen"),
+    pluralize(selection.selected.length, "Eingangsrechnung", "Eingangsrechnungen"),
   );
+  const paidWarning = $derived.by(() => {
+    if (!paidDate || selection.selected.length === 0) return null;
+    const latestIssueDate = Math.max(...selection.selected.map((e) => e.issueDate));
+    return paidDateWarning(fromIsoDate(paidDate), { sentAt: null, issueDate: latestIssueDate }, nowUnix());
+  });
 
-  function toggleSelect(id: number) {
-    const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    selectedIds = next;
+  function openPaidDialog() {
+    paidDate = toIsoDate(nowUnix());
+    paidDialogOpen = true;
   }
 
-  function toggleSelectAll() {
-    selectedIds =
-      selectedIds.size === sortedExpenses.length
-        ? new Set()
-        : new Set(sortedExpenses.map((e) => e.id));
+  async function confirmBulkPaid() {
+    const paidAt = fromIsoDate(paidDate);
+    paidDialogOpen = false;
+    await selection.runBulk("als bezahlt markiert", (id) => markExpensePaid(id, paidAt), expenses.reload);
   }
 
-  async function runBulkAction(successMessage: string, action: (id: number) => Promise<void>) {
-    const targets = selectedExpenses;
-    bulkBusy = true;
-    try {
-      for (const e of targets) await action(e.id);
-      toast.success(`${targets.length} ${successMessage}`);
-      selectedIds = new Set();
-    } catch (e) {
-      toast.error("Bulk-Aktion fehlgeschlagen", String(e));
-    } finally {
-      bulkBusy = false;
-      bulkDeleteConfirmOpen = false;
-      await expenses.reload();
-    }
+  async function confirmBulkDelete() {
+    bulkDeleteConfirmOpen = false;
+    await selection.runBulk("gelöscht", deleteExpense, expenses.reload);
   }
 </script>
 
@@ -163,23 +141,17 @@
   </Button>
 </header>
 
-<div class="grid grid-cols-2 @3xl:grid-cols-4 gap-3 mb-5">
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Status</Label>
-    <Select bind:value={status} items={statusItems} />
-  </div>
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Jahr</Label>
-    <Select bind:value={year} items={yearItems} />
-  </div>
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Lieferant</Label>
-    <Select bind:value={vendorId} items={vendorItems} />
-  </div>
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Suche</Label>
-    <SearchInput bind:value={search} placeholder="Nummer oder Lieferant…" />
-  </div>
+<div class="mb-5">
+  <DocumentListFilters
+    bind:status
+    {statusItems}
+    bind:year
+    bind:customerId={vendorId}
+    bind:search
+    {years}
+    customers={vendors}
+    counterparty={VENDOR_COUNTERPARTY}
+  />
 </div>
 
 {#if expenses.error}
@@ -195,8 +167,8 @@
         <tr>
           <th class="px-3 @3xl:px-4 py-3 w-10">
             <Checkbox
-              checked={selectedIds.size > 0 && selectedIds.size === sortedExpenses.length}
-              onCheckedChange={toggleSelectAll}
+              checked={selection.allSelected}
+              onCheckedChange={selection.toggleAll}
               aria-label="Alle auswählen"
             />
           </th>
@@ -217,8 +189,8 @@
           >
             <td class="px-3 @3xl:px-4 py-3" onclick={(ev) => ev.stopPropagation()}>
               <Checkbox
-                checked={selectedIds.has(e.id)}
-                onCheckedChange={() => toggleSelect(e.id)}
+                checked={selection.isSelected(e.id)}
+                onCheckedChange={() => selection.toggle(e.id)}
                 aria-label={`Eingangsrechnung ${e.internalNumber} auswählen`}
               />
             </td>
@@ -240,26 +212,39 @@
   </Card>
 {/if}
 
-<BulkActionBar count={selectedIds.size} label={selectionLabel} onClear={() => (selectedIds = new Set())}>
+<BulkActionBar count={selection.selected.length} label={selectionLabel} onClear={selection.clear}>
   {#if canBulkMarkPaid}
-    <Button size="sm" variant="outline" onclick={() => runBulkAction("als bezahlt markiert", markExpensePaid)} disabled={bulkBusy}>
+    <Button size="sm" variant="outline" onclick={openPaidDialog} disabled={selection.busy}>
       <CheckCircle2 class="size-3.5" />
       Als bezahlt
     </Button>
   {/if}
   {#if canBulkDelete}
-    <Button size="sm" variant="destructive" onclick={() => (bulkDeleteConfirmOpen = true)} disabled={bulkBusy}>
+    <Button size="sm" variant="destructive" onclick={() => (bulkDeleteConfirmOpen = true)} disabled={selection.busy}>
       <Trash2 class="size-3.5" />
       Löschen
     </Button>
   {/if}
 </BulkActionBar>
 
+<DateConfirmDialog
+  bind:open={paidDialogOpen}
+  bind:date={paidDate}
+  title="Als bezahlt markieren"
+  description="{selection.selected.length} {selectionLabel} werden mit diesem Zahldatum als bezahlt markiert."
+  dateInputId="expense-paid-date"
+  dateLabel="Zahldatum"
+  hint="Standard ist heute. Bei Nacherfassung das echte Zahldatum eintragen."
+  confirmLabel="Bestätigen"
+  warning={paidWarning}
+  onConfirm={confirmBulkPaid}
+/>
+
 <ConfirmDialog
   bind:open={bulkDeleteConfirmOpen}
-  title="{selectedIds.size} {selectionLabel} löschen?"
+  title="{selection.selected.length} {selectionLabel} löschen?"
   description="Nur Entwürfe und stornierte Belege werden gelöscht. Offene/bezahlte bleiben unangetastet."
   confirmLabel="Löschen"
   destructive
-  onConfirm={() => runBulkAction("gelöscht", deleteExpense)}
+  onConfirm={confirmBulkDelete}
 />
