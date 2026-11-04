@@ -6,6 +6,41 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Fixed
+- **Datum auf PDF und E-Rechnung einen Tag zu früh.** Der Sidecar gab Daten in UTC aus, die App speichert lokale Mitternacht. Rechnungsdatum, Fälligkeit, Leistungszeitraum, Skonto-Frist und Mahnungen erscheinen jetzt korrekt (Europe/Berlin). Bereits erzeugte PDFs bitte neu erzeugen.
+- **Teilzahlungen gingen nie durch.** Die Tabelle `invoices` ließ den Status `partial` per CHECK nicht zu; die Zahlung wurde gespeichert, der Status nicht, und ein erneuter Bank-Import buchte doppelt. Die Migration erlaubt den Status und repariert betroffene Rechnungen.
+- **Betragseingabe „119.00“ ergab 11.900 €.** Der Punkt galt immer als Tausendertrenner; jetzt werden deutsche und Dezimalpunkt-Schreibweise unterschieden.
+- **Backups** enthalten jetzt auch Eingangsrechnungen und Mahnungen, ein Voll-Restore nimmt die WAL-Dateien mit, ein Teil-Restore stellt Zahlungen und Mahnungen mit wieder her und setzt Nummernkreise nie zurück, ein fehlgeschlagenes Backup überschreibt das vorherige nicht mehr. Ein Teil-Restore fragt nach und legt vorher ein Sicherheits-Backup an.
+- **Auto-Backup** konnte Nummernkreise auf einen alten Stand zurücksetzen.
+- **Sandbox und Mandanten** legen PDFs in eigenen Ordnern ab (`Zettel-Sandbox`, `Zettel/Mandanten/<id>`) statt die echten PDFs mit gleicher Nummer zu verdrängen. „Datenbank verschieben“ ist in der Sandbox gesperrt.
+- **Fremdwährung:** Angebote und Mahnungen zeigen die Belegwährung; Angebot → Rechnung friert den EUR-Betrag ein; Steuerrücklage und offene Angebote rechnen in EUR um.
+- **Reverse Charge Drittland** bleibt bei Angebot → Rechnung und wiederkehrender Rechnung → Rechnung erhalten (vorher immer innergemeinschaftlich).
+- **Storno:** übernimmt die Kleinunternehmer-Einstellung der Originalrechnung; eine ausgestellte Stornorechnung nimmt das Original aus Mahnungen, überfälligen Posten, offenen Posten und Bank-Abgleich; eine bezahlte Stornorechnung zeigt keinen negativen Restbetrag mehr.
+- **GoBD:** Rechnungen mit vergebener Nummer lassen sich nicht mehr löschen oder ohne Stornorechnung stornieren.
+- **Doppelklick** auf Ausstellen, „Jetzt erzeugen“ oder „In Rechnung umwandeln“ erzeugt keine doppelten Rechnungen oder Nummern mehr.
+- **ZUGFeRD-Import** von Eingangsrechnungen übernimmt Positionssummen statt gerundeter Einzelpreise (richtige Vorsteuer).
+- **Steuern:** Skonto-, Gewerbesteuer- und UStVA-Rundung korrigiert (UStVA-Bemessungsgrundlagen in vollen Euro), ESt-Tarif 2024 rückwirkend angepasst (Grundfreibetrag 11.784 €), DATEV-Export behält das Vorzeichen negativer Buchungsgruppen und lehnt Zeiträume über zwei Wirtschaftsjahre ab.
+- **EPC-QR-Code** fordert nach Teilzahlungen nur den offenen Betrag.
+- **Kundenadresse** auf Entwürfen wird beim Speichern und Ausstellen aktualisiert.
+- Kunden und Lieferanten mit Belegen lassen sich nicht mehr löschen.
+- Sidecar und Validator brechen nach einem Timeout ab, statt ewig zu hängen.
+
+### Changed
+- **PDF-Ablage:** PDFs liegen im echten Dokumente-Ordner des Systems (bei OneDrive-Umleitung dort), derselbe Ort, den Backups sichern. Bestehende PDFs bleiben, wo sie sind, und werden weiter gefunden.
+- **Rechnungs-PDF** weist Netto und Umsatzsteuer je Steuersatz aus.
+- **Rechnung:** Erste Teilzahlung direkt auf der Rechnung erfassbar; „PDF erzeugen“ auf einem Entwurf fragt nach, weil es die Nummer vergibt; Fälligkeit folgt den eingestellten Zahlungstagen; überfällige Rechnungen sind markiert; Prüfergebnisse der E-Rechnung lassen sich auf der Rechnung öffnen.
+- **Ausgaben:** Lieferant direkt im Formular anlegen, Zahldatum wählbar, „Speichern & weitere erfassen“, PDF erst beim Speichern ablegen, Duplikatwarnung.
+- **Bank-Import:** erkennt bereits importierte Buchungen, manuelle Zuordnung, Zusammenfassung nach dem Buchen.
+- **Navigation:** „E-Rechnung prüfen“ und „Steuern“ in der Sidebar, Aktionen in der Befehlspalette, Filter bleiben beim Zurückkehren erhalten, Warnung bei ungespeicherten Änderungen.
+- **Einheitliche Begriffe:** „Versendet“, „Mandant“, „Wiederkehrende Rechnungen“.
+- **Barrierefreiheit:** Beschriftungen sind mit ihren Feldern verknüpft, Icon-Buttons benannt, Tabellenzeilen per Tastatur bedienbar.
+- **Onboarding** als echter Dialog; Kleinunternehmer muss bewusst gewählt werden.
+- Positions-Editor, Formular-Bausteine, Listen- und Detailseiten sowie Datenbank-Abfragen zusammengeführt; PDF-Vorlagen teilen sich Bausteine.
+- `tauri-plugin-shell` und `@lucide/svelte` entfernt.
+
+### Migration
+- **Migration `0027_v0.23_lifecycle`**, Schema `user_version = 28`: erlaubt den Rechnungsstatus `partial` (Änderung des CHECK ohne Tabellen-Neuaufbau), repariert hängengebliebene Teilzahlungen, ergänzt `reverse_charge_type` für Angebote und wiederkehrende Rechnungen sowie `bank_transaction_id` für Zahlungen.
+
 ## [0.22.0]
 
 ### Added
