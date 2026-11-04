@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Download, FileSpreadsheet } from "$lib/brand-icons";
+  import BackLink from "./parts/entity/BackLink.svelte";
   import {
     Button,
     Card,
@@ -89,7 +90,7 @@
       if (documents.invoices.length + documents.expenses.length === 0) {
         toast.error(
           "Keine Belege im Zeitraum",
-          "Rechnungen müssen 'Versandt' oder 'Bezahlt' sein. Eingangsrechnungen 'Offen' oder 'Bezahlt'.",
+          "Rechnungen müssen 'Versendet' oder 'Bezahlt' sein. Eingangsrechnungen 'Offen' oder 'Bezahlt'.",
         );
         return;
       }
@@ -123,7 +124,8 @@
 </script>
 
 <header class="mb-6">
-  <h1 class="text-3xl font-semibold tracking-tight">Export</h1>
+  <BackLink href="/">Dashboard</BackLink>
+  <h1 class="text-3xl font-semibold tracking-tight mt-2">DATEV-Export</h1>
   <p class="text-sm text-muted-foreground mt-1">
     DATEV-konformer Buchungsstapel für deinen Steuerberater. Exportiert Rechnungen
     (Erlöse) und/oder Eingangsrechnungen (Aufwände) inklusive Stornos.
@@ -174,7 +176,7 @@
       <div class="grid grid-cols-1 gap-2 rounded-md border border-border bg-muted/20 p-3">
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
           <Checkbox bind:checked={includeInvoices} />
-          Rechnungen (Erlöse — Status „Versandt" oder „Bezahlt")
+          Rechnungen (Erlöse — Status „Versendet" oder „Bezahlt")
         </label>
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
           <Checkbox bind:checked={includeExpenses} />

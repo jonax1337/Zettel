@@ -20,7 +20,8 @@
   import { loadSettings } from "$lib/db/queries";
   import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
-  import { Download, AlertTriangle } from "$lib/brand-icons";
+  import { Download, AlertTriangle, ArrowRight } from "$lib/brand-icons";
+  import BackLink from "./parts/entity/BackLink.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import { saveTextFileWithDialog } from "./parts/reports/save-text-file";
 
@@ -73,12 +74,19 @@
   }
 </script>
 
-<header class="mb-6">
-  <h1 class="text-3xl font-semibold tracking-tight">UStVA-Vorbereitung</h1>
-  <p class="text-sm text-muted-foreground mt-1">
-    Quartalsweise Aggregation der wichtigsten Kennzahlen für die Umsatzsteuer-Voranmeldung.
-    Werte zum Abtippen in ELSTER — kein direkter Upload.
-  </p>
+<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
+  <div>
+    <BackLink href="/">Dashboard</BackLink>
+    <h1 class="text-3xl font-semibold tracking-tight mt-2">UStVA-Vorbereitung</h1>
+    <p class="text-sm text-muted-foreground mt-1">
+      Quartalsweise Aggregation der wichtigsten Kennzahlen für die Umsatzsteuer-Voranmeldung.
+      Werte zum Abtippen in ELSTER — kein direkter Upload.
+    </p>
+  </div>
+  <Button href="/reports/taxes" variant="outline" size="sm">
+    Steuer-Rücklage ansehen
+    <ArrowRight class="size-4" />
+  </Button>
 </header>
 
 <div class="mb-6 rounded-md border border-warning/40 bg-warning/5 p-3 flex items-start gap-3">

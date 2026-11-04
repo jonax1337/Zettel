@@ -19,6 +19,7 @@
   } from "$lib/ui";
   import type { BadgeVariant } from "$lib/ui/Badge.svelte";
   import { Upload, CheckCircle2, AlertCircle, FileUp } from "$lib/brand-icons";
+  import BackLink from "./parts/entity/BackLink.svelte";
   import { pluralize } from "./parts/entity/format";
   import {
     canApply,
@@ -124,7 +125,8 @@
 
 <header class="mb-6 flex items-end justify-between gap-4">
   <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Bank-Import</h1>
+    <BackLink href="/invoices">Rechnungen</BackLink>
+    <h1 class="text-3xl font-semibold tracking-tight mt-2">Bank-Import</h1>
     <p class="text-sm text-muted-foreground mt-1">
       Kontoauszug im CAMT.053 (XML) oder MT940 (SWIFT) hochladen, Buchungen
       bestehenden Rechnungen zuordnen. Keine Online-Banking-Anbindung — reine

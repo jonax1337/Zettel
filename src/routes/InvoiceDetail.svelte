@@ -424,7 +424,7 @@
       {#if invoice.status === "draft"}
         <Button disabled={busy} onclick={openSendDialog}>
           <Send />
-          Versenden
+          Als versendet markieren
         </Button>
       {:else if invoice.status === "sent"}
         <Button disabled={busy} onclick={openPaidDialog}>
@@ -519,7 +519,7 @@
     dateInputId="send-date"
     dateLabel="Versanddatum"
     hint="Standard ist heute. Für Nacherfassung das tatsächliche Versanddatum eintragen."
-    confirmLabel="Versenden"
+    confirmLabel="Als versendet markieren"
     warning={dialogWarning}
     onConfirm={confirmSend}
   />

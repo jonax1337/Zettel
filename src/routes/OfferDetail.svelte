@@ -239,7 +239,7 @@
         </Button>
         <Button disabled={busy} onclick={() => action("Als versendet markiert", () => markSent(offer!.id))}>
           <Send />
-          Versenden
+          Als versendet markieren
         </Button>
       {/if}
       {#if offer.status === "sent"}

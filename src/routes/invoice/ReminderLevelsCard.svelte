@@ -31,7 +31,7 @@
           <span class="font-medium">{levelLabel(r.level as ReminderLevel)}</span>
           <span class="text-xs text-muted-foreground">{formatDate(r.issueDate)}</span>
           <Badge variant={r.status === "sent" ? "warning" : "secondary"} class="text-[10px]">
-            {r.status === "sent" ? "versandt" : "Entwurf"}
+            {r.status === "sent" ? "versendet" : "Entwurf"}
           </Badge>
         </a>
       {/each}

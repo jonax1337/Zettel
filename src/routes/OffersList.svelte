@@ -190,11 +190,11 @@
     <Button
       size="sm"
       variant="outline"
-      onclick={() => selection.runBulk("als versandt markiert", markSent, offers.reload)}
+      onclick={() => selection.runBulk("als versendet markiert", markSent, offers.reload)}
       disabled={selection.busy}
     >
       <Send class="size-3.5" />
-      Versenden
+      Als versendet markieren
     </Button>
   {/if}
   {#if canBulkReject}

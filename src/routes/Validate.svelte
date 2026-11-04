@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
+  import { getCurrentWebview } from "@tauri-apps/api/webview";
   import {
     Button,
     Card,
@@ -23,23 +24,72 @@
     ShieldAlert,
     FileSearch,
     Upload,
+    FileUp,
     AlertCircle,
   } from "$lib/brand-icons";
+  import BackLink from "./parts/entity/BackLink.svelte";
+  import {
+    firstValidatableFile,
+    validationVerdictLabel,
+    VALIDATOR_UNAVAILABLE_MESSAGE,
+  } from "./parts/reports/validate-files";
 
   let status = $state<ValidatorStatus | null>(null);
   let report = $state<ValidationReport | null>(null);
   let loading = $state(false);
   let activeFile = $state<string | null>(null);
+  let dropHover = $state(false);
 
   const canValidate = $derived(!!status?.installed && !!status?.hasJava);
 
-  onMount(async () => {
+  onMount(() => {
+    loadStatus();
+
+    let disposed = false;
+    let stopListening: (() => void) | undefined;
+    getCurrentWebview()
+      .onDragDropEvent(({ payload }) => {
+        if (payload.type === "over") {
+          dropHover = true;
+        } else if (payload.type === "leave") {
+          dropHover = false;
+        } else if (payload.type === "drop") {
+          dropHover = false;
+          handleDrop(payload.paths);
+        }
+      })
+      .then((unlisten) => {
+        if (disposed) unlisten();
+        else stopListening = unlisten;
+      })
+      .catch((e) => toast.warning("Drag & Drop nicht verfügbar", String(e)));
+
+    return () => {
+      disposed = true;
+      stopListening?.();
+    };
+  });
+
+  async function loadStatus() {
     try {
       status = await getValidatorStatus();
     } catch (e) {
       toast.error("Status konnte nicht geladen werden", String(e));
     }
-  });
+  }
+
+  function handleDrop(paths: string[]) {
+    const file = firstValidatableFile(paths);
+    if (!file) {
+      if (paths.length > 0) toast.warning("Nur PDF- oder XML-Dateien können geprüft werden.");
+      return;
+    }
+    if (!canValidate || loading) {
+      toast.warning("Die Prüfung ist gerade nicht verfügbar.");
+      return;
+    }
+    runValidate(file);
+  }
 
   async function pickFile(): Promise<string | null> {
     const selected = await open({
@@ -81,7 +131,8 @@
 
 <div class="flex flex-col gap-6">
   <div>
-    <h1 class="text-2xl font-semibold tracking-tight">E-Rechnung validieren</h1>
+    <BackLink href="/">Dashboard</BackLink>
+    <h1 class="text-3xl font-semibold tracking-tight mt-2">E-Rechnung validieren</h1>
     <p class="text-sm text-muted-foreground mt-1">
       Lokale Validierung gegen die offiziellen KoSIT/XRechnung-Schematron-Regeln.
       Kein Upload — alles bleibt auf diesem Rechner.
@@ -95,19 +146,7 @@
           <AlertCircle class="size-4 text-warning" />
           Validator nicht einsatzbereit
         </CardTitle>
-        <CardDescription>
-          {#if !status.installed && !status.hasJava}
-            Validator-Dateien und Java-Runtime fehlen. Dev-Setup:
-            <code class="text-xs">tools/download-validator.sh</code> +
-            <code class="text-xs">tools/build-jre.sh</code>.
-          {:else if !status.installed}
-            KoSIT-Dateien fehlen unter <code class="text-xs">{status.validatorDir}</code>.
-            Setup: <code class="text-xs">tools/download-validator.sh</code>.
-          {:else}
-            Java-Runtime nicht gefunden. Sollte mit dem Installer ausgeliefert
-            werden — ggf. Installer neu ausführen.
-          {/if}
-        </CardDescription>
+        <CardDescription>{VALIDATOR_UNAVAILABLE_MESSAGE}</CardDescription>
       </CardHeader>
     </Card>
   {/if}
@@ -120,13 +159,31 @@
       </CardDescription>
     </CardHeader>
     <CardContent class="flex flex-col gap-3">
-      <Button onclick={pickAndValidate} disabled={!canValidate || loading} class="self-start">
-        <Upload class="size-4" />
-        Datei auswählen
-      </Button>
+      <div
+        class="rounded-lg border-2 border-dashed p-6 text-center transition-colors {dropHover
+          ? 'border-primary bg-primary/5'
+          : 'border-muted-foreground/25'}"
+      >
+        <div class="flex flex-col items-center gap-3">
+          <FileUp class="size-8 text-muted-foreground" />
+          <div class="text-sm">
+            <span class="font-medium">PDF oder XML hierher ziehen</span>
+            <span class="text-muted-foreground"> oder </span>
+            <Button
+              variant="link"
+              class="h-auto p-0"
+              onclick={pickAndValidate}
+              disabled={!canValidate || loading}
+            >
+              <Upload class="size-4" />
+              Datei auswählen
+            </Button>
+          </div>
+        </div>
+      </div>
       {#if !canValidate && status}
         <p class="text-xs text-muted-foreground">
-          Erst Validator-Setup abschließen, dann kann hier validiert werden.
+          Solange die Prüfung nicht verfügbar ist, kann hier nichts validiert werden.
         </p>
       {/if}
     </CardContent>
@@ -162,7 +219,7 @@
           </CardDescription>
         </div>
         <Badge variant={report.valid ? "default" : "destructive"}>
-          {report.valid ? "ACCEPTABLE" : "REJECTED"}
+          {validationVerdictLabel(report.valid)}
         </Badge>
       </CardHeader>
       {#if report.findings.length > 0}

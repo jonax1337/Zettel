@@ -66,7 +66,7 @@
       Auto-Backup
     </CardTitle>
     <CardDescription>
-      Rotierender Wochen-Snapshot in <code>~/Dokumente/Zettel/Backups/auto-&lt;wochentag&gt;.zip</code>.
+      Rotierender Wochen-Snapshot (<code>auto-&lt;wochentag&gt;.zip</code>) im Ordner „Zettel/Backups“ deiner Dokumente.
       Unverschlüsselt, läuft beim App-Start. Im Sandbox-Modus deaktiviert.
     </CardDescription>
   </CardHeader>

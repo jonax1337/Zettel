@@ -217,11 +217,11 @@
     <Button
       size="sm"
       variant="outline"
-      onclick={() => selection.runBulk("als versandt markiert", (id) => markSent(id), invoices.reload)}
+      onclick={() => selection.runBulk("als versendet markiert", (id) => markSent(id), invoices.reload)}
       disabled={selection.busy}
     >
       <Send class="size-3.5" />
-      Versenden
+      Als versendet markieren
     </Button>
   {/if}
   {#if canBulkMarkPaid}
