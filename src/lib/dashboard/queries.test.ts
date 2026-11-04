@@ -18,7 +18,7 @@ vi.mock("$lib/db/client", () => ({
 
 import { fromIsoDate } from "$lib/utils/date";
 import type { Period } from "./period";
-import { monthlyRevenueInPeriod, oldestOverdue } from "./queries";
+import { cashFlowForecast30d, loadKpis, monthlyRevenueInPeriod, oldestOverdue } from "./queries";
 
 type InvoiceSeed = {
   status?: string;
@@ -28,13 +28,16 @@ type InvoiceSeed = {
   subtotal?: number;
   eurTotalCent?: number | null;
   amountPaidCent?: number | null;
+  isCreditNote?: boolean;
+  correctsInvoiceId?: number | null;
 };
 
-function seedInvoice(inv: InvoiceSeed): void {
-  sqlite
+function seedInvoice(inv: InvoiceSeed): number {
+  const result = sqlite
     .current!.prepare(
-      `INSERT INTO invoices (status, issue_date, due_date, total, subtotal, eur_total_cent, amount_paid_cent)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO invoices (status, issue_date, due_date, total, subtotal, eur_total_cent, amount_paid_cent,
+                             is_credit_note, corrects_invoice_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       inv.status ?? "sent",
@@ -44,7 +47,16 @@ function seedInvoice(inv: InvoiceSeed): void {
       inv.subtotal ?? inv.total,
       inv.eurTotalCent ?? null,
       inv.amountPaidCent ?? null,
-    );
+      inv.isCreditNote ? 1 : 0,
+      inv.correctsInvoiceId ?? null,
+    ) as { lastInsertRowid: number | bigint };
+  return Number(result.lastInsertRowid);
+}
+
+/** An invoice fully offset by an issued credit note: both rows stay 'sent'. */
+function seedCancelledByCreditNote(total: number): void {
+  const originalId = seedInvoice({ total });
+  seedInvoice({ total: -total, isCreditNote: true, correctsInvoiceId: originalId });
 }
 
 beforeEach(() => {
@@ -52,7 +64,11 @@ beforeEach(() => {
   sqlite.current = new DatabaseSync(":memory:") as SqliteDatabase;
   sqlite.current.exec(`CREATE TABLE invoices (
     id INTEGER PRIMARY KEY, status TEXT, issue_date INTEGER, due_date INTEGER,
-    total INTEGER, subtotal INTEGER, eur_total_cent INTEGER, amount_paid_cent INTEGER)`);
+    total INTEGER, subtotal INTEGER, eur_total_cent INTEGER, amount_paid_cent INTEGER,
+    is_credit_note INTEGER, corrects_invoice_id INTEGER);
+  CREATE TABLE expenses (status TEXT, issue_date INTEGER, subtotal INTEGER);
+  CREATE TABLE recurring_invoices (id INTEGER PRIMARY KEY, active INTEGER, next_due_date INTEGER, is_reverse_charge INTEGER);
+  CREATE TABLE recurring_invoice_items (recurring_id INTEGER, quantity REAL, unit_price INTEGER, vat_rate REAL)`);
 });
 
 describe("oldestOverdue open balance", () => {
@@ -82,10 +98,35 @@ describe("oldestOverdue open balance", () => {
     expect((await oldestOverdue()).openTotal).toBe(92_000);
   });
 
-  it("keeps credit notes negative", async () => {
-    seedInvoice({ total: -10_000, eurTotalCent: -9_200 });
+});
 
-    expect((await oldestOverdue()).openTotal).toBe(-9_200);
+describe("open receivables and credit notes", () => {
+  const wholeHistory: Period = { type: "custom", start: 0, end: 4_000_000_000, label: "alles" };
+
+  it("leaves an invoice offset by an issued credit note and the credit note itself out of the overdue summary", async () => {
+    seedCancelledByCreditNote(10_000);
+    seedInvoice({ total: 5_000, dueDate: 100 });
+
+    expect(await oldestOverdue()).toMatchObject({ openCount: 1, openTotal: 5_000 });
+  });
+
+  it("does not count them as open in the KPIs", async () => {
+    seedCancelledByCreditNote(10_000);
+
+    expect(await loadKpis(wholeHistory)).toMatchObject({ openCount: 0, openTotal: 0 });
+  });
+
+  it("does not forecast them as overdue cash", async () => {
+    seedCancelledByCreditNote(10_000);
+
+    expect(await cashFlowForecast30d()).toMatchObject({ overdue: 0, overdueCount: 0 });
+  });
+
+  it("keeps an invoice open while its credit note is only a draft", async () => {
+    const originalId = seedInvoice({ total: 10_000 });
+    seedInvoice({ status: "draft", total: -10_000, isCreditNote: true, correctsInvoiceId: originalId });
+
+    expect(await oldestOverdue()).toMatchObject({ openCount: 1, openTotal: 10_000 });
   });
 });
 

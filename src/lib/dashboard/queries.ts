@@ -1,4 +1,5 @@
 import { select } from "$lib/db/client";
+import { notSettledByCreditNoteSql } from "$lib/db/invoice-lifecycle";
 import type { InvoiceStatus } from "$lib/db/schema";
 import { nowUnix, SECONDS_PER_DAY } from "$lib/utils/date";
 import { displayInvoiceNumber } from "$lib/utils/invoice-number";
@@ -7,7 +8,11 @@ import type { Period } from "./period";
 import { monthsIn } from "./period";
 
 const REVENUE_STATUSES = `('sent','partial','paid')`;
-const OPEN_STATUSES = `('sent','partial')`;
+// Credit notes never get payments and stay 'sent', and the invoice they offset
+// is no longer due, so neither counts as an open receivable.
+const OPEN_RECEIVABLE_SQL = `status IN ('sent','partial')
+       AND (is_credit_note IS NULL OR is_credit_note = 0)
+       AND ${notSettledByCreditNoteSql("invoices")}`;
 
 // Non-EUR invoices prefer the frozen eur_total_cent, otherwise total as-is.
 const REVENUE_AMOUNT_SQL = `COALESCE(eur_total_cent, total)`;
@@ -68,7 +73,7 @@ async function loadOpenReceivables(p: Period): Promise<CountAndTotal> {
   const [row] = await select<{ c: number; t: number }>(
     `SELECT COUNT(*) AS c, COALESCE(SUM(${OPEN_BALANCE_SQL}), 0) AS t
      FROM invoices
-     WHERE status IN ${OPEN_STATUSES}
+     WHERE ${OPEN_RECEIVABLE_SQL}
        AND issue_date >= ? AND issue_date < ?`,
     [p.start, p.end],
   );
@@ -175,7 +180,7 @@ export async function oldestOverdue(): Promise<OldestOverdue> {
   const rows = await select<{ due_date: number; t: number }>(
     `SELECT due_date, ${OPEN_BALANCE_SQL} AS t
      FROM invoices
-     WHERE status IN ${OPEN_STATUSES}`,
+     WHERE ${OPEN_RECEIVABLE_SQL}`,
   );
   if (rows.length === 0) {
     return { daysOverdue: null, openTotal: 0, openCount: 0 };
@@ -275,7 +280,7 @@ async function sumOpenBalanceWhere(dueDateCondition: string, params: number[]): 
   const [row] = await select<{ c: number; t: number }>(
     `SELECT COUNT(*) AS c, COALESCE(SUM(${OPEN_BALANCE_SQL}), 0) AS t
      FROM invoices
-     WHERE status IN ${OPEN_STATUSES}
+     WHERE ${OPEN_RECEIVABLE_SQL}
        AND ${dueDateCondition}`,
     params,
   );
