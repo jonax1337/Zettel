@@ -2,7 +2,6 @@
   import { push } from "svelte-spa-router";
   import { listCustomers, loadSettings } from "$lib/db/queries";
   import {
-    computeTotals,
     createOffer,
     getOffer,
     updateOffer,
@@ -11,6 +10,7 @@
   import type { SupplyKind } from "$lib/db/invoices";
   import type { Customer, Offer, OfferItem, Settings } from "$lib/db/schema";
   import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
+  import { computeTotals } from "$lib/utils/totals";
   import {
     Button,
     Card,

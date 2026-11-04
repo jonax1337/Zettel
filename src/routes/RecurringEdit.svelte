@@ -7,9 +7,10 @@
     updateRecurring,
     type RecurringFormInput,
   } from "$lib/db/recurring";
-  import { computeTotals, getInvoice, type SupplyKind } from "$lib/db/invoices";
+  import { getInvoice, type SupplyKind } from "$lib/db/invoices";
   import type { CatalogItem, Customer, RecurringInterval, Settings } from "$lib/db/schema";
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
+  import { computeTotals } from "$lib/utils/totals";
   import {
     Button,
     Input,

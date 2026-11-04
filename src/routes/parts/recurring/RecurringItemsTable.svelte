@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { computeLineTotal } from "$lib/db/invoices";
+  import { computeLineTotal } from "$lib/utils/totals";
   import { centsToEur } from "$lib/utils/money";
   import { Button, Card, Input, LinePeriodPopover, Select, Textarea } from "$lib/ui";
   import { FileText, Package, Plus, Trash2, X } from "$lib/brand-icons";

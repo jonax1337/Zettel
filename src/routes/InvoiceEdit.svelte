@@ -2,7 +2,6 @@
   import { push } from "svelte-spa-router";
   import { listCustomers, loadSettings } from "$lib/db/queries";
   import {
-    computeTotals,
     createInvoice,
     getInvoice,
     updateInvoice,
@@ -13,6 +12,7 @@
   import type { Customer, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
   import { computeEurTotalCent } from "$lib/utils/currency";
   import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
+  import { computeTotals } from "$lib/utils/totals";
   import { Button, Card, CardContent, DatePicker, Label, Select, Textarea, toast } from "$lib/ui";
   import { AlertTriangle, CalendarRange } from "$lib/brand-icons";
   import BackLink from "./parts/entity/BackLink.svelte";

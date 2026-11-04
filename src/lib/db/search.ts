@@ -1,5 +1,5 @@
 import { containsPattern, select } from "./client";
-import { MISSING_NAME } from "./invoice-rows";
+import { MISSING_NAME } from "./doc-queries";
 import { displayInvoiceNumber } from "./invoices";
 import type { InvoiceStatus } from "./schema";
 import { formatDate } from "$lib/utils/date";

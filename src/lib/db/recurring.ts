@@ -1,4 +1,5 @@
 import { execute, insert, select } from "./client";
+import { MISSING_NAME } from "./doc-queries";
 import { createInvoice, type SupplyKind } from "./invoices";
 import type {
   RecurringInterval,
@@ -8,7 +9,6 @@ import type {
 import { addDaysUnix, nowUnix } from "$lib/utils/date";
 
 const DUE_SOON_DAYS = 7;
-const UNKNOWN_CUSTOMER_NAME = "—";
 
 const MONTHS_PER_INTERVAL: Record<RecurringInterval, number> = {
   monthly: 1,
@@ -156,7 +156,7 @@ async function selectRecurringRows(
   );
   return rows.map((r) => ({
     ...mapRecurring(r),
-    customerName: r.customer_name ?? UNKNOWN_CUSTOMER_NAME,
+    customerName: r.customer_name ?? MISSING_NAME,
   }));
 }
 
