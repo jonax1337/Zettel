@@ -330,7 +330,8 @@ class TestDraftDueDate:
         args = SimpleNamespace(
             issue_date="2026-03-20", due_date=None, delivery_date=None, payment_terms=14,
             reverse_charge="none", supply_kind="services", notes=None, service_start=None, service_end=None,
-            skonto_percent=None, skonto_days=None, pdf_language="de",
+            skonto_percent=None, skonto_days=None, no_skonto=False, pdf_language="de",
+            currency="EUR", exchange_rate=None,
         )
         customer = {
             "id": 1, "customer_number": "K-0001", "name": "A", "contact_person": None,

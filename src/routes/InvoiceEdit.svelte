@@ -12,6 +12,7 @@
   import type { Customer, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
   import { computeEurTotalCent } from "$lib/utils/currency";
   import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
+  import { defaultPaymentTermsText } from "$lib/utils/payment-terms";
   import { computeTotals } from "$lib/utils/totals";
   import { Button, Card, CardContent, DatePicker, Label, Select, Textarea, toast } from "$lib/ui";
   import { AlertTriangle, CalendarRange } from "$lib/brand-icons";
@@ -163,7 +164,7 @@
   });
 
   function applyNewInvoiceDefaults(s: Settings) {
-    paymentTerms = `Zahlbar innerhalb von ${s.defaultPaymentTermsDays} Tagen ohne Abzug.`;
+    paymentTerms = defaultPaymentTermsText(s.defaultPaymentTermsDays);
     for (const item of items) item.vatRate = vatRateForNewItem(s.isKleinunternehmer);
     skonto = skontoFormFromSettings(s);
     pdfLanguage = s.defaultPdfLanguage;

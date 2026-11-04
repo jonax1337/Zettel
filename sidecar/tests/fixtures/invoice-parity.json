@@ -1,0 +1,81 @@
+{
+  "_comment": "Shared by src/lib/utils/invoice-parity.test.ts (app) and sidecar/tests/test_cli_parity.py (cli/zettel.py). Change an expectation only when the rule changes in both places.",
+  "totals": [
+    {
+      "name": "single line with 19 % VAT",
+      "items": [{ "quantity": 1, "unitPrice": 10000, "vatRate": 19 }],
+      "isKleinunternehmer": false,
+      "isReverseCharge": false,
+      "expected": { "subtotal": 10000, "vatAmount": 1900, "total": 11900 }
+    },
+    {
+      "name": "VAT is rounded per line, not on the sum",
+      "items": [
+        { "quantity": 1, "unitPrice": 105, "vatRate": 7 },
+        { "quantity": 1, "unitPrice": 105, "vatRate": 7 }
+      ],
+      "isKleinunternehmer": false,
+      "isReverseCharge": false,
+      "expected": { "subtotal": 210, "vatAmount": 14, "total": 224 }
+    },
+    {
+      "name": "line total rounds half up",
+      "items": [{ "quantity": 0.5, "unitPrice": 5, "vatRate": 0 }],
+      "isKleinunternehmer": false,
+      "isReverseCharge": false,
+      "expected": { "subtotal": 3, "vatAmount": 0, "total": 3 }
+    },
+    {
+      "name": "negative VAT half rounds towards positive infinity",
+      "items": [{ "quantity": 1, "unitPrice": -250, "vatRate": 19 }],
+      "isKleinunternehmer": false,
+      "isReverseCharge": false,
+      "expected": { "subtotal": -250, "vatAmount": -47, "total": -297 }
+    },
+    {
+      "name": "mixed VAT rates",
+      "items": [
+        { "quantity": 2, "unitPrice": 4500, "vatRate": 19 },
+        { "quantity": 1.5, "unitPrice": 3333, "vatRate": 7 }
+      ],
+      "isKleinunternehmer": false,
+      "isReverseCharge": false,
+      "expected": { "subtotal": 14000, "vatAmount": 2060, "total": 16060 }
+    },
+    {
+      "name": "Kleinunternehmer charges no VAT",
+      "items": [{ "quantity": 3, "unitPrice": 3333, "vatRate": 19 }],
+      "isKleinunternehmer": true,
+      "isReverseCharge": false,
+      "expected": { "subtotal": 9999, "vatAmount": 0, "total": 9999 }
+    },
+    {
+      "name": "reverse charge charges no VAT",
+      "items": [{ "quantity": 1, "unitPrice": 12345, "vatRate": 19 }],
+      "isKleinunternehmer": false,
+      "isReverseCharge": true,
+      "expected": { "subtotal": 12345, "vatAmount": 0, "total": 12345 }
+    }
+  ],
+  "invoiceNumbers": [
+    { "pattern": "RE-{YYYY}-{NNNN}", "counter": 1, "date": "2026-03-05", "expected": "RE-2026-0001" },
+    { "pattern": "{YY}{MM}-{NNN}", "counter": 42, "date": "2026-11-30", "expected": "2611-042" },
+    { "pattern": "R{N}", "counter": 12345, "date": "2026-01-01", "expected": "R12345" },
+    { "pattern": "INV-{YYYY}{MM}-{NN}", "counter": 7, "date": "2025-01-09", "expected": "INV-202501-07" },
+    { "pattern": "RE-{NNNN}", "counter": 12345, "date": "2026-06-15", "expected": "RE-12345" }
+  ],
+  "eurTotals": [
+    { "currency": "EUR", "totalCent": 11900, "exchangeRate": null, "expected": 11900 },
+    { "currency": "USD", "totalCent": 100, "exchangeRate": "1.08", "expected": 93 },
+    { "currency": "USD", "totalCent": 10000, "exchangeRate": "1,0832", "expected": 9232 },
+    { "currency": "USD", "totalCent": -10000, "exchangeRate": "1.0832", "expected": -9232 },
+    { "currency": "GBP", "totalCent": 100000, "exchangeRate": "0.85", "expected": 117647 },
+    { "currency": "USD", "totalCent": 10000, "exchangeRate": null, "expected": null },
+    { "currency": "USD", "totalCent": 10000, "exchangeRate": "abc", "expected": null },
+    { "currency": "USD", "totalCent": 10000, "exchangeRate": "0", "expected": null }
+  ],
+  "paymentTerms": [
+    { "days": 14, "expected": "Zahlbar innerhalb von 14 Tagen ohne Abzug." },
+    { "days": 30, "expected": "Zahlbar innerhalb von 30 Tagen ohne Abzug." }
+  ]
+}
