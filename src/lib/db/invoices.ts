@@ -109,7 +109,7 @@ export async function listInvoices(
     InvoiceRow & { customer_name: string | null; has_credit_note: number }
   >(
     `SELECT i.*, c.name AS customer_name,
-            EXISTS (SELECT 1 FROM invoices cn WHERE cn.corrects_invoice_id = i.id) AS has_credit_note
+            EXISTS (SELECT 1 FROM invoices cn WHERE cn.corrects_invoice_id = i.id AND cn.status != 'cancelled') AS has_credit_note
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
      ${where}

@@ -1,5 +1,8 @@
+import {
+  canCancelInvoice,
+  canCreateCreditNote as lifecycleAllowsCreditNote,
+} from "$lib/db/invoice-lifecycle";
 import type { Invoice } from "$lib/db/schema";
-import { isDraftNumber } from "$lib/utils/invoice-number";
 
 type ActionInvoice = Pick<Invoice, "status" | "isCreditNote" | "number" | "amountPaidCent" | "dueDate">;
 
@@ -22,8 +25,7 @@ export function showsPayments(
 }
 
 export function canCreateCreditNote(invoice: ActionInvoice, cancelledByCreditNote: boolean): boolean {
-  if (invoice.isCreditNote || cancelledByCreditNote) return false;
-  return invoice.status === "sent" || invoice.status === "partial" || invoice.status === "paid";
+  return !cancelledByCreditNote && lifecycleAllowsCreditNote(invoice);
 }
 
 export function isOverdue(invoice: ActionInvoice, cancelledByCreditNote: boolean, now: number): boolean {
@@ -36,7 +38,7 @@ export function isOverdue(invoice: ActionInvoice, cancelledByCreditNote: boolean
  * carrying the DRAFT placeholder) can be removed.
  */
 export function canDiscardInvoice(invoice: Pick<ActionInvoice, "status" | "number">): boolean {
-  return invoice.status === "draft" && isDraftNumber(invoice.number);
+  return canCancelInvoice(invoice);
 }
 
 export function canReopenAsDraft(
