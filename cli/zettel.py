@@ -450,13 +450,24 @@ def load_invoice_full(con, invoice_id: int) -> tuple[dict, list[dict], dict]:
 
 
 def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
-    """Spiegel von issueInvoice(): DRAFT -> echte Nummer, status sent."""
+    """Spiegel von issueInvoice(): Entwurf beanspruchen (Kundendaten einfrieren), dann echte Nummer ziehen."""
     inv = fetch_invoice(con, invoice_id)
     if inv["status"] != "draft":
         return inv["number"]
+    customer = con.execute("SELECT * FROM customers WHERE id = ?", (inv["customer_id"],)).fetchone()
+    if not customer:
+        sys.exit(f"Kunde {inv['customer_id']} der Rechnung {invoice_id} nicht gefunden.")
     ts = sent_at or now_unix()
+    claimed = con.execute(
+        f"UPDATE invoices SET status = 'sent', sent_at = ?, customer_snapshot = ?, updated_at = {SQL_NOW} "
+        "WHERE id = ? AND status = 'draft'",
+        (ts, json.dumps(customer_snapshot(customer)), invoice_id),
+    ).rowcount
+    if claimed != 1:
+        con.commit()
+        return fetch_invoice(con, invoice_id)["number"]
     final_number = inv["number"]
-    if is_draft_number(inv["number"]):
+    if is_draft_number(final_number):
         con.execute(
             "UPDATE settings SET invoice_number_counter = invoice_number_counter + 1, "
             f"updated_at = {SQL_NOW} WHERE id = 1"
@@ -469,11 +480,7 @@ def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
             row["invoice_number_counter"],
             datetime.fromtimestamp(inv["issue_date"] or ts),
         )
-    con.execute(
-        f"UPDATE invoices SET number = ?, status = 'sent', sent_at = ?, updated_at = {SQL_NOW} "
-        "WHERE id = ? AND status = 'draft'",
-        (final_number, ts, invoice_id),
-    )
+        con.execute("UPDATE invoices SET number = ? WHERE id = ?", (final_number, invoice_id))
     con.commit()
     return final_number
 
@@ -707,7 +714,10 @@ def mark_invoice_paid(con, invoice_id: int, paid_at: int) -> sqlite3.Row | None:
     if inv["status"] not in PAYABLE_STATUSES:
         return None
     total = abs(inv["total"])
-    remaining = total - (inv["amount_paid_cent"] or 0)
+    paid_before = con.execute(
+        "SELECT COALESCE(SUM(amount_cent), 0) FROM invoice_payments WHERE invoice_id = ?", (invoice_id,)
+    ).fetchone()[0]
+    remaining = total - paid_before
     if remaining > 0:
         con.execute(
             "INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent, source) VALUES (?, ?, ?, 'auto')",
@@ -716,7 +726,7 @@ def mark_invoice_paid(con, invoice_id: int, paid_at: int) -> sqlite3.Row | None:
     con.execute(
         f"UPDATE invoices SET status = 'paid', paid_at = ?, amount_paid_cent = ?, updated_at = {SQL_NOW} "
         "WHERE id = ? AND status IN ('sent','partial')",
-        (paid_at, total, invoice_id),
+        (paid_at, max(total, paid_before), invoice_id),
     )
     con.commit()
     return inv

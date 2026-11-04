@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sqlite3
 import sys
 import time
@@ -97,6 +98,11 @@ CREATE TABLE settings (
     updated_at INTEGER
 );
 INSERT INTO settings VALUES (1, 0, 'RE-{YYYY}-{NNNN}', 0);
+CREATE TABLE customers (
+    id INTEGER PRIMARY KEY, customer_number TEXT, name TEXT, contact_person TEXT, street TEXT,
+    postal_code TEXT, city TEXT, country TEXT, email TEXT, vat_id TEXT
+);
+INSERT INTO customers (id, customer_number, name, city) VALUES (1, 'K-0001', 'Acme GmbH', 'Berlin');
 CREATE TABLE invoices (
     id INTEGER PRIMARY KEY AUTOINCREMENT, number TEXT, customer_id INTEGER, customer_snapshot TEXT,
     issue_date INTEGER, delivery_date INTEGER, due_date INTEGER, status TEXT,
@@ -142,10 +148,15 @@ class SharedConnection:
 
 def insert_invoice(con, *, status, total=11900, amount_paid=0, number="RE-2026-0001", issue_date=1_700_000_000):
     cur = con.execute(
-        "INSERT INTO invoices (number, status, total, amount_paid_cent, issue_date, due_date, is_credit_note) "
-        "VALUES (?, ?, ?, ?, ?, ?, 0)",
+        "INSERT INTO invoices (number, customer_id, customer_snapshot, status, total, amount_paid_cent, "
+        "issue_date, due_date, is_credit_note) VALUES (?, 1, '{}', ?, ?, ?, ?, ?, 0)",
         (number, status, total, amount_paid, issue_date, issue_date),
     )
+    if amount_paid:
+        con.execute(
+            "INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent, source) VALUES (?, ?, ?, 'manual')",
+            (cur.lastrowid, issue_date, amount_paid),
+        )
     return cur.lastrowid
 
 
@@ -177,8 +188,20 @@ class TestMarkPaid:
     def test_partial_invoice_logs_only_the_open_remainder(self, cli, con):
         invoice_id = insert_invoice(con, status="partial", amount_paid=4000)
         cli.mark_invoice_paid(con, invoice_id, PAID_AT)
-        assert payments_of(con, invoice_id) == [(PAID_AT, 7900, "auto")]
+        assert payments_of(con, invoice_id)[-1] == (PAID_AT, 7900, "auto")
         assert row_of(con, invoice_id)["amount_paid_cent"] == 11900
+
+    def test_open_remainder_comes_from_the_recorded_payments_not_the_cached_amount(self, cli, con):
+        invoice_id = insert_invoice(con, status="partial", amount_paid=4000)
+        con.execute("UPDATE invoices SET amount_paid_cent = 0 WHERE id = ?", (invoice_id,))
+        cli.mark_invoice_paid(con, invoice_id, PAID_AT)
+        assert payments_of(con, invoice_id)[-1] == (PAID_AT, 7900, "auto")
+
+    def test_overpayment_stays_visible_in_the_paid_amount(self, cli, con):
+        invoice_id = insert_invoice(con, status="partial", amount_paid=12500)
+        cli.mark_invoice_paid(con, invoice_id, PAID_AT)
+        assert len(payments_of(con, invoice_id)) == 1
+        assert row_of(con, invoice_id)["amount_paid_cent"] == 12500
 
     @pytest.mark.parametrize("status", ["cancelled", "paid"])
     def test_cancelled_or_paid_invoice_is_left_untouched(self, cli, con, status):
@@ -214,6 +237,53 @@ class TestIssuedNumberUsesIssueDate:
 
     def test_format_without_date_placeholders_is_unchanged(self, cli, con):
         assert self.issued_number(cli, con, local_timestamp(2024, 3, 15), "K-{NNNN}") == "K-0001"
+
+
+class TestIssueInvoice:
+    def test_freezes_the_current_customer_data(self, cli, con):
+        invoice_id = insert_invoice(con, status="draft", number=cli.draft_placeholder())
+        cli.issue_invoice(con, invoice_id)
+        snapshot = json.loads(row_of(con, invoice_id)["customer_snapshot"])
+        assert (snapshot["name"], snapshot["city"]) == ("Acme GmbH", "Berlin")
+
+    def test_issued_invoice_keeps_its_number_and_draws_none(self, cli, con):
+        invoice_id = insert_invoice(con, status="sent", number="RE-2026-0007")
+        assert cli.issue_invoice(con, invoice_id) == "RE-2026-0007"
+        assert con.execute("SELECT invoice_number_counter FROM settings").fetchone()[0] == 0
+
+
+MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "src" / "lib" / "db" / "migrations"
+
+
+@pytest.mark.skipif(sqlite3.sqlite_version_info < (3, 38), reason="migrations use unixepoch() (SQLite 3.38+)")
+class TestOnMigratedSchema:
+    """The CLI against the real schema, after the migration that allowed 'partial'."""
+
+    @pytest.fixture
+    def app_db(self):
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
+            connection.executescript(migration.read_text(encoding="utf-8"))
+        connection.execute("INSERT INTO customers (id, customer_number, name) VALUES (1, 'K-0001', 'Acme')")
+        connection.commit()
+        yield connection
+        connection.close()
+
+    def test_pays_off_a_partially_paid_invoice(self, cli, app_db):
+        invoice_id = insert_invoice(app_db, status="sent", amount_paid=4000)
+        app_db.execute("UPDATE invoices SET status = 'partial' WHERE id = ?", (invoice_id,))
+        assert cli.mark_invoice_paid(app_db, invoice_id, PAID_AT) is not None
+        invoice = row_of(app_db, invoice_id)
+        assert (invoice["status"], invoice["amount_paid_cent"]) == ("paid", 11900)
+
+    def test_issues_a_draft_with_a_reverse_charge_type(self, cli, app_db):
+        invoice_id = insert_invoice(app_db, status="draft", number=cli.draft_placeholder())
+        app_db.execute("UPDATE invoices SET reverse_charge_type = 'third_country' WHERE id = ?", (invoice_id,))
+        number = cli.issue_invoice(app_db, invoice_id)
+        assert number.startswith("RE-")
+        assert row_of(app_db, invoice_id)["reverse_charge_type"] == "third_country"
 
 
 class TestAddDaysUnix:
