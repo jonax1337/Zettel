@@ -163,7 +163,7 @@
   </Button>
 </header>
 
-<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
+<div class="grid grid-cols-2 @3xl:grid-cols-4 gap-3 mb-5">
   <div class="flex flex-col gap-1.5">
     <Label class="text-xs text-muted-foreground">Status</Label>
     <Select bind:value={status} items={statusItems} />
@@ -193,20 +193,20 @@
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
         <tr>
-          <th class="px-4 py-3 w-10">
+          <th class="px-3 @3xl:px-4 py-3 w-10">
             <Checkbox
               checked={selectedIds.size > 0 && selectedIds.size === sortedExpenses.length}
               onCheckedChange={toggleSelectAll}
               aria-label="Alle auswählen"
             />
           </th>
-          <SortableTh column="internalNumber" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Interne Nr.</SortableTh>
-          <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Beleg-Nr.</SortableTh>
-          <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Datum</SortableTh>
-          <SortableTh column="vendor" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Lieferant</SortableTh>
-          <SortableTh column="total" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-4 py-3 text-right">Brutto</SortableTh>
-          <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Status</SortableTh>
-          <SortableTh column="dueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Fällig</SortableTh>
+          <SortableTh column="internalNumber" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Interne Nr.</SortableTh>
+          <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 whitespace-nowrap">Beleg-Nr.</SortableTh>
+          <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Datum</SortableTh>
+          <SortableTh column="vendor" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 min-w-32">Lieferant</SortableTh>
+          <SortableTh column="total" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-3 @3xl:px-4 py-3 text-right whitespace-nowrap">Brutto</SortableTh>
+          <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 @3xl:px-4 py-3 whitespace-nowrap">Status</SortableTh>
+          <SortableTh column="dueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 whitespace-nowrap">Fällig</SortableTh>
         </tr>
       </thead>
       <tbody class="stagger">
@@ -215,22 +215,22 @@
             class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
             onclick={() => push(`/expenses/${e.id}`)}
           >
-            <td class="px-4 py-3" onclick={(ev) => ev.stopPropagation()}>
+            <td class="px-3 @3xl:px-4 py-3" onclick={(ev) => ev.stopPropagation()}>
               <Checkbox
                 checked={selectedIds.has(e.id)}
                 onCheckedChange={() => toggleSelect(e.id)}
                 aria-label={`Eingangsrechnung ${e.internalNumber} auswählen`}
               />
             </td>
-            <td class="px-4 py-3 font-mono text-xs">{e.internalNumber}</td>
-            <td class="px-4 py-3 font-mono text-xs text-muted-foreground">{e.number ?? "—"}</td>
-            <td class="px-4 py-3 text-muted-foreground">{formatDate(e.issueDate)}</td>
-            <td class="px-4 py-3">{e.vendorName}</td>
-            <td class="px-4 py-3 text-right font-mono">{centsToEur(e.total)}</td>
-            <td class="px-4 py-3">
+            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">{e.internalNumber}</td>
+            <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{e.number ?? "—"}</td>
+            <td class="px-3 @3xl:px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(e.issueDate)}</td>
+            <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={e.vendorName}>{e.vendorName}</span></td>
+            <td class="px-3 @3xl:px-4 py-3 text-right font-mono whitespace-nowrap">{centsToEur(e.total)}</td>
+            <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
               <Badge variant={EXPENSE_STATUS_VARIANT[e.status]}>{EXPENSE_STATUS_LABEL[e.status]}</Badge>
             </td>
-            <td class="px-4 py-3 text-muted-foreground text-xs">
+            <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
               {e.dueDate ? formatDate(e.dueDate) : "—"}
             </td>
           </tr>

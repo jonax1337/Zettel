@@ -99,28 +99,28 @@
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
         <tr>
-          <SortableTh column="customerNumber" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Nr.</SortableTh>
-          <SortableTh column="name" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Name</SortableTh>
-          <SortableTh column="city" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Ort</SortableTh>
-          <SortableTh column="email" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">E-Mail</SortableTh>
+          <SortableTh column="customerNumber" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3 whitespace-nowrap">Nr.</SortableTh>
+          <SortableTh column="name" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3 min-w-32">Name</SortableTh>
+          <SortableTh column="city" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-4 py-3 whitespace-nowrap">Ort</SortableTh>
+          <SortableTh column="email" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="hidden @3xl:table-cell px-4 py-3 whitespace-nowrap">E-Mail</SortableTh>
           <th class="px-4 py-3 font-medium w-12"></th>
         </tr>
       </thead>
       <tbody class="stagger">
         {#each visibleCustomers as c (c.id)}
           <tr class="border-t hover:bg-muted/30 transition-colors">
-            <td class="px-4 py-3 font-mono text-xs text-muted-foreground">{c.customerNumber}</td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{c.customerNumber}</td>
+            <td class="px-4 py-3 min-w-32">
               <button
                 type="button"
                 class="text-left hover:text-foreground font-medium transition-colors"
                 onclick={() => editCustomer(c)}
               >
-                {c.name}
+                <span class="line-clamp-2" title={c.name}>{c.name}</span>
               </button>
             </td>
-            <td class="px-4 py-3 text-muted-foreground">{c.city}</td>
-            <td class="px-4 py-3 text-muted-foreground">{c.email ?? ""}</td>
+            <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground whitespace-nowrap">{c.city}</td>
+            <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground whitespace-nowrap">{c.email ?? ""}</td>
             <td class="px-4 py-3 text-right">
               <RowActionsMenu onEdit={() => editCustomer(c)} onDelete={() => askDelete(c)} />
             </td>

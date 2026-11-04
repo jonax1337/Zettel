@@ -73,7 +73,7 @@
 {:else if error}
   <p class="text-sm text-destructive">Fehler: {error}</p>
 {:else if result && activeScenario}
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+  <div class="grid grid-cols-1 @3xl:grid-cols-2 gap-4 mb-6">
     <ScenarioCard
       title="Bisher ausgelöst (YTD)"
       description="Steuerlast aus dem, was du wirklich bis heute erwirtschaftet hast. Konservativ — keine Hochrechnung."

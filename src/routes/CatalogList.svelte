@@ -106,33 +106,33 @@
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
         <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-          <th class="px-4 py-3 font-medium">Name</th>
-          <th class="px-4 py-3 font-medium">Beschreibung</th>
-          <th class="px-4 py-3 font-medium text-right">Standardpreis</th>
-          <th class="px-4 py-3 font-medium text-right">USt</th>
-          <th class="px-4 py-3 font-medium">Einheit</th>
+          <th class="px-4 py-3 font-medium min-w-32">Name</th>
+          <th class="hidden @3xl:table-cell px-4 py-3 font-medium">Beschreibung</th>
+          <th class="px-4 py-3 font-medium text-right whitespace-nowrap">Standardpreis</th>
+          <th class="px-4 py-3 font-medium text-right whitespace-nowrap">USt</th>
+          <th class="hidden @3xl:table-cell px-4 py-3 font-medium whitespace-nowrap">Einheit</th>
           <th class="px-4 py-3 font-medium w-12"></th>
         </tr>
       </thead>
       <tbody class="stagger">
         {#each filtered as it (it.id)}
           <tr class="border-t hover:bg-muted/30 transition-colors {it.archived ? 'opacity-60' : ''}">
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 min-w-32">
               <button
                 type="button"
                 class="text-left hover:text-foreground font-medium transition-colors"
                 onclick={() => editItem(it)}
               >
-                {it.name}
+                <span class="line-clamp-2" title={it.name}>{it.name}</span>
               </button>
               {#if it.archived}
                 <Badge variant="secondary" class="ml-2 text-[10px]">archiviert</Badge>
               {/if}
             </td>
-            <td class="px-4 py-3 text-muted-foreground truncate max-w-xs">{it.descriptionDe}</td>
-            <td class="px-4 py-3 text-right tabular-nums">{centsToEur(it.defaultUnitPrice)}</td>
-            <td class="px-4 py-3 text-right tabular-nums">{it.defaultVatRate} %</td>
-            <td class="px-4 py-3 text-muted-foreground">{it.unit}</td>
+            <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground truncate max-w-xs">{it.descriptionDe}</td>
+            <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap">{centsToEur(it.defaultUnitPrice)}</td>
+            <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap">{it.defaultVatRate} %</td>
+            <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground whitespace-nowrap">{it.unit}</td>
             <td class="px-4 py-3 text-right">
               <RowActionsMenu onEdit={() => editItem(it)} onDelete={() => askDelete(it)}>
                 {#snippet extraItems()}

@@ -41,7 +41,7 @@
   }: Props = $props();
 
   const subtleButton =
-    "inline-flex items-center gap-1 rounded-md border border-input bg-transparent px-2 h-7 text-xs text-muted-foreground transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed";
+    "inline-flex shrink-0 whitespace-nowrap items-center gap-1 rounded-md border border-input bg-transparent px-2 h-7 text-xs text-muted-foreground transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed";
 
   // Number of columns left of the "Summe" column; the VAT column is hidden when exempt.
   const labelColspan = $derived(vatExempt ? 5 : 6);
@@ -103,19 +103,19 @@
     </div>
   </div>
   <Card class="overflow-hidden py-0">
-    <table class="w-full text-sm">
+    <table class="w-full table-fixed text-sm">
       <thead class="bg-muted/40 text-left">
-        <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-          <th class="px-3 py-2 w-14 font-medium">#</th>
-          <th class="px-3 py-2 font-medium">Beschreibung</th>
-          <th class="px-3 py-2 w-20 font-medium">Menge</th>
-          <th class="px-3 py-2 w-20 font-medium">Einheit</th>
-          <th class="px-3 py-2 w-28 font-medium">Preis ({currency})</th>
+        <tr class="text-xs uppercase tracking-wider text-muted-foreground whitespace-nowrap">
+          <th class="px-1.5 @3xl:px-3 py-2 w-10 @3xl:w-14 font-medium">#</th>
+          <th class="px-1.5 @3xl:px-3 py-2 font-medium">Beschreibung</th>
+          <th class="px-1.5 @3xl:px-3 py-2 w-[4.25rem] @3xl:w-20 font-medium">Menge</th>
+          <th class="px-1.5 @3xl:px-3 py-2 w-[4.5rem] @3xl:w-20 font-medium">Einheit</th>
+          <th class="px-1.5 @3xl:px-3 py-2 w-20 @3xl:w-28 font-medium" title="Preis ({currency})">Preis<span class="hidden @3xl:inline"> ({currency})</span></th>
           {#if !vatExempt}
-            <th class="px-3 py-2 w-24 font-medium">USt</th>
+            <th class="px-1.5 @3xl:px-3 py-2 w-16 @3xl:w-24 font-medium">USt</th>
           {/if}
-          <th class="px-3 py-2 w-28 font-medium text-right">Summe</th>
-          <th class="px-3 py-2 w-24 font-medium"></th>
+          <th class="px-1.5 @3xl:px-3 py-2 w-24 @3xl:w-28 font-medium text-right">Summe</th>
+          <th class="px-1.5 @3xl:px-3 py-2 w-16 @3xl:w-24 font-medium"></th>
         </tr>
       </thead>
       <tbody>
@@ -127,8 +127,8 @@
             ondragover={(e) => onDragOver(e, idx)}
             ondrop={() => onDrop(idx)}
           >
-            <td class="px-2 py-2 align-top">
-              <div class="flex items-center gap-1">
+            <td class="px-1.5 @3xl:px-2 py-2 align-top">
+              <div class="flex items-center gap-0.5 @3xl:gap-1">
                 <button
                   type="button"
                   draggable={!readOnly}
@@ -144,7 +144,7 @@
                 <span class="text-xs text-muted-foreground tabular-nums">{idx + 1}</span>
               </div>
             </td>
-            <td class="px-2 py-1.5">
+            <td class="px-1.5 @3xl:px-2 py-1.5">
               <Input bind:value={it.description} required disabled={readOnly} />
               {#if it.showDetail}
                 <div class="mt-1.5">
@@ -166,54 +166,64 @@
                   <button
                     type="button"
                     class="{subtleButton} hover:bg-accent hover:text-destructive"
+                    title="Detail entfernen"
                     onclick={() => {
                       it.showDetail = false;
                       it.longDescription = "";
                     }}
                     disabled={readOnly}
                   >
-                    <X class="size-3" /> Detail entfernen
+                    <X class="size-3" /> <span class="sr-only @2xl:not-sr-only">Detail entfernen</span>
                   </button>
                 {:else}
                   <button
                     type="button"
                     class="{subtleButton} hover:bg-accent hover:text-foreground"
+                    title="Detail-Beschreibung hinzufügen"
                     onclick={() => (it.showDetail = true)}
                     disabled={readOnly}
                   >
-                    <FileText class="size-3" /> Detail-Beschreibung
+                    <FileText class="size-3" /> <span class="sr-only @2xl:not-sr-only">Detail-Beschreibung</span>
                   </button>
                 {/if}
               </div>
             </td>
-            <td class="px-2 py-1.5 align-top pt-1.5">
-              <Input type="number" step="0.01" min="0" bind:value={it.quantity} disabled={readOnly} />
+            <td class="px-1.5 @3xl:px-2 py-1.5 align-top pt-1.5">
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                bind:value={it.quantity}
+                disabled={readOnly}
+                class="px-2 @3xl:px-3 [&::-webkit-inner-spin-button]:appearance-none @3xl:[&::-webkit-inner-spin-button]:appearance-auto"
+              />
             </td>
-            <td class="px-2 py-1.5 align-top pt-1.5">
-              <Input bind:value={it.unit} disabled={readOnly} />
+            <td class="px-1.5 @3xl:px-2 py-1.5 align-top pt-1.5">
+              <Input bind:value={it.unit} disabled={readOnly} class="px-2 @3xl:px-3" />
             </td>
-            <td class="px-2 py-1.5 align-top pt-1.5">
+            <td class="px-1.5 @3xl:px-2 py-1.5 align-top pt-1.5">
               <Input
                 bind:value={it.priceText}
                 onblur={() => commitPriceText(it)}
                 placeholder="0,00"
-                class="text-right"
+                class="px-2 @3xl:px-3 text-right"
                 disabled={readOnly}
               />
             </td>
             {#if !vatExempt}
-              <td class="px-2 py-1.5 align-top pt-1.5">
+              <td class="px-1.5 @3xl:px-2 py-1.5 align-top pt-1.5">
                 <Select
                   bind:value={() => String(it.vatRate), (v) => (it.vatRate = Number.parseInt(v, 10))}
                   items={VAT_RATE_ITEMS}
                   disabled={readOnly}
+                  class="px-2 @3xl:px-3"
                 />
               </td>
             {/if}
-            <td class="px-3 py-2 text-right font-mono text-xs align-top pt-3">
+            <td class="px-1.5 @3xl:px-3 py-2 text-right font-mono text-xs whitespace-nowrap align-top pt-3">
               {formatMoney(computeLineTotal(it), currency)}
             </td>
-            <td class="px-2 py-1.5 text-right align-top pt-1.5">
+            <td class="px-1.5 @3xl:px-2 py-1.5 text-right align-top pt-1.5">
               <div class="inline-flex items-center gap-0.5">
                 <div class="flex flex-col">
                   <button
@@ -253,20 +263,20 @@
       </tbody>
       <tfoot class="bg-muted/40 text-sm">
         <tr class="border-t">
-          <td colspan={labelColspan} class="px-3 py-2 text-right text-muted-foreground">Zwischensumme</td>
-          <td class="px-3 py-2 text-right font-mono">{formatMoney(totals.subtotal, currency)}</td>
+          <td colspan={labelColspan} class="px-1.5 @3xl:px-3 py-2 text-right text-muted-foreground">Zwischensumme</td>
+          <td class="px-1.5 @3xl:px-3 py-2 text-right font-mono text-xs @3xl:text-sm whitespace-nowrap">{formatMoney(totals.subtotal, currency)}</td>
           <td></td>
         </tr>
         {#if !vatExempt}
           <tr>
-            <td colspan={labelColspan} class="px-3 py-2 text-right text-muted-foreground">USt</td>
-            <td class="px-3 py-2 text-right font-mono">{formatMoney(totals.vatAmount, currency)}</td>
+            <td colspan={labelColspan} class="px-1.5 @3xl:px-3 py-2 text-right text-muted-foreground">USt</td>
+            <td class="px-1.5 @3xl:px-3 py-2 text-right font-mono text-xs @3xl:text-sm whitespace-nowrap">{formatMoney(totals.vatAmount, currency)}</td>
             <td></td>
           </tr>
         {/if}
         <tr class="border-t">
-          <td colspan={labelColspan} class="px-3 py-2 text-right font-semibold">Gesamtbetrag</td>
-          <td class="px-3 py-2 text-right font-mono font-semibold">{formatMoney(totals.total, currency)}</td>
+          <td colspan={labelColspan} class="px-1.5 @3xl:px-3 py-2 text-right font-semibold">Gesamtbetrag</td>
+          <td class="px-1.5 @3xl:px-3 py-2 text-right font-mono text-xs @3xl:text-sm font-semibold whitespace-nowrap">{formatMoney(totals.total, currency)}</td>
           <td></td>
         </tr>
       </tfoot>

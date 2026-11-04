@@ -17,7 +17,7 @@
   let { items = $bindable(), vatExempt, totalCents, onAdd, onAddFromCatalog }: Props = $props();
 
   const detailButtonClass =
-    "inline-flex items-center gap-1 rounded-md border border-input bg-transparent px-2 h-7 text-xs text-muted-foreground hover:bg-accent transition-colors cursor-pointer";
+    "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-input bg-transparent px-2 h-7 text-xs text-muted-foreground hover:bg-accent transition-colors cursor-pointer";
 
   function removeItem(idx: number) {
     items = items.filter((_, i) => i !== idx);
@@ -46,26 +46,26 @@
     </div>
   </div>
   <Card class="overflow-hidden py-0">
-    <table class="w-full text-sm">
+    <table class="w-full table-fixed text-sm">
       <thead class="bg-muted/40 text-left">
-        <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-          <th class="px-3 py-2 w-10 font-medium">#</th>
-          <th class="px-3 py-2 font-medium">Beschreibung</th>
-          <th class="px-3 py-2 w-20 font-medium">Menge</th>
-          <th class="px-3 py-2 w-20 font-medium">Einheit</th>
-          <th class="px-3 py-2 w-28 font-medium">Preis (€)</th>
+        <tr class="text-xs uppercase tracking-wider text-muted-foreground whitespace-nowrap">
+          <th class="px-1.5 @3xl:px-3 py-2 w-8 @3xl:w-10 font-medium">#</th>
+          <th class="px-1.5 @3xl:px-3 py-2 font-medium">Beschreibung</th>
+          <th class="px-1.5 @3xl:px-3 py-2 w-[4.25rem] @3xl:w-20 font-medium">Menge</th>
+          <th class="px-1.5 @3xl:px-3 py-2 w-[4.5rem] @3xl:w-20 font-medium">Einheit</th>
+          <th class="px-1.5 @3xl:px-3 py-2 w-20 @3xl:w-28 font-medium">Preis<span class="hidden @3xl:inline"> (€)</span></th>
           {#if !vatExempt}
-            <th class="px-3 py-2 w-24 font-medium">USt</th>
+            <th class="px-1.5 @3xl:px-3 py-2 w-16 @3xl:w-24 font-medium">USt</th>
           {/if}
-          <th class="px-3 py-2 w-28 font-medium text-right">Summe</th>
-          <th class="px-3 py-2 w-10 font-medium"></th>
+          <th class="px-1.5 @3xl:px-3 py-2 w-24 @3xl:w-28 font-medium text-right">Summe</th>
+          <th class="px-1.5 @3xl:px-3 py-2 w-10 font-medium"></th>
         </tr>
       </thead>
       <tbody>
         {#each items as item, idx (idx)}
           <tr class="border-t">
-            <td class="px-3 py-2 text-xs text-muted-foreground align-top pt-3">{idx + 1}</td>
-            <td class="px-2 py-1.5">
+            <td class="px-1.5 @3xl:px-3 py-2 text-xs text-muted-foreground align-top pt-3">{idx + 1}</td>
+            <td class="px-1.5 @3xl:px-2 py-1.5">
               <Input bind:value={item.description} required />
               {#if item.showDetail}
                 <div class="mt-1.5">
@@ -78,45 +78,54 @@
                   <button
                     type="button"
                     class="{detailButtonClass} hover:text-destructive"
+                    title="Detail entfernen"
                     onclick={() => hideDetail(item)}
                   >
-                    <X class="size-3" /> Detail entfernen
+                    <X class="size-3" /> <span class="sr-only @2xl:not-sr-only">Detail entfernen</span>
                   </button>
                 {:else}
                   <button
                     type="button"
                     class="{detailButtonClass} hover:text-foreground"
+                    title="Detail-Beschreibung hinzufügen"
                     onclick={() => (item.showDetail = true)}
                   >
-                    <FileText class="size-3" /> Detail-Beschreibung
+                    <FileText class="size-3" /> <span class="sr-only @2xl:not-sr-only">Detail-Beschreibung</span>
                   </button>
                 {/if}
               </div>
             </td>
-            <td class="px-2 py-1.5 align-top pt-1.5">
-              <Input type="number" step="0.01" min="0" bind:value={item.quantity} />
+            <td class="px-1.5 @3xl:px-2 py-1.5 align-top pt-1.5">
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                bind:value={item.quantity}
+                class="px-2 @3xl:px-3 [&::-webkit-inner-spin-button]:appearance-none @3xl:[&::-webkit-inner-spin-button]:appearance-auto"
+              />
             </td>
-            <td class="px-2 py-1.5 align-top pt-1.5"><Input bind:value={item.unit} /></td>
-            <td class="px-2 py-1.5 align-top pt-1.5">
+            <td class="px-1.5 @3xl:px-2 py-1.5 align-top pt-1.5"><Input bind:value={item.unit} class="px-2 @3xl:px-3" /></td>
+            <td class="px-1.5 @3xl:px-2 py-1.5 align-top pt-1.5">
               <Input
                 bind:value={item.priceText}
                 onblur={() => commitPriceText(item)}
                 placeholder="0,00"
-                class="text-right"
+                class="px-2 @3xl:px-3 text-right"
               />
             </td>
             {#if !vatExempt}
-              <td class="px-2 py-1.5 align-top pt-1.5">
+              <td class="px-1.5 @3xl:px-2 py-1.5 align-top pt-1.5">
                 <Select
                   bind:value={() => String(item.vatRate), (v) => (item.vatRate = Number.parseInt(v, 10))}
                   items={VAT_RATE_ITEMS}
+                  class="px-2 @3xl:px-3"
                 />
               </td>
             {/if}
-            <td class="px-3 py-2 text-right font-mono text-xs align-top pt-3">
+            <td class="px-1.5 @3xl:px-3 py-2 text-right font-mono text-xs whitespace-nowrap align-top pt-3">
               {centsToEur(computeLineTotal(item))}
             </td>
-            <td class="px-2 py-1.5 text-right align-top pt-1.5">
+            <td class="px-1.5 @3xl:px-2 py-1.5 text-right align-top pt-1.5">
               <button
                 type="button"
                 onclick={() => removeItem(idx)}
@@ -132,10 +141,10 @@
       </tbody>
       <tfoot class="bg-muted/40 text-sm">
         <tr class="border-t">
-          <td colspan={vatExempt ? 5 : 6} class="px-3 py-2 text-right font-semibold">
+          <td colspan={vatExempt ? 5 : 6} class="px-1.5 @3xl:px-3 py-2 text-right font-semibold">
             Voraussichtlicher Gesamtbetrag pro Erzeugung
           </td>
-          <td class="px-3 py-2 text-right font-mono font-semibold">{centsToEur(totalCents)}</td>
+          <td class="px-1.5 @3xl:px-3 py-2 text-right font-mono text-xs @3xl:text-sm font-semibold whitespace-nowrap">{centsToEur(totalCents)}</td>
           <td></td>
         </tr>
       </tfoot>

@@ -377,8 +377,8 @@
     </NoticeCard>
   {/if}
 
-  <div class="flex items-start justify-between gap-4 mb-6">
-    <div>
+  <div class="flex flex-col @3xl:flex-row @3xl:items-start @3xl:justify-between gap-4 mb-6">
+    <div class="min-w-0">
       <div class="flex items-center gap-3">
         <h1 class="text-3xl font-semibold tracking-tight font-mono">
           {invoice.isCreditNote ? "Storno " : ""}{displayInvoiceNumber(invoice)}
