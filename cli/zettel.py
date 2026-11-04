@@ -52,6 +52,8 @@ ERROR_TAIL_CHARS = 2000
 ERROR_DETAIL_CHARS = 800
 MIN_ITEM_FIELDS = 4
 CENTS_PER_EUR = 100
+# unixepoch() needs SQLite 3.38+; older Python builds ship an older SQLite.
+SQL_NOW = "CAST(strftime('%s', 'now') AS INTEGER)"
 
 # ----------------------------------------------------------------------------
 # DB-Auflösung (Spiegel von src-tauri/src/tenants.rs)
@@ -457,7 +459,7 @@ def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
     if is_draft_number(inv["number"]):
         con.execute(
             "UPDATE settings SET invoice_number_counter = invoice_number_counter + 1, "
-            "updated_at = unixepoch() WHERE id = 1"
+            f"updated_at = {SQL_NOW} WHERE id = 1"
         )
         row = con.execute(
             "SELECT invoice_number_counter, invoice_number_format FROM settings WHERE id = 1"
@@ -468,7 +470,7 @@ def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
             datetime.fromtimestamp(inv["issue_date"] or ts),
         )
     con.execute(
-        "UPDATE invoices SET number = ?, status = 'sent', sent_at = ?, updated_at = unixepoch() "
+        f"UPDATE invoices SET number = ?, status = 'sent', sent_at = ?, updated_at = {SQL_NOW} "
         "WHERE id = ? AND status = 'draft'",
         (final_number, ts, invoice_id),
     )
@@ -522,7 +524,7 @@ def generate_pdf_for(con, invoice_id: int) -> tuple[str, str]:
         err = resp.get("error", {})
         sys.exit(f"PDF-Fehler [{err.get('code')}]: {err.get('message')}\n{err.get('details', '')[:ERROR_DETAIL_CHARS]}")
     con.execute(
-        "UPDATE invoices SET pdf_path = ?, updated_at = unixepoch() WHERE id = ?",
+        f"UPDATE invoices SET pdf_path = ?, updated_at = {SQL_NOW} WHERE id = ?",
         (resp["pdfPath"], invoice_id),
     )
     con.commit()
@@ -712,7 +714,7 @@ def mark_invoice_paid(con, invoice_id: int, paid_at: int) -> sqlite3.Row | None:
             (invoice_id, paid_at, remaining),
         )
     con.execute(
-        "UPDATE invoices SET status = 'paid', paid_at = ?, amount_paid_cent = ?, updated_at = unixepoch() "
+        f"UPDATE invoices SET status = 'paid', paid_at = ?, amount_paid_cent = ?, updated_at = {SQL_NOW} "
         "WHERE id = ? AND status IN ('sent','partial')",
         (paid_at, total, invoice_id),
     )
