@@ -151,7 +151,7 @@ export type RecurringFormInput = {
  */
 export function templatePrefillRejection(invoice: Pick<Invoice, "currency">): string | null {
   if ((invoice.currency || TEMPLATE_CURRENCY) === TEMPLATE_CURRENCY) return null;
-  return `Vorlagen rechnen immer in EUR. Die Rechnung ist in ${invoice.currency} gestellt und kann nicht als Vorlage übernommen werden.`;
+  return `Wiederkehrende Rechnungen rechnen immer in EUR. Die Rechnung ist in ${invoice.currency} gestellt und kann nicht als wiederkehrende Rechnung übernommen werden.`;
 }
 
 // ----- List / get -----
@@ -338,7 +338,7 @@ export async function generateInvoiceFromRecurring(
     [now, nextDue, id, recurring.nextDueDate],
   );
   if (claim.rowsAffected !== 1) {
-    throw new Error("Für diesen Zeitraum wurde bereits eine Rechnung aus der Vorlage erzeugt.");
+    throw new Error("Für diesen Zeitraum wurde bereits eine Rechnung erzeugt.");
   }
 
   try {

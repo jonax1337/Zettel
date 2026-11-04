@@ -5,7 +5,7 @@ type Reference = { table: string; column: string; one: string; many: string };
 const CUSTOMER_REFERENCES: readonly Reference[] = [
   { table: "invoices", column: "customer_id", one: "Rechnung", many: "Rechnungen" },
   { table: "offers", column: "customer_id", one: "Angebot", many: "Angebote" },
-  { table: "recurring_invoices", column: "customer_id", one: "Vorlage", many: "Vorlagen" },
+  { table: "recurring_invoices", column: "customer_id", one: "wiederkehrende Rechnung", many: "wiederkehrende Rechnungen" },
 ];
 
 const VENDOR_REFERENCES: readonly Reference[] = [

@@ -29,7 +29,7 @@ describe("assertCustomerDeletable", () => {
   it("counts invoices, offers and recurring templates of the customer", async () => {
     select.mockResolvedValueOnce([{ c0: 0, c1: 0, c2: 2 }]);
 
-    await expect(assertCustomerDeletable(7)).rejects.toThrow("2 Vorlagen");
+    await expect(assertCustomerDeletable(7)).rejects.toThrow("2 wiederkehrende Rechnungen");
 
     const [sql, binds] = select.mock.calls[0];
     expect(sql).toContain("FROM invoices WHERE customer_id = ?");

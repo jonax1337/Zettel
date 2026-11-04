@@ -74,7 +74,7 @@
     try {
       await toggleActive(row.id, !row.active);
       await templates.reload();
-      toast.success(row.active ? "Vorlage pausiert" : "Vorlage aktiviert");
+      toast.success(row.active ? "Wiederkehrende Rechnung pausiert" : "Wiederkehrende Rechnung aktiviert");
     } catch (e) {
       toast.error("Fehler", String(e));
     }
