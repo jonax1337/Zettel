@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { SidecarErrorInfo } from "./types";
 
 export type ExtractedParty = {
   name: string | null;
@@ -51,7 +52,7 @@ export type ExtractResultNotFound = {
 
 export type ExtractResultError = {
   success: false;
-  error: { code: string; message: string; details: string };
+  error: SidecarErrorInfo;
 };
 
 export type ExtractResult =
@@ -60,7 +61,7 @@ export type ExtractResult =
   | ExtractResultError;
 
 export async function extractZugferd(pdfPath: string): Promise<ExtractResult> {
-  return (await invoke("extract_zugferd", { pdfPath })) as ExtractResult;
+  return invoke<ExtractResult>("extract_zugferd", { pdfPath });
 }
 
 export type ExtractedText = {
@@ -76,18 +77,18 @@ export type ExtractedText = {
 export type ExtractTextResult =
   | { success: true; found: true; textLength: number; data: ExtractedText }
   | { success: true; found: false; textLength: number }
-  | { success: false; error: { code: string; message: string; details: string } };
+  | { success: false; error: SidecarErrorInfo };
 
 export async function extractTextPdf(pdfPath: string): Promise<ExtractTextResult> {
-  return (await invoke("extract_text_pdf", { pdfPath })) as ExtractTextResult;
+  return invoke<ExtractTextResult>("extract_text_pdf", { pdfPath });
 }
 
 export async function importExpensePdf(
   srcPath: string,
   vendorSlug?: string | null,
 ): Promise<string> {
-  return (await invoke("import_expense_pdf", {
+  return invoke<string>("import_expense_pdf", {
     srcPath,
     vendorSlug: vendorSlug ?? null,
-  })) as string;
+  });
 }

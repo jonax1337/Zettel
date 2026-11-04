@@ -5,13 +5,19 @@
   import { searchCatalog } from "$lib/db/catalog";
   import type { CatalogItem } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
+  import { createDebouncedTask } from "./debounced-task";
+  import {
+    DIALOG_CONTENT_ANIMATION_CLASS,
+    DIALOG_OVERLAY_CLASS,
+    pickerRowClass,
+  } from "./dialog-classes";
+  import { cycleIndex } from "./list-navigation";
+  import { toast } from "./toast.svelte";
 
   type Props = {
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
     onPick?: (item: CatalogItem) => void;
-    /** "invoice" liefert defaultDatevAccount nicht — nur expense-Edit braucht es. */
-    context?: "invoice" | "offer" | "recurring" | "expense";
     /** Sprache der aktiven Rechnung/Angebot — entscheidet welche Beschreibung der Picker zeigt. */
     language?: "de" | "en";
   };
@@ -19,51 +25,49 @@
     open = $bindable(false),
     onOpenChange,
     onPick,
-    context = "invoice",
     language = "de",
   }: Props = $props();
 
-  function descriptionFor(item: CatalogItem): string {
-    if (language === "en" && item.descriptionEn) return item.descriptionEn;
-    return item.descriptionDe ?? "";
-  }
+  const SEARCH_DEBOUNCE_MS = 120;
 
   let query = $state("");
   let results = $state<CatalogItem[]>([]);
   let activeIndex = $state(0);
   let inputEl = $state<HTMLInputElement | null>(null);
   let listEl = $state<HTMLDivElement | null>(null);
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastSent = "";
 
-  $effect(() => {
-    const q = query;
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(async () => {
-      lastSent = q;
-      const r = await searchCatalog(q);
-      if (lastSent === q) {
-        results = r;
-        activeIndex = 0;
-      }
-    }, 120);
-  });
-
-  $effect(() => {
-    if (open) {
-      query = "";
-      results = [];
+  const searchTask = createDebouncedTask({
+    run: searchCatalog,
+    onResult: (items) => {
+      results = items;
       activeIndex = 0;
-      queueMicrotask(() => inputEl?.focus());
-      // initial load when opening
-      searchCatalog("").then((r) => {
-        if (open) {
-          results = r;
-          activeIndex = 0;
-        }
-      });
-    }
+    },
+    onError: (error) => toast.error("Katalog-Suche fehlgeschlagen", String(error)),
+    delayMs: SEARCH_DEBOUNCE_MS,
   });
+
+  $effect(() => {
+    if (!open) {
+      searchTask.cancel();
+      return;
+    }
+    query = "";
+    results = [];
+    activeIndex = 0;
+    queueMicrotask(() => inputEl?.focus());
+    searchTask.runNow("");
+  });
+
+  $effect(() => {
+    listEl
+      ?.querySelector<HTMLButtonElement>(`[data-idx="${activeIndex}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  });
+
+  function descriptionFor(item: CatalogItem): string {
+    if (language === "en" && item.descriptionEn) return item.descriptionEn;
+    return item.descriptionDe ?? "";
+  }
 
   function commit(item: CatalogItem) {
     onPick?.(item);
@@ -73,11 +77,10 @@
   function onKey(e: KeyboardEvent) {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (results.length) activeIndex = (activeIndex + 1) % results.length;
+      activeIndex = cycleIndex(activeIndex, 1, results.length);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      if (results.length)
-        activeIndex = (activeIndex - 1 + results.length) % results.length;
+      activeIndex = cycleIndex(activeIndex, -1, results.length);
     } else if (e.key === "Enter") {
       e.preventDefault();
       const item = results[activeIndex];
@@ -86,23 +89,16 @@
       open = false;
     }
   }
-
-  $effect(() => {
-    if (!listEl) return;
-    const row = listEl.querySelector<HTMLButtonElement>(
-      `[data-idx="${activeIndex}"]`,
-    );
-    row?.scrollIntoView({ block: "nearest" });
-  });
 </script>
 
 <DialogPrimitive.Root bind:open {onOpenChange}>
   <DialogPrimitive.Portal>
-    <DialogPrimitive.Overlay
-      class="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50"
-    />
+    <DialogPrimitive.Overlay class={DIALOG_OVERLAY_CLASS} />
     <DialogPrimitive.Content
-      class="bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[20%] left-[50%] z-50 grid w-full max-w-xl translate-x-[-50%] gap-0 overflow-hidden rounded-lg border bg-card shadow-2xl outline-none"
+      class={cn(
+        DIALOG_CONTENT_ANIMATION_CLASS,
+        "bg-background fixed top-[20%] left-[50%] z-50 grid w-full max-w-xl translate-x-[-50%] gap-0 overflow-hidden rounded-lg border bg-card shadow-2xl outline-none",
+      )}
     >
       <DialogPrimitive.Title class="sr-only">Aus Katalog einfügen</DialogPrimitive.Title>
       <DialogPrimitive.Description class="sr-only">
@@ -114,6 +110,7 @@
         <input
           bind:this={inputEl}
           bind:value={query}
+          oninput={() => searchTask.schedule(query)}
           onkeydown={onKey}
           placeholder="Katalog durchsuchen…"
           class="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
@@ -138,12 +135,7 @@
               data-idx={idx}
               onclick={() => commit(item)}
               onmouseenter={() => (activeIndex = idx)}
-              class={cn(
-                "group flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors",
-                idx === activeIndex
-                  ? "bg-accent text-accent-foreground"
-                  : "hover:bg-accent/60",
-              )}
+              class={pickerRowClass(idx === activeIndex)}
             >
               <Package class="size-4 shrink-0 text-muted-foreground" />
               <div class="flex-1 min-w-0">

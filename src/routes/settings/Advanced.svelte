@@ -1,6 +1,6 @@
 <script lang="ts">
   import SettingsShell from "./SettingsShell.svelte";
-  import { loadSettings } from "$lib/db/queries";
+  import DangerSection from "./DangerSection.svelte";
   import {
     Button,
     Input,
@@ -15,6 +15,7 @@
     toast,
   } from "$lib/ui";
   import { AlertTriangle } from "$lib/brand-icons";
+  import { CURRENT_DB_SCHEMA_VERSION } from "$lib/utils/schema-version";
   import {
     autoBackupBeforeWipe,
     resetNumberingCounters,
@@ -23,89 +24,75 @@
     WIPEABLE_TABLE_LABELS,
     type WipeableTable,
   } from "$lib/db/danger";
+  import {
+    DANGER_CONFIRM_WORD,
+    dangerActionDescription,
+    dangerActionLabel,
+    isDangerConfirmed,
+    joinTableLabels,
+    tableCountLabel,
+    type DangerAction,
+  } from "./danger-actions";
 
-  const CURRENT_DB_SCHEMA_VERSION = 26;
+  const wipeableTables = Object.entries(WIPEABLE_TABLE_LABELS) as [WipeableTable, string][];
 
-  type DangerAction =
-    | { kind: "wipeAll" }
-    | { kind: "wipeTables"; tables: WipeableTable[] }
-    | { kind: "resetCounters" };
+  let selectedTables = $state<Set<WipeableTable>>(new Set());
+  let confirmText = $state("");
+  let busy = $state(false);
+  let pending = $state<DangerAction | null>(null);
 
-  let dangerSelectedTables = $state<Set<WipeableTable>>(new Set());
-  let dangerConfirmText = $state("");
-  let dangerBusy = $state(false);
-  let dangerPending = $state<DangerAction | null>(null);
+  const confirmed = $derived(isDangerConfirmed(confirmText));
 
-  const dangerConfirmValid = $derived(dangerConfirmText.trim() === "LÖSCHEN");
-
-  function dangerActionLabel(a: DangerAction): string {
-    if (a.kind === "wipeAll") return "Alle Geschäftsdaten löschen";
-    if (a.kind === "resetCounters") return "Nummerierungs-Counter zurücksetzen";
-    return `${a.tables.length} Tabelle${a.tables.length === 1 ? "" : "n"} leeren`;
-  }
-
-  function dangerActionDescription(a: DangerAction): string {
-    if (a.kind === "wipeAll") {
-      return "Rechnungen, Angebote, Mahnungen, Ausgaben, Kunden, Lieferanten, wiederkehrende Rechnungen und Steuer-Vorauszahlungen werden gelöscht. Settings (Firma, Steuerprofil, Logo, Counter-Stand) bleiben.";
-    }
-    if (a.kind === "resetCounters") {
-      return "Counter für Rechnungs-/Angebots-/Ausgaben-/Mahnungs-/Lieferanten-Nummern springen auf 0. Bestehende Datensätze bleiben unangetastet — passt nur zum Stand wenn du vorher die Tabellen geleert hast.";
-    }
-    const labels = a.tables.map((t) => WIPEABLE_TABLE_LABELS[t]).join(", ");
-    return `Die folgenden Daten werden gelöscht: ${labels}. Verknüpfte Datensätze (z. B. Positionen, abhängige Mahnungen) werden automatisch mitgelöscht.`;
-  }
-
-  function startDanger(a: DangerAction) {
-    dangerPending = a;
-    dangerConfirmText = "";
+  function startDanger(action: DangerAction) {
+    pending = action;
+    confirmText = "";
   }
 
   function cancelDanger() {
-    dangerPending = null;
-    dangerConfirmText = "";
+    pending = null;
+    confirmText = "";
+  }
+
+  function toggleTable(table: WipeableTable) {
+    const next = new Set(selectedTables);
+    if (next.has(table)) next.delete(table);
+    else next.add(table);
+    selectedTables = next;
+  }
+
+  /** Runs the action and returns the success message to show. */
+  async function performDangerAction(action: DangerAction): Promise<string> {
+    switch (action.kind) {
+      case "wipeAll":
+        await wipeAllBusinessData();
+        return "Alle Geschäftsdaten gelöscht.";
+      case "wipeTables":
+        await wipeTables(action.tables);
+        return `Geleert: ${joinTableLabels(action.tables, WIPEABLE_TABLE_LABELS)}`;
+      case "resetCounters":
+        await resetNumberingCounters();
+        return "Counter zurückgesetzt.";
+    }
   }
 
   async function executeDanger() {
-    if (!dangerPending || !dangerConfirmValid || dangerBusy) return;
-    dangerBusy = true;
-    let phase = "init";
+    const action = pending;
+    if (!action || !confirmed || busy) return;
+    busy = true;
+    let phase: string = "backup";
     try {
-      phase = "backup";
       const backupPath = await autoBackupBeforeWipe(CURRENT_DB_SCHEMA_VERSION);
       toast.success("Sicherheits-Backup angelegt", backupPath);
-      const a = dangerPending;
-      if (a.kind === "wipeAll") {
-        phase = "wipeAll";
-        await wipeAllBusinessData();
-        toast.success("Alle Geschäftsdaten gelöscht.");
-      } else if (a.kind === "wipeTables") {
-        phase = "wipeTables";
-        await wipeTables(a.tables);
-        toast.success(
-          `Geleert: ${a.tables.map((t) => WIPEABLE_TABLE_LABELS[t]).join(", ")}`,
-        );
-      } else {
-        phase = "resetCounters";
-        await resetNumberingCounters();
-        toast.success("Counter zurückgesetzt.");
-        await loadSettings();
-      }
-      dangerSelectedTables = new Set();
-      dangerPending = null;
-      dangerConfirmText = "";
+      phase = action.kind;
+      toast.success(await performDangerAction(action));
+      selectedTables = new Set();
+      cancelDanger();
     } catch (e) {
       console.error(`[danger:${phase}]`, e);
       toast.error(`Fehlgeschlagen (Phase: ${phase})`, String(e));
     } finally {
-      dangerBusy = false;
+      busy = false;
     }
-  }
-
-  function toggleDangerTable(t: WipeableTable) {
-    const next = new Set(dangerSelectedTables);
-    if (next.has(t)) next.delete(t);
-    else next.add(t);
-    dangerSelectedTables = next;
   }
 </script>
 
@@ -125,39 +112,33 @@
       </CardDescription>
     </CardHeader>
     <CardContent class="space-y-6">
-      <div class="rounded-md border border-destructive/30 bg-destructive/5 p-4 space-y-3">
-        <div>
-          <h3 class="text-sm font-semibold">Alle Geschäftsdaten löschen</h3>
-          <p class="text-xs text-muted-foreground mt-0.5">
-            Rechnungen, Angebote, Mahnungen, Ausgaben, Kunden, Lieferanten, Recurring &
-            Vorauszahlungen — Settings (Firma, Steuerprofil, Logo) bleiben.
-          </p>
-        </div>
+      <DangerSection title="Alle Geschäftsdaten löschen">
+        {#snippet description()}
+          Rechnungen, Angebote, Mahnungen, Ausgaben, Kunden, Lieferanten, Recurring &
+          Vorauszahlungen — Settings (Firma, Steuerprofil, Logo) bleiben.
+        {/snippet}
         <Button
           type="button"
           variant="destructive"
           size="sm"
-          disabled={dangerBusy}
+          disabled={busy}
           onclick={() => startDanger({ kind: "wipeAll" })}
         >
           Alle Geschäftsdaten löschen…
         </Button>
-      </div>
+      </DangerSection>
 
-      <div class="rounded-md border border-destructive/30 bg-destructive/5 p-4 space-y-3">
-        <div>
-          <h3 class="text-sm font-semibold">Einzelne Tabellen leeren</h3>
-          <p class="text-xs text-muted-foreground mt-0.5">
-            Wähle gezielt, was gelöscht wird. Abhängige Daten (Positionen, Mahnungen)
-            werden automatisch mitgelöscht.
-          </p>
-        </div>
+      <DangerSection title="Einzelne Tabellen leeren">
+        {#snippet description()}
+          Wähle gezielt, was gelöscht wird. Abhängige Daten (Positionen, Mahnungen)
+          werden automatisch mitgelöscht.
+        {/snippet}
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {#each Object.entries(WIPEABLE_TABLE_LABELS) as [table, label] (table)}
+          {#each wipeableTables as [table, label] (table)}
             <label class="flex items-center gap-2 text-sm cursor-pointer">
               <Checkbox
-                checked={dangerSelectedTables.has(table as WipeableTable)}
-                onCheckedChange={() => toggleDangerTable(table as WipeableTable)}
+                checked={selectedTables.has(table)}
+                onCheckedChange={() => toggleTable(table)}
               />
               {label}
             </label>
@@ -167,52 +148,45 @@
           type="button"
           variant="destructive"
           size="sm"
-          disabled={dangerBusy || dangerSelectedTables.size === 0}
-          onclick={() =>
-            startDanger({
-              kind: "wipeTables",
-              tables: Array.from(dangerSelectedTables),
-            })}
+          disabled={busy || selectedTables.size === 0}
+          onclick={() => startDanger({ kind: "wipeTables", tables: Array.from(selectedTables) })}
         >
-          {dangerSelectedTables.size === 0
+          {selectedTables.size === 0
             ? "Tabellen leeren…"
-            : `${dangerSelectedTables.size} Tabelle${dangerSelectedTables.size === 1 ? "" : "n"} leeren…`}
+            : `${tableCountLabel(selectedTables.size)} leeren…`}
         </Button>
-      </div>
+      </DangerSection>
 
-      <div class="rounded-md border border-destructive/30 bg-destructive/5 p-4 space-y-3">
-        <div>
-          <h3 class="text-sm font-semibold">Nummerierungs-Counter zurücksetzen</h3>
-          <p class="text-xs text-muted-foreground mt-0.5">
-            Setzt die Counter für Rechnung / Angebot / Ausgabe / Mahnung / Lieferant
-            auf 0. Sinnvoll <strong>nur</strong> nach einem vorherigen Tabellen-Wipe.
-            Bestehende Nummern bleiben unverändert — neue Datensätze starten dann
-            wieder bei 0001.
-          </p>
-        </div>
+      <DangerSection title="Nummerierungs-Counter zurücksetzen">
+        {#snippet description()}
+          Setzt die Counter für Rechnung / Angebot / Ausgabe / Mahnung / Lieferant
+          auf 0. Sinnvoll <strong>nur</strong> nach einem vorherigen Tabellen-Wipe.
+          Bestehende Nummern bleiben unverändert — neue Datensätze starten dann
+          wieder bei 0001.
+        {/snippet}
         <Button
           type="button"
           variant="destructive"
           size="sm"
-          disabled={dangerBusy}
+          disabled={busy}
           onclick={() => startDanger({ kind: "resetCounters" })}
         >
           Counter zurücksetzen…
         </Button>
-      </div>
+      </DangerSection>
     </CardContent>
   </Card>
 
   <Dialog
-    open={dangerPending !== null}
-    onOpenChange={(o) => {
-      if (!o) cancelDanger();
+    open={pending !== null}
+    onOpenChange={(isOpen) => {
+      if (!isOpen) cancelDanger();
     }}
-    title={dangerPending ? dangerActionLabel(dangerPending) : ""}
+    title={pending ? dangerActionLabel(pending) : ""}
   >
     <div class="space-y-4">
       <p class="text-sm text-muted-foreground">
-        {dangerPending ? dangerActionDescription(dangerPending) : ""}
+        {pending ? dangerActionDescription(pending, WIPEABLE_TABLE_LABELS) : ""}
       </p>
       <div class="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
         <strong>Irreversibel.</strong> Vor der Ausführung wird ein unverschlüsseltes
@@ -220,26 +194,26 @@
         ein Rettungsanker, falls du dich vertippt hast.
       </div>
       <div class="space-y-1.5">
-        <Label for="dangerConfirm">Zum Bestätigen <code>LÖSCHEN</code> tippen:</Label>
+        <Label for="dangerConfirm">Zum Bestätigen <code>{DANGER_CONFIRM_WORD}</code> tippen:</Label>
         <Input
           id="dangerConfirm"
-          bind:value={dangerConfirmText}
-          placeholder="LÖSCHEN"
+          bind:value={confirmText}
+          placeholder={DANGER_CONFIRM_WORD}
           autocomplete="off"
           spellcheck={false}
         />
       </div>
     </div>
     {#snippet footer()}
-      <Button variant="outline" onclick={cancelDanger} disabled={dangerBusy}>
+      <Button variant="outline" onclick={cancelDanger} disabled={busy}>
         Abbrechen
       </Button>
       <Button
         variant="destructive"
         onclick={executeDanger}
-        disabled={!dangerConfirmValid || dangerBusy}
+        disabled={!confirmed || busy}
       >
-        {dangerBusy ? "Lösche…" : "Endgültig löschen"}
+        {busy ? "Lösche…" : "Endgültig löschen"}
       </Button>
     {/snippet}
   </Dialog>

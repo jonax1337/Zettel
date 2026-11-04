@@ -7,6 +7,7 @@
  *
  * Trigger: percent > 0, days > 0, nicht-Storno, nicht-RC, nicht KU mit 0-Betrag.
  */
+import { addDaysUnix } from "./date";
 
 export type SkontoInput = {
   totalCent: number;
@@ -38,8 +39,7 @@ export function computeSkonto(input: SkontoInput): SkontoResult | null {
   const percent = input.percent!;
   const days = input.days!;
   const discountCent = Math.floor((input.totalCent * percent) / 100);
-  // 86400 s ≈ 24 h; reicht für die Berechnung der Skonto-Frist als Datum.
-  const deadlineUnix = input.issueDate + days * 86_400;
+  const deadlineUnix = addDaysUnix(input.issueDate, days);
   return { discountCent, deadlineUnix, percent, days };
 }
 

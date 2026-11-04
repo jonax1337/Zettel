@@ -1,4 +1,5 @@
 <script lang="ts" generics="K extends string">
+  import type { Snippet } from "svelte";
   import { ArrowUp, ArrowDown, ArrowUpDown } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
 
@@ -17,7 +18,7 @@
     align?: "left" | "right";
     /** Klassen für das umschließende <th>. */
     class?: string;
-    children?: import("svelte").Snippet;
+    children?: Snippet;
   };
 
   let {
@@ -39,11 +40,7 @@
   }
 
   function onClick() {
-    if (!isActive) {
-      onChange(column, "asc");
-    } else {
-      onChange(column, nextDir(activeDir));
-    }
+    onChange(column, isActive ? nextDir(activeDir) : "asc");
   }
 </script>
 

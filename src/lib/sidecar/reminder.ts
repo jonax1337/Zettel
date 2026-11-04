@@ -1,25 +1,47 @@
 import { invoke } from "@tauri-apps/api/core";
-import { homeDir, join } from "@tauri-apps/api/path";
 import { execute } from "$lib/db/client";
-import { getReminder } from "$lib/db/reminders";
 import { getInvoice } from "$lib/db/invoices";
 import { loadSettings } from "$lib/db/queries";
-import { levelLabel } from "$lib/db/reminders";
+import { getReminder, levelLabel } from "$lib/db/reminders";
 import type {
   CustomerSnapshot,
-  Reminder,
+  Invoice,
   ReminderInvoiceSnapshot,
   ReminderLevel,
 } from "$lib/db/schema";
-import type { SidecarResponse } from "./invoice";
+import {
+  companyBankPayload,
+  companyContactPayload,
+  documentOutputPath,
+  pdfSettingsPayload,
+} from "./payload";
+import type { SidecarResponse } from "./types";
 
-function safeFilename(s: string): string {
-  return s.replace(/[\\/:*?"<>|]+/g, "_");
+const FALLBACK_CUSTOMER_NAME = "—";
+const FALLBACK_CUSTOMER_COUNTRY = "DE";
+
+function parseJsonOrNull<T>(json: string): T | null {
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    return null;
+  }
 }
 
-async function buildOutputPath(number: string): Promise<string> {
-  const home = await homeDir();
-  return join(home, "Documents", "Zettel", "Mahnungen", `${safeFilename(number)}.pdf`);
+/** Reconstructs the snapshot from the live invoice when the stored one is unreadable. */
+function snapshotFromInvoice(invoice: Invoice): ReminderInvoiceSnapshot {
+  const customer = parseJsonOrNull<CustomerSnapshot>(invoice.customerSnapshot);
+  return {
+    invoiceNumber: invoice.number,
+    invoiceIssueDate: invoice.issueDate,
+    invoiceDueDate: invoice.dueDate,
+    customerName: customer?.name ?? FALLBACK_CUSTOMER_NAME,
+    customerStreet: customer?.street ?? "",
+    customerPostalCode: customer?.postalCode ?? "",
+    customerCity: customer?.city ?? "",
+    customerCountry: customer?.country ?? FALLBACK_CUSTOMER_COUNTRY,
+    customerContactPerson: customer?.contactPerson ?? null,
+  };
 }
 
 export async function generateReminderPdf(reminderId: number): Promise<SidecarResponse> {
@@ -32,30 +54,11 @@ export async function generateReminderPdf(reminderId: number): Promise<SidecarRe
   }
   const company = await loadSettings();
 
-  let snapshot: ReminderInvoiceSnapshot;
-  try {
-    snapshot = JSON.parse(reminder.invoiceSnapshot);
-  } catch {
-    let customerSnap: CustomerSnapshot | null = null;
-    try {
-      customerSnap = JSON.parse(invoiceData.invoice.customerSnapshot);
-    } catch {
-      customerSnap = null;
-    }
-    snapshot = {
-      invoiceNumber: invoiceData.invoice.number,
-      invoiceIssueDate: invoiceData.invoice.issueDate,
-      invoiceDueDate: invoiceData.invoice.dueDate,
-      customerName: customerSnap?.name ?? "—",
-      customerStreet: customerSnap?.street ?? "",
-      customerPostalCode: customerSnap?.postalCode ?? "",
-      customerCity: customerSnap?.city ?? "",
-      customerCountry: customerSnap?.country ?? "DE",
-      customerContactPerson: customerSnap?.contactPerson ?? null,
-    };
-  }
+  const snapshot =
+    parseJsonOrNull<ReminderInvoiceSnapshot>(reminder.invoiceSnapshot) ??
+    snapshotFromInvoice(invoiceData.invoice);
 
-  const outputPath = await buildOutputPath(reminder.number);
+  const outputPath = await documentOutputPath("Mahnungen", reminder.number);
 
   const payload = {
     reminder: {
@@ -84,29 +87,14 @@ export async function generateReminderPdf(reminderId: number): Promise<SidecarRe
       country: snapshot.customerCountry,
     },
     company: {
-      companyName: company.companyName,
-      ownerName: company.ownerName,
-      street: company.street,
-      postalCode: company.postalCode,
-      city: company.city,
-      country: company.country,
-      taxNumber: company.taxNumber,
-      vatId: company.vatId,
-      email: company.email,
-      phone: company.phone,
-      website: company.website,
-      bankName: company.bankName,
-      bankIban: company.bankIban,
-      bankBic: company.bankBic,
-      logoPath: company.logoPath,
+      ...companyContactPayload(company),
+      ...companyBankPayload(company),
     },
     outputPath,
-    settings: {
-      pdf_theme: company.pdfTheme ?? "classic",
-    },
+    settings: pdfSettingsPayload(company),
   };
 
-  const response = (await invoke<SidecarResponse>("generate_reminder", { payload })) as SidecarResponse;
+  const response = await invoke<SidecarResponse>("generate_reminder", { payload });
 
   if (response.success) {
     await execute(
@@ -116,5 +104,3 @@ export async function generateReminderPdf(reminderId: number): Promise<SidecarRe
   }
   return response;
 }
-
-export type { Reminder };

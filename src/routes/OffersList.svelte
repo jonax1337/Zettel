@@ -1,115 +1,76 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
   import {
+    deleteOffer,
     expireDueOffers,
     getOfferYears,
     listOffers,
+    markRejected,
+    markSent,
     type OfferFilter,
     type OfferListRow,
   } from "$lib/db/offers";
-  import type { OfferStatus } from "$lib/db/schema";
+  import type { Customer, OfferStatus } from "$lib/db/schema";
   import { listCustomers } from "$lib/db/queries";
-  import type { Customer } from "$lib/db/schema";
-  import { centsToEur } from "$lib/utils/money";
+  import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
-  import { Button, Card, Input, Select, Badge, Label, Checkbox, SortableTh, BulkActionBar, ConfirmDialog, toast, EmptyState } from "$lib/ui";
-  import { Plus, Search, Send, Ban, Trash2 } from "$lib/brand-icons";
-  import { applySort, loadSortState, saveSortState, type SortState } from "$lib/utils/sort";
-  import { deleteOffer, markSent as markOfferSent, markRejected } from "$lib/db/offers";
+  import { Button, Card, Badge, Checkbox, SortableTh, BulkActionBar, ConfirmDialog, toast, EmptyState } from "$lib/ui";
+  import { Plus, Send, Ban, Trash2 } from "$lib/brand-icons";
+  import { applySort } from "$lib/utils/sort";
+  import DocumentListFilters from "./invoice/DocumentListFilters.svelte";
+  import { createRowSelection } from "./invoice/list-selection.svelte";
+  import { pluralize } from "./parts/entity/format";
+  import { createListSort } from "./parts/entity/list-sort.svelte";
+  import { createQueryState } from "./parts/entity/query-state.svelte";
+  import {
+    ALL,
+    numberOrAll,
+    statusFilterItems,
+  } from "./invoice/list-support";
+  import { OFFER_STATUS_LABEL, OFFER_STATUS_VARIANT } from "./offer/status";
 
-  let offers = $state<OfferListRow[]>([]);
+  const statusItems = statusFilterItems(OFFER_STATUS_LABEL);
+
   let customers = $state<Customer[]>([]);
   let years = $state<number[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
 
-  let status = $state<string>("all");
-  let year = $state<string>("all");
-  let customerId = $state<string>("all");
+  let status = $state<OfferStatus | typeof ALL>(ALL);
+  let year = $state(ALL);
+  let customerId = $state(ALL);
   let search = $state("");
 
-  async function reload() {
-    loading = true;
+  const filter = $derived<OfferFilter>({
+    status,
+    year: numberOrAll(year),
+    customerId: numberOrAll(customerId),
+    search,
+  });
+
+  const offers = createQueryState<OfferListRow[]>([], () => listOffers(filter));
+
+  async function expireOutdatedOffers() {
     try {
-      const filter: OfferFilter = {
-        status: (status === "all" ? "all" : status) as OfferStatus | "all",
-        year: year === "all" ? "all" : Number.parseInt(year, 10),
-        customerId: customerId === "all" ? "all" : Number.parseInt(customerId, 10),
-        search,
-      };
-      offers = await listOffers(filter);
-      error = null;
+      await expireDueOffers();
     } catch (e) {
-      error = String(e);
-    } finally {
-      loading = false;
+      toast.error("Abgelaufene Angebote konnten nicht aktualisiert werden", String(e));
     }
+    await offers.reload();
   }
 
   $effect(() => {
-    expireDueOffers()
-      .catch(() => {})
-      .finally(() => {
-        listCustomers().then((c) => (customers = c));
-        getOfferYears().then((y) => (years = y));
-        reload();
-      });
+    expireOutdatedOffers();
+    listCustomers().then((c) => (customers = c));
+    getOfferYears().then((y) => (years = y));
   });
 
   $effect(() => {
-    void status;
-    void year;
-    void customerId;
-    void search;
-    reload();
+    offers.reload();
   });
-
-  const statusLabel: Record<OfferStatus, string> = {
-    draft: "Entwurf",
-    sent: "Versendet",
-    accepted: "Angenommen",
-    rejected: "Abgelehnt",
-    expired: "Abgelaufen",
-  };
-
-  const statusVariant: Record<
-    OfferStatus,
-    "secondary" | "warning" | "success" | "destructive" | "outline"
-  > = {
-    draft: "secondary",
-    sent: "warning",
-    accepted: "success",
-    rejected: "destructive",
-    expired: "outline",
-  };
-
-  const statusItems = $derived([
-    { value: "all", label: "Alle Status" },
-    { value: "draft", label: "Entwurf" },
-    { value: "sent", label: "Versendet" },
-    { value: "accepted", label: "Angenommen" },
-    { value: "rejected", label: "Abgelehnt" },
-    { value: "expired", label: "Abgelaufen" },
-  ]);
-
-  const yearItems = $derived([
-    { value: "all", label: "Alle Jahre" },
-    ...years.map((y) => ({ value: String(y), label: String(y) })),
-  ]);
-
-  const customerItems = $derived([
-    { value: "all", label: "Alle Kunden" },
-    ...customers.map((c) => ({ value: String(c.id), label: c.name })),
-  ]);
 
   type SortKey = "number" | "issueDate" | "customer" | "total" | "status" | "validUntil";
-  let sort = $state<SortState<SortKey>>(loadSortState<SortKey>("offers", { key: "issueDate", dir: "desc" }));
-  function setSort(key: SortKey, dir: SortState<SortKey>["dir"]) {
-    sort = { key: dir === null ? null : key, dir };
-    saveSortState("offers", sort);
-  }
+  const sort = createListSort<SortKey>("offers", { key: "issueDate", dir: "desc" });
   const sortedOffers = $derived(
-    applySort(offers, sort, {
+    applySort(offers.data, sort.state, {
       number: (r) => r.number,
       issueDate: (r) => r.issueDate,
       customer: (r) => r.customerName,
@@ -119,47 +80,29 @@
     }),
   );
 
-  let selectedIds = $state<Set<number>>(new Set());
-  let bulkBusy = $state(false);
+  const selection = createRowSelection(() => sortedOffers);
   let bulkDeleteConfirmOpen = $state(false);
 
-  const selectedOffers = $derived(sortedOffers.filter((o) => selectedIds.has(o.id)));
-
+  // Bulk actions are offered only when every selected offer allows them.
   const canBulkMarkSent = $derived(
-    selectedOffers.length > 0 && selectedOffers.every((o) => o.status === "draft"),
+    selection.selected.length > 0 && selection.selected.every((o) => o.status === "draft"),
   );
   const canBulkReject = $derived(
-    selectedOffers.length > 0 && selectedOffers.every((o) => o.status === "sent" || o.status === "draft"),
+    selection.selected.length > 0 &&
+      selection.selected.every((o) => o.status === "sent" || o.status === "draft"),
   );
   const canBulkDelete = $derived(
-    selectedOffers.length > 0 &&
-      selectedOffers.every((o) => o.status === "draft" || o.status === "rejected" || o.status === "expired"),
+    selection.selected.length > 0 &&
+      selection.selected.every(
+        (o) => o.status === "draft" || o.status === "rejected" || o.status === "expired",
+      ),
   );
 
-  function toggleSelect(id: number) {
-    const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    selectedIds = next;
-  }
-  function toggleSelectAll() {
-    if (selectedIds.size === sortedOffers.length) selectedIds = new Set();
-    else selectedIds = new Set(sortedOffers.map((o) => o.id));
-  }
+  const selectedLabel = $derived(pluralize(selection.selected.length, "Angebot", "Angebote"));
 
-  async function bulkAction(label: string, fn: (id: number) => Promise<void>) {
-    bulkBusy = true;
-    try {
-      for (const o of selectedOffers) await fn(o.id);
-      toast.success(`${selectedOffers.length} ${label}`);
-      selectedIds = new Set();
-      await reload();
-    } catch (e) {
-      toast.error("Bulk-Aktion fehlgeschlagen", String(e));
-    } finally {
-      bulkBusy = false;
-      bulkDeleteConfirmOpen = false;
-    }
+  async function bulkDelete() {
+    bulkDeleteConfirmOpen = false;
+    await selection.runBulk("gelöscht", deleteOffer, offers.reload);
   }
 </script>
 
@@ -167,7 +110,7 @@
   <div>
     <h1 class="text-3xl font-semibold tracking-tight">Angebote</h1>
     <p class="text-sm text-muted-foreground mt-1">
-      {offers.length} {offers.length === 1 ? "Angebot" : "Angebote"}
+      {offers.data.length} {pluralize(offers.data.length, "Angebot", "Angebote")}
     </p>
   </div>
   <Button onclick={() => push("/offers/new")}>
@@ -176,33 +119,23 @@
   </Button>
 </header>
 
-<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Status</Label>
-    <Select bind:value={status} items={statusItems} />
-  </div>
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Jahr</Label>
-    <Select bind:value={year} items={yearItems} />
-  </div>
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Kunde</Label>
-    <Select bind:value={customerId} items={customerItems} />
-  </div>
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Suche</Label>
-    <div class="relative">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-      <Input type="search" placeholder="Nummer oder Kunde…" bind:value={search} class="pl-9" />
-    </div>
-  </div>
+<div class="mb-5">
+  <DocumentListFilters
+    bind:status
+    {statusItems}
+    bind:year
+    bind:customerId
+    bind:search
+    {years}
+    {customers}
+  />
 </div>
 
-{#if error}
-  <p class="text-sm text-destructive">Fehler: {error}</p>
-{:else if loading}
+{#if offers.error}
+  <p class="text-sm text-destructive">Fehler: {offers.error}</p>
+{:else if offers.loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if offers.length === 0}
+{:else if offers.data.length === 0}
   <EmptyState variant={search ? "no-results" : "empty"} message="Keine Angebote gefunden." />
 {:else}
   <Card class="overflow-hidden py-0">
@@ -211,17 +144,17 @@
         <tr>
           <th class="px-4 py-3 w-10">
             <Checkbox
-              checked={selectedIds.size > 0 && selectedIds.size === sortedOffers.length}
-              onCheckedChange={toggleSelectAll}
+              checked={selection.allSelected}
+              onCheckedChange={selection.toggleAll}
               aria-label="Alle auswählen"
             />
           </th>
-          <SortableTh column="number" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Nummer</SortableTh>
-          <SortableTh column="issueDate" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Datum</SortableTh>
-          <SortableTh column="customer" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Kunde</SortableTh>
-          <SortableTh column="total" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} align="right" class="px-4 py-3 text-right">Betrag</SortableTh>
-          <SortableTh column="status" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Status</SortableTh>
-          <SortableTh column="validUntil" activeKey={sort.key} activeDir={sort.dir} onChange={setSort} class="px-4 py-3">Gültig bis</SortableTh>
+          <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Nummer</SortableTh>
+          <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Datum</SortableTh>
+          <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Kunde</SortableTh>
+          <SortableTh column="total" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-4 py-3 text-right">Betrag</SortableTh>
+          <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Status</SortableTh>
+          <SortableTh column="validUntil" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Gültig bis</SortableTh>
         </tr>
       </thead>
       <tbody class="stagger">
@@ -232,17 +165,17 @@
           >
             <td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
               <Checkbox
-                checked={selectedIds.has(off.id)}
-                onCheckedChange={() => toggleSelect(off.id)}
+                checked={selection.isSelected(off.id)}
+                onCheckedChange={() => selection.toggle(off.id)}
                 aria-label={`Angebot ${off.number} auswählen`}
               />
             </td>
             <td class="px-4 py-3 font-mono text-xs">{off.number}</td>
             <td class="px-4 py-3 text-muted-foreground">{formatDate(off.issueDate)}</td>
             <td class="px-4 py-3">{off.customerName}</td>
-            <td class="px-4 py-3 text-right font-mono">{centsToEur(off.total)}</td>
+            <td class="px-4 py-3 text-right font-mono">{formatMoney(off.total, off.currency)}</td>
             <td class="px-4 py-3">
-              <Badge variant={statusVariant[off.status]}>{statusLabel[off.status]}</Badge>
+              <Badge variant={OFFER_STATUS_VARIANT[off.status]}>{OFFER_STATUS_LABEL[off.status]}</Badge>
             </td>
             <td class="px-4 py-3 text-muted-foreground text-xs">{formatDate(off.validUntil)}</td>
           </tr>
@@ -252,21 +185,31 @@
   </Card>
 {/if}
 
-<BulkActionBar count={selectedIds.size} label="Angebot{selectedIds.size === 1 ? '' : 'e'}" onClear={() => (selectedIds = new Set())}>
+<BulkActionBar count={selection.selected.length} label={selectedLabel} onClear={selection.clear}>
   {#if canBulkMarkSent}
-    <Button size="sm" variant="outline" onclick={() => bulkAction('als versandt markiert', markOfferSent)} disabled={bulkBusy}>
+    <Button
+      size="sm"
+      variant="outline"
+      onclick={() => selection.runBulk("als versandt markiert", markSent, offers.reload)}
+      disabled={selection.busy}
+    >
       <Send class="size-3.5" />
       Versenden
     </Button>
   {/if}
   {#if canBulkReject}
-    <Button size="sm" variant="outline" onclick={() => bulkAction('abgelehnt', markRejected)} disabled={bulkBusy}>
+    <Button
+      size="sm"
+      variant="outline"
+      onclick={() => selection.runBulk("abgelehnt", markRejected, offers.reload)}
+      disabled={selection.busy}
+    >
       <Ban class="size-3.5" />
       Ablehnen
     </Button>
   {/if}
   {#if canBulkDelete}
-    <Button size="sm" variant="destructive" onclick={() => (bulkDeleteConfirmOpen = true)} disabled={bulkBusy}>
+    <Button size="sm" variant="destructive" onclick={() => (bulkDeleteConfirmOpen = true)} disabled={selection.busy}>
       <Trash2 class="size-3.5" />
       Löschen
     </Button>
@@ -275,9 +218,9 @@
 
 <ConfirmDialog
   bind:open={bulkDeleteConfirmOpen}
-  title="{selectedIds.size} Angebot{selectedIds.size === 1 ? '' : 'e'} löschen?"
+  title="{selection.selected.length} {selectedLabel} löschen?"
   description="Nur Entwürfe, abgelehnte und abgelaufene Angebote werden gelöscht. Angenommene bleiben unangetastet."
   confirmLabel="Löschen"
   destructive
-  onConfirm={() => bulkAction('gelöscht', deleteOffer)}
+  onConfirm={bulkDelete}
 />

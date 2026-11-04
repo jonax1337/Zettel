@@ -1,26 +1,18 @@
 <script lang="ts">
-  import { link, push } from "svelte-spa-router";
+  import { push } from "svelte-spa-router";
   import {
     createCatalogItem,
     getCatalogItem,
     updateCatalogItem,
     type CatalogInput,
   } from "$lib/db/catalog";
-  import {
-    Button,
-    Input,
-    Textarea,
-    Label,
-    Card,
-    CardHeader,
-    CardTitle,
-    CardDescription,
-    CardContent,
-    Checkbox,
-    toast,
-  } from "$lib/ui";
-  import { ArrowLeft } from "$lib/brand-icons";
+  import type { CatalogItem } from "$lib/db/schema";
+  import { Button, Input, Textarea, Label, Card, CardContent, Checkbox, toast } from "$lib/ui";
   import { eurStringToCents } from "$lib/utils/money";
+  import BackLink from "./parts/entity/BackLink.svelte";
+  import { fetchEditTarget } from "./parts/entity/edit-target";
+  import { centsToPriceText } from "./parts/entity/format";
+  import { STANDARD_VAT_RATE } from "./parts/entity/vat";
 
   type Props = {
     mode: "new" | "edit";
@@ -28,57 +20,69 @@
   };
   let { mode, params }: Props = $props();
 
+  const MAX_VAT_RATE_PERCENT = 30;
+
   const empty: CatalogInput = {
     name: "",
     descriptionDe: "",
     descriptionEn: null,
     unit: "Stk",
     defaultUnitPrice: 0,
-    defaultVatRate: 19,
+    defaultVatRate: STANDARD_VAT_RATE,
     defaultDatevAccount: null,
     tags: null,
     archived: false,
   };
 
   let form = $state<CatalogInput>({ ...empty });
-  let priceText = $state("0,00");
+  let priceText = $state(centsToPriceText(0));
   let id = $state<number | null>(null);
   let loaded = $state(false);
   const loading = $derived(mode === "edit" && !loaded);
   let saving = $state(false);
   let error = $state<string | null>(null);
 
+  function toForm(it: CatalogItem): CatalogInput {
+    return {
+      name: it.name,
+      descriptionDe: it.descriptionDe,
+      descriptionEn: it.descriptionEn,
+      unit: it.unit,
+      defaultUnitPrice: it.defaultUnitPrice,
+      defaultVatRate: it.defaultVatRate,
+      defaultDatevAccount: it.defaultDatevAccount,
+      tags: it.tags,
+      archived: it.archived,
+    };
+  }
+
   $effect(() => {
-    if (mode === "edit" && params?.id) {
-      const numId = Number.parseInt(params.id, 10);
-      if (!Number.isNaN(numId)) {
-        id = numId;
-        getCatalogItem(numId)
-          .then((it) => {
-            if (it) {
-              form = {
-                name: it.name,
-                descriptionDe: it.descriptionDe,
-                descriptionEn: it.descriptionEn,
-                unit: it.unit,
-                defaultUnitPrice: it.defaultUnitPrice,
-                defaultVatRate: it.defaultVatRate,
-                defaultDatevAccount: it.defaultDatevAccount,
-                tags: it.tags,
-                archived: it.archived,
-              };
-              priceText = (it.defaultUnitPrice / 100).toFixed(2).replace(".", ",");
-            } else {
-              error = "Eintrag nicht gefunden.";
-            }
-          })
-          .catch((e) => (error = String(e)))
-          .finally(() => (loaded = true));
-      }
-    } else {
-      loaded = true;
-    }
+    if (mode !== "edit") return;
+    fetchEditTarget(params?.id, getCatalogItem, "Eintrag nicht gefunden.")
+      .then((target) => {
+        if ("error" in target) {
+          error = target.error;
+          return;
+        }
+        id = target.id;
+        form = toForm(target.value);
+        priceText = centsToPriceText(target.value.defaultUnitPrice);
+      })
+      .catch((e) => (error = String(e)))
+      .finally(() => (loaded = true));
   });
+
+  async function persist() {
+    if (mode === "new") {
+      await createCatalogItem(form);
+      toast.success("Eintrag angelegt");
+    } else if (id !== null) {
+      await updateCatalogItem(id, form);
+      toast.success("Änderungen gespeichert");
+    } else {
+      throw new Error("Keine ID");
+    }
+  }
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
@@ -86,13 +90,7 @@
     saving = true;
     error = null;
     try {
-      if (mode === "new") {
-        await createCatalogItem(form);
-        toast.success("Eintrag angelegt");
-      } else if (id !== null) {
-        await updateCatalogItem(id, form);
-        toast.success("Änderungen gespeichert");
-      }
+      await persist();
       push("/catalog");
     } catch (err) {
       error = String(err);
@@ -104,13 +102,7 @@
 </script>
 
 <header class="mb-6">
-  <a
-    href="/catalog"
-    use:link
-    class="group inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-  >
-    <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" /> Katalog
-  </a>
+  <BackLink href="/catalog">Katalog</BackLink>
   <h1 class="text-3xl font-semibold tracking-tight mt-2">
     {mode === "new" ? "Neuer Katalog-Eintrag" : "Eintrag bearbeiten"}
   </h1>
@@ -153,7 +145,7 @@
 
           <div class="flex flex-col gap-1.5">
             <Label>USt-Satz (%)</Label>
-            <Input type="number" min="0" max="30" step="1" bind:value={form.defaultVatRate} />
+            <Input type="number" min="0" max={MAX_VAT_RATE_PERCENT} step="1" bind:value={form.defaultVatRate} />
           </div>
 
           <div class="flex flex-col gap-1.5">

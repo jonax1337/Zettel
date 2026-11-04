@@ -147,9 +147,9 @@
   {% endif %}
 
   {% if invoice.reverseChargeType == 'intra_eu' %}
-    <p class="callout">{{ t('rc_intra_eu', lang) }}</p>
+    <p class="callout">{{ t('rc_intra_eu_goods' if invoice.supplyKind == 'goods' else 'rc_intra_eu_services', lang) }}</p>
   {% elif invoice.reverseChargeType == 'third_country' %}
-    <p class="callout">{{ t('rc_third_country', lang) }}</p>
+    <p class="callout">{{ t('rc_third_country' if invoice.supplyKind == 'goods' else 'rc_third_country_services', lang) }}</p>
   {% endif %}
 
   {% if invoice.isCreditNote %}

@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { save } from "@tauri-apps/plugin-dialog";
-  import { invoke } from "@tauri-apps/api/core";
   import {
     Button,
     Card,
@@ -15,28 +13,31 @@
   import {
     buildUstvaReport,
     ustvaToCsv,
+    VAT_ACCOUNTING_LABELS,
     type Quarter,
     type UstvaReport,
   } from "$lib/reports/ustva";
+  import { loadSettings } from "$lib/db/queries";
   import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
   import { Download, AlertTriangle } from "$lib/brand-icons";
+  import { createQueryState } from "./parts/entity/query-state.svelte";
+  import { saveTextFileWithDialog } from "./parts/reports/save-text-file";
 
-  const currentYear = new Date().getFullYear();
-  const currentQuarter = (Math.floor(new Date().getMonth() / 3) + 1) as Quarter;
+  const SELECTABLE_YEARS = 3;
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentQuarter = Math.floor(now.getMonth() / 3) + 1;
 
   let yearStr = $state(String(currentYear));
   let quarterStr = $state(String(currentQuarter));
-  let report = $state<UstvaReport | null>(null);
-  let loading = $state(false);
   let saving = $state(false);
 
-  const yearItems = $derived(
-    [currentYear, currentYear - 1, currentYear - 2].map((y) => ({
-      value: String(y),
-      label: String(y),
-    })),
-  );
+  const yearItems = Array.from({ length: SELECTABLE_YEARS }, (_, i) => {
+    const year = String(currentYear - i);
+    return { value: year, label: year };
+  });
   const quarterItems = [
     { value: "1", label: "Q1 (Jan–Mär)" },
     { value: "2", label: "Q2 (Apr–Jun)" },
@@ -44,41 +45,26 @@
     { value: "4", label: "Q4 (Okt–Dez)" },
   ];
 
-  async function reload() {
-    loading = true;
-    try {
-      const y = Number.parseInt(yearStr, 10);
-      const q = Number.parseInt(quarterStr, 10) as Quarter;
-      report = await buildUstvaReport(y, q);
-    } catch (e) {
-      toast.error("Bericht konnte nicht erzeugt werden", String(e));
-      report = null;
-    } finally {
-      loading = false;
-    }
-  }
-
+  const report = createQueryState<UstvaReport | null>(null, async () => {
+    const year = Number.parseInt(yearStr, 10);
+    const quarter = Number.parseInt(quarterStr, 10) as Quarter;
+    const { vatAccounting } = await loadSettings();
+    return buildUstvaReport(year, quarter, vatAccounting);
+  });
   $effect(() => {
-    void yearStr;
-    void quarterStr;
-    reload();
+    report.reload();
   });
 
-  async function onSaveCsv() {
-    if (!report) return;
+  async function onSaveCsv(current: UstvaReport) {
     saving = true;
     try {
-      const filename = `UStVA-${report.year}-Q${report.quarter}.csv`;
-      const targetPath = await save({
-        defaultPath: filename,
-        filters: [{ name: "CSV", extensions: ["csv"] }],
+      const saved = await saveTextFileWithDialog({
+        defaultPath: `UStVA-${current.year}-Q${current.quarter}.csv`,
+        filterName: "CSV",
+        extension: "csv",
+        content: ustvaToCsv(current),
       });
-      if (!targetPath) return;
-      await invoke<string>("save_text_file", {
-        path: targetPath,
-        content: ustvaToCsv(report),
-      });
-      toast.success("CSV gespeichert");
+      if (saved) toast.success("CSV gespeichert");
     } catch (e) {
       toast.error("Speichern fehlgeschlagen", String(e));
     } finally {
@@ -118,16 +104,19 @@
   </div>
 </div>
 
-{#if loading}
+{#if report.error}
+  <p class="text-sm text-destructive">Bericht konnte nicht erzeugt werden: {report.error}</p>
+{:else if report.loading}
   <p class="text-sm text-muted-foreground">Berechne…</p>
-{:else if report}
+{:else if report.data}
   <Card>
     <CardHeader>
       <CardTitle>
-        Q{report.quarter}/{report.year}
+        Q{report.data.quarter}/{report.data.year}
       </CardTitle>
       <CardDescription>
-        Zeitraum {formatDate(report.dateFrom)} – {formatDate(report.dateTo)}
+        Zeitraum {formatDate(report.data.dateFrom)} – {formatDate(report.data.dateTo)}
+        · {VAT_ACCOUNTING_LABELS[report.data.vatAccounting]}
       </CardDescription>
     </CardHeader>
     <CardContent class="p-0">
@@ -140,7 +129,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each report.rows as row (row.kz)}
+          {#each report.data.rows as row (row.kz)}
             <tr class="border-t">
               <td class="px-4 py-3 font-mono font-medium">{row.kz}</td>
               <td class="px-4 py-3">
@@ -158,7 +147,7 @@
   </Card>
 
   <div class="mt-6">
-    <Button onclick={onSaveCsv} disabled={saving}>
+    <Button onclick={() => onSaveCsv(report.data!)} disabled={saving}>
       <Download class="size-4" />
       {saving ? "Speichere…" : "CSV exportieren"}
     </Button>

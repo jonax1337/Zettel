@@ -96,6 +96,10 @@ export const settings = sqliteTable("settings", {
   autoBackupIntervalDays: integer("auto_backup_interval_days").notNull().default(0),
   lastAutoBackupAt: integer("last_auto_backup_at"),
   defaultPdfLanguage: text("default_pdf_language", { enum: ["de", "en"] }).notNull().default("de"),
+  vatAccounting: text("vat_accounting", { enum: ["accrual", "cash"] }).notNull().default("accrual"),
+  taxReserveExpensesGross: integer("tax_reserve_expenses_gross", { mode: "boolean" })
+    .notNull()
+    .default(false),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),
@@ -153,6 +157,7 @@ export const invoices = sqliteTable("invoices", {
   })
     .notNull()
     .default("none"),
+  supplyKind: text("supply_kind", { enum: ["goods", "services"] }).notNull().default("services"),
   notes: text("notes"),
   paymentTerms: text("payment_terms"),
   pdfPath: text("pdf_path"),
@@ -242,6 +247,7 @@ export const recurringInvoices = sqliteTable("recurring_invoices", {
   lastGeneratedAt: integer("last_generated_at"),
   paymentTermsDays: integer("payment_terms_days").notNull().default(14),
   isReverseCharge: integer("is_reverse_charge", { mode: "boolean" }).notNull().default(false),
+  supplyKind: text("supply_kind", { enum: ["goods", "services"] }).notNull().default("services"),
   notes: text("notes"),
   paymentTerms: text("payment_terms"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
@@ -297,6 +303,7 @@ export const offers = sqliteTable("offers", {
   isReverseCharge: integer("is_reverse_charge", { mode: "boolean" })
     .notNull()
     .default(false),
+  supplyKind: text("supply_kind", { enum: ["goods", "services"] }).notNull().default("services"),
   notes: text("notes"),
   introText: text("intro_text"),
   pdfPath: text("pdf_path"),

@@ -1,149 +1,65 @@
 <script lang="ts">
-  import { link, router } from "svelte-spa-router";
-  import {
-    LayoutDashboard,
-    Users,
-    Truck,
-    FileText,
-    FileSignature,
-    FileInput,
-    FileWarning,
-    Repeat,
-    Download,
-    BarChart3,
-    Package,
-    Landmark,
-    Settings as SettingsIcon,
-  } from "$lib/brand-icons";
-  import { Toaster, Titlebar, CommandPalette } from "$lib/ui";
-  import { Search } from "$lib/brand-icons";
-  import { cn } from "$lib/utils";
+  import { push, router } from "svelte-spa-router";
+  import { onMount, type Snippet } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { onMount } from "svelte";
+  import { FlaskConical } from "$lib/brand-icons";
+  import { Toaster, Titlebar, CommandPalette } from "$lib/ui";
   import { isSandboxActive } from "$lib/db/client";
   import { loadSettings } from "$lib/db/queries";
   import { maybeRunAutoBackup } from "$lib/utils/auto-backup";
-  import { FlaskConical } from "$lib/brand-icons";
-  import { push } from "svelte-spa-router";
+  import { isMac } from "$lib/utils/platform";
   import OnboardingWizard from "./OnboardingWizard.svelte";
-  import TenantSwitcher from "./TenantSwitcher.svelte";
-  import { theme } from "$lib/theme.svelte";
-  import logoLight from "../../assets/brand/horizontal-primary.svg";
-  import logoDark from "../../assets/brand/horizontal-on-dark.svg";
+  import Sidebar from "./Sidebar.svelte";
+  import { isOnboardingDismissed } from "./onboarding-dismissal";
+
+  let { children }: { children?: Snippet } = $props();
 
   let sandbox = $state(false);
   let paletteOpen = $state(false);
   let onboardingOpen = $state(false);
+  let windowTitle = $state("Zettel");
 
-  const ONBOARDING_DISMISSED_KEY = "zettel.onboarding.dismissed";
-
-  async function checkOnboarding() {
+  // An empty company name is the most reliable sign of a fresh installation
+  // (the default is an empty string, not NULL).
+  async function openOnboardingOnFreshInstall() {
+    if (isOnboardingDismissed()) return;
     try {
-      const dismissed =
-        typeof localStorage !== "undefined" &&
-        localStorage.getItem(ONBOARDING_DISMISSED_KEY) === "1";
-      if (dismissed) return;
-      const s = await loadSettings();
-      // Trigger nur bei "frischer" Installation — leerer Firmenname ist das
-      // verlässlichste Signal (Standard ist leer-String, kein NULL).
-      if (s.companyName.trim() === "") {
-        onboardingOpen = true;
-      }
-    } catch {
-      /* ignore — sandbox/dev mode etc. */
+      const settings = await loadSettings();
+      if (settings.companyName.trim() === "") onboardingOpen = true;
+    } catch (e) {
+      console.error("Onboarding check failed", e);
     }
   }
 
   onMount(async () => {
     sandbox = await isSandboxActive();
-    checkOnboarding();
-    // Silent best-effort. Sandbox-Modus überspringt das Auto-Backup, weil
-    // dort eh keine Echtdaten liegen.
+    openOnboardingOnFreshInstall();
+    // Sandbox data is disposable, so it is never backed up.
     if (!sandbox) {
-      maybeRunAutoBackup().catch(() => undefined);
+      maybeRunAutoBackup().catch((e) => console.error("Auto-backup failed", e));
     }
   });
-
-  function isEditable(el: EventTarget | null): boolean {
-    if (!(el instanceof HTMLElement)) return false;
-    if (el.dataset.commandPaletteInput !== undefined) return false;
-    const tag = el.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-    if (el.isContentEditable) return true;
-    return false;
-  }
-
-  function onGlobalKey(e: KeyboardEvent) {
-    const isMac =
-      typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform);
-    const mod = isMac ? e.metaKey : e.ctrlKey;
-    if (mod && (e.key === "k" || e.key === "K")) {
-      if (paletteOpen) return;
-      if (isEditable(e.target)) return;
-      e.preventDefault();
-      paletteOpen = true;
-    }
-  }
-
-  let { children } = $props();
-
-  let windowTitle = $state("Zettel");
 
   onMount(() => {
     getCurrentWindow()
       .title()
-      .then((t) => (windowTitle = t));
+      .then((title) => (windowTitle = title))
+      .catch((e) => console.error("Reading the window title failed", e));
   });
 
-  const navGroups: Array<{
-    label: string | null;
-    items: Array<{ href: string; label: string; icon: typeof LayoutDashboard }>;
-  }> = [
-    {
-      label: null,
-      items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }],
-    },
-    {
-      label: "Stammdaten",
-      items: [
-        { href: "/customers", label: "Kunden", icon: Users },
-        { href: "/vendors", label: "Lieferanten", icon: Truck },
-        { href: "/catalog", label: "Katalog", icon: Package },
-      ],
-    },
-    {
-      label: "Ausgangsbelege",
-      items: [
-        { href: "/offers", label: "Angebote", icon: FileSignature },
-        { href: "/invoices", label: "Rechnungen", icon: FileText },
-        { href: "/reminders", label: "Mahnungen", icon: FileWarning },
-        { href: "/recurring", label: "Vorlagen", icon: Repeat },
-      ],
-    },
-    {
-      label: "Eingangsbelege",
-      items: [{ href: "/expenses", label: "Eingangsrechnungen", icon: FileInput }],
-    },
-    {
-      label: "Auswertung",
-      items: [
-        { href: "/reports/ustva", label: "UStVA", icon: BarChart3 },
-        { href: "/bank-import", label: "Bank-Import", icon: Landmark },
-        { href: "/export", label: "DATEV-Export", icon: Download },
-      ],
-    },
-    {
-      label: "System",
-      items: [{ href: "/settings", label: "Einstellungen", icon: SettingsIcon }],
-    },
-  ];
-
-  function isActive(href: string) {
-    const loc = router.location;
-    if (href === "/") return loc === "/";
-    return loc === href || loc.startsWith(href + "/");
+  function isEditable(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.dataset.commandPaletteInput !== undefined) return false;
+    return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable;
   }
 
+  function onGlobalKey(e: KeyboardEvent) {
+    const modifierPressed = isMac ? e.metaKey : e.ctrlKey;
+    if (!modifierPressed || e.key.toLowerCase() !== "k") return;
+    if (paletteOpen || isEditable(e.target)) return;
+    e.preventDefault();
+    paletteOpen = true;
+  }
 </script>
 
 <svelte:window onkeydown={onGlobalKey} />
@@ -165,58 +81,7 @@
   </Titlebar>
 
   <div class="flex flex-1 min-h-0">
-    <aside class="w-60 shrink-0 border-r bg-card/50 flex flex-col">
-        <a href="/" use:link class="block px-5 pt-5 pb-1" aria-label="Zettel – Dashboard">
-          <img
-            src={theme.resolved === "dark" ? logoDark : logoLight}
-            alt="Zettel"
-            class="w-40 h-auto"
-            draggable="false"
-          />
-        </a>
-        <div class="px-2 pt-4">
-          <button
-            type="button"
-            onclick={() => (paletteOpen = true)}
-            aria-label="Globale Suche (Strg+K)"
-            class="flex w-full items-center gap-2.5 h-9 px-3 rounded-md border bg-background text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-          >
-            <Search class="size-4 shrink-0" />
-            <span class="flex-1 text-left">Suchen…</span>
-            <kbd class="text-[10px] font-bold opacity-70">Strg K</kbd>
-          </button>
-        </div>
-        <nav class="flex-1 p-2 flex flex-col gap-4 pt-4 overflow-y-auto">
-          {#each navGroups as group, gi (gi)}
-            <div class="flex flex-col gap-0.5">
-              {#if group.label}
-                <div class="px-3 pb-1 text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground/80">
-                  {group.label}
-                </div>
-              {/if}
-              {#each group.items as item (item.href)}
-                {@const active = isActive(item.href)}
-                <a
-                  href={item.href}
-                  use:link
-                  class={cn(
-                    "group relative flex items-center gap-2.5 rounded-md px-3 h-9 text-sm font-semibold transition-all duration-200",
-                    "before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-[3px] before:rounded-r-full before:bg-primary before:transition-all before:duration-300",
-                    active
-                      ? "bg-accent text-accent-foreground before:h-5 before:opacity-100"
-                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground before:h-0 before:opacity-0",
-                  )}
-                >
-                  <item.icon class={cn("size-4 shrink-0 transition-transform duration-200", active && "scale-110")} />
-                  <span>{item.label}</span>
-                </a>
-              {/each}
-            </div>
-          {/each}
-        </nav>
-
-        <TenantSwitcher />
-      </aside>
+    <Sidebar onOpenSearch={() => (paletteOpen = true)} />
 
     <main class="flex-1 overflow-auto">
       <div class="mx-auto max-w-6xl px-8 py-8">

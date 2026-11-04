@@ -9,18 +9,23 @@
 //! seine URL in `lib.rs` mitregistriert — `client.ts` lädt dieselbe URL via
 //! `get_active_db_url`. Sandbox hat Vorrang vor dem aktiven Tenant.
 
-use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager};
+
+use serde::{Deserialize, Serialize};
+use tauri::AppHandle;
+
+use crate::paths::{app_data_dir, app_data_dir_static};
+use crate::sandbox;
 
 const CONFIG_FILE: &str = "tenants.json";
-const SANDBOX_FLAG: &str = "sandbox.flag";
-const APP_IDENTIFIER: &str = "digital.laux.zettel";
-const DEFAULT_DB_URL: &str = "sqlite:zettel.db";
-const SANDBOX_DB_URL: &str = "sqlite:zettel-sandbox.db";
+pub const DEFAULT_DB_URL: &str = "sqlite:zettel.db";
+pub const SANDBOX_DB_URL: &str = "sqlite:zettel-sandbox.db";
 const DEFAULT_ID: &str = "default";
+const DEFAULT_LABEL: &str = "Standard";
+const RELOCATED_DEFAULT_LABEL: &str = "Cloud-DB";
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct TenantConfig {
@@ -28,6 +33,26 @@ struct TenantConfig {
     active: Option<String>,
     #[serde(default)]
     tenants: Vec<Tenant>,
+}
+
+impl TenantConfig {
+    /// The active tenant if it is a custom one with a usable DB path.
+    fn active_custom_tenant(&self) -> Option<&Tenant> {
+        let active = self.active.as_deref().filter(|id| *id != DEFAULT_ID)?;
+        self.tenants
+            .iter()
+            .find(|t| t.id == active && !t.path.trim().is_empty())
+    }
+
+    fn push_tenant(&mut self, label: String, path: String) -> String {
+        let id = format!("t{}", now_millis());
+        self.tenants.push(Tenant {
+            id: id.clone(),
+            label,
+            path,
+        });
+        id
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -38,19 +63,25 @@ struct Tenant {
     path: String,
 }
 
-fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path().app_data_dir().map_err(|e| e.to_string())
-}
-
-fn app_data_dir_static() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join(APP_IDENTIFIER))
-}
-
-fn read_config_from(dir: &Path) -> TenantConfig {
+/// Fehlende Datei = leere Konfiguration. Eine defekte Datei ist ein Fehler,
+/// damit ein Schreibvorgang nicht still alle Tenants überschreibt.
+fn load_config(dir: &Path) -> Result<TenantConfig, String> {
     match fs::read_to_string(dir.join(CONFIG_FILE)) {
-        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
-        Err(_) => TenantConfig::default(),
+        Ok(json) => {
+            serde_json::from_str(&json).map_err(|e| format!("{CONFIG_FILE} ist unlesbar: {e}"))
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(TenantConfig::default()),
+        Err(e) => Err(format!("{CONFIG_FILE} nicht lesbar: {e}")),
     }
+}
+
+/// Für lesende Pfade (DB-Auswahl beim Start), die auch mit defekter
+/// Konfiguration auf den Standard zurückfallen müssen.
+fn load_config_or_default(dir: &Path) -> TenantConfig {
+    load_config(dir).unwrap_or_else(|e| {
+        eprintln!("[tenants] {e}; using default");
+        TenantConfig::default()
+    })
 }
 
 fn write_config(dir: &Path, cfg: &TenantConfig) -> Result<(), String> {
@@ -59,26 +90,39 @@ fn write_config(dir: &Path, cfg: &TenantConfig) -> Result<(), String> {
     fs::write(dir.join(CONFIG_FILE), json).map_err(|e| e.to_string())
 }
 
+/// Lädt die Konfiguration, wendet `change` an und speichert sie nur bei Erfolg.
+fn update_config<T>(
+    app: &AppHandle,
+    change: impl FnOnce(&mut TenantConfig) -> Result<T, String>,
+) -> Result<T, String> {
+    let dir = app_data_dir(app)?;
+    let mut cfg = load_config(&dir)?;
+    let result = change(&mut cfg)?;
+    write_config(&dir, &cfg)?;
+    Ok(result)
+}
+
 fn db_url_for_path(path: &str) -> String {
-    format!("sqlite:{}", path)
+    format!("sqlite:{path}")
 }
 
 /// Aktive DB-URL inkl. Sandbox-Vorrang — Quelle der Wahrheit für `client.ts`.
 fn resolve_active_url(dir: &Path) -> String {
-    if dir.join(SANDBOX_FLAG).exists() {
+    if dir.join(sandbox::FLAG_FILE).exists() {
         return SANDBOX_DB_URL.to_string();
     }
-    let cfg = read_config_from(dir);
-    if let Some(active) = cfg.active.as_deref() {
-        if active != DEFAULT_ID {
-            if let Some(t) = cfg.tenants.iter().find(|t| t.id == active) {
-                if !t.path.trim().is_empty() {
-                    return db_url_for_path(&t.path);
-                }
-            }
-        }
-    }
-    DEFAULT_DB_URL.to_string()
+    load_config_or_default(dir)
+        .active_custom_tenant()
+        .map_or_else(|| DEFAULT_DB_URL.to_string(), |t| db_url_for_path(&t.path))
+}
+
+/// Datei, die das SQL-Plugin für die aktive DB öffnet. Spiegelt dessen
+/// `path_mapper`: der Teil nach `sqlite:` wird an `config_dir` angehängt,
+/// ein absoluter Tenant-Pfad ersetzt ihn also.
+pub fn active_db_file(data_dir: &Path, config_dir: &Path) -> PathBuf {
+    let url = resolve_active_url(data_dir);
+    let file = url.split_once(':').map_or(url.as_str(), |(_, file)| file);
+    config_dir.join(file)
 }
 
 /// Custom-Tenant-URL, für die beim Start zusätzlich Migrationen registriert
@@ -86,16 +130,9 @@ fn resolve_active_url(dir: &Path) -> String {
 /// `None`, wenn der aktive Tenant der eingebaute Standard ist.
 pub fn active_custom_db_url_static() -> Option<String> {
     let dir = app_data_dir_static()?;
-    let cfg = read_config_from(&dir);
-    let active = cfg.active.as_deref()?;
-    if active == DEFAULT_ID {
-        return None;
-    }
-    let t = cfg.tenants.iter().find(|t| t.id == active)?;
-    if t.path.trim().is_empty() {
-        return None;
-    }
-    Some(db_url_for_path(&t.path))
+    load_config_or_default(&dir)
+        .active_custom_tenant()
+        .map(|t| db_url_for_path(&t.path))
 }
 
 #[tauri::command]
@@ -113,60 +150,61 @@ pub struct TenantEntry {
 
 #[tauri::command]
 pub async fn list_tenants(app: AppHandle) -> Result<Vec<TenantEntry>, String> {
-    let dir = app_data_dir(&app)?;
-    let cfg = read_config_from(&dir);
-    let active = cfg.active.clone().unwrap_or_else(|| DEFAULT_ID.to_string());
-    let mut out = vec![TenantEntry {
+    let cfg = load_config_or_default(&app_data_dir(&app)?);
+    Ok(tenant_entries(cfg))
+}
+
+fn tenant_entries(cfg: TenantConfig) -> Vec<TenantEntry> {
+    let active = cfg.active.unwrap_or_else(|| DEFAULT_ID.to_string());
+    let default_entry = TenantEntry {
         id: DEFAULT_ID.to_string(),
-        label: "Standard".to_string(),
+        label: DEFAULT_LABEL.to_string(),
         path: String::new(),
         current: active == DEFAULT_ID,
-    }];
-    for t in cfg.tenants {
-        out.push(TenantEntry {
-            current: active == t.id,
-            id: t.id,
-            label: t.label,
-            path: t.path,
-        });
-    }
-    Ok(out)
+    };
+    let custom_entries = cfg.tenants.into_iter().map(|t| TenantEntry {
+        current: active == t.id,
+        id: t.id,
+        label: t.label,
+        path: t.path,
+    });
+    std::iter::once(default_entry).chain(custom_entries).collect()
 }
 
 #[tauri::command]
 pub async fn add_tenant(app: AppHandle, label: String, path: String) -> Result<String, String> {
-    let label = label.trim().to_string();
-    let path = path.trim().to_string();
+    update_config(&app, |cfg| add(cfg, &label, &path))
+}
+
+fn add(cfg: &mut TenantConfig, label: &str, path: &str) -> Result<String, String> {
+    let label = label.trim();
+    let path = path.trim();
     if label.is_empty() {
         return Err("Bezeichnung darf nicht leer sein.".into());
     }
     if path.is_empty() {
         return Err("Kein Datenbank-Pfad gewählt.".into());
     }
-    let dir = app_data_dir(&app)?;
-    let mut cfg = read_config_from(&dir);
     if cfg.tenants.iter().any(|t| t.path == path) {
         return Err("Für diesen Pfad existiert bereits ein Tenant.".into());
     }
-    let id = format!("t{}", now_millis());
-    cfg.tenants.push(Tenant {
-        id: id.clone(),
-        label,
-        path,
-    });
-    write_config(&dir, &cfg)?;
-    Ok(id)
+    Ok(cfg.push_tenant(label.to_string(), path.to_string()))
 }
 
 #[tauri::command]
 pub async fn set_active_tenant(app: AppHandle, id: String) -> Result<(), String> {
-    let dir = app_data_dir(&app)?;
-    let mut cfg = read_config_from(&dir);
-    if id != DEFAULT_ID && !cfg.tenants.iter().any(|t| t.id == id) {
+    update_config(&app, |cfg| set_active(cfg, id))
+}
+
+fn set_active(cfg: &mut TenantConfig, id: String) -> Result<(), String> {
+    if id == DEFAULT_ID {
+        cfg.active = None;
+    } else if cfg.tenants.iter().any(|t| t.id == id) {
+        cfg.active = Some(id);
+    } else {
         return Err("Unbekannter Tenant.".into());
     }
-    cfg.active = if id == DEFAULT_ID { None } else { Some(id) };
-    write_config(&dir, &cfg)
+    Ok(())
 }
 
 /// Repoint the **active** tenant to a new DB path. The frontend has already
@@ -179,56 +217,50 @@ pub async fn relocate_active_tenant(
     path: String,
     label: String,
 ) -> Result<(), String> {
-    let path = path.trim().to_string();
+    update_config(&app, |cfg| relocate(cfg, &path, &label))
+}
+
+fn relocate(cfg: &mut TenantConfig, path: &str, label: &str) -> Result<(), String> {
+    let path = path.trim();
     if path.is_empty() {
         return Err("Kein Zielpfad.".into());
     }
-    let dir = app_data_dir(&app)?;
-    let mut cfg = read_config_from(&dir);
-    match cfg.active.clone() {
-        Some(active) if active != DEFAULT_ID => {
-            let t = cfg
+    let label = label.trim();
+
+    match cfg.active.clone().filter(|id| id != DEFAULT_ID) {
+        Some(active) => {
+            let tenant = cfg
                 .tenants
                 .iter_mut()
                 .find(|t| t.id == active)
                 .ok_or_else(|| "Aktiver Tenant nicht gefunden.".to_string())?;
-            t.path = path;
-            let label = label.trim();
+            tenant.path = path.to_string();
             if !label.is_empty() {
-                t.label = label.to_string();
+                tenant.label = label.to_string();
             }
         }
-        _ => {
-            let label = label.trim();
-            let label = if label.is_empty() {
-                "Cloud-DB".to_string()
-            } else {
-                label.to_string()
-            };
-            let id = format!("t{}", now_millis());
-            cfg.tenants.push(Tenant {
-                id: id.clone(),
-                label,
-                path,
-            });
-            cfg.active = Some(id);
+        None => {
+            let label = if label.is_empty() { RELOCATED_DEFAULT_LABEL } else { label };
+            cfg.active = Some(cfg.push_tenant(label.to_string(), path.to_string()));
         }
     }
-    write_config(&dir, &cfg)
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn remove_tenant(app: AppHandle, id: String) -> Result<(), String> {
+    update_config(&app, |cfg| remove(cfg, &id))
+}
+
+fn remove(cfg: &mut TenantConfig, id: &str) -> Result<(), String> {
     if id == DEFAULT_ID {
         return Err("Standard-Tenant kann nicht entfernt werden.".into());
     }
-    let dir = app_data_dir(&app)?;
-    let mut cfg = read_config_from(&dir);
     cfg.tenants.retain(|t| t.id != id);
-    if cfg.active.as_deref() == Some(id.as_str()) {
+    if cfg.active.as_deref() == Some(id) {
         cfg.active = None;
     }
-    write_config(&dir, &cfg)
+    Ok(())
 }
 
 fn now_millis() -> u128 {
@@ -236,4 +268,142 @@ fn now_millis() -> u128 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::TempDir;
+
+    fn config_with_active_custom_tenant() -> TenantConfig {
+        let mut cfg = TenantConfig::default();
+        let id = add(&mut cfg, "Cloud", "D:/cloud/zettel.db").unwrap();
+        cfg.active = Some(id);
+        cfg
+    }
+
+    #[test]
+    fn active_url_is_default_without_config() {
+        let dir = TempDir::new("tenants-default");
+        assert_eq!(resolve_active_url(dir.path()), DEFAULT_DB_URL);
+    }
+
+    #[test]
+    fn active_url_uses_the_active_custom_tenant() {
+        let dir = TempDir::new("tenants-custom");
+        write_config(dir.path(), &config_with_active_custom_tenant()).unwrap();
+        assert_eq!(resolve_active_url(dir.path()), "sqlite:D:/cloud/zettel.db");
+    }
+
+    #[test]
+    fn sandbox_takes_precedence_over_the_active_tenant() {
+        let dir = TempDir::new("tenants-sandbox");
+        write_config(dir.path(), &config_with_active_custom_tenant()).unwrap();
+        fs::write(dir.path().join(sandbox::FLAG_FILE), b"1").unwrap();
+        assert_eq!(resolve_active_url(dir.path()), SANDBOX_DB_URL);
+    }
+
+    #[test]
+    fn active_db_file_resolves_built_in_dbs_against_the_config_dir() {
+        let (data, config) = (TempDir::new("tenants-data"), TempDir::new("tenants-config"));
+        assert_eq!(
+            active_db_file(data.path(), config.path()),
+            config.path().join("zettel.db")
+        );
+        fs::write(data.path().join(sandbox::FLAG_FILE), b"1").unwrap();
+        assert_eq!(
+            active_db_file(data.path(), config.path()),
+            config.path().join("zettel-sandbox.db")
+        );
+    }
+
+    #[test]
+    fn active_db_file_is_the_absolute_path_of_a_custom_tenant() {
+        let (data, config) = (TempDir::new("tenants-data"), TempDir::new("tenants-config"));
+        let tenant_db = data.path().join("cloud").join("zettel.db");
+        let mut cfg = TenantConfig::default();
+        let id = add(&mut cfg, "Cloud", &tenant_db.to_string_lossy()).unwrap();
+        cfg.active = Some(id);
+        write_config(data.path(), &cfg).unwrap();
+
+        assert_eq!(active_db_file(data.path(), config.path()), tenant_db);
+    }
+
+    #[test]
+    fn tenant_with_blank_path_falls_back_to_default() {
+        let mut cfg = config_with_active_custom_tenant();
+        cfg.tenants[0].path = "  ".into();
+        assert!(cfg.active_custom_tenant().is_none());
+    }
+
+    #[test]
+    fn corrupt_config_still_resolves_to_default_url() {
+        let dir = TempDir::new("tenants-corrupt-read");
+        fs::write(dir.path().join(CONFIG_FILE), "{ not json").unwrap();
+        assert_eq!(resolve_active_url(dir.path()), DEFAULT_DB_URL);
+    }
+
+    #[test]
+    fn corrupt_config_is_an_error_instead_of_an_empty_config() {
+        let dir = TempDir::new("tenants-corrupt-write");
+        fs::write(dir.path().join(CONFIG_FILE), "{ not json").unwrap();
+        assert!(load_config(dir.path()).is_err());
+    }
+
+    #[test]
+    fn add_rejects_blank_input_and_duplicate_paths() {
+        let mut cfg = TenantConfig::default();
+        assert!(add(&mut cfg, " ", "D:/a.db").is_err());
+        assert!(add(&mut cfg, "A", " ").is_err());
+        add(&mut cfg, "A", "D:/a.db").unwrap();
+        assert!(add(&mut cfg, "B", " D:/a.db ").is_err());
+    }
+
+    #[test]
+    fn set_active_switches_between_default_and_known_tenants() {
+        let mut cfg = TenantConfig::default();
+        let id = add(&mut cfg, "A", "D:/a.db").unwrap();
+        set_active(&mut cfg, id.clone()).unwrap();
+        assert_eq!(cfg.active.as_deref(), Some(id.as_str()));
+        set_active(&mut cfg, DEFAULT_ID.into()).unwrap();
+        assert_eq!(cfg.active, None);
+        assert!(set_active(&mut cfg, "missing".into()).is_err());
+    }
+
+    #[test]
+    fn relocate_from_default_creates_and_activates_a_tenant() {
+        let mut cfg = TenantConfig::default();
+        relocate(&mut cfg, "D:/moved.db", " ").unwrap();
+        let tenant = &cfg.tenants[0];
+        assert_eq!(tenant.label, RELOCATED_DEFAULT_LABEL);
+        assert_eq!(cfg.active.as_deref(), Some(tenant.id.as_str()));
+    }
+
+    #[test]
+    fn relocate_repoints_the_active_tenant_and_keeps_label_when_blank() {
+        let mut cfg = config_with_active_custom_tenant();
+        relocate(&mut cfg, "E:/new.db", "").unwrap();
+        assert_eq!(cfg.tenants.len(), 1);
+        assert_eq!(cfg.tenants[0].path, "E:/new.db");
+        assert_eq!(cfg.tenants[0].label, "Cloud");
+    }
+
+    #[test]
+    fn removing_the_active_tenant_falls_back_to_default() {
+        let mut cfg = config_with_active_custom_tenant();
+        let id = cfg.tenants[0].id.clone();
+        remove(&mut cfg, &id).unwrap();
+        assert!(cfg.tenants.is_empty());
+        assert_eq!(cfg.active, None);
+        assert!(remove(&mut cfg, DEFAULT_ID).is_err());
+    }
+
+    #[test]
+    fn entries_list_default_first_and_mark_the_active_one() {
+        let cfg = config_with_active_custom_tenant();
+        let entries = tenant_entries(cfg);
+        assert_eq!(entries[0].id, DEFAULT_ID);
+        assert!(!entries[0].current);
+        assert!(entries[1].current);
+    }
 }

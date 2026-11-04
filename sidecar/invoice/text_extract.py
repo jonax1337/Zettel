@@ -23,6 +23,16 @@ import re
 from pathlib import Path
 from typing import Any
 
+# The letterhead is expected within the first lines of the first page.
+VENDOR_SCAN_LINES = 25
+VENDOR_MIN_LINE_LENGTH = 3
+VENDOR_MAX_DIGIT_RATIO = 0.4
+VENDOR_NAME_MAX_LENGTH = 80
+VENDOR_SKIPPED_PREFIXES = ("rechnung", "invoice", "beleg", "datum", "kunde")
+VENDOR_SKIPPED_BULLETS = ("-", "*", "_")
+TWO_DIGIT_YEAR_BASE = 2000
+FALLBACK_CURRENCY = "EUR"
+
 # --- Regex patterns ---
 
 # German invoice number cues. We keep the captured number loose (alphanum + - / _).
@@ -37,9 +47,10 @@ _RE_DATE_DE = re.compile(r"\b(\d{1,2})\.(\d{1,2})\.(\d{2,4})\b")
 # ISO date yyyy-mm-dd
 _RE_DATE_ISO = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 
-# Invoice date cue followed by a date within ~30 chars.
+# Invoice date cue followed by a date within ~30 chars. The leading \b keeps
+# "Fälligkeitsdatum" from matching the bare "Datum" cue.
 _RE_ISSUE_DATE_CUE = re.compile(
-    r"(?:Rechnungs(?:datum|tag)|Belegdatum|Datum|Invoice\s+date)[:\s]+(.{0,30})",
+    r"\b(?:Rechnungs(?:datum|tag)|Belegdatum|Datum|Invoice\s+date)[:\s]+(.{0,30})",
     re.IGNORECASE,
 )
 _RE_DUE_DATE_CUE = re.compile(
@@ -47,10 +58,11 @@ _RE_DUE_DATE_CUE = re.compile(
     re.IGNORECASE,
 )
 
-# Total amount cues. Captures the value to the right.
+# Total amount cues. Captures the value to the right; the value itself must
+# stay on one line, otherwise it swallows digits of the following line.
 _RE_TOTAL_CUE = re.compile(
     r"(?:Gesamt(?:betrag|summe)?|Rechnungs(?:betrag|summe)|Endbetrag|Zahlbetrag|Summe\s+brutto|Total\s+amount|Total)"
-    r"[:\s]*([0-9][0-9.,\s]*)\s*(?:EUR|€|\$)?",
+    r"[:\s]*([0-9][0-9.,\t ]*)\s*(?:EUR|€|\$)?",
     re.IGNORECASE,
 )
 
@@ -72,27 +84,27 @@ def _de_amount_to_cents(s: str) -> int | None:
         cleaned = cleaned.replace(",", ".")
     try:
         return round(float(cleaned) * 100)
-    except (ValueError, TypeError):
+    except ValueError:
+        return None
+
+
+def _local_midnight_unix(year: int, month: int, day: int) -> int | None:
+    try:
+        return int(_dt.datetime(year, month, day).timestamp())
+    except ValueError:
         return None
 
 
 def _parse_de_date(s: str) -> int | None:
     m = _RE_DATE_DE.search(s)
     if m:
-        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        if y < 100:
-            y += 2000
-        try:
-            return int(_dt.datetime(y, mo, d).timestamp())
-        except ValueError:
-            return None
+        day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if year < 100:
+            year += TWO_DIGIT_YEAR_BASE
+        return _local_midnight_unix(year, month, day)
     m = _RE_DATE_ISO.search(s)
     if m:
-        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        try:
-            return int(_dt.datetime(y, mo, d).timestamp())
-        except ValueError:
-            return None
+        return _local_midnight_unix(int(m.group(1)), int(m.group(2)), int(m.group(3)))
     return None
 
 
@@ -105,6 +117,7 @@ def _read_pdf_text(pdf_path: Path) -> str:
         try:
             text = page.extract_text() or ""
         except Exception:
+            # One undecodable page must not discard the text of the others.
             text = ""
         chunks.append(text)
     return "\n".join(chunks)
@@ -116,32 +129,67 @@ def _guess_vendor_name(text: str) -> str | None:
 
     Skips lines that look like dates, amounts, or pure punctuation.
     """
-    for raw in text.splitlines()[:25]:
+    for raw in text.splitlines()[:VENDOR_SCAN_LINES]:
         line = raw.strip()
-        if not line or len(line) < 3:
+        if len(line) < VENDOR_MIN_LINE_LENGTH:
             continue
-        # Skip lines that are dominated by digits / dates / amounts.
         digits = sum(1 for ch in line if ch.isdigit())
-        if digits > len(line) * 0.4:
+        if digits > len(line) * VENDOR_MAX_DIGIT_RATIO:
             continue
         if _RE_DATE_DE.search(line) or _RE_DATE_ISO.search(line):
             continue
-        if line.lower().startswith(("rechnung", "invoice", "beleg", "datum", "kunde")):
+        if line.lower().startswith(VENDOR_SKIPPED_PREFIXES):
             continue
-        if line.startswith(("-", "*", "_")):
+        if line.startswith(VENDOR_SKIPPED_BULLETS):
             continue
-        return line[:80]
+        return line[:VENDOR_NAME_MAX_LENGTH]
     return None
+
+
+def _find_invoice_number(text: str) -> str | None:
+    m = _RE_INVOICE_NUMBER.search(text)
+    return m.group(1).strip().rstrip(".,;:") if m else None
+
+
+def _find_issue_date(text: str) -> int | None:
+    m = _RE_ISSUE_DATE_CUE.search(text)
+    issue_date = _parse_de_date(m.group(1)) if m else None
+    if issue_date is not None:
+        return issue_date
+    # First plausible date anywhere as last resort.
+    first = _RE_DATE_DE.search(text) or _RE_DATE_ISO.search(text)
+    return _parse_de_date(first.group(0)) if first else None
+
+
+def _find_due_date(text: str) -> int | None:
+    m = _RE_DUE_DATE_CUE.search(text)
+    return _parse_de_date(m.group(1)) if m else None
+
+
+def _find_total_cents(text: str) -> int | None:
+    m = _RE_TOTAL_CUE.search(text)
+    total_cents = _de_amount_to_cents(m.group(1)) if m else None
+    if total_cents is not None:
+        return total_cents
+    # Fallback: largest EUR amount in the document.
+    amounts = [_de_amount_to_cents(x) for x in _RE_EUR_AMOUNT.findall(text)]
+    positive = [a for a in amounts if a is not None and a > 0]
+    return max(positive) if positive else None
+
+
+def _find_vat_id(text: str) -> str | None:
+    m = _RE_VAT_ID.search(text)
+    return m.group(1).replace(" ", "") if m else None
 
 
 def extract_text_heuristic(pdf_path: str) -> dict[str, Any]:
     """Best-effort heuristic extraction. Returns:
     {
       found: bool,                # True if we got at least one usable field
-      text_length: int,           # raw text length (0 = no text layer / scan)
+      textLength: int,            # raw text length (0 = no text layer / scan)
       data?: {
         invoiceNumber, issueDate, dueDate, totalCents, currency,
-        vendorName, vendorVatId, rawText (truncated)
+        vendorName, vendorVatId
       }
     }
     """
@@ -153,44 +201,10 @@ def extract_text_heuristic(pdf_path: str) -> dict[str, Any]:
     if not text.strip():
         return {"found": False, "textLength": 0}
 
-    invoice_number: str | None = None
-    m = _RE_INVOICE_NUMBER.search(text)
-    if m:
-        invoice_number = m.group(1).strip().rstrip(".,;:")
-
-    issue_date: int | None = None
-    m = _RE_ISSUE_DATE_CUE.search(text)
-    if m:
-        issue_date = _parse_de_date(m.group(1))
-    if issue_date is None:
-        # First plausible date anywhere as last resort.
-        first = _RE_DATE_DE.search(text) or _RE_DATE_ISO.search(text)
-        if first:
-            issue_date = _parse_de_date(first.group(0))
-
-    due_date: int | None = None
-    m = _RE_DUE_DATE_CUE.search(text)
-    if m:
-        due_date = _parse_de_date(m.group(1))
-
-    total_cents: int | None = None
-    # Prefer explicit cue first.
-    m = _RE_TOTAL_CUE.search(text)
-    if m:
-        total_cents = _de_amount_to_cents(m.group(1))
-    if total_cents is None:
-        # Fallback: largest EUR amount in the document.
-        amounts = [_de_amount_to_cents(x) for x in _RE_EUR_AMOUNT.findall(text)]
-        amounts = [a for a in amounts if a is not None and a > 0]
-        if amounts:
-            total_cents = max(amounts)
-
+    invoice_number = _find_invoice_number(text)
+    issue_date = _find_issue_date(text)
+    total_cents = _find_total_cents(text)
     vendor_name = _guess_vendor_name(text)
-
-    vat_id: str | None = None
-    m = _RE_VAT_ID.search(text)
-    if m:
-        vat_id = m.group(1).replace(" ", "")
 
     has_useful = any(
         v is not None and v != ""
@@ -203,10 +217,10 @@ def extract_text_heuristic(pdf_path: str) -> dict[str, Any]:
         "data": {
             "invoiceNumber": invoice_number,
             "issueDate": issue_date,
-            "dueDate": due_date,
+            "dueDate": _find_due_date(text),
             "totalCents": total_cents,
-            "currency": "EUR",
+            "currency": FALLBACK_CURRENCY,
             "vendorName": vendor_name,
-            "vendorVatId": vat_id,
+            "vendorVatId": _find_vat_id(text),
         },
     }

@@ -1,8 +1,11 @@
 import { select } from "$lib/db/client";
 import { loadSettings } from "$lib/db/queries";
 import { sumPrepaymentsForYear } from "$lib/db/tax-prepayments";
-import { estimateIncomeTax, type IncomeTaxResult } from "$lib/tax/income";
+import { marginalIncomeTax, type FilingStatus, type IncomeTaxResult } from "$lib/tax/income";
 import { estimateTradeTax, type TradeTaxResult } from "$lib/tax/trade";
+import { nowUnix } from "$lib/utils/date";
+import { deductibleExpenseCent, deductsExpensesGross } from "./reserve-expenses";
+import { resolveTaxYearWindow } from "./tax-year";
 
 export interface TaxScenario {
   /** Selbst-Gewinn auf den hier gerechnet wurde (Cent). */
@@ -24,6 +27,7 @@ export interface TaxScenario {
 export interface TaxRücklageResult {
   year: number;
   daysElapsed: number;
+  daysInYear: number;
   profitYtdCent: number;
   projectedAnnualProfitCent: number;
   /** Umsatz YTD brutto (Cent) — Basis für den Pauschal-Modus. */
@@ -44,20 +48,25 @@ export interface TaxRücklageResult {
   flags: {
     isFreelancer: boolean;
     isKleinunternehmer: boolean;
+    /** Ausgaben fließen brutto statt netto in den Gewinn (nur Kleinunternehmer). */
+    expensesDeductedGross: boolean;
     usePauschal: boolean;
     pauschalPercent: number;
   };
 }
 
+const MAX_PAUSCHAL_PERCENT = 50;
+
 interface YearAggRow {
   revenueNet: number;
   revenueGross: number;
-  expense: number;
+  expenseNet: number;
+  expenseGross: number;
   invoiceVat: number;
   expenseVat: number;
 }
 
-async function loadYearAgg(yearStart: number, now: number): Promise<YearAggRow> {
+async function loadYearAgg(yearStart: number, cutoff: number): Promise<YearAggRow> {
   // Storno-Rechnungen sind in `invoices` mit negativem subtotal/vat/total
   // gespeichert (siehe invoices.ts: `sign = isCreditNote ? -1 : 1`), daher
   // nettet ein simples SUM(...) sie korrekt heraus.
@@ -74,21 +83,23 @@ async function loadYearAgg(yearStart: number, now: number): Promise<YearAggRow> 
      FROM invoices
      WHERE status IN ('sent','partial','paid')
        AND issue_date >= ? AND issue_date <= ?`,
-    [yearStart, now],
+    [yearStart, cutoff],
   );
-  const exp = await select<{ expense: number; expense_vat: number }>(
+  const exp = await select<{ expense_net: number; expense_gross: number; expense_vat: number }>(
     `SELECT
-       COALESCE(SUM(subtotal), 0) AS expense,
+       COALESCE(SUM(subtotal), 0) AS expense_net,
+       COALESCE(SUM(total), 0) AS expense_gross,
        COALESCE(SUM(CASE WHEN is_reverse_charge = 1 THEN 0 ELSE vat_amount END), 0) AS expense_vat
      FROM expenses
      WHERE status IN ('open','paid')
        AND issue_date >= ? AND issue_date <= ?`,
-    [yearStart, now],
+    [yearStart, cutoff],
   );
   return {
     revenueNet: inv[0]?.revenue_net ?? 0,
     revenueGross: inv[0]?.revenue_gross ?? 0,
-    expense: exp[0]?.expense ?? 0,
+    expenseNet: exp[0]?.expense_net ?? 0,
+    expenseGross: exp[0]?.expense_gross ?? 0,
     invoiceVat: inv[0]?.invoice_vat ?? 0,
     expenseVat: exp[0]?.expense_vat ?? 0,
   };
@@ -99,7 +110,7 @@ interface ScenarioInput {
   otherIncomeCent: number;
   ustSchuldCent: number;
   prepaymentsCent: number;
-  status: "single" | "married";
+  status: FilingStatus;
   churchRate: number;
   tradeTaxRate: number;
   isFreelancer: boolean;
@@ -108,28 +119,14 @@ interface ScenarioInput {
 
 function computeScenario(i: ScenarioInput): TaxScenario {
   const selbstProfitClamped = Math.max(0, i.profitCent);
-  const otherClamped = Math.max(0, i.otherIncomeCent);
 
-  const estTotal = estimateIncomeTax(
-    otherClamped + selbstProfitClamped,
+  const income = marginalIncomeTax(
+    selbstProfitClamped,
+    i.otherIncomeCent,
     i.status,
     i.churchRate,
     i.year,
   );
-  const estOtherAlone = estimateIncomeTax(
-    otherClamped,
-    i.status,
-    i.churchRate,
-    i.year,
-  );
-  const income: IncomeTaxResult = {
-    est: Math.max(0, estTotal.est - estOtherAlone.est),
-    soli: Math.max(0, estTotal.soli - estOtherAlone.soli),
-    kist: Math.max(0, estTotal.kist - estOtherAlone.kist),
-    total: 0,
-    tarifYear: estTotal.tarifYear,
-  };
-  income.total = income.est + income.soli + income.kist;
 
   const trade = estimateTradeTax(selbstProfitClamped, i.tradeTaxRate, i.isFreelancer);
   const gewStNetCent = Math.max(0, trade.tradeTax - trade.estCredit);
@@ -156,17 +153,18 @@ function computeScenario(i: ScenarioInput): TaxScenario {
 export async function computeTaxRücklage(year?: number): Promise<TaxRücklageResult> {
   const settings = await loadSettings();
   const targetYear = year ?? new Date().getFullYear();
-  const yearStart = Math.floor(new Date(targetYear, 0, 1).getTime() / 1000);
-  const yearEnd = Math.floor(new Date(targetYear + 1, 0, 1).getTime() / 1000);
-  const now = Math.floor(Date.now() / 1000);
-  // Für vergangene Jahre: volles Jahr. Für laufendes Jahr: bis jetzt.
-  const cutoff = Math.min(now, yearEnd);
-  const elapsedSeconds = Math.max(86_400, cutoff - yearStart);
-  const daysElapsed = Math.min(365, Math.floor(elapsedSeconds / 86_400) + 1);
+  const { yearStart, cutoff, daysElapsed, daysInYear } = resolveTaxYearWindow(
+    targetYear,
+    nowUnix(),
+  );
 
   const agg = await loadYearAgg(yearStart, cutoff);
-  const profitYtdCent = agg.revenueNet - agg.expense;
-  const projectedAnnualProfitCent = Math.floor((profitYtdCent / daysElapsed) * 365);
+  const deductibleExpense = deductibleExpenseCent(
+    { netCent: agg.expenseNet, grossCent: agg.expenseGross },
+    settings,
+  );
+  const profitYtdCent = agg.revenueNet - deductibleExpense;
+  const projectedAnnualProfitCent = Math.floor((profitYtdCent / daysElapsed) * daysInYear);
 
   const ustSchuldYtdCent = settings.isKleinunternehmer
     ? 0
@@ -174,6 +172,7 @@ export async function computeTaxRücklage(year?: number): Promise<TaxRücklageRe
 
   const prepaymentsCent = await sumPrepaymentsForYear(targetYear);
   const otherIncomeCent = Math.max(0, settings.otherIncomeAnnualCent);
+  const isFreelancer = settings.legalForm === "freelancer";
 
   const baseInput = {
     otherIncomeCent,
@@ -182,23 +181,23 @@ export async function computeTaxRücklage(year?: number): Promise<TaxRücklageRe
     status: settings.taxFilingStatus,
     churchRate: settings.churchTaxRate,
     tradeTaxRate: settings.tradeTaxRate,
-    isFreelancer: settings.legalForm === "freelancer",
+    isFreelancer,
     year: targetYear,
   };
 
   const ytd = computeScenario({ ...baseInput, profitCent: profitYtdCent });
   const projected = computeScenario({ ...baseInput, profitCent: projectedAnnualProfitCent });
 
-  const pauschalPercent = Math.max(0, Math.min(50, settings.pauschalTaxPercent));
+  const pauschalPercent = Math.max(0, Math.min(MAX_PAUSCHAL_PERCENT, settings.pauschalTaxPercent));
   const pauschalReserveCent = Math.max(
     0,
     Math.round((agg.revenueGross * pauschalPercent) / 100),
   );
-  const pauschalDeltaCent = projected.recommendedReserveCent - pauschalReserveCent;
 
   return {
     year: targetYear,
     daysElapsed,
+    daysInYear,
     profitYtdCent,
     projectedAnnualProfitCent,
     revenueYtdGrossCent: agg.revenueGross,
@@ -208,10 +207,11 @@ export async function computeTaxRücklage(year?: number): Promise<TaxRücklageRe
     ytd,
     projected,
     pauschalReserveCent,
-    pauschalDeltaCent,
+    pauschalDeltaCent: projected.recommendedReserveCent - pauschalReserveCent,
     flags: {
-      isFreelancer: settings.legalForm === "freelancer",
+      isFreelancer,
       isKleinunternehmer: settings.isKleinunternehmer,
+      expensesDeductedGross: deductsExpensesGross(settings),
       usePauschal: settings.usePauschalTaxReserve,
       pauschalPercent,
     },

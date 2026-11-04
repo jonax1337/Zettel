@@ -1,6 +1,5 @@
 <script lang="ts">
   import { loadSettings, saveSettings } from "$lib/db/queries";
-  import type { Settings } from "$lib/db/schema";
   import {
     Button,
     Input,
@@ -14,6 +13,8 @@
     toast,
   } from "$lib/ui";
   import { ArrowLeft, ArrowRight, Sparkles, X } from "$lib/brand-icons";
+  import { rememberOnboardingDismissed } from "./onboarding-dismissal";
+  import { applyDraft, emptyDraft, STEP_COUNT, validateStep } from "./onboarding-draft";
 
   type Props = {
     onDone: () => void;
@@ -21,54 +22,22 @@
   };
   let { onDone, onDismiss }: Props = $props();
 
-  const STORAGE_KEY = "zettel.onboarding.dismissed";
-
   let step = $state(1);
   let saving = $state(false);
   let error = $state<string | null>(null);
-
-  let companyName = $state("");
-  let ownerName = $state("");
-  let email = $state("");
-  let street = $state("");
-  let postalCode = $state("");
-  let city = $state("");
-  let country = $state("DE");
-  let taxNumber = $state("");
-  let vatId = $state("");
-  let isKleinunternehmer = $state(true);
-  let bankName = $state("");
-  let bankIban = $state("");
-  let bankBic = $state("");
+  const draft = $state(emptyDraft());
 
   function dismissForever() {
-    try {
-      localStorage.setItem(STORAGE_KEY, "1");
-    } catch {
-      /* ignore */
-    }
+    rememberOnboardingDismissed();
     onDismiss();
   }
 
-  function next() {
-    error = null;
-    if (step === 1) {
-      if (!companyName.trim() || !street.trim() || !postalCode.trim() || !city.trim()) {
-        error = "Bitte alle Pflichtfelder ausfüllen.";
-        return;
-      }
-    }
-    if (step === 2) {
-      if (!taxNumber.trim() && !vatId.trim()) {
-        error =
-          "EN-16931 verlangt mindestens eine Steuernummer ODER USt-IdNr. (BR-CO-26).";
-        return;
-      }
-    }
-    step += 1;
+  function goNext() {
+    error = validateStep(step, draft);
+    if (!error) step += 1;
   }
 
-  function prev() {
+  function goBack() {
     error = null;
     step -= 1;
   }
@@ -77,24 +46,7 @@
     saving = true;
     error = null;
     try {
-      const current = await loadSettings();
-      const next: Partial<Settings> = {
-        ...current,
-        companyName: companyName.trim(),
-        ownerName: ownerName.trim(),
-        email: email.trim(),
-        street: street.trim(),
-        postalCode: postalCode.trim(),
-        city: city.trim(),
-        country: country.trim().toUpperCase().slice(0, 2) || "DE",
-        taxNumber: taxNumber.trim(),
-        vatId: vatId.trim() || null,
-        isKleinunternehmer,
-        bankName: bankName.trim(),
-        bankIban: bankIban.trim(),
-        bankBic: bankBic.trim(),
-      };
-      await saveSettings(next);
+      await saveSettings(applyDraft(await loadSettings(), draft));
       toast.success("Stammdaten gespeichert", "Du kannst jetzt loslegen.");
       onDone();
     } catch (e) {
@@ -104,8 +56,6 @@
       saving = false;
     }
   }
-
-  const totalSteps = 4;
 </script>
 
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -113,8 +63,8 @@
     <button
       type="button"
       onclick={dismissForever}
-      aria-label="Später erinnern"
-      title="Später"
+      aria-label="Nicht mehr anzeigen"
+      title="Nicht mehr anzeigen"
       class="absolute top-4 right-4 inline-flex items-center justify-center size-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
     >
       <X class="size-4" />
@@ -127,7 +77,7 @@
       </div>
 
       <div class="mb-6 flex gap-1.5">
-        {#each Array(totalSteps) as _, i (i)}
+        {#each Array(STEP_COUNT) as _, i (i)}
           <div
             class={"h-1.5 flex-1 rounded-full transition-colors " +
               (i + 1 <= step ? "bg-primary" : "bg-muted")}
@@ -148,31 +98,31 @@
             <div class="grid grid-cols-2 gap-4">
               <div class="col-span-2 flex flex-col gap-1.5">
                 <Label>Firmenname <span class="text-destructive">*</span></Label>
-                <Input bind:value={companyName} required placeholder="z. B. Jonas Laux Digital" />
+                <Input bind:value={draft.companyName} required placeholder="z. B. Jonas Laux Digital" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <Label>Inhaber:in</Label>
-                <Input bind:value={ownerName} />
+                <Input bind:value={draft.ownerName} />
               </div>
               <div class="flex flex-col gap-1.5">
                 <Label>E-Mail</Label>
-                <Input type="email" bind:value={email} />
+                <Input type="email" bind:value={draft.email} />
               </div>
               <div class="col-span-2 flex flex-col gap-1.5">
                 <Label>Straße & Nr. <span class="text-destructive">*</span></Label>
-                <Input bind:value={street} required />
+                <Input bind:value={draft.street} required />
               </div>
               <div class="flex flex-col gap-1.5">
                 <Label>PLZ <span class="text-destructive">*</span></Label>
-                <Input bind:value={postalCode} required />
+                <Input bind:value={draft.postalCode} required />
               </div>
               <div class="flex flex-col gap-1.5">
                 <Label>Ort <span class="text-destructive">*</span></Label>
-                <Input bind:value={city} required />
+                <Input bind:value={draft.city} required />
               </div>
               <div class="flex flex-col gap-1.5">
                 <Label>Land</Label>
-                <Input bind:value={country} maxlength={2} placeholder="DE" />
+                <Input bind:value={draft.country} maxlength={2} placeholder="DE" />
               </div>
             </div>
           </CardContent>
@@ -190,15 +140,15 @@
             <div class="grid grid-cols-2 gap-4">
               <div class="flex flex-col gap-1.5">
                 <Label>Steuernummer</Label>
-                <Input bind:value={taxNumber} placeholder="z. B. 12/345/67890" />
+                <Input bind:value={draft.taxNumber} placeholder="z. B. 12/345/67890" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <Label>USt-IdNr.</Label>
-                <Input bind:value={vatId} placeholder="z. B. DE123456789" />
+                <Input bind:value={draft.vatId} placeholder="z. B. DE123456789" />
               </div>
             </div>
             <label class="flex items-start gap-2 text-sm cursor-pointer select-none">
-              <Checkbox bind:checked={isKleinunternehmer} />
+              <Checkbox bind:checked={draft.isKleinunternehmer} />
               <span>
                 <span class="font-medium">Kleinunternehmer:in nach § 19 UStG</span>
                 <span class="block text-xs text-muted-foreground mt-0.5">
@@ -222,15 +172,15 @@
             <div class="grid grid-cols-2 gap-4">
               <div class="col-span-2 flex flex-col gap-1.5">
                 <Label>Bank</Label>
-                <Input bind:value={bankName} placeholder="z. B. Sparkasse Beispielstadt" />
+                <Input bind:value={draft.bankName} placeholder="z. B. Sparkasse Beispielstadt" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <Label>IBAN</Label>
-                <Input bind:value={bankIban} placeholder="DE…" />
+                <Input bind:value={draft.bankIban} placeholder="DE…" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <Label>BIC</Label>
-                <Input bind:value={bankBic} />
+                <Input bind:value={draft.bankBic} />
               </div>
             </div>
             <p class="text-xs text-muted-foreground mt-3">
@@ -268,17 +218,17 @@
           onclick={dismissForever}
           class="text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
-          Später erinnern
+          Nicht mehr anzeigen
         </button>
         <div class="inline-flex items-center gap-2">
           {#if step > 1}
-            <Button type="button" variant="outline" onclick={prev} disabled={saving}>
+            <Button type="button" variant="outline" onclick={goBack} disabled={saving}>
               <ArrowLeft class="size-4" />
               Zurück
             </Button>
           {/if}
-          {#if step < totalSteps}
-            <Button type="button" onclick={next} disabled={saving}>
+          {#if step < STEP_COUNT}
+            <Button type="button" onclick={goNext} disabled={saving}>
               Weiter
               <ArrowRight class="size-4" />
             </Button>

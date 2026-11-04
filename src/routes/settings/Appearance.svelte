@@ -9,6 +9,7 @@
   } from "$lib/ui";
   import { Sun, Moon, Monitor } from "$lib/brand-icons";
   import { theme, type ThemeMode } from "$lib/theme.svelte";
+  import { cn } from "$lib/utils";
 
   const themeModes: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
     { value: "system", label: "System", icon: Monitor },
@@ -34,15 +35,15 @@
             <button
               type="button"
               onclick={() => theme.set(mode.value)}
-              class={[
+              class={cn(
                 "flex flex-col items-center justify-center gap-2 rounded-xl border bg-card p-4 transition-all hover:bg-muted/30",
                 active
                   ? "border-primary ring-2 ring-ring/40 ring-offset-2 ring-offset-background"
                   : "border-border",
-              ].join(" ")}
+              )}
               aria-pressed={active}
             >
-              <Icon class={["size-5", active ? "text-primary" : "text-muted-foreground"]} />
+              <Icon class={cn("size-5", active ? "text-primary" : "text-muted-foreground")} />
               <span class="text-sm font-bold">{mode.label}</span>
             </button>
           {/each}

@@ -3,6 +3,7 @@
   import { CalendarDate, type DateValue } from "@internationalized/date";
   import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
+  import { MONTHS_DE, MONTHS_DE_SHORT } from "$lib/utils/date";
 
   type Props = {
     /** ISO date (YYYY-MM-DD) or empty string. */
@@ -58,14 +59,20 @@
   type View = "days" | "months" | "years";
   let view = $state<View>("days");
 
-  const MONTHS_DE = [
-    "Januar", "Februar", "März", "April", "Mai", "Juni",
-    "Juli", "August", "September", "Oktober", "November", "Dezember",
-  ];
-  const MONTHS_DE_SHORT = [
-    "Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
-    "Jul", "Aug", "Sep", "Okt", "Nov", "Dez",
-  ];
+  const YEARS_PER_PAGE = 12;
+  const NAV_ARROW_CLASS =
+    "inline-flex items-center justify-center size-7 rounded-md hover:bg-accent transition-colors cursor-pointer";
+  const HEADER_LABEL_CLASS =
+    "px-2 h-7 rounded-md text-sm font-medium hover:bg-accent transition-colors cursor-pointer";
+
+  function pickCellClass(isSelected: boolean, isCurrent: boolean, extra?: string): string {
+    return cn(
+      "h-10 rounded-md text-sm font-normal hover:bg-accent transition-colors cursor-pointer",
+      extra,
+      isSelected && "bg-primary text-primary-foreground hover:bg-primary font-medium",
+      !isSelected && isCurrent && "ring-1 ring-primary/40 font-medium",
+    );
+  }
 
   function selectMonth(m: number) {
     placeholder = new CalendarDate(placeholder.year, m, 1);
@@ -76,8 +83,8 @@
     view = "months";
   }
   function yearRange(center: number): number[] {
-    const start = Math.floor(center / 12) * 12;
-    return Array.from({ length: 12 }, (_, i) => start + i);
+    const start = Math.floor(center / YEARS_PER_PAGE) * YEARS_PER_PAGE;
+    return Array.from({ length: YEARS_PER_PAGE }, (_, i) => start + i);
   }
   function shiftYears(delta: number) {
     placeholder = new CalendarDate(placeholder.year + delta, placeholder.month, 1);
@@ -148,11 +155,10 @@
       class="rounded-lg border bg-popover text-popover-foreground shadow-md p-3 select-none w-[268px]"
     >
       {#snippet children({ months, weekdays })}
-        <!-- Custom header: month + year are clickable to switch views -->
         <div class="flex items-center justify-between mb-2">
           {#if view === "days"}
             <DatePicker.PrevButton
-              class="inline-flex items-center justify-center size-7 rounded-md hover:bg-accent transition-colors cursor-pointer"
+              class={NAV_ARROW_CLASS}
               aria-label="Vorheriger Monat"
             >
               <ChevronLeft class="size-4" />
@@ -161,20 +167,20 @@
               <button
                 type="button"
                 onclick={() => (view = "months")}
-                class="px-2 h-7 rounded-md text-sm font-medium hover:bg-accent transition-colors cursor-pointer"
+                class={HEADER_LABEL_CLASS}
               >
                 {MONTHS_DE[placeholder.month - 1]}
               </button>
               <button
                 type="button"
                 onclick={() => (view = "years")}
-                class="px-2 h-7 rounded-md text-sm font-medium hover:bg-accent transition-colors cursor-pointer tabular-nums"
+                class={cn(HEADER_LABEL_CLASS, "tabular-nums")}
               >
                 {placeholder.year}
               </button>
             </div>
             <DatePicker.NextButton
-              class="inline-flex items-center justify-center size-7 rounded-md hover:bg-accent transition-colors cursor-pointer"
+              class={NAV_ARROW_CLASS}
               aria-label="Nächster Monat"
             >
               <ChevronRight class="size-4" />
@@ -183,7 +189,7 @@
             <button
               type="button"
               onclick={() => shiftYears(-1)}
-              class="inline-flex items-center justify-center size-7 rounded-md hover:bg-accent transition-colors cursor-pointer"
+              class={NAV_ARROW_CLASS}
               aria-label="Vorheriges Jahr"
             >
               <ChevronLeft class="size-4" />
@@ -191,14 +197,14 @@
             <button
               type="button"
               onclick={() => (view = "years")}
-              class="px-2 h-7 rounded-md text-sm font-medium hover:bg-accent transition-colors cursor-pointer tabular-nums"
+              class={cn(HEADER_LABEL_CLASS, "tabular-nums")}
             >
               {placeholder.year}
             </button>
             <button
               type="button"
               onclick={() => shiftYears(1)}
-              class="inline-flex items-center justify-center size-7 rounded-md hover:bg-accent transition-colors cursor-pointer"
+              class={NAV_ARROW_CLASS}
               aria-label="Nächstes Jahr"
             >
               <ChevronRight class="size-4" />
@@ -206,20 +212,20 @@
           {:else}
             <button
               type="button"
-              onclick={() => shiftYears(-12)}
-              class="inline-flex items-center justify-center size-7 rounded-md hover:bg-accent transition-colors cursor-pointer"
+              onclick={() => shiftYears(-YEARS_PER_PAGE)}
+              class={NAV_ARROW_CLASS}
               aria-label="Vorherige 12 Jahre"
             >
               <ChevronLeft class="size-4" />
             </button>
             {@const years = yearRange(placeholder.year)}
             <span class="text-sm font-medium tabular-nums">
-              {years[0]} – {years[11]}
+              {years[0]} – {years[years.length - 1]}
             </span>
             <button
               type="button"
-              onclick={() => shiftYears(12)}
-              class="inline-flex items-center justify-center size-7 rounded-md hover:bg-accent transition-colors cursor-pointer"
+              onclick={() => shiftYears(YEARS_PER_PAGE)}
+              class={NAV_ARROW_CLASS}
               aria-label="Nächste 12 Jahre"
             >
               <ChevronRight class="size-4" />
@@ -272,11 +278,7 @@
               <button
                 type="button"
                 onclick={() => selectMonth(m)}
-                class={cn(
-                  "h-10 rounded-md text-sm font-normal hover:bg-accent transition-colors cursor-pointer",
-                  isSelected && "bg-primary text-primary-foreground hover:bg-primary font-medium",
-                  !isSelected && isCurrent && "ring-1 ring-primary/40 font-medium",
-                )}
+                class={pickCellClass(isSelected, isCurrent)}
               >
                 {label}
               </button>
@@ -292,11 +294,7 @@
               <button
                 type="button"
                 onclick={() => selectYear(y)}
-                class={cn(
-                  "h-10 rounded-md text-sm font-normal hover:bg-accent transition-colors cursor-pointer tabular-nums",
-                  isSelected && "bg-primary text-primary-foreground hover:bg-primary font-medium",
-                  !isSelected && isCurrent && "ring-1 ring-primary/40 font-medium",
-                )}
+                class={pickCellClass(isSelected, isCurrent, "tabular-nums")}
               >
                 {y}
               </button>

@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import SettingsShell from "./SettingsShell.svelte";
-  import { loadSettings, saveSettings } from "$lib/db/queries";
+  import SettingsFormFooter from "./SettingsFormFooter.svelte";
+  import DocumentNumberingCard from "./DocumentNumberingCard.svelte";
+  import { SettingsForm } from "./settings-form.svelte";
   import type { Settings } from "$lib/db/schema";
   import {
-    Button,
     Input,
     Label,
     Card,
@@ -13,114 +15,59 @@
     CardContent,
     Checkbox,
     Select,
-    toast,
   } from "$lib/ui";
 
-  let s = $state<Settings | null>(null);
-  let loading = $state(true);
-  let saving = $state(false);
-  let error = $state<string | null>(null);
+  type Choice<T> = { value: T; label: string }[];
 
-  const profileItems = [
+  const profileItems: Choice<Settings["zugferdProfile"]> = [
     { value: "en16931", label: "EN 16931 / Comfort (Standard)" },
     { value: "basic", label: "BASIC (Factur-X 1.0)" },
     { value: "extended", label: "EXTENDED (Factur-X 1.0)" },
   ];
 
-  const themeItems = [
+  const themeItems: Choice<Settings["pdfTheme"]> = [
     { value: "classic", label: "Klassisch" },
     { value: "modern", label: "Modern" },
     { value: "minimal", label: "Minimal" },
   ];
 
-  const pdfLanguageItems = [
+  const pdfLanguageItems: Choice<Settings["defaultPdfLanguage"]> = [
     { value: "de", label: "Deutsch" },
     { value: "en", label: "Englisch" },
   ];
 
-  $effect(() => {
-    loadSettings()
-      .then((row) => (s = row))
-      .catch((e) => (error = String(e)))
-      .finally(() => (loading = false));
-  });
-
-  async function onSubmit(e: SubmitEvent) {
-    e.preventDefault();
-    if (!s) return;
-    saving = true;
-    error = null;
-    try {
-      await saveSettings(s);
-      toast.success("Einstellungen gespeichert");
-    } catch (err) {
-      error = String(err);
-      toast.error("Speichern fehlgeschlagen", String(err));
-    } finally {
-      saving = false;
-    }
-  }
+  const form = new SettingsForm();
+  onMount(() => form.load());
 </script>
 
 <SettingsShell
   title="Dokumente"
   description="Rechnungen, Angebote, Nummernkreise und E-Rechnung-Profil."
 >
-  {#if loading}
+  {#if form.loading}
     <p class="text-sm text-muted-foreground">Lade…</p>
-  {:else if error && !s}
-    <p class="text-sm text-destructive">Fehler: {error}</p>
-  {:else if s}
-    <form onsubmit={onSubmit} class="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Rechnungen</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div class="grid grid-cols-2 gap-4">
-            <div class="flex flex-col gap-1.5">
-              <Label>Nummern-Format</Label>
-              <Input bind:value={s.invoiceNumberFormat} />
-              <span class="text-xs text-muted-foreground">
-                Platzhalter: {"{YYYY}"}, {"{NNNN}"}
-              </span>
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <Label>Aktueller Zähler</Label>
-              <Input type="number" min="0" bind:value={s.invoiceNumberCounter} />
-            </div>
-            <div class="flex flex-col gap-1.5 col-span-2">
-              <Label>Standard-Zahlungsfrist (Tage)</Label>
-              <Input type="number" min="0" bind:value={s.defaultPaymentTermsDays} />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+  {:else if form.error && !form.settings}
+    <p class="text-sm text-destructive">Fehler: {form.error}</p>
+  {:else if form.settings}
+    {@const s = form.settings}
+    <form onsubmit={(e) => form.submit(e)} class="space-y-6">
+      <DocumentNumberingCard
+        title="Rechnungen"
+        bind:format={s.invoiceNumberFormat}
+        bind:counter={s.invoiceNumberCounter}
+        bind:defaultDays={s.defaultPaymentTermsDays}
+        defaultDaysLabel="Standard-Zahlungsfrist (Tage)"
+        defaultDaysMin={0}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Angebote</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div class="grid grid-cols-2 gap-4">
-            <div class="flex flex-col gap-1.5">
-              <Label>Nummern-Format</Label>
-              <Input bind:value={s.offerNumberFormat} />
-              <span class="text-xs text-muted-foreground">
-                Platzhalter: {"{YYYY}"}, {"{NNNN}"}
-              </span>
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <Label>Aktueller Zähler</Label>
-              <Input type="number" min="0" bind:value={s.offerNumberCounter} />
-            </div>
-            <div class="flex flex-col gap-1.5 col-span-2">
-              <Label>Standard-Gültigkeit (Tage)</Label>
-              <Input type="number" min="1" bind:value={s.defaultOfferValidityDays} />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <DocumentNumberingCard
+        title="Angebote"
+        bind:format={s.offerNumberFormat}
+        bind:counter={s.offerNumberCounter}
+        bind:defaultDays={s.defaultOfferValidityDays}
+        defaultDaysLabel="Standard-Gültigkeit (Tage)"
+        defaultDaysMin={1}
+      />
 
       <Card>
         <CardHeader>
@@ -193,11 +140,7 @@
 
             <div class="flex flex-col gap-1.5">
               <Label>Standard-Sprache PDF</Label>
-              <Select
-                items={pdfLanguageItems}
-                value={s.defaultPdfLanguage}
-                onValueChange={(v) => (s!.defaultPdfLanguage = v as "de" | "en")}
-              />
+              <Select bind:value={s.defaultPdfLanguage} items={pdfLanguageItems} />
               <span class="text-xs text-muted-foreground">
                 Vorbelegung für neue Rechnungen und Angebote. Pro Beleg
                 überschreibbar. Das ZUGFeRD-XML bleibt sprach-neutral.
@@ -207,14 +150,7 @@
         </CardContent>
       </Card>
 
-      <div class="flex items-center gap-3">
-        <Button type="submit" disabled={saving}>
-          {saving ? "Speichere…" : "Speichern"}
-        </Button>
-        {#if error}
-          <span class="text-sm text-destructive">{error}</span>
-        {/if}
-      </div>
+      <SettingsFormFooter saving={form.saving} error={form.error} />
     </form>
   {/if}
 </SettingsShell>

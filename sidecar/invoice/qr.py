@@ -24,6 +24,14 @@ import base64
 import io
 from decimal import Decimal
 
+SERVICE_TAG = "BCD"
+VERSION = "002"
+CHARSET_UTF8 = "1"
+SEPA_CREDIT_TRANSFER = "SCT"
+MAX_NAME_LENGTH = 70
+MAX_REMITTANCE_LENGTH = 140
+CENTS_PER_EUR = 100
+
 
 def _clean_iban(iban: str) -> str:
     return "".join(ch for ch in iban if ch.isalnum()).upper()
@@ -37,7 +45,7 @@ def _clean_bic(bic: str | None) -> str:
 
 def _format_amount(amount_cent: int) -> str:
     # EPC requires "EUR" + amount with dot as decimal separator, 0.01..999_999_999.99.
-    eur = Decimal(amount_cent) / Decimal(100)
+    eur = Decimal(amount_cent) / CENTS_PER_EUR
     return f"EUR{eur:.2f}"
 
 
@@ -51,13 +59,13 @@ def build_epc_payload(
 ) -> str:
     """Build the EPC payload string. Caller validates business inputs."""
     # Truncate per spec to keep total payload <= 331 bytes (we're well under).
-    name = beneficiary_name.strip()[:70]
-    remit = remittance.strip()[:140]
+    name = beneficiary_name.strip()[:MAX_NAME_LENGTH]
+    remit = remittance.strip()[:MAX_REMITTANCE_LENGTH]
     fields = [
-        "BCD",
-        "002",
-        "1",
-        "SCT",
+        SERVICE_TAG,
+        VERSION,
+        CHARSET_UTF8,
+        SEPA_CREDIT_TRANSFER,
         _clean_bic(bic),
         name,
         _clean_iban(iban),
@@ -78,21 +86,17 @@ def should_emit_qr(
     iban: str | None,
     amount_cent: int,
     is_credit_note: bool,
-    reverse_charge_type: str | None,
 ) -> bool:
-    """Trigger logic for EPC-QR — EUR only, IBAN required, no stornos / RC."""
+    """Trigger logic for EPC-QR — EUR only, IBAN required, positive amount, no stornos.
+
+    Reverse-charge invoices keep the QR: they are typically B2B with intra-EU
+    SEPA, so payment by transfer still applies.
+    """
     if (currency or "EUR").upper() != "EUR":
         return False
     if not iban or not _clean_iban(iban):
         return False
-    if amount_cent <= 0:
-        return False
-    if is_credit_note:
-        return False
-    # Reverse-charge invoices are typically B2B with intra-EU SEPA but the
-    # supplier doesn't receive VAT — leaving the QR enabled is fine. We only
-    # skip when the field explicitly signals non-collection.
-    return True
+    return amount_cent > 0 and not is_credit_note
 
 
 def epc_qr_svg_data_uri(payload: str) -> str:

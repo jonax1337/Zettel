@@ -23,7 +23,3 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
     },
   };
 }
-
-export async function installAndRestart(update: { install: () => Promise<void> }): Promise<void> {
-  await update.install();
-}

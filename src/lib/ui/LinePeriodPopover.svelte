@@ -23,8 +23,10 @@
   const hasValue = $derived(!!startIso && !!endIso);
   const isSingleDay = $derived(hasValue && startIso === endIso);
 
+  type Mode = "single" | "range";
+
   let open = $state(false);
-  let mode = $state<"single" | "range">("single");
+  let mode = $state<Mode>("single");
 
   $effect(() => {
     if (open) {
@@ -32,7 +34,7 @@
     }
   });
 
-  let invalid = $derived(
+  const invalid = $derived(
     mode === "range" &&
       !!startIso &&
       !!endIso &&
@@ -62,6 +64,21 @@
     return `${formatDate(sd)} – ${formatDate(ed)}`;
   }
 </script>
+
+{#snippet modeButton(target: Mode, label: string, onSelect: () => void)}
+  <button
+    type="button"
+    onclick={onSelect}
+    class={cn(
+      "flex-1 h-7 rounded-sm text-xs font-medium transition-colors cursor-pointer",
+      mode === target
+        ? "bg-background shadow-sm text-foreground"
+        : "text-muted-foreground hover:text-foreground",
+    )}
+  >
+    {label}
+  </button>
+{/snippet}
 
 <Popover.Root bind:open>
   <Popover.Trigger
@@ -100,30 +117,8 @@
       )}
     >
       <div class="inline-flex w-full rounded-md bg-muted/50 p-0.5 mb-3">
-        <button
-          type="button"
-          onclick={switchToSingle}
-          class={cn(
-            "flex-1 h-7 rounded-sm text-xs font-medium transition-colors cursor-pointer",
-            mode === "single"
-              ? "bg-background shadow-sm text-foreground"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          Einzeltag
-        </button>
-        <button
-          type="button"
-          onclick={switchToRange}
-          class={cn(
-            "flex-1 h-7 rounded-sm text-xs font-medium transition-colors cursor-pointer",
-            mode === "range"
-              ? "bg-background shadow-sm text-foreground"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          Zeitraum
-        </button>
+        {@render modeButton("single", "Einzeltag", switchToSingle)}
+        {@render modeButton("range", "Zeitraum", switchToRange)}
       </div>
 
       {#if mode === "single"}

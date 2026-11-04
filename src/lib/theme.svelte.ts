@@ -1,53 +1,69 @@
 export type ThemeMode = "system" | "light" | "dark";
+type ResolvedTheme = "light" | "dark";
 
 const STORAGE_KEY = "zettel.theme";
-const media = typeof window !== "undefined"
+const NEXT_MODE: Record<ThemeMode, ThemeMode> = {
+  system: "light",
+  light: "dark",
+  dark: "system",
+};
+
+const darkSchemeQuery = typeof window !== "undefined"
   ? window.matchMedia("(prefers-color-scheme: dark)")
   : null;
 
-function readStored(): ThemeMode {
-  if (typeof localStorage === "undefined") return "system";
-  const v = localStorage.getItem(STORAGE_KEY);
-  return v === "light" || v === "dark" || v === "system" ? v : "system";
+function isThemeMode(value: string | null): value is ThemeMode {
+  return value === "light" || value === "dark" || value === "system";
 }
 
-function resolve(mode: ThemeMode): "light" | "dark" {
-  if (mode === "system") return media?.matches ? "dark" : "light";
+function readStoredMode(): ThemeMode {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return isThemeMode(stored) ? stored : "system";
+  } catch {
+    // Storage missing or blocked: follow the system theme.
+    return "system";
+  }
+}
+
+function resolve(mode: ThemeMode): ResolvedTheme {
+  if (mode === "system") return darkSchemeQuery?.matches ? "dark" : "light";
   return mode;
 }
 
-function apply(resolved: "light" | "dark") {
+function applyToDocument(theme: ResolvedTheme) {
   if (typeof document === "undefined") return;
-  document.documentElement.setAttribute("data-theme", resolved);
+  document.documentElement.setAttribute("data-theme", theme);
 }
 
 class ThemeStore {
-  mode = $state<ThemeMode>(readStored());
-  resolved = $state<"light" | "dark">(resolve(readStored()));
+  mode = $state<ThemeMode>(readStoredMode());
+  resolved = $state<ResolvedTheme>(resolve(this.mode));
 
   constructor() {
-    apply(this.resolved);
-    media?.addEventListener("change", () => {
-      if (this.mode === "system") {
-        this.resolved = resolve("system");
-        apply(this.resolved);
-      }
+    applyToDocument(this.resolved);
+    darkSchemeQuery?.addEventListener("change", () => {
+      if (this.mode === "system") this.update("system");
     });
   }
 
   set(mode: ThemeMode) {
-    this.mode = mode;
-    this.resolved = resolve(mode);
-    apply(this.resolved);
+    this.update(mode);
     try {
       localStorage.setItem(STORAGE_KEY, mode);
-    } catch {}
+    } catch {
+      // Storage blocked: the choice applies to this session only.
+    }
   }
 
   cycle() {
-    const next: ThemeMode =
-      this.mode === "system" ? "light" : this.mode === "light" ? "dark" : "system";
-    this.set(next);
+    this.set(NEXT_MODE[this.mode]);
+  }
+
+  private update(mode: ThemeMode) {
+    this.mode = mode;
+    this.resolved = resolve(mode);
+    applyToDocument(this.resolved);
   }
 }
 

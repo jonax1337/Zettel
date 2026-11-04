@@ -1,10 +1,10 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { parseBankStatement } from "$lib/sidecar/bank";
-  import { matchBookings, type BookingMatch } from "$lib/bank/match";
-  import { listInvoices, type InvoiceListRow } from "$lib/db/invoices";
+  import { matchBookings, openBalance, type MatchCandidate } from "$lib/bank/match";
+  import { listInvoices } from "$lib/db/invoices";
   import { addPayment } from "$lib/db/invoice-payments";
-  import { formatDate, fromIsoDate } from "$lib/utils/date";
+  import { nowUnix } from "$lib/utils/date";
   import { centsToEur } from "$lib/utils/money";
   import {
     Button,
@@ -17,54 +17,63 @@
     Checkbox,
     toast,
   } from "$lib/ui";
+  import type { BadgeVariant } from "$lib/ui/Badge.svelte";
   import { Upload, CheckCircle2, AlertCircle, FileUp } from "$lib/brand-icons";
+  import { pluralize } from "./parts/entity/format";
+  import {
+    canApply,
+    paymentFor,
+    toImportRows,
+    type ImportRow,
+    type StatementFormat,
+  } from "./parts/bank/import-rows";
 
-  let busy = $state(false);
+  const CONFIDENCE_BADGE: Record<MatchCandidate["confidence"], BadgeVariant> = {
+    high: "success",
+    medium: "warning",
+    low: "outline",
+  };
+  const FORMAT_LABEL: Record<StatementFormat, string> = { camt: "CAMT.053", mt940: "MT940" };
+
   let parsing = $state(false);
   let applying = $state(false);
   let error = $state<string | null>(null);
 
-  let detectedFormat = $state<"camt" | "mt940" | null>(null);
-  let matches = $state<BookingMatch[]>([]);
-  let selectedCandidateIdx = $state<Record<number, number | null>>({});
-  let included = $state<Record<number, boolean>>({});
+  let detectedFormat = $state<StatementFormat | null>(null);
+  let rows = $state<ImportRow[]>([]);
+
+  const willApplyCount = $derived(rows.filter((r) => r.included).length);
 
   async function pickFile() {
-    const picked = await open({
-      multiple: false,
-      filters: [
-        { name: "Kontoauszug (CAMT / MT940)", extensions: ["xml", "sta", "txt"] },
-      ],
-    });
-    if (typeof picked !== "string") return;
+    try {
+      const picked = await open({
+        multiple: false,
+        filters: [{ name: "Kontoauszug (CAMT / MT940)", extensions: ["xml", "sta", "txt"] }],
+      });
+      if (typeof picked === "string") await loadStatement(picked);
+    } catch (e) {
+      toast.error("Datei-Dialog fehlgeschlagen", String(e));
+    }
+  }
 
+  async function loadStatement(path: string) {
     parsing = true;
     error = null;
-    matches = [];
+    rows = [];
     detectedFormat = null;
     try {
-      const result = await parseBankStatement(picked, "auto");
+      const result = await parseBankStatement(path, "auto");
       if (!result.success) {
         error = `${result.error.code}: ${result.error.message}`;
         toast.error("Datei konnte nicht geparst werden", result.error.message);
         return;
       }
       detectedFormat = result.format;
-      const allInvoices = await listInvoices({});
-      const m = matchBookings(result.bookings, allInvoices);
-      matches = m;
-      // Default-Auswahl je Booking.
-      const sel: Record<number, number | null> = {};
-      const inc: Record<number, boolean> = {};
-      m.forEach((bm, idx) => {
-        sel[idx] = bm.defaultPick;
-        inc[idx] = bm.defaultPick !== null && bm.candidates[bm.defaultPick]?.confidence === "high";
-      });
-      selectedCandidateIdx = sel;
-      included = inc;
+      const matches = matchBookings(result.bookings, await listInvoices({}));
+      rows = toImportRows(matches);
       toast.success(
-        `${m.length} Buchung${m.length === 1 ? "" : "en"} eingelesen`,
-        `${m.filter((bm) => bm.candidates.length > 0).length} Treffer-Kandidaten`,
+        `${matches.length} ${pluralize(matches.length, "Buchung", "Buchungen")} eingelesen`,
+        `${matches.filter((m) => m.candidates.length > 0).length} Treffer-Kandidaten`,
       );
     } catch (e) {
       error = String(e);
@@ -74,69 +83,42 @@
     }
   }
 
-  function setSelected(bookingIdx: number, candIdx: number) {
-    selectedCandidateIdx[bookingIdx] = candIdx;
+  function reportApplied(applied: number, errors: string[]) {
+    if (errors.length === 0) {
+      toast.success(`${applied} ${pluralize(applied, "Zahlung", "Zahlungen")} zugeordnet`);
+      return;
+    }
+    toast.warning(
+      `${applied} zugeordnet, ${errors.length} fehlgeschlagen`,
+      `Fehlgeschlagene Buchungen bleiben zum erneuten Versuch in der Liste. ${errors[0]}`,
+    );
   }
 
-  function toggleIncluded(bookingIdx: number) {
-    included[bookingIdx] = !included[bookingIdx];
-  }
-
-  const willApplyCount = $derived(
-    Object.keys(included).filter((k) => included[+k]).length,
-  );
-
-  async function applyAll() {
+  /** Records every ticked booking; rows that fail stay in the list so they can be retried. */
+  async function applyAll(format: StatementFormat) {
     if (applying) return;
     applying = true;
-    let applied = 0;
-    let failed = 0;
     try {
-      for (let i = 0; i < matches.length; i++) {
-        if (!included[i]) continue;
-        const candIdx = selectedCandidateIdx[i];
-        if (candIdx === null || candIdx === undefined) continue;
-        const cand = matches[i].candidates[candIdx];
-        if (!cand) continue;
-        const booking = matches[i].booking;
+      const failedRows: ImportRow[] = [];
+      const errors: string[] = [];
+      let applied = 0;
+      for (const row of rows) {
+        const payment = paymentFor(row, format, nowUnix());
+        if (!payment) continue;
         try {
-          await addPayment({
-            invoiceId: cand.invoice.id,
-            paidAt: bookingDateToUnix(booking.valutaDate),
-            amountCent: booking.amountCent,
-            source: detectedFormat === "mt940" ? "mt940" : "camt053",
-            notes: booking.purpose || null,
-          });
+          await addPayment(payment);
           applied += 1;
-        } catch {
-          failed += 1;
+        } catch (e) {
+          failedRows.push(row);
+          errors.push(String(e));
         }
       }
-      if (failed === 0) {
-        toast.success(`${applied} Zahlung${applied === 1 ? "" : "en"} zugeordnet`);
-      } else {
-        toast.warning(
-          `${applied} zugeordnet, ${failed} fehlgeschlagen`,
-          "Bitte die Detail-Ansicht prüfen.",
-        );
-      }
-      // Reset
-      matches = [];
-      detectedFormat = null;
-      selectedCandidateIdx = {};
-      included = {};
+      reportApplied(applied, errors);
+      rows = failedRows;
+      if (failedRows.length === 0) detectedFormat = null;
     } finally {
       applying = false;
     }
-  }
-
-  function bookingDateToUnix(iso: string): number {
-    if (!iso) return Math.floor(Date.now() / 1000);
-    return fromIsoDate(iso);
-  }
-
-  function confidenceBadge(c: "high" | "medium" | "low") {
-    return c === "high" ? "success" : c === "medium" ? "warning" : "outline";
   }
 </script>
 
@@ -169,7 +151,7 @@
     </Button>
     {#if detectedFormat}
       <Badge variant="secondary" class="ml-3">
-        Format: {detectedFormat === "camt" ? "CAMT.053" : "MT940"}
+        Format: {FORMAT_LABEL[detectedFormat]}
       </Badge>
     {/if}
     {#if error}
@@ -178,7 +160,8 @@
   </CardContent>
 </Card>
 
-{#if matches.length > 0}
+{#if rows.length > 0 && detectedFormat}
+  {@const format = detectedFormat}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
@@ -192,49 +175,50 @@
         </tr>
       </thead>
       <tbody class="stagger">
-        {#each matches as bm, idx (idx)}
-          {@const sel = selectedCandidateIdx[idx]}
-          <tr class="border-t hover:bg-muted/30 transition-colors {bm.booking.amountCent <= 0 ? 'opacity-50' : ''}">
+        {#each rows as row, idx (idx)}
+          {@const booking = row.match.booking}
+          <tr class="border-t hover:bg-muted/30 transition-colors {booking.amountCent <= 0 ? 'opacity-50' : ''}">
             <td class="px-4 py-3">
-              {#if bm.candidates.length > 0 && bm.booking.amountCent > 0}
-                <Checkbox checked={included[idx] ?? false} onCheckedChange={() => toggleIncluded(idx)} />
+              {#if canApply(row)}
+                <Checkbox bind:checked={row.included} />
               {/if}
             </td>
             <td class="px-4 py-3 text-muted-foreground tabular-nums text-xs">
-              {bm.booking.valutaDate}
+              {booking.valutaDate}
             </td>
-            <td class="px-4 py-3 text-right font-mono tabular-nums {bm.booking.amountCent < 0 ? 'text-muted-foreground' : 'font-medium'}">
-              {centsToEur(bm.booking.amountCent)}
+            <td class="px-4 py-3 text-right font-mono tabular-nums {booking.amountCent < 0 ? 'text-muted-foreground' : 'font-medium'}">
+              {centsToEur(booking.amountCent)}
             </td>
-            <td class="px-4 py-3 text-muted-foreground truncate max-w-[14rem]">{bm.booking.partyName}</td>
-            <td class="px-4 py-3 text-muted-foreground text-xs truncate max-w-[18rem]">{bm.booking.purpose}</td>
+            <td class="px-4 py-3 text-muted-foreground truncate max-w-[14rem]">{booking.partyName}</td>
+            <td class="px-4 py-3 text-muted-foreground text-xs truncate max-w-[18rem]">{booking.purpose}</td>
             <td class="px-4 py-3">
-              {#if bm.booking.amountCent <= 0}
+              {#if booking.amountCent <= 0}
                 <span class="text-xs text-muted-foreground">Geldausgang — ignoriert</span>
-              {:else if bm.candidates.length === 0}
+              {:else if row.match.candidates.length === 0}
                 <span class="text-xs text-muted-foreground inline-flex items-center gap-1">
                   <AlertCircle class="size-3" /> Kein Treffer
                 </span>
               {:else}
                 <div class="flex flex-col gap-1">
-                  {#each bm.candidates as cand, ci (ci)}
+                  {#each row.match.candidates as candidate, candidateIdx (candidateIdx)}
+                    {@const picked = row.pickedCandidate === candidateIdx}
                     <button
                       type="button"
-                      onclick={() => setSelected(idx, ci)}
-                      class={`flex items-center gap-2 text-left px-2 py-1 rounded-md text-xs transition-colors ${
-                        sel === ci ? "bg-accent text-accent-foreground" : "hover:bg-accent/40"
-                      }`}
+                      onclick={() => (row.pickedCandidate = candidateIdx)}
+                      class="flex items-center gap-2 text-left px-2 py-1 rounded-md text-xs transition-colors {picked
+                        ? 'bg-accent text-accent-foreground'
+                        : 'hover:bg-accent/40'}"
                     >
-                      {#if sel === ci}
+                      {#if picked}
                         <CheckCircle2 class="size-3.5 text-primary shrink-0" />
                       {/if}
-                      <Badge variant={confidenceBadge(cand.confidence)} class="text-[9px] uppercase">
-                        {cand.confidence}
+                      <Badge variant={CONFIDENCE_BADGE[candidate.confidence]} class="text-[9px] uppercase">
+                        {candidate.confidence}
                       </Badge>
-                      <span class="font-mono">{cand.invoice.number}</span>
-                      <span class="text-muted-foreground truncate">· {cand.invoice.customerName}</span>
+                      <span class="font-mono">{candidate.invoice.number}</span>
+                      <span class="text-muted-foreground truncate">· {candidate.invoice.customerName}</span>
                       <span class="ml-auto text-muted-foreground tabular-nums">
-                        {centsToEur(Math.abs(cand.invoice.total) - (cand.invoice.amountPaidCent ?? 0))} offen
+                        {centsToEur(openBalance(candidate.invoice))} offen
                       </span>
                     </button>
                   {/each}
@@ -248,8 +232,8 @@
   </Card>
 
   <div class="mt-6 flex items-center gap-3">
-    <Button onclick={applyAll} disabled={applying || willApplyCount === 0}>
-      {applying ? "Wende an…" : `${willApplyCount} Zahlung${willApplyCount === 1 ? "" : "en"} zuordnen`}
+    <Button onclick={() => applyAll(format)} disabled={applying || willApplyCount === 0}>
+      {applying ? "Wende an…" : `${willApplyCount} ${pluralize(willApplyCount, "Zahlung", "Zahlungen")} zuordnen`}
     </Button>
     <p class="text-xs text-muted-foreground">
       Nur markierte Buchungen werden als Zahlungen erfasst — die Rechnung wird automatisch auf

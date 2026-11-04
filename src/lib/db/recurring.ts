@@ -1,11 +1,20 @@
-import { execute, select } from "./client";
-import { createInvoice } from "./invoices";
+import { execute, insert, select } from "./client";
+import { createInvoice, type SupplyKind } from "./invoices";
 import type {
-  InvoiceItem,
   RecurringInterval,
   RecurringInvoice,
   RecurringInvoiceItem,
 } from "./schema";
+import { addDaysUnix, nowUnix } from "$lib/utils/date";
+
+const DUE_SOON_DAYS = 7;
+const UNKNOWN_CUSTOMER_NAME = "—";
+
+const MONTHS_PER_INTERVAL: Record<RecurringInterval, number> = {
+  monthly: 1,
+  quarterly: 3,
+  yearly: 12,
+};
 
 // ----- Row types -----
 
@@ -19,6 +28,7 @@ type RecurringRow = {
   last_generated_at: number | null;
   payment_terms_days: number;
   is_reverse_charge: number;
+  supply_kind: string;
   notes: string | null;
   payment_terms: string | null;
   active: number;
@@ -40,7 +50,7 @@ type RecurringItemRow = {
   line_period_end: number | null;
 };
 
-function mapRecurring(r: RecurringRow): RecurringInvoice {
+export function mapRecurring(r: RecurringRow): RecurringInvoice {
   return {
     id: r.id,
     name: r.name,
@@ -51,6 +61,7 @@ function mapRecurring(r: RecurringRow): RecurringInvoice {
     lastGeneratedAt: r.last_generated_at,
     paymentTermsDays: r.payment_terms_days,
     isReverseCharge: r.is_reverse_charge === 1,
+    supplyKind: r.supply_kind as RecurringInvoice["supplyKind"],
     notes: r.notes,
     paymentTerms: r.payment_terms,
     active: r.active === 1,
@@ -77,19 +88,23 @@ function mapRecurringItem(r: RecurringItemRow): RecurringInvoiceItem {
 
 // ----- Date math -----
 
-export function addInterval(unixSeconds: number, interval: RecurringInterval): number {
+function daysInMonth(year: number, month: number): number {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+/**
+ * Advances by one interval, landing on `anchorDay` of the target month or on
+ * its last day when the month is shorter (31 Jan + 1 month = 28/29 Feb, not 3 Mar).
+ */
+export function addInterval(
+  unixSeconds: number,
+  interval: RecurringInterval,
+  anchorDay = new Date(unixSeconds * 1000).getDate(),
+): number {
   const d = new Date(unixSeconds * 1000);
-  switch (interval) {
-    case "monthly":
-      d.setMonth(d.getMonth() + 1);
-      break;
-    case "quarterly":
-      d.setMonth(d.getMonth() + 3);
-      break;
-    case "yearly":
-      d.setFullYear(d.getFullYear() + 1);
-      break;
-  }
+  d.setDate(1);
+  d.setMonth(d.getMonth() + MONTHS_PER_INTERVAL[interval]);
+  d.setDate(Math.min(anchorDay, daysInMonth(d.getFullYear(), d.getMonth())));
   return Math.floor(d.getTime() / 1000);
 }
 
@@ -113,6 +128,7 @@ export type RecurringFormInput = {
   startDate: number;
   paymentTermsDays: number;
   isReverseCharge: boolean;
+  supplyKind: SupplyKind;
   notes: string | null;
   paymentTerms: string | null;
   active: boolean;
@@ -123,17 +139,29 @@ export type RecurringFormInput = {
 
 export type RecurringListRow = RecurringInvoice & { customerName: string };
 
-export async function listRecurring(): Promise<RecurringListRow[]> {
-  const rows = await select<RecurringRow & { customer_name: string }>(
+type RecurringListQueryRow = RecurringRow & { customer_name: string | null };
+
+async function selectRecurringRows(
+  whereClause: string,
+  ordering: string,
+  binds: unknown[] = [],
+): Promise<RecurringListRow[]> {
+  const rows = await select<RecurringListQueryRow>(
     `SELECT r.*, c.name AS customer_name
      FROM recurring_invoices r
      LEFT JOIN customers c ON c.id = r.customer_id
-     ORDER BY r.active DESC, r.next_due_date ASC, r.id ASC`,
+     ${whereClause}
+     ORDER BY ${ordering}`,
+    binds,
   );
   return rows.map((r) => ({
     ...mapRecurring(r),
-    customerName: r.customer_name ?? "—",
+    customerName: r.customer_name ?? UNKNOWN_CUSTOMER_NAME,
   }));
+}
+
+export function listRecurring(): Promise<RecurringListRow[]> {
+  return selectRecurringRows("", "r.active DESC, r.next_due_date ASC, r.id ASC");
 }
 
 export async function getRecurring(
@@ -154,22 +182,13 @@ export async function getRecurring(
   };
 }
 
-export async function dueRecurring(
-  withinSeconds = 7 * 24 * 3600,
-): Promise<RecurringListRow[]> {
-  const threshold = Math.floor(Date.now() / 1000) + withinSeconds;
-  const rows = await select<RecurringRow & { customer_name: string }>(
-    `SELECT r.*, c.name AS customer_name
-     FROM recurring_invoices r
-     LEFT JOIN customers c ON c.id = r.customer_id
-     WHERE r.active = 1 AND r.next_due_date <= ?
-     ORDER BY r.next_due_date ASC, r.id ASC`,
+export function dueRecurring(): Promise<RecurringListRow[]> {
+  const threshold = addDaysUnix(nowUnix(), DUE_SOON_DAYS);
+  return selectRecurringRows(
+    "WHERE r.active = 1 AND r.next_due_date <= ?",
+    "r.next_due_date ASC, r.id ASC",
     [threshold],
   );
-  return rows.map((r) => ({
-    ...mapRecurring(r),
-    customerName: r.customer_name ?? "—",
-  }));
 }
 
 // ----- Mutations -----
@@ -205,11 +224,11 @@ async function writeRecurringItems(
 }
 
 export async function createRecurring(input: RecurringFormInput): Promise<number> {
-  const res = await execute(
+  const id = await insert(
     `INSERT INTO recurring_invoices
       (name, customer_id, interval, start_date, next_due_date, payment_terms_days,
-       is_reverse_charge, notes, payment_terms, active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       is_reverse_charge, supply_kind, notes, payment_terms, active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.name,
       input.customerId,
@@ -218,12 +237,12 @@ export async function createRecurring(input: RecurringFormInput): Promise<number
       input.startDate,
       input.paymentTermsDays,
       input.isReverseCharge ? 1 : 0,
+      input.supplyKind,
       input.notes,
       input.paymentTerms,
       input.active ? 1 : 0,
     ],
   );
-  const id = Number(res.lastInsertId ?? 0);
   await writeRecurringItems(id, input.items);
   return id;
 }
@@ -235,7 +254,7 @@ export async function updateRecurring(
   await execute(
     `UPDATE recurring_invoices SET
       name = ?, customer_id = ?, interval = ?, start_date = ?,
-      payment_terms_days = ?, is_reverse_charge = ?,
+      payment_terms_days = ?, is_reverse_charge = ?, supply_kind = ?,
       notes = ?, payment_terms = ?, active = ?, updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -245,6 +264,7 @@ export async function updateRecurring(
       input.startDate,
       input.paymentTermsDays,
       input.isReverseCharge ? 1 : 0,
+      input.supplyKind,
       input.notes,
       input.paymentTerms,
       input.active ? 1 : 0,
@@ -281,31 +301,23 @@ export async function generateInvoiceFromRecurring(
 ): Promise<number> {
   const tmpl = await getRecurring(id);
   if (!tmpl) throw new Error(`Vorlage ${id} nicht gefunden.`);
+  const { recurring } = tmpl;
 
-  const now = Math.floor(Date.now() / 1000);
-  const dueDate = now + tmpl.recurring.paymentTermsDays * 24 * 3600;
-
+  const now = nowUnix();
   const invoiceId = await createInvoice({
-    customerId: tmpl.recurring.customerId,
+    customerId: recurring.customerId,
     issueDate: now,
     deliveryDate: null,
-    dueDate,
-    notes: tmpl.recurring.notes,
-    paymentTerms: tmpl.recurring.paymentTerms,
-    reverseChargeType: tmpl.recurring.isReverseCharge ? "intra_eu" : "none",
-    items: tmpl.items.map((it) => ({
-      description: it.description,
-      quantity: it.quantity,
-      unit: it.unit,
-      unitPrice: it.unitPrice,
-      vatRate: it.vatRate,
-      longDescription: it.longDescription,
-      linePeriodStart: it.linePeriodStart,
-      linePeriodEnd: it.linePeriodEnd,
-    })),
+    dueDate: addDaysUnix(now, recurring.paymentTermsDays),
+    notes: recurring.notes,
+    paymentTerms: recurring.paymentTerms,
+    reverseChargeType: recurring.isReverseCharge ? "intra_eu" : "none",
+    supplyKind: recurring.supplyKind,
+    items: tmpl.items.map(toItemInput),
   });
 
-  const nextDue = addInterval(tmpl.recurring.nextDueDate, tmpl.recurring.interval);
+  const startDay = new Date(recurring.startDate * 1000).getDate();
+  const nextDue = addInterval(recurring.nextDueDate, recurring.interval, startDay);
   await execute(
     `UPDATE recurring_invoices SET
       last_generated_at = ?, next_due_date = ?, updated_at = unixepoch()
@@ -315,26 +327,8 @@ export async function generateInvoiceFromRecurring(
   return invoiceId;
 }
 
-// ----- Snapshot helpers for the editor -----
-
-/**
- * Best-effort: when the user wants "make a template out of this invoice",
- * we mirror its items into a fresh recurring template input shape.
- */
-export function templateInputFromItems(
-  items: Pick<
-    InvoiceItem,
-    | "description"
-    | "quantity"
-    | "unit"
-    | "unitPrice"
-    | "vatRate"
-    | "longDescription"
-    | "linePeriodStart"
-    | "linePeriodEnd"
-  >[],
-): RecurringItemInput[] {
-  return items.map((it) => ({
+function toItemInput(it: RecurringInvoiceItem): RecurringItemInput {
+  return {
     description: it.description,
     quantity: it.quantity,
     unit: it.unit,
@@ -343,5 +337,5 @@ export function templateInputFromItems(
     longDescription: it.longDescription,
     linePeriodStart: it.linePeriodStart,
     linePeriodEnd: it.linePeriodEnd,
-  }));
+  };
 }

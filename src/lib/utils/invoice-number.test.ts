@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatInvoiceNumber } from "./invoice-number";
+import { displayInvoiceNumber, draftPlaceholder, formatInvoiceNumber, isDraftNumber } from "./invoice-number";
 
 const D = new Date(2026, 4, 17); // May 17, 2026
 
@@ -52,5 +52,25 @@ describe("formatInvoiceNumber", () => {
 
   it("leaves unknown placeholders untouched", () => {
     expect(formatInvoiceNumber("RE-{ZZZ}-{NNNN}", 1, D)).toBe("RE-{ZZZ}-0001");
+  });
+});
+
+describe("draft numbers", () => {
+  it("recognizes the DRAFT- placeholder", () => {
+    expect(isDraftNumber("DRAFT-abcdef")).toBe(true);
+    expect(isDraftNumber("RE-2026-0001")).toBe(false);
+    expect(isDraftNumber(null)).toBe(false);
+  });
+
+  it("generates distinct placeholders that are recognized as drafts", () => {
+    const [a, b] = [draftPlaceholder(), draftPlaceholder()];
+    expect(isDraftNumber(a)).toBe(true);
+    expect(a).not.toBe(b);
+  });
+
+  it("shows only drafts as 'Entwurf #<4 chars>'", () => {
+    expect(displayInvoiceNumber({ number: "DRAFT-1a2b3c4d5e", status: "draft" })).toBe("Entwurf #1a2b");
+    expect(displayInvoiceNumber({ number: "DRAFT-1a2b3c4d5e", status: "sent" })).toBe("DRAFT-1a2b3c4d5e");
+    expect(displayInvoiceNumber({ number: "RE-2026-0001", status: "draft" })).toBe("RE-2026-0001");
   });
 });
