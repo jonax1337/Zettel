@@ -7,6 +7,7 @@ Scripts, Cron). Nur Python-stdlib, keine Abhängigkeiten.
 
 Wie die App (`src-tauri/src/tenants.rs`): `sandbox.flag` → Sandbox-DB,
 sonst aktiver Tenant aus `tenants.json`, sonst Standard-`zettel.db`.
+Unter Linux liegen die eingebauten DBs in `~/.config/digital.laux.zettel/`, `sandbox.flag` und `tenants.json` in `~/.local/share/digital.laux.zettel/`.
 
 **Nicht parallel zur laufenden App schreiben** (SQLite single-writer).
 Lesende Befehle sind unproblematisch.

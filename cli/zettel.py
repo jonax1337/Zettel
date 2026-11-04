@@ -13,6 +13,8 @@ DB-Auswahl folgt derselben Quelle der Wahrheit wie die App:
   sandbox.flag vorhanden  -> zettel-sandbox.db
   sonst aktiver Tenant    -> dessen Pfad aus tenants.json
   sonst                   -> zettel.db (Standard)
+Linux: the built-in DBs live in ~/.config/digital.laux.zettel/, sandbox.flag and
+tenants.json in ~/.local/share/digital.laux.zettel/ (Windows/macOS: one folder).
 
 Nur stdlib — bewusst ohne externe Abhängigkeiten.
 
@@ -70,11 +72,19 @@ def app_data_dir() -> Path:
     return base / APP_IDENTIFIER
 
 
+def app_config_dir() -> Path:
+    """Where tauri-plugin-sql puts relative DB paths (app_config_dir). Differs from app_data_dir on Linux only."""
+    if sys.platform in ("win32", "darwin"):
+        return app_data_dir()
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / APP_IDENTIFIER
+
+
 def resolve_db_path() -> Path:
-    """Aktive DB: Sandbox > aktiver Tenant > Standard. Wie resolve_active_url()."""
+    """Active DB: sandbox > active tenant > default. Like resolve_active_url().
+    The flag file and tenants.json live in the data dir, the built-in DBs in the config dir."""
     d = app_data_dir()
     if (d / "sandbox.flag").exists():
-        return d / "zettel-sandbox.db"
+        return app_config_dir() / "zettel-sandbox.db"
     cfg_path = d / "tenants.json"
     if cfg_path.exists():
         try:
@@ -86,7 +96,7 @@ def resolve_db_path() -> Path:
                         return Path(t["path"])
         except (json.JSONDecodeError, OSError):
             pass
-    return d / "zettel.db"
+    return app_config_dir() / "zettel.db"
 
 
 @contextmanager
