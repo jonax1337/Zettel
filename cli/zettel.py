@@ -465,7 +465,7 @@ def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
     ).rowcount
     if claimed != 1:
         con.commit()
-        return fetch_invoice(con, invoice_id)["number"]
+        return number_issued_concurrently(con, invoice_id)
     final_number = inv["number"]
     if is_draft_number(final_number):
         con.execute(
@@ -483,6 +483,15 @@ def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
         con.execute("UPDATE invoices SET number = ? WHERE id = ?", (final_number, invoice_id))
     con.commit()
     return final_number
+
+
+def number_issued_concurrently(con, invoice_id: int) -> str:
+    """Spiegel von numberIssuedConcurrently(): ein anderer Prozess hat den Entwurf
+    beansprucht, aber noch keine echte Nummer vergeben."""
+    number = fetch_invoice(con, invoice_id)["number"]
+    if is_draft_number(number):
+        sys.exit("Die Rechnung wird gerade ausgestellt. Bitte gleich noch einmal versuchen.")
+    return number
 
 
 def safe_filename(s: str) -> str:

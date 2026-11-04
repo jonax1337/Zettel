@@ -251,6 +251,15 @@ class TestIssueInvoice:
         assert cli.issue_invoice(con, invoice_id) == "RE-2026-0007"
         assert con.execute("SELECT invoice_number_counter FROM settings").fetchone()[0] == 0
 
+    def test_lost_claim_returns_the_number_the_other_process_assigned(self, cli, con):
+        invoice_id = insert_invoice(con, status="sent", number="RE-2026-0008")
+        assert cli.number_issued_concurrently(con, invoice_id) == "RE-2026-0008"
+
+    def test_lost_claim_refuses_to_report_a_placeholder_as_the_number(self, cli, con):
+        invoice_id = insert_invoice(con, status="sent", number=cli.draft_placeholder())
+        with pytest.raises(SystemExit, match="gerade ausgestellt"):
+            cli.number_issued_concurrently(con, invoice_id)
+
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "src" / "lib" / "db" / "migrations"
 
