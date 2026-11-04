@@ -11,7 +11,6 @@ import {
   canCreateCreditNote,
   canDeleteInvoice,
   canReopenInvoice,
-  isIssuedCreditNote,
 } from "./invoice-lifecycle";
 import { drawNextNumber } from "./numbering";
 import { loadSettings } from "./queries";
@@ -611,10 +610,9 @@ async function countPayments(invoiceId: number): Promise<number> {
 export async function reopenDraft(id: number): Promise<void> {
   const invoice = await findInvoice(id);
   if (!invoice) throw new Error(`Rechnung ${id} nicht gefunden.`);
-  const creditNote = await findCreditNoteFor(id);
   const facts = {
     paymentCount: await countPayments(id),
-    hasIssuedCreditNote: creditNote !== null && isIssuedCreditNote(creditNote),
+    hasCreditNote: (await findCreditNoteFor(id)) !== null,
   };
   if (!canReopenInvoice(invoice, facts)) {
     throw new Error(

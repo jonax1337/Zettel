@@ -38,7 +38,7 @@ describe("canCancelInvoice", () => {
 });
 
 describe("canReopenInvoice", () => {
-  const clean = { paymentCount: 0, hasIssuedCreditNote: false };
+  const clean = { paymentCount: 0, hasCreditNote: false };
 
   it("allows reopening a sent invoice without payments or credit note", () => {
     expect(canReopenInvoice({ number: REAL_NUMBER, status: "sent" }, clean)).toBe(true);
@@ -48,8 +48,8 @@ describe("canReopenInvoice", () => {
     expect(canReopenInvoice({ number: REAL_NUMBER, status: "sent" }, { ...clean, paymentCount: 1 })).toBe(false);
   });
 
-  it("forbids reopening an invoice with an issued credit note", () => {
-    const facts = { ...clean, hasIssuedCreditNote: true };
+  it("forbids reopening an invoice that has a credit note", () => {
+    const facts = { ...clean, hasCreditNote: true };
     expect(canReopenInvoice({ number: REAL_NUMBER, status: "sent" }, facts)).toBe(false);
   });
 
@@ -100,5 +100,12 @@ describe("credit note settlement", () => {
       creditNote("paid", null),
     ];
     expect([...invoiceIdsSettledByCreditNote(invoices)]).toEqual([1]);
+  });
+
+  it("settles the whole invoice even when the credit note refunds only part of it", () => {
+    const original = { id: 1, isCreditNote: false, status: "sent" as const, correctsInvoiceId: null, total: 10_000 };
+    const partialRefund = { ...creditNote("sent", 1), total: -2_500 };
+
+    expect(invoiceIdsSettledByCreditNote([original, partialRefund]).has(1)).toBe(true);
   });
 });

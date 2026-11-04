@@ -626,6 +626,7 @@ describe("reopenDraft", () => {
   it.each([
     ["with payments", invoiceRow({ status: "sent" }), 1, null],
     ["with an issued credit note", invoiceRow({ status: "sent" }), 0, issuedCreditNote],
+    ["with a draft credit note", invoiceRow({ status: "sent" }), 0, { ...issuedCreditNote, status: "draft" }],
     ["that is paid", invoiceRow({ status: "paid" }), 0, null],
     ["that is cancelled and numbered", invoiceRow({ status: "cancelled" }), 0, null],
   ])("refuses an invoice %s", async (_label, invoice, payments, creditNote) => {

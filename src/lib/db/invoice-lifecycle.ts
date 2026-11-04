@@ -22,14 +22,16 @@ export function canCancelInvoice(invoice: LifecycleFacts): boolean {
 
 /**
  * A sent invoice may go back to draft (keeping its number) as long as nothing
- * has been booked against it; a discarded draft may be picked up again.
+ * has been booked against it; a discarded draft may be picked up again. Any
+ * credit note that is not cancelled blocks it, a draft one too: it mirrors the
+ * invoice's current items and would no longer match after an edit.
  */
 export function canReopenInvoice(
   invoice: LifecycleFacts,
-  facts: { paymentCount: number; hasIssuedCreditNote: boolean },
+  facts: { paymentCount: number; hasCreditNote: boolean },
 ): boolean {
   if (invoice.status === "cancelled") return isDraftNumber(invoice.number);
-  return invoice.status === "sent" && facts.paymentCount === 0 && !facts.hasIssuedCreditNote;
+  return invoice.status === "sent" && facts.paymentCount === 0 && !facts.hasCreditNote;
 }
 
 export function canCreateCreditNote(invoice: Pick<Invoice, "status" | "isCreditNote">): boolean {
@@ -49,6 +51,10 @@ export function isIssuedCreditNote(invoice: CreditNoteFacts): boolean {
  * Invoices offset by an issued credit note. They keep their own status (KPIs
  * net out invoice and credit note) but are no longer due: not dunnable, not
  * overdue, not matched against bank bookings.
+ *
+ * Amounts are not compared: a credit note whose quantities were reduced for a
+ * partial refund settles the whole invoice as well, so a remainder the customer
+ * still owes is no longer tracked as open.
  */
 export function invoiceIdsSettledByCreditNote(invoices: CreditNoteFacts[]): Set<number> {
   const ids = new Set<number>();
