@@ -8,7 +8,7 @@
     type RecurringFormInput,
   } from "$lib/db/recurring";
   import { computeTotals, getInvoice, type SupplyKind } from "$lib/db/invoices";
-  import type { CatalogItem, Customer, RecurringInterval, Settings } from "$lib/db/schema";
+  import type { Customer, RecurringInterval, Settings } from "$lib/db/schema";
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import {
     Button,
@@ -17,7 +17,6 @@
     Label,
     Card,
     CardContent,
-    CatalogPicker,
     DatePicker,
     Select,
     Checkbox,
@@ -25,19 +24,19 @@
   } from "$lib/ui";
   import BackLink from "./parts/entity/BackLink.svelte";
   import { fetchEditTarget, parseId } from "./parts/entity/edit-target";
-  import { centsToPriceText } from "./parts/entity/format";
   import { RECURRING_INTERVAL_ITEMS } from "./parts/entity/recurring";
   import { vatRateForNewItem } from "./parts/entity/vat";
   import SupplyKindField from "./invoice/SupplyKindField.svelte";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
-  import RecurringItemsTable from "./parts/recurring/RecurringItemsTable.svelte";
+  import LineItemsEditor from "./invoice/LineItemsEditor.svelte";
   import {
-    emptyItemRow,
-    itemInputFromRow,
-    itemRowFromStored,
-    paymentTermDays,
-    type RecurringItemRow,
-  } from "./parts/recurring/recurring-items";
+    lineItemFromStored,
+    newLineItem,
+    toLineItemInputs,
+    zeroVatRates,
+    type LineItemForm,
+  } from "./invoice/line-items";
+  import { paymentTermDays } from "./parts/recurring/payment-term-days";
 
   type Props = {
     mode: "new" | "edit";
@@ -73,9 +72,7 @@
   let active = $state(true);
   let notes = $state("");
   let paymentTerms = $state("");
-  let items = $state<RecurringItemRow[]>([emptyItemRow(0)]);
-
-  let catalogPickerOpen = $state(false);
+  let items = $state<LineItemForm[]>([newLineItem()]);
 
   const selectedCustomer = $derived(
     customerIdStr ? customers.find((c) => String(c.id) === customerIdStr) ?? null : null,
@@ -100,8 +97,7 @@
   });
 
   $effect(() => {
-    if (!isReverseCharge) return;
-    for (const item of items) item.vatRate = 0;
+    if (isReverseCharge) zeroVatRates(items);
   });
 
   $effect(() => {
@@ -134,7 +130,7 @@
       invoice.dueDate,
       loadedSettings.defaultPaymentTermsDays,
     );
-    if (source.items.length > 0) items = source.items.map(itemRowFromStored);
+    if (source.items.length > 0) items = source.items.map(lineItemFromStored);
     startDateIso = "";
   }
 
@@ -164,24 +160,7 @@
     active = recurring.active;
     notes = recurring.notes ?? "";
     paymentTerms = recurring.paymentTerms ?? "";
-    items = storedItems.map(itemRowFromStored);
-  }
-
-  function addItem() {
-    items = [...items, emptyItemRow(vatRateForNewItem(!!settings?.isKleinunternehmer))];
-  }
-
-  function addFromCatalog(catalogItem: CatalogItem) {
-    const row = emptyItemRow(vatExempt ? 0 : catalogItem.defaultVatRate);
-    row.description = catalogItem.name;
-    row.unit = catalogItem.unit;
-    row.unitPrice = catalogItem.defaultUnitPrice;
-    row.priceText = centsToPriceText(catalogItem.defaultUnitPrice);
-    if (catalogItem.descriptionDe) {
-      row.longDescription = catalogItem.descriptionDe;
-      row.showDetail = true;
-    }
-    items = [...items, row];
+    items = storedItems.map(lineItemFromStored);
   }
 
   function buildInput(customerId: number): RecurringFormInput {
@@ -196,7 +175,7 @@
       notes: notes.trim() || null,
       paymentTerms: paymentTerms.trim() || null,
       active,
-      items: items.map(itemInputFromRow),
+      items: toLineItemInputs(items),
     };
   }
 
@@ -302,12 +281,13 @@
       </CardContent>
     </Card>
 
-    <RecurringItemsTable
+    <LineItemsEditor
       bind:items
+      currency="EUR"
       {vatExempt}
-      totalCents={totals.total}
-      onAdd={addItem}
-      onAddFromCatalog={() => (catalogPickerOpen = true)}
+      {totals}
+      language="de"
+      totalLabel="Voraussichtlicher Gesamtbetrag pro Erzeugung"
     />
 
     <Card>
@@ -335,6 +315,4 @@
       {/if}
     </div>
   </form>
-
-  <CatalogPicker bind:open={catalogPickerOpen} onPick={addFromCatalog} />
 {/if}
