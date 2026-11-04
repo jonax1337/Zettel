@@ -20,7 +20,12 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 - **Doppelklick** auf Ausstellen, „Jetzt erzeugen“ oder „In Rechnung umwandeln“ erzeugt keine doppelten Rechnungen oder Nummern mehr.
 - **ZUGFeRD-Import** von Eingangsrechnungen übernimmt Positionssummen statt gerundeter Einzelpreise (richtige Vorsteuer).
 - **Steuern:** Skonto-, Gewerbesteuer- und UStVA-Rundung korrigiert (UStVA-Bemessungsgrundlagen in vollen Euro), ESt-Tarif 2024 rückwirkend angepasst (Grundfreibetrag 11.784 €), DATEV-Export behält das Vorzeichen negativer Buchungsgruppen und lehnt Zeiträume über zwei Wirtschaftsjahre ab.
+- **DATEV-Erlöskonten bei Reverse Charge** nach Typ und Art des Umsatzes: SKR03 8125/8336/8120/8338, SKR04 4125/4336/4120/4338 (ig. Lieferung / EU-Leistung / Ausfuhr / Drittland-Leistung) (#134).
+- **Skonto** wird kaufmännisch gerundet statt abgerundet (#136).
 - **EPC-QR-Code** fordert nach Teilzahlungen nur den offenen Betrag.
+- **Teil-Stornos** rechnen betragsgenau: offen ist Rechnungsbetrag − Zahlungen − Stornorechnungen. Ein verbleibender Rest bleibt mahnbar, im Bank-Abgleich und in den offenen Posten (#131).
+- **Angebote mit Reverse Charge Drittland** kündigen eine steuerfreie Ausfuhrlieferung bzw. eine Leistung ohne deutsche Umsatzsteuer an statt des EU-Hinweises (#135).
+- **Mahngebühr und Zinsen** gelten in der Rechnungswährung; die Standardgebühr aus den Einstellungen wird per Kurs umgerechnet, das PDF zeigt eine einheitliche Summe (#132).
 - **Kundenadresse** auf Entwürfen wird beim Speichern und Ausstellen aktualisiert.
 - Kunden und Lieferanten mit Belegen lassen sich nicht mehr löschen.
 - Sidecar und Validator brechen nach einem Timeout ab, statt ewig zu hängen.
@@ -37,6 +42,10 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 - **Onboarding** als echter Dialog; Kleinunternehmer muss bewusst gewählt werden.
 - Positions-Editor, Formular-Bausteine, Listen- und Detailseiten sowie Datenbank-Abfragen zusammengeführt; PDF-Vorlagen teilen sich Bausteine.
 - `tauri-plugin-shell` und `@lucide/svelte` entfernt.
+
+### Hinweis zum Update
+- **Teil-Stornos aus früheren Versionen:** Rechnungen, die nur teilweise per Stornorechnung gutgeschrieben wurden, galten bisher als komplett erledigt. Nach dem Update erscheint der Restbetrag wieder in offenen Posten, Mahnungen und im Bank-Abgleich. Wurde der Rest bewusst abgeschrieben, die Rechnung mit einer weiteren Stornorechnung über den Restbetrag ausgleichen.
+- **DATEV:** Bereits exportierte Reverse-Charge-Buchungen in SKR04 lagen auf 4125, EU-Leistungen gehören auf 4336. Betroffene Zeiträume ggf. mit dem Steuerberater abstimmen.
 
 ### Migration
 - **Migration `0027_v0.23_lifecycle`**, Schema `user_version = 28`: erlaubt den Rechnungsstatus `partial` (Änderung des CHECK ohne Tabellen-Neuaufbau), repariert hängengebliebene Teilzahlungen, ergänzt `reverse_charge_type` für Angebote und wiederkehrende Rechnungen sowie `bank_transaction_id` für Zahlungen.
