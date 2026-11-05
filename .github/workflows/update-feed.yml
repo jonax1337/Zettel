@@ -39,8 +39,16 @@ jobs:
         run: |
           mkdir -p candidate current
           gh release download "$TAG" --pattern latest.json --dir candidate
-          gh release download "$FEED_TAG" --pattern latest.json --dir current 2>/dev/null \
-            || echo "No beta feed yet — it will be created."
+          # Only a missing release counts as "no feed yet". Any other failure
+          # must abort, or a stale candidate would overwrite a newer feed.
+          if gh release view "$FEED_TAG" >/dev/null 2>view.err; then
+            gh release download "$FEED_TAG" --pattern latest.json --dir current
+          elif grep -qi "not found" view.err; then
+            echo "No beta feed yet — it will be created."
+          else
+            cat view.err >&2
+            exit 1
+          fi
 
       - name: Decide whether the candidate is newer
         id: compare

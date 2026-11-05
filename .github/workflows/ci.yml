@@ -1,16 +1,11 @@
 name: CI
 
+# No paths-ignore: a required check that never starts blocks docs-only PRs.
 on:
   push:
     branches: [main, 'release/**']
-    paths-ignore: &docs-only
-      - '**/*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE.md'
-      - 'LICENSE'
   pull_request:
     branches: [main, 'release/**']
-    paths-ignore: *docs-only
   workflow_dispatch:
 
 permissions:

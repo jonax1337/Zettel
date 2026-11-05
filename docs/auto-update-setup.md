@@ -82,6 +82,12 @@ The choice lives in `localStorage` (`zettel.update_channel`). Without a stored c
 3. `build.yml` checks that the tag matches all manifests and lies on `release/vX.Y`, builds (Windows: NSIS only — WiX/MSI rejects non-numeric pre-release versions) and creates a **draft pre-release** that is never marked "latest".
 4. Publish the draft → `update-feed.yml` moves the beta feed → beta users get the RC.
 
+Stable tags must sit on `main`. As a second line of defence, the stable channel ignores any feed entry with a pre-release version, so an RC draft published without the pre-release flag still never reaches stable installs.
+
+Caveats:
+- `update-feed.yml` runs from the tagged commit's copy of the workflow, so it only fires for tags that contain it (v0.23.0-rc.1 onward). `workflow_dispatch` repair is only offered once the file is on `main`. If the workflow fails, beta users miss that release until it is re-run.
+- Linux `.deb`: dpkg reads `0.23.0-rc.1` as Debian revision `rc.1` and sorts it *above* `0.23.0`, so installing the stable `.deb` over an RC needs `apt install --allow-downgrades`. Linux has no auto-update entry, so this only affects manual installs.
+
 ## Don'ts
 
 - **Never** commit the private key or check the pubkey replacement into a branch that ships before the secrets are in place.

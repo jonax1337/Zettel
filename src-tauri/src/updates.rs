@@ -39,9 +39,18 @@ pub async fn check_for_update(
     channel: UpdateChannel,
 ) -> Result<Option<UpdateMetadata>, String> {
     let mut builder = webview.updater_builder();
-    if channel == UpdateChannel::Beta {
-        let feed = Url::parse(BETA_FEED_URL).map_err(|e| e.to_string())?;
-        builder = builder.endpoints(vec![feed]).map_err(|e| e.to_string())?;
+    match channel {
+        UpdateChannel::Beta => {
+            let feed = Url::parse(BETA_FEED_URL).map_err(|e| e.to_string())?;
+            builder = builder.endpoints(vec![feed]).map_err(|e| e.to_string())?;
+        }
+        // Guard against an RC draft published without the pre-release flag:
+        // it would become releases/latest and reach every stable install.
+        UpdateChannel::Stable => {
+            builder = builder.version_comparator(|current, remote| {
+                remote.version.pre.is_empty() && remote.version > current
+            });
+        }
     }
     let updater = builder.build().map_err(|e| e.to_string())?;
     let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
