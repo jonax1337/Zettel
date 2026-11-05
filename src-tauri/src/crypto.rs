@@ -141,7 +141,10 @@ mod tests {
         let mut pw2 = String::from("same-password");
         let a = encrypt(b"same plaintext", &mut pw1).unwrap();
         let b = encrypt(b"same plaintext", &mut pw2).unwrap();
-        assert_ne!(a, b, "salt/nonce randomness must produce distinct ciphertexts");
+        assert_ne!(
+            a, b,
+            "salt/nonce randomness must produce distinct ciphertexts"
+        );
     }
 
     #[test]

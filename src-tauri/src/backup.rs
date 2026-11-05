@@ -165,7 +165,11 @@ impl StagedRestore {
             .unwrap_or_else(|| tenants::active_db_file(data_dir, config_dir))
     }
 
-    fn resolve_documents_root(&self, data_dir: &Path, documents_dir: Option<&Path>) -> Option<PathBuf> {
+    fn resolve_documents_root(
+        &self,
+        data_dir: &Path,
+        documents_dir: Option<&Path>,
+    ) -> Option<PathBuf> {
         self.documents_root.clone().or_else(|| {
             documents_dir.map(|documents| tenants::active_documents_root(data_dir, documents))
         })
@@ -314,8 +318,10 @@ fn write_backup_zip(
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     let manifest_json = serde_json::to_string_pretty(manifest).map_err(|e| e.to_string())?;
-    zip.start_file(MANIFEST_NAME, options).map_err(|e| e.to_string())?;
-    zip.write_all(manifest_json.as_bytes()).map_err(|e| e.to_string())?;
+    zip.start_file(MANIFEST_NAME, options)
+        .map_err(|e| e.to_string())?;
+    zip.write_all(manifest_json.as_bytes())
+        .map_err(|e| e.to_string())?;
 
     add_file(&mut zip, DB_ENTRY, snapshot, options)?;
     for (entry_name, path) in backup_pdf_entries(snapshot, documents_root)? {
@@ -375,9 +381,15 @@ fn backup_pdf_entries(
 /// unreadable one is skipped instead of failing the whole backup.
 fn readable_versions_outside_root(pdf: &Path) -> Vec<PathBuf> {
     let versions = match pdf_versions(pdf) {
-        Ok(versions) => versions.into_iter().map(|v| PathBuf::from(v.path)).collect(),
+        Ok(versions) => versions
+            .into_iter()
+            .map(|v| PathBuf::from(v.path))
+            .collect(),
         Err(e) => {
-            eprintln!("[backup] archived versions of {} unreadable, skipped: {e}", pdf.display());
+            eprintln!(
+                "[backup] archived versions of {} unreadable, skipped: {e}",
+                pdf.display()
+            );
             vec![pdf.to_path_buf()]
         }
     };
@@ -439,7 +451,10 @@ fn referenced_pdfs(snapshot: &Path) -> Result<Vec<StoredPdf>, String> {
 fn stored_pdfs(conn: &rusqlite::Connection) -> Result<Vec<StoredPdf>, String> {
     let mut pdfs = Vec::new();
     for (table, dir) in PDF_SOURCES {
-        if !table_columns(conn, "main", table)?.iter().any(|c| c == "pdf_path") {
+        if !table_columns(conn, "main", table)?
+            .iter()
+            .any(|c| c == "pdf_path")
+        {
             continue;
         }
         let rows = conn
@@ -448,7 +463,9 @@ fn stored_pdfs(conn: &rusqlite::Connection) -> Result<Vec<StoredPdf>, String> {
             ))
             .and_then(|mut statement| {
                 statement
-                    .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?
+                    .query_map([], |row| {
+                        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                    })?
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(|e| format!("{table}.pdf_path: {e}"))?;
@@ -510,7 +527,8 @@ fn add_file(
     source: &Path,
     options: SimpleFileOptions,
 ) -> Result<(), String> {
-    zip.start_file(entry_name, options).map_err(|e| e.to_string())?;
+    zip.start_file(entry_name, options)
+        .map_err(|e| e.to_string())?;
     let mut file = File::open(source).map_err(|e| format!("{}: {e}", source.display()))?;
     io::copy(&mut file, zip).map_err(|e| format!("{}: {e}", source.display()))?;
     Ok(())
@@ -599,7 +617,9 @@ pub async fn stage_restore(
     } else {
         None
     };
-    let zip_path = decrypted.as_ref().map_or(source.as_path(), |tmp| tmp.0.as_path());
+    let zip_path = decrypted
+        .as_ref()
+        .map_or(source.as_path(), |tmp| tmp.0.as_path());
 
     let pending_root = data_dir.join(PENDING_DIR);
     if pending_root.exists() {
@@ -668,7 +688,9 @@ fn extract_backup(zip_path: &Path, pending_root: &Path) -> Result<(), String> {
 
         if relative == Path::new(MANIFEST_NAME) {
             let mut content = String::new();
-            entry.read_to_string(&mut content).map_err(|e| e.to_string())?;
+            entry
+                .read_to_string(&mut content)
+                .map_err(|e| e.to_string())?;
             BackupManifest::parse_supported(&content)?;
             found_manifest = true;
             continue;
@@ -697,8 +719,11 @@ fn extract_backup(zip_path: &Path, pending_root: &Path) -> Result<(), String> {
 }
 
 fn read_staged_restore(data_dir: &Path) -> StagedRestore {
-    let assume_full =
-        StagedRestore { mode: RestoreMode::Full, target_db: None, documents_root: None };
+    let assume_full = StagedRestore {
+        mode: RestoreMode::Full,
+        target_db: None,
+        documents_root: None,
+    };
     let Ok(json) = fs::read_to_string(data_dir.join(RESTORE_MODE_FILE)) else {
         return assume_full;
     };
@@ -763,7 +788,10 @@ fn apply_pending_full_restore(data_dir: &Path, config_dir: &Path, documents_dir:
     let pending_db = pending_root.join(DB_ENTRY);
     if pending_db.is_file() {
         if let Err(e) = place_restored_db(&pending_db, &target) {
-            eprintln!("[backup] could not place restored DB at {}: {e}", target.display());
+            eprintln!(
+                "[backup] could not place restored DB at {}: {e}",
+                target.display()
+            );
         }
     }
     let documents_root = staged.resolve_documents_root(data_dir, documents_dir);
@@ -818,7 +846,11 @@ fn move_present_files(from: &[PathBuf], to: &[PathBuf]) -> Result<(), String> {
             for (source, destination) in moved {
                 let _ = fs::rename(destination, source);
             }
-            return Err(format!("{} → {}: {e}", source.display(), destination.display()));
+            return Err(format!(
+                "{} → {}: {e}",
+                source.display(),
+                destination.display()
+            ));
         }
         moved.push((source, destination));
     }
@@ -941,7 +973,9 @@ fn foreign_key_violations(
         .prepare("PRAGMA main.foreign_key_check")
         .map_err(|e| e.to_string())?;
     let violations = statement
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
         .map_err(|e| e.to_string())?
         .collect::<rusqlite::Result<_>>()
         .map_err(|e| e.to_string())?;
@@ -972,10 +1006,16 @@ fn ensure_no_new_dangling_references(
 }
 
 /// Document number counters in `schema.settings` as (column, value).
-fn number_counters(conn: &rusqlite::Connection, schema: &str) -> Result<Vec<(String, i64)>, String> {
+fn number_counters(
+    conn: &rusqlite::Connection,
+    schema: &str,
+) -> Result<Vec<(String, i64)>, String> {
     let columns = table_columns(conn, schema, "settings")?;
     let mut counters = Vec::new();
-    for column in columns.into_iter().filter(|c| c.ends_with(NUMBER_COUNTER_SUFFIX)) {
+    for column in columns
+        .into_iter()
+        .filter(|c| c.ends_with(NUMBER_COUNTER_SUFFIX))
+    {
         let value: Option<i64> = conn
             .query_row(
                 &format!("SELECT \"{column}\" FROM {schema}.settings WHERE id = ?1"),
@@ -1071,11 +1111,18 @@ mod tests {
     use rusqlite::Connection;
 
     fn all_tables() -> impl Iterator<Item = &'static str> {
-        CUSTOMER_TABLES.into_iter().chain(INVOICE_TABLES).chain(SETTINGS_TABLES)
+        CUSTOMER_TABLES
+            .into_iter()
+            .chain(INVOICE_TABLES)
+            .chain(SETTINGS_TABLES)
     }
 
     fn sections(customers: bool, invoices: bool, settings: bool) -> PartialRestoreSections {
-        PartialRestoreSections { customers, invoices, settings }
+        PartialRestoreSections {
+            customers,
+            invoices,
+            settings,
+        }
     }
 
     fn partial(sections: PartialRestoreSections) -> RestoreMode {
@@ -1085,7 +1132,8 @@ mod tests {
     /// DB at the current schema version, as a backup snapshot would be.
     fn open_current_db(path: &Path) -> Connection {
         let conn = Connection::open(path).unwrap();
-        conn.execute_batch(&format!("PRAGMA user_version = {CURRENT_SCHEMA};")).unwrap();
+        conn.execute_batch(&format!("PRAGMA user_version = {CURRENT_SCHEMA};"))
+            .unwrap();
         conn
     }
 
@@ -1137,14 +1185,23 @@ mod tests {
             for dir in [&data, &config] {
                 fs::create_dir_all(dir).unwrap();
             }
-            Self { root, data, config, documents }
+            Self {
+                root,
+                data,
+                config,
+                documents,
+            }
         }
 
         /// Writes what `stage_restore` leaves behind and returns the pending dir.
         fn stage(&self, mode: RestoreMode, target_db: Option<PathBuf>) -> PathBuf {
             let pending = self.data.join(PENDING_DIR);
             fs::create_dir_all(&pending).unwrap();
-            let staged = StagedRestore { mode, target_db, documents_root: None };
+            let staged = StagedRestore {
+                mode,
+                target_db,
+                documents_root: None,
+            };
             write_staged_restore(&self.data, &staged).unwrap();
             pending
         }
@@ -1159,7 +1216,9 @@ mod tests {
         );
         assert_eq!(
             RestoreMode::from_sections(Some(sections(true, false, true))),
-            RestoreMode::Partial { sections: sections(true, false, true) }
+            RestoreMode::Partial {
+                sections: sections(true, false, true)
+            }
         );
     }
 
@@ -1222,7 +1281,9 @@ mod tests {
 
         let payments: i64 = Connection::open(&live)
             .unwrap()
-            .query_row("SELECT COUNT(*) FROM invoice_payments", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM invoice_payments", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(payments, 0);
         assert_eq!(tag_of(&live, "invoices"), "backup");
@@ -1238,12 +1299,19 @@ mod tests {
                customer_id INTEGER NOT NULL REFERENCES customers(id));",
         )
         .unwrap();
-        for table in INVOICE_TABLES.into_iter().filter(|t| *t != "invoices").chain(SETTINGS_TABLES) {
-            conn.execute_batch(&format!("CREATE TABLE {table} (id INTEGER PRIMARY KEY, tag TEXT);"))
-                .unwrap();
+        for table in INVOICE_TABLES
+            .into_iter()
+            .filter(|t| *t != "invoices")
+            .chain(SETTINGS_TABLES)
+        {
+            conn.execute_batch(&format!(
+                "CREATE TABLE {table} (id INTEGER PRIMARY KEY, tag TEXT);"
+            ))
+            .unwrap();
         }
         for id in customer_ids {
-            conn.execute("INSERT INTO customers (id, tag) VALUES (?1, 'c')", [id]).unwrap();
+            conn.execute("INSERT INTO customers (id, tag) VALUES (?1, 'c')", [id])
+                .unwrap();
         }
         conn.execute(
             "INSERT INTO invoices (tag, customer_id) VALUES ('invoice', ?1)",
@@ -1316,7 +1384,9 @@ mod tests {
     fn invoice_counter_of(path: &Path) -> i64 {
         Connection::open(path)
             .unwrap()
-            .query_row("SELECT invoice_number_counter FROM settings", [], |row| row.get(0))
+            .query_row("SELECT invoice_number_counter FROM settings", [], |row| {
+                row.get(0)
+            })
             .unwrap()
     }
 
@@ -1388,7 +1458,9 @@ mod tests {
 
         let vat_accounting: String = Connection::open(&live)
             .unwrap()
-            .query_row("SELECT \"vat accounting\" FROM settings", [], |row| row.get(0))
+            .query_row("SELECT \"vat accounting\" FROM settings", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(tag_of(&live, "settings"), "backup");
         assert_eq!(vat_accounting, "accrual");
@@ -1455,16 +1527,24 @@ mod tests {
         let pending = dir.path().join("pending");
         extract_backup(&zip_path, &pending).unwrap();
 
-        assert_eq!(fs::read(pending.join(DB_ENTRY)).unwrap(), fs::read(&snapshot).unwrap());
-        assert_eq!(fs::read(pending.join("Rechnungen/2026/RE-1.pdf")).unwrap(), b"pdf-bytes");
+        assert_eq!(
+            fs::read(pending.join(DB_ENTRY)).unwrap(),
+            fs::read(&snapshot).unwrap()
+        );
+        assert_eq!(
+            fs::read(pending.join("Rechnungen/2026/RE-1.pdf")).unwrap(),
+            b"pdf-bytes"
+        );
     }
 
     /// Snapshot DB whose tables reference the given PDFs as (table, pdf_path).
     fn create_snapshot(path: &Path, pdf_paths: &[(&str, &Path)]) {
         let conn = open_current_db(path);
         for (table, _) in PDF_SOURCES {
-            conn.execute_batch(&format!("CREATE TABLE {table} (id INTEGER PRIMARY KEY, pdf_path TEXT);"))
-                .unwrap();
+            conn.execute_batch(&format!(
+                "CREATE TABLE {table} (id INTEGER PRIMARY KEY, pdf_path TEXT);"
+            ))
+            .unwrap();
         }
         for (table, pdf) in pdf_paths {
             conn.execute(
@@ -1510,7 +1590,10 @@ mod tests {
         let restored = dir.path().join("restored");
         copy_pdf_dirs(&pending, &restored).unwrap();
 
-        assert_eq!(fs::read(restored.join("Mahnungen/MA-1.pdf")).unwrap(), b"Mahnungen");
+        assert_eq!(
+            fs::read(restored.join("Mahnungen/MA-1.pdf")).unwrap(),
+            b"Mahnungen"
+        );
         assert_eq!(
             fs::read(restored.join("Eingangsrechnungen/Acme/ER-1.pdf")).unwrap(),
             b"Eingangsrechnungen"
@@ -1523,13 +1606,17 @@ mod tests {
         let legacy_invoice = dir.path().join("home/Documents/Zettel/Rechnungen/RE-1.pdf");
         write_file(&legacy_invoice, b"legacy");
         write_file(
-            &dir.path().join("home/Documents/Zettel/Rechnungen/Versionen/RE-1__100.pdf"),
+            &dir.path()
+                .join("home/Documents/Zettel/Rechnungen/Versionen/RE-1__100.pdf"),
             b"legacy-v1",
         );
         let loose_expense = dir.path().join("downloads/beleg.pdf");
         write_file(&loose_expense, b"expense");
         let snapshot = dir.path().join("snapshot.db");
-        create_snapshot(&snapshot, &[("invoices", &legacy_invoice), ("expenses", &loose_expense)]);
+        create_snapshot(
+            &snapshot,
+            &[("invoices", &legacy_invoice), ("expenses", &loose_expense)],
+        );
         let documents_root = dir.path().join("onedrive/Dokumente/Zettel");
         let zip_path = dir.path().join("backup.zip");
         let manifest = BackupManifest::new(CURRENT_SCHEMA, None);
@@ -1538,12 +1625,18 @@ mod tests {
         let pending = dir.path().join("pending");
         extract_backup(&zip_path, &pending).unwrap();
 
-        assert_eq!(fs::read(pending.join("Rechnungen/RE-1.pdf")).unwrap(), b"legacy");
+        assert_eq!(
+            fs::read(pending.join("Rechnungen/RE-1.pdf")).unwrap(),
+            b"legacy"
+        );
         assert_eq!(
             fs::read(pending.join("Rechnungen/Versionen/RE-1__100.pdf")).unwrap(),
             b"legacy-v1"
         );
-        assert_eq!(fs::read(pending.join("Eingangsrechnungen/beleg.pdf")).unwrap(), b"expense");
+        assert_eq!(
+            fs::read(pending.join("Eingangsrechnungen/beleg.pdf")).unwrap(),
+            b"expense"
+        );
     }
 
     #[test]
@@ -1562,10 +1655,19 @@ mod tests {
         write_backup_zip(&zip_path, &snapshot, &manifest, &documents_root).unwrap();
 
         let entries = zip_entries(&zip_path);
-        assert_eq!(entries.iter().filter(|e| *e == "Rechnungen/RE-1.pdf").count(), 1);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|e| *e == "Rechnungen/RE-1.pdf")
+                .count(),
+            1
+        );
         let pending = dir.path().join("pending");
         extract_backup(&zip_path, &pending).unwrap();
-        assert_eq!(fs::read(pending.join("Rechnungen/RE-1.pdf")).unwrap(), b"current");
+        assert_eq!(
+            fs::read(pending.join("Rechnungen/RE-1.pdf")).unwrap(),
+            b"current"
+        );
     }
 
     #[test]
@@ -1584,14 +1686,19 @@ mod tests {
 
         apply_pending_full_restore(&dirs.data, &dirs.config, Some(&dirs.documents));
 
-        assert_eq!(fs::read(sandbox_root.join("Rechnungen/RE-1.pdf")).unwrap(), b"sandbox");
+        assert_eq!(
+            fs::read(sandbox_root.join("Rechnungen/RE-1.pdf")).unwrap(),
+            b"sandbox"
+        );
         assert!(!dirs.documents.join("Zettel/Rechnungen/RE-1.pdf").exists());
     }
 
     fn pdf_path_of(db: &Path, table: &str) -> PathBuf {
         Connection::open(db)
             .unwrap()
-            .query_row(&format!("SELECT pdf_path FROM {table}"), [], |row| row.get::<_, String>(0))
+            .query_row(&format!("SELECT pdf_path FROM {table}"), [], |row| {
+                row.get::<_, String>(0)
+            })
             .map(PathBuf::from)
             .unwrap()
     }
@@ -1600,7 +1707,10 @@ mod tests {
     fn full_restore_points_rows_at_pdfs_restored_from_another_root() {
         let dirs = AppDirs::new("full-restore-repoint");
         let documents_root = dirs.documents.join("Zettel");
-        let elsewhere = dirs.root.path().join("old-machine/Zettel/Rechnungen/2026/RE-1.pdf");
+        let elsewhere = dirs
+            .root
+            .path()
+            .join("old-machine/Zettel/Rechnungen/2026/RE-1.pdf");
         let still_there = dirs.root.path().join("kept/AN-1.pdf");
         write_file(&still_there, b"offer");
         let pending = dirs.stage(RestoreMode::Full, Some(dirs.config.join("zettel.db")));
@@ -1675,7 +1785,10 @@ mod tests {
         let dir = TempDir::new("schema-too-new");
         let zip_path = dir.path().join("new.zip");
         let manifest = manifest_json(CURRENT_SCHEMA + 1);
-        write_zip(&zip_path, &[(MANIFEST_NAME, manifest.as_bytes()), (DB_ENTRY, b"db")]);
+        write_zip(
+            &zip_path,
+            &[(MANIFEST_NAME, manifest.as_bytes()), (DB_ENTRY, b"db")],
+        );
 
         let err = extract_backup(&zip_path, &dir.path().join("pending")).unwrap_err();
 
@@ -1707,7 +1820,9 @@ mod tests {
         assert!(is_encrypted_file(&encrypted).unwrap());
 
         for missing in [None, Some(String::new())] {
-            let err = decrypt_to_temp(&encrypted, missing, dir.path()).err().unwrap();
+            let err = decrypt_to_temp(&encrypted, missing, dir.path())
+                .err()
+                .unwrap();
             assert_eq!(err, PASSWORD_REQUIRED);
         }
     }
@@ -1741,7 +1856,10 @@ mod tests {
 
         assert_eq!(fs::read(&live).unwrap(), b"restored");
         assert_eq!(fs::read(dirs.config.join("zettel.db.bak")).unwrap(), b"old");
-        assert_eq!(fs::read(dirs.documents.join("Zettel/Angebote/AN-1.pdf")).unwrap(), b"offer");
+        assert_eq!(
+            fs::read(dirs.documents.join("Zettel/Angebote/AN-1.pdf")).unwrap(),
+            b"offer"
+        );
         assert!(!pending.exists());
         assert!(!dirs.data.join(PENDING_MARKER).exists());
         assert!(!dirs.data.join(RESTORE_MODE_FILE).exists());
@@ -1761,7 +1879,10 @@ mod tests {
         apply_pending_full_restore(&dirs.data, &dirs.config, None);
 
         assert_eq!(fs::read(&tenant_db).unwrap(), b"restored");
-        assert_eq!(fs::read(tenant_db.with_extension("db.bak")).unwrap(), b"tenant-old");
+        assert_eq!(
+            fs::read(tenant_db.with_extension("db.bak")).unwrap(),
+            b"tenant-old"
+        );
         assert_eq!(fs::read(&default_db).unwrap(), b"default");
     }
 
@@ -1774,7 +1895,10 @@ mod tests {
 
         apply_pending_full_restore(&dirs.data, &dirs.config, None);
 
-        assert_eq!(fs::read(dirs.config.join("zettel.db")).unwrap(), b"restored");
+        assert_eq!(
+            fs::read(dirs.config.join("zettel.db")).unwrap(),
+            b"restored"
+        );
         assert!(!dirs.config.join("zettel-sandbox.db").exists());
     }
 
@@ -1790,7 +1914,10 @@ mod tests {
 
         apply_pending_full_restore(&dirs.data, &dirs.config, None);
 
-        assert_eq!(fs::read(dirs.config.join("zettel-sandbox.db")).unwrap(), b"restored");
+        assert_eq!(
+            fs::read(dirs.config.join("zettel-sandbox.db")).unwrap(),
+            b"restored"
+        );
         assert!(!dirs.config.join("zettel.db").exists());
     }
 
@@ -1899,8 +2026,13 @@ mod tests {
         fs::write(&target, b"last week").unwrap();
         let manifest = BackupManifest::new(CURRENT_SCHEMA, None);
 
-        let result =
-            write_backup_file(&target, &dir.path().join("missing.db"), &manifest, dir.path(), None);
+        let result = write_backup_file(
+            &target,
+            &dir.path().join("missing.db"),
+            &manifest,
+            dir.path(),
+            None,
+        );
 
         assert!(result.is_err());
         assert_eq!(fs::read(&target).unwrap(), b"last week");
@@ -1929,7 +2061,10 @@ mod tests {
         create_db(&default_db, "default");
         let tenant_db = dirs.root.path().join("tenant.db");
         create_db(&tenant_db, "live");
-        let pending = dirs.stage(partial(sections(true, false, false)), Some(tenant_db.clone()));
+        let pending = dirs.stage(
+            partial(sections(true, false, false)),
+            Some(tenant_db.clone()),
+        );
         create_db(&pending.join(DB_ENTRY), "backup");
 
         apply_partial_restore(&dirs.data, &dirs.config, None).unwrap();
@@ -1983,7 +2118,10 @@ mod tests {
         let err = copy_pdf_dirs(&staged, &documents).unwrap_err();
 
         assert!(err.contains("a.pdf"), "{err}");
-        assert_eq!(fs::read(documents.join("Rechnungen/b.pdf")).unwrap(), b"copied");
+        assert_eq!(
+            fs::read(documents.join("Rechnungen/b.pdf")).unwrap(),
+            b"copied"
+        );
     }
 
     #[test]

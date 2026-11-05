@@ -70,7 +70,11 @@ fn resolve_launch(app: &AppHandle) -> Result<SidecarLaunch, String> {
         .path()
         .resource_dir()
         .map_err(|e| format!("Could not resolve resource dir: {}", e))?;
-    let exe_name = if cfg!(windows) { "zettel-sidecar.exe" } else { "zettel-sidecar" };
+    let exe_name = if cfg!(windows) {
+        "zettel-sidecar.exe"
+    } else {
+        "zettel-sidecar"
+    };
     let exe = resource_dir.join("sidecar").join(exe_name);
     if !exe.exists() {
         return Err(format!(
@@ -96,13 +100,19 @@ fn run_sidecar(app: &AppHandle, request: &Value) -> Result<Value, String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to spawn sidecar ({}): {}", launch.program.display(), e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to spawn sidecar ({}): {}",
+                launch.program.display(),
+                e
+            )
+        })?;
 
     // Taking the handle closes stdin once the request is written, which is
     // what tells the sidecar the request is complete.
     let mut stdin = child.stdin.take().ok_or("No stdin handle for sidecar")?;
-    let bytes = serde_json::to_vec(request)
-        .map_err(|e| format!("Could not serialize request: {e}"))?;
+    let bytes =
+        serde_json::to_vec(request).map_err(|e| format!("Could not serialize request: {e}"))?;
     stdin
         .write_all(&bytes)
         .map_err(|e| format!("Could not write to sidecar stdin: {e}"))?;
@@ -217,7 +227,10 @@ mod tests {
     #[test]
     fn request_carries_command_and_payload() {
         let request = build_request("generate_invoice", Some(json!({ "id": 1 })));
-        assert_eq!(request, json!({ "command": "generate_invoice", "payload": { "id": 1 } }));
+        assert_eq!(
+            request,
+            json!({ "command": "generate_invoice", "payload": { "id": 1 } })
+        );
     }
 
     #[test]
@@ -234,12 +247,18 @@ mod tests {
     #[test]
     fn empty_stdout_reports_exit_code_and_stderr() {
         let err = parse_response("\n", "boom", Some(3)).unwrap_err();
-        assert!(err.contains("exit=Some(3)") && err.contains("boom"), "{err}");
+        assert!(
+            err.contains("exit=Some(3)") && err.contains("boom"),
+            "{err}"
+        );
     }
 
     #[test]
     fn non_json_stdout_reports_stdout_and_stderr() {
         let err = parse_response("Traceback", "oops", Some(1)).unwrap_err();
-        assert!(err.contains("non-JSON") && err.contains("Traceback") && err.contains("oops"), "{err}");
+        assert!(
+            err.contains("non-JSON") && err.contains("Traceback") && err.contains("oops"),
+            "{err}"
+        );
     }
 }
