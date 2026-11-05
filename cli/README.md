@@ -28,6 +28,12 @@ python cli/zettel.py invoice:paid <id>               # bezahlt + Payment-Eintrag
 python cli/zettel.py stats                           # Umsatz / offene Posten
 ```
 
+Neue Rechnungen übernehmen wie das App-Formular `default_pdf_language` und die
+Skonto-Voreinstellung aus den Settings; `--pdf-language`, `--skonto-percent`/`--skonto-days`
+überschreiben sie, `--no-skonto` schaltet Skonto ab. Fremdwährung:
+`--currency USD --exchange-rate 1.0832` (1 EUR = X USD, Pflicht außer bei EUR; der
+EUR-Gegenwert wird wie in der App eingefroren).
+
 Positions-Format: `Beschreibung|Menge|Einheit|Einzelpreis-Euro[|MwSt%][|Langtext]`,
 mehrere Positionen mit `;`.
 
@@ -42,9 +48,15 @@ Der CLI repliziert bewusst die App-Logik aus `src/lib/db/invoices.ts`:
   nur bei Status `sent`/`partial` (Entwürfe werden vorher bereitgestellt),
   bei `paid`/`cancelled` bricht `invoice:paid` ohne Änderung mit Fehler ab
 - **Fristen** (Fälligkeit, Skonto) zählen Kalendertage in lokaler Zeit (DST-sicher),
-  Skonto-Betrag wird abgerundet; Jahresfilter/-statistik gruppieren nach lokalem Jahr
+  Skonto-Betrag wird kaufmännisch gerundet (half-up); Jahresfilter/-statistik gruppieren nach lokalem Jahr
 - **PDF-Versionierung**: existierendes PDF wird vor Regeneration nach
-  `Versionen/<stem>__<mtime>.pdf` verschoben (wie `archive_pdf_version`)
+  `Versionen/<stem>__<mtime>.pdf` verschoben (wie `archive_pdf_version`); ein
+  bisher in einem anderen Ordner gespeichertes PDF wandert samt Versionen mit
+- **PDF-Validierung**: der CLI validiert nicht (KoSIT läuft über die App); ein neu
+  erzeugtes PDF setzt `last_validation_*` zurück, statt den Status des alten PDFs stehen zu lassen
+- **Parität**: `sidecar/tests/fixtures/invoice-parity.json` (Summen, Nummern, EUR-Gegenwert,
+  Zahlungsziel-Text) prüfen Vitest (`src/lib/utils/invoice-parity.test.ts`) und Pytest
+  (`sidecar/tests/test_cli_parity.py`) gemeinsam
 - **Sidecar**: JSON-RPC über stdin/stdout, Dev-Venv oder `ZETTEL_SIDECAR`-Binary
 
 Bei Änderungen an der App-Logik (Migrationen, Payload-Format) müssen beide

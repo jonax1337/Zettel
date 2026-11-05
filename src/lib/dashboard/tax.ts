@@ -4,6 +4,7 @@ import { sumPrepaymentsForYear } from "$lib/db/tax-prepayments";
 import { marginalIncomeTax, type FilingStatus, type IncomeTaxResult } from "$lib/tax/income";
 import { estimateTradeTax, type TradeTaxResult } from "$lib/tax/trade";
 import { nowUnix } from "$lib/utils/date";
+import { REVENUE_AMOUNT_SQL, REVENUE_NET_SQL, REVENUE_VAT_SQL } from "./queries";
 import { deductibleExpenseCent, deductsExpensesGross } from "./reserve-expenses";
 import { resolveTaxYearWindow } from "./tax-year";
 
@@ -69,7 +70,8 @@ interface YearAggRow {
 async function loadYearAgg(yearStart: number, cutoff: number): Promise<YearAggRow> {
   // Storno-Rechnungen sind in `invoices` mit negativem subtotal/vat/total
   // gespeichert (siehe invoices.ts: `sign = isCreditNote ? -1 : 1`), daher
-  // nettet ein simples SUM(...) sie korrekt heraus.
+  // nettet ein simples SUM(...) sie korrekt heraus. Fremdwährungsrechnungen
+  // fließen über ihren eingefrorenen EUR-Gegenwert ein (wie die Dashboard-KPIs).
   // RC-Eingangsrechnungen (is_reverse_charge=1) ziehen keine Vorsteuer.
   const inv = await select<{
     revenue_net: number;
@@ -77,9 +79,9 @@ async function loadYearAgg(yearStart: number, cutoff: number): Promise<YearAggRo
     invoice_vat: number;
   }>(
     `SELECT
-       COALESCE(SUM(subtotal), 0) AS revenue_net,
-       COALESCE(SUM(total), 0) AS revenue_gross,
-       COALESCE(SUM(vat_amount), 0) AS invoice_vat
+       COALESCE(SUM(${REVENUE_NET_SQL}), 0) AS revenue_net,
+       COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS revenue_gross,
+       COALESCE(SUM(${REVENUE_VAT_SQL}), 0) AS invoice_vat
      FROM invoices
      WHERE status IN ('sent','partial','paid')
        AND issue_date >= ? AND issue_date <= ?`,
@@ -96,11 +98,11 @@ async function loadYearAgg(yearStart: number, cutoff: number): Promise<YearAggRo
     [yearStart, cutoff],
   );
   return {
-    revenueNet: inv[0]?.revenue_net ?? 0,
-    revenueGross: inv[0]?.revenue_gross ?? 0,
+    revenueNet: Math.round(inv[0]?.revenue_net ?? 0),
+    revenueGross: Math.round(inv[0]?.revenue_gross ?? 0),
     expenseNet: exp[0]?.expense_net ?? 0,
     expenseGross: exp[0]?.expense_gross ?? 0,
-    invoiceVat: inv[0]?.invoice_vat ?? 0,
+    invoiceVat: Math.round(inv[0]?.invoice_vat ?? 0),
     expenseVat: exp[0]?.expense_vat ?? 0,
   };
 }

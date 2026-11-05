@@ -200,6 +200,7 @@ export const invoicePayments = sqliteTable("invoice_payments", {
   source: text("source", { enum: ["manual", "camt053", "mt940", "auto"] }).notNull().default("manual"),
   notes: text("notes"),
   createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  bankTransactionId: text("bank_transaction_id"),
 });
 
 export type InvoicePayment = typeof invoicePayments.$inferSelect;
@@ -247,6 +248,9 @@ export const recurringInvoices = sqliteTable("recurring_invoices", {
   lastGeneratedAt: integer("last_generated_at"),
   paymentTermsDays: integer("payment_terms_days").notNull().default(14),
   isReverseCharge: integer("is_reverse_charge", { mode: "boolean" }).notNull().default(false),
+  reverseChargeType: text("reverse_charge_type", { enum: ["none", "intra_eu", "third_country"] })
+    .notNull()
+    .default("none"),
   supplyKind: text("supply_kind", { enum: ["goods", "services"] }).notNull().default("services"),
   notes: text("notes"),
   paymentTerms: text("payment_terms"),
@@ -303,6 +307,9 @@ export const offers = sqliteTable("offers", {
   isReverseCharge: integer("is_reverse_charge", { mode: "boolean" })
     .notNull()
     .default(false),
+  reverseChargeType: text("reverse_charge_type", { enum: ["none", "intra_eu", "third_country"] })
+    .notNull()
+    .default("none"),
   supplyKind: text("supply_kind", { enum: ["goods", "services"] }).notNull().default("services"),
   notes: text("notes"),
   introText: text("intro_text"),

@@ -23,12 +23,12 @@ describe("sendDateWarning", () => {
 describe("paidDateWarning", () => {
   it("compares against the sent date when present", () => {
     const invoice = { sentAt: now - DAY, issueDate: now - 5 * DAY };
-    expect(paidDateWarning(now - 2 * DAY, invoice, now)).toContain("vor dem Versand");
+    expect(paidDateWarning(now - 2 * DAY, invoice, now)).toContain("vor dem Rechnungs- bzw. Versendedatum");
   });
 
   it("falls back to the issue date for invoices without sent date", () => {
     const invoice = { sentAt: null, issueDate: now - 5 * DAY };
-    expect(paidDateWarning(now - 6 * DAY, invoice, now)).toContain("vor dem Versand");
+    expect(paidDateWarning(now - 6 * DAY, invoice, now)).toContain("vor dem Rechnungs- bzw. Versendedatum");
     expect(paidDateWarning(now - 4 * DAY, invoice, now)).toBeNull();
   });
 

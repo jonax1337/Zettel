@@ -1,4 +1,12 @@
 import { execute, insert, select } from "./client";
+import {
+  creditedCentSql,
+  isSettledByCreditNote,
+  openBalanceCent,
+  PAYMENT_ROUNDING_TOLERANCE_CENT,
+  SETTLED_BY_CREDIT_NOTE_ERROR,
+  type SettlementFacts,
+} from "./invoice-lifecycle";
 import type { InvoicePayment, InvoicePaymentSource, InvoiceStatus } from "./schema";
 import { nowUnix } from "$lib/utils/date";
 
@@ -11,6 +19,7 @@ type PaymentRow = {
   source: InvoicePaymentSource;
   notes: string | null;
   created_at: number;
+  bank_transaction_id: string | null;
 };
 
 function mapPayment(r: PaymentRow): InvoicePayment {
@@ -23,6 +32,7 @@ function mapPayment(r: PaymentRow): InvoicePayment {
     source: r.source,
     notes: r.notes,
     createdAt: r.created_at,
+    bankTransactionId: r.bank_transaction_id,
   };
 }
 
@@ -37,24 +47,26 @@ export async function listPayments(invoiceId: number): Promise<InvoicePayment[]>
 type PayableStatus = Extract<InvoiceStatus, "sent" | "partial" | "paid">;
 
 /**
- * Status of a sent invoice given what has been paid so far:
+ * Status of a sent invoice given what has been paid so far, against what is
+ * due (the total less issued credit notes):
  *   nothing paid        -> sent
- *   paid < total        -> partial (remainder outstanding)
- *   paid >= total       -> paid
+ *   paid < due          -> partial (remainder outstanding)
+ *   paid >= due         -> paid
  */
-export function statusForPaidAmount(paidCent: number, totalCent: number): PayableStatus {
+export function statusForPaidAmount(paidCent: number, dueCent: number): PayableStatus {
   if (paidCent <= 0) return "sent";
-  return paidCent < totalCent ? "partial" : "paid";
+  return paidCent < dueCent ? "partial" : "paid";
 }
 
 /**
- * Re-derives status, paid amount and paid_at from the payment list. Drafts and
- * cancelled invoices are left alone; a payment on a draft would be a data
- * consistency error the calling UI has to prevent.
+ * Re-derives status, paid amount and paid_at from the payment list and the
+ * issued credit notes, so the result does not depend on which came first.
+ * Drafts and cancelled invoices are left alone; a payment on a draft would be a
+ * data consistency error the calling UI has to prevent.
  */
-async function recomputeInvoiceStatus(invoiceId: number): Promise<void> {
-  const [invoice] = await select<{ total: number; status: InvoiceStatus }>(
-    "SELECT total, status FROM invoices WHERE id = ?",
+export async function recomputeInvoiceStatus(invoiceId: number): Promise<void> {
+  const [invoice] = await select<{ total: number; status: InvoiceStatus; credited_cent: number }>(
+    `SELECT i.total, i.status, ${creditedCentSql("i")} AS credited_cent FROM invoices i WHERE i.id = ?`,
     [invoiceId],
   );
   if (!invoice || invoice.status === "draft" || invoice.status === "cancelled") return;
@@ -64,7 +76,8 @@ async function recomputeInvoiceStatus(invoiceId: number): Promise<void> {
      FROM invoice_payments WHERE invoice_id = ?`,
     [invoiceId],
   );
-  const status = statusForPaidAmount(payments.paid_cent, Math.abs(invoice.total));
+  const dueCent = Math.abs(invoice.total) - invoice.credited_cent;
+  const status = statusForPaidAmount(payments.paid_cent, dueCent);
   const paidAt = status === "paid" ? (payments.last_paid_at ?? nowUnix()) : null;
   await execute(
     `UPDATE invoices SET status = ?, amount_paid_cent = ?, paid_at = ?, updated_at = unixepoch()
@@ -80,27 +93,123 @@ export type AddPaymentInput = {
   source?: InvoicePaymentSource;
   notes?: string | null;
   eurAmountCent?: number | null;
+  /** Dedupe key of an imported bank booking (see `bankBookingKey`); null for manual payments. */
+  bankTransactionId?: string | null;
+  /** Accept more than the open amount, e.g. a customer who paid twice. */
+  allowOverpayment?: boolean;
 };
 
-export async function addPayment(input: AddPaymentInput): Promise<number> {
-  if (input.amountCent === 0) {
-    throw new Error("Zahlbetrag darf nicht 0 sein.");
+/** Thrown when a bank booking was already recorded, e.g. the same statement imported twice. */
+export class DuplicateBankBookingError extends Error {
+  constructor() {
+    super("Diese Buchung wurde bereits importiert.");
+    this.name = "DuplicateBankBookingError";
   }
-  const id = await insert(
-    `INSERT INTO invoice_payments
-       (invoice_id, paid_at, amount_cent, eur_amount_cent, source, notes)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [
-      input.invoiceId,
-      input.paidAt,
-      input.amountCent,
-      input.eurAmountCent ?? null,
-      input.source ?? "manual",
-      input.notes ?? null,
-    ],
+}
+
+/** `amountPaidCent` is the sum of the recorded payments, not the cached column. */
+export type PayableInvoice = SettlementFacts & { status: InvoiceStatus };
+
+/** Why a payment cannot be recorded against this invoice, or null when it can. */
+export function paymentRejection(
+  invoice: PayableInvoice,
+  amountCent: number,
+  allowOverpayment = false,
+): string | null {
+  if (invoice.status !== "sent" && invoice.status !== "partial") {
+    return "Zahlungen können nur für versendete oder teilbezahlte Rechnungen erfasst werden.";
+  }
+  if (isSettledByCreditNote(invoice)) return SETTLED_BY_CREDIT_NOTE_ERROR;
+  if (!Number.isInteger(amountCent) || amountCent <= 0) {
+    return "Zahlbetrag muss größer als 0 sein.";
+  }
+  if (!allowOverpayment && amountCent > openBalanceCent(invoice) + PAYMENT_ROUNDING_TOLERANCE_CENT) {
+    return "Der Zahlbetrag übersteigt den offenen Betrag der Rechnung.";
+  }
+  return null;
+}
+
+async function loadPayableInvoice(invoiceId: number): Promise<PayableInvoice | null> {
+  const [row] = await select<{
+    status: InvoiceStatus;
+    total: number;
+    paid_cent: number;
+    credited_cent: number;
+  }>(
+    `SELECT i.status, i.total,
+            (SELECT COALESCE(SUM(p.amount_cent), 0) FROM invoice_payments p WHERE p.invoice_id = i.id) AS paid_cent,
+            ${creditedCentSql("i")} AS credited_cent
+     FROM invoices i WHERE i.id = ?`,
+    [invoiceId],
   );
-  await recomputeInvoiceStatus(input.invoiceId);
+  if (!row) return null;
+  return {
+    status: row.status,
+    total: row.total,
+    amountPaidCent: row.paid_cent,
+    creditedCent: row.credited_cent,
+  };
+}
+
+async function isBankBookingRecorded(bankTransactionId: string): Promise<boolean> {
+  const rows = await select<{ id: number }>(
+    "SELECT id FROM invoice_payments WHERE bank_transaction_id = ? LIMIT 1",
+    [bankTransactionId],
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Validates before writing and removes the payment row again if the invoice
+ * cannot be updated, so a failed booking never leaves a payment behind that
+ * the next import would book a second time.
+ */
+export async function addPayment(input: AddPaymentInput): Promise<number> {
+  const invoice = await loadPayableInvoice(input.invoiceId);
+  if (!invoice) throw new Error(`Rechnung ${input.invoiceId} nicht gefunden.`);
+  const rejection = paymentRejection(invoice, input.amountCent, input.allowOverpayment);
+  if (rejection) throw new Error(rejection);
+  const bankTransactionId = input.bankTransactionId ?? null;
+  if (bankTransactionId !== null && (await isBankBookingRecorded(bankTransactionId))) {
+    throw new DuplicateBankBookingError();
+  }
+
+  const id = await insertPayment(input, bankTransactionId);
+  try {
+    await recomputeInvoiceStatus(input.invoiceId);
+  } catch (error) {
+    await execute("DELETE FROM invoice_payments WHERE id = ?", [id]);
+    throw error;
+  }
   return id;
+}
+
+async function insertPayment(input: AddPaymentInput, bankTransactionId: string | null): Promise<number> {
+  try {
+    return await insert(
+      `INSERT INTO invoice_payments
+         (invoice_id, paid_at, amount_cent, eur_amount_cent, source, notes, bank_transaction_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        input.invoiceId,
+        input.paidAt,
+        input.amountCent,
+        input.eurAmountCent ?? null,
+        input.source ?? "manual",
+        input.notes ?? null,
+        bankTransactionId,
+      ],
+    );
+  } catch (error) {
+    // A concurrent import of the same booking can pass the pre-check; the unique index decides.
+    if (bankTransactionId !== null && isBankTransactionConflict(error)) throw new DuplicateBankBookingError();
+    throw error;
+  }
+}
+
+function isBankTransactionConflict(error: unknown): boolean {
+  const message = String(error);
+  return message.includes("UNIQUE constraint failed") && message.includes("invoice_payments.bank_transaction_id");
 }
 
 export async function deletePayment(id: number): Promise<void> {
@@ -110,27 +219,4 @@ export async function deletePayment(id: number): Promise<void> {
   );
   await execute("DELETE FROM invoice_payments WHERE id = ?", [id]);
   if (payment) await recomputeInvoiceStatus(payment.invoice_id);
-}
-
-export async function updatePayment(
-  id: number,
-  patch: { paidAt?: number; amountCent?: number; notes?: string | null },
-): Promise<void> {
-  const [existing] = await select<PaymentRow>(
-    "SELECT * FROM invoice_payments WHERE id = ?",
-    [id],
-  );
-  if (!existing) return;
-  await execute(
-    `UPDATE invoice_payments
-       SET paid_at = ?, amount_cent = ?, notes = ?
-     WHERE id = ?`,
-    [
-      patch.paidAt ?? existing.paid_at,
-      patch.amountCent ?? existing.amount_cent,
-      patch.notes !== undefined ? patch.notes : existing.notes,
-      id,
-    ],
-  );
-  await recomputeInvoiceStatus(existing.invoice_id);
 }

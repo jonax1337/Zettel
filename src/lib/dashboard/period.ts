@@ -67,7 +67,7 @@ export function periodCustom(startUnix: number, endUnixExclusive: number): Perio
   };
 }
 
-export function currentDefaultPeriod(): Period {
+function currentDefaultPeriod(): Period {
   return periodForYear(new Date().getFullYear());
 }
 

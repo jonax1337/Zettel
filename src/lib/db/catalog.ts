@@ -1,7 +1,7 @@
 import { execute, insert, select } from "./client";
 import type { CatalogItem } from "./schema";
+import { DEFAULT_UNIT } from "$lib/utils/units";
 
-const DEFAULT_UNIT = "Stk";
 const DEFAULT_VAT_RATE = 19;
 const DEFAULT_SEARCH_LIMIT = 30;
 

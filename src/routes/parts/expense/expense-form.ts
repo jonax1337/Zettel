@@ -1,11 +1,18 @@
 import type { ExpenseItemInput } from "$lib/db/expenses";
 import type { Expense, Vendor } from "$lib/db/schema";
-import type { ExtractedInvoice, ExtractedText } from "$lib/sidecar/extract";
+import type {
+  ExtractedInvoice,
+  ExtractedLineItem,
+  ExtractedTaxGroup,
+  ExtractedText,
+} from "$lib/sidecar/extract";
 import { nowUnix, toIsoDate } from "$lib/utils/date";
+import { computeLineTotal } from "$lib/utils/totals";
+import { DEFAULT_UNIT } from "$lib/utils/units";
 import { centsToPriceText } from "../entity/format";
 import { STANDARD_VAT_RATE } from "../entity/vat";
 
-export type ReverseChargeType = Expense["reverseChargeType"];
+type ReverseChargeType = Expense["reverseChargeType"];
 
 export type ExpenseItemRow = ExpenseItemInput & { priceText: string };
 
@@ -30,7 +37,6 @@ type StoredExpenseItem = {
   vatRate: number;
 };
 
-const DEFAULT_UNIT = "Stk";
 const LUMP_SUM_UNIT = "Pauschal";
 
 export function emptyItemRow(overrides: Partial<ExpenseItemRow> = {}): ExpenseItemRow {
@@ -100,17 +106,66 @@ export function applyInvoiceExtract(
   applyHeaderFields(form, data, vendor);
   form.reverseChargeType = data.reverseChargeType;
   if (data.lineItems.length === 0) return;
-  form.items = data.lineItems.map((line) =>
-    emptyItemRow({
+  const category = vendor?.defaultCategory ?? null;
+  const lines = data.lineItems.map((line) => lineItemRow(line, category));
+  form.items = matchesTaxGroups(lines, data.taxGroups)
+    ? lines
+    : data.taxGroups.map((group) => taxGroupRow(group, category));
+}
+
+/**
+ * Item prices are whole cents, so a price like 0,3249 EUR cannot be kept as
+ * quantity x unit price. The supplier's line total is authoritative: such a line
+ * becomes one lump-sum position that carries the original quantity and price in
+ * its description.
+ */
+function lineItemRow(line: ExtractedLineItem, category: string | null): ExpenseItemRow {
+  if (computeLineTotal(line) === line.lineTotal) {
+    return emptyItemRow({
       description: line.description,
-      category: vendor?.defaultCategory ?? null,
+      category,
       quantity: line.quantity,
       unit: line.unit,
       unitPrice: line.unitPrice,
       vatRate: line.vatRate,
       priceText: centsToPriceText(line.unitPrice),
-    }),
+    });
+  }
+  const price = line.unitPriceDecimal.replace(".", ",");
+  return emptyItemRow({
+    description: `${line.description} (${line.quantity} ${line.unit} × ${price} €)`,
+    category,
+    quantity: 1,
+    unit: LUMP_SUM_UNIT,
+    unitPrice: line.lineTotal,
+    vatRate: line.vatRate,
+    priceText: centsToPriceText(line.lineTotal),
+  });
+}
+
+/** Document-level allowances or charges are not part of the lines, only of the VAT breakdown. */
+function matchesTaxGroups(rows: ExpenseItemRow[], groups: ExtractedTaxGroup[]): boolean {
+  if (groups.length === 0) return true;
+  const netByRate = new Map<number, number>();
+  for (const row of rows) {
+    netByRate.set(row.vatRate, (netByRate.get(row.vatRate) ?? 0) + computeLineTotal(row));
+  }
+  const groupNetByRate = new Map(groups.map((group) => [group.vatRate, group.basis]));
+  return (
+    netByRate.size === groupNetByRate.size &&
+    [...netByRate].every(([rate, net]) => groupNetByRate.get(rate) === net)
   );
+}
+
+function taxGroupRow(group: ExtractedTaxGroup, category: string | null): ExpenseItemRow {
+  return emptyItemRow({
+    description: `Rechnungsposten ${group.vatRate} % USt`,
+    category,
+    unit: LUMP_SUM_UNIT,
+    unitPrice: group.basis,
+    vatRate: group.vatRate,
+    priceText: centsToPriceText(group.basis),
+  });
 }
 
 /** Text-layer heuristics only know the gross total, so it becomes one lump-sum position. */

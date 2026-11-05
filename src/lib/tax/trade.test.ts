@@ -68,6 +68,17 @@ describe("estimateTradeTax", () => {
     expect(r.tradeTax - r.estCredit).toBe(19_200);
   });
 
+  it.each([
+    // [Gewinn in Cent, Hebesatz, Messbetrag €, GewSt €] — float: 210 * 4.1 = 860.9999…
+    [3_050_000, 4.1, 210, 861],
+    [2_580_000, 4.6, 45, 207],
+    [3_080_000, 4.35, 220, 957],
+  ])("Hebesatz ohne Float-Drift: Gewinn %i, Hebesatz %f", (profit, hebesatz, messbetrag, gewst) => {
+    const r = estimateTradeTax(profit, hebesatz, false);
+    expect(r.messbetrag).toBe(messbetrag * 100);
+    expect(r.tradeTax).toBe(gewst * 100);
+  });
+
   it("Verlustfall (negativer Gewinn) → 0 €", () => {
     expect(estimateTradeTax(-1_000_000, 4.0, false)).toEqual({
       tradeTax: 0,

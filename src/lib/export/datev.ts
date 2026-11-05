@@ -26,8 +26,14 @@ export type DatevAccountMap = {
   revenue7: number;
   /** Steuerfreie Umsätze (§ 19 UStG / 0 %). */
   revenueExempt: number;
-  /** Steuerfreie innergemeinschaftliche Lieferung (Reverse-Charge). */
-  revenueIntraEu: number;
+  /** Steuerfreie innergemeinschaftliche Lieferung (§ 4 Nr. 1b UStG). */
+  revenueIntraEuGoods: number;
+  /** Im anderen EU-Land steuerpflichtige sonstige Leistung (§ 13b UStG). */
+  revenueIntraEuServices: number;
+  /** Steuerfreie Ausfuhrlieferung (§ 4 Nr. 1a UStG). */
+  revenueThirdCountryGoods: number;
+  /** Im Drittland steuerbare sonstige Leistung. */
+  revenueThirdCountryServices: number;
   /** Sammel-Kreditor (Verbindlichkeiten aus Lieferungen und Leistungen). */
   kreditor: number;
   /** Aufwand mit 19 % Vorsteuerabzug. */
@@ -45,7 +51,10 @@ export const SKR03: DatevAccountMap = {
   revenue19: 8400,
   revenue7: 8300,
   revenueExempt: 8200,
-  revenueIntraEu: 8336,
+  revenueIntraEuGoods: 8125,
+  revenueIntraEuServices: 8336,
+  revenueThirdCountryGoods: 8120,
+  revenueThirdCountryServices: 8338,
   kreditor: 70000,
   expense19: 3400,
   expense7: 3300,
@@ -58,7 +67,10 @@ export const SKR04: DatevAccountMap = {
   revenue19: 4400,
   revenue7: 4300,
   revenueExempt: 4200,
-  revenueIntraEu: 4125,
+  revenueIntraEuGoods: 4125,
+  revenueIntraEuServices: 4336,
+  revenueThirdCountryGoods: 4120,
+  revenueThirdCountryServices: 4338,
   kreditor: 73000,
   expense19: 5400,
   expense7: 5300,
@@ -99,7 +111,7 @@ export type DatevInvoiceInput = {
   customerVatId: string | null;
 };
 
-export type DatevExpenseInput = {
+type DatevExpenseInput = {
   expense: Expense;
   items: ExpenseItem[];
   vendorName: string;
@@ -157,12 +169,15 @@ function sum(values: number[]): number {
 
 // ----- Booking-row construction -----
 
+type SollHaben = "S" | "H";
+
 type Booking = {
+  /** Signed gross; a negative amount (e.g. a discount line on its own VAT rate) reverses the direction. */
   amountCents: number;
   debit: number;
   credit: number;
-  /** "S" = standard Forderung. "H" flips the booking direction for credit notes. */
-  sollHaben: "S" | "H";
+  /** Direction of a positive amount: "S" = standard, "H" for credit notes / cancelled expenses. */
+  sollHaben: SollHaben;
   belegdatum: Date;
   belegfeld1: string;
   buchungstext: string;
@@ -171,14 +186,20 @@ type Booking = {
 
 type RateGroup = { rate: number; gross: number };
 
-function revenueAccountFor(
-  vatRate: number,
-  isKleinunternehmer: boolean,
-  isReverseCharge: boolean,
+function reverseChargeRevenueAccount(
+  invoice: Pick<Invoice, "reverseChargeType" | "supplyKind">,
   accounts: DatevAccountMap,
 ): number {
-  if (isReverseCharge) return accounts.revenueIntraEu;
-  if (isKleinunternehmer) return accounts.revenueExempt;
+  const isGoods = invoice.supplyKind === "goods";
+  if (invoice.reverseChargeType === "third_country") {
+    return isGoods ? accounts.revenueThirdCountryGoods : accounts.revenueThirdCountryServices;
+  }
+  return isGoods ? accounts.revenueIntraEuGoods : accounts.revenueIntraEuServices;
+}
+
+function revenueAccountFor(vatRate: number, invoice: Invoice, accounts: DatevAccountMap): number {
+  if (invoice.isReverseCharge) return reverseChargeRevenueAccount(invoice, accounts);
+  if (invoice.isKleinunternehmer) return accounts.revenueExempt;
   if (vatRate === 19) return accounts.revenue19;
   if (vatRate === 7) return accounts.revenue7;
   return accounts.revenueExempt;
@@ -235,14 +256,15 @@ function bookingsForInvoice(input: DatevInvoiceInput, accounts: DatevAccountMap)
   const isForeignCurrency =
     !!invoice.currency && invoice.currency !== "EUR" && invoice.eurTotalCent != null;
   if (isForeignCurrency) {
-    groups = apportionEurTotal(groups, invoice.eurTotalCent!);
+    // Credit-note items are stored positive while eurTotalCent is negative; the direction comes from sollHaben.
+    groups = apportionEurTotal(groups, Math.abs(invoice.eurTotalCent!));
   }
 
   const belegdatum = new Date(invoice.issueDate * 1000);
   return groups.map(({ rate, gross }) => ({
     amountCents: gross,
     debit: accounts.debitor,
-    credit: revenueAccountFor(rate, isKu, isRc, accounts),
+    credit: revenueAccountFor(rate, invoice, accounts),
     sollHaben: isCreditNote ? "H" : "S",
     belegdatum,
     belegfeld1: invoice.number,
@@ -424,10 +446,16 @@ function buildHeaderLine(opts: DatevExportOpts, now: Date): string {
   return fields.join(";");
 }
 
+/** DATEV amounts carry no sign, so a negative booking is expressed by flipping Soll/Haben. */
+function effectiveSollHaben(b: Booking): SollHaben {
+  if (b.amountCents >= 0) return b.sollHaben;
+  return b.sollHaben === "S" ? "H" : "S";
+}
+
 function rowFor(b: Booking): string {
   const fields: string[] = new Array(COLUMN_HEADERS.length).fill("");
   fields[COLUMN.amount] = centsToDatev(b.amountCents);
-  fields[COLUMN.sollHaben] = quote(b.sollHaben);
+  fields[COLUMN.sollHaben] = quote(effectiveSollHaben(b));
   fields[COLUMN.currency] = quote("EUR");
   fields[COLUMN.account] = String(b.debit);
   fields[COLUMN.contraAccount] = String(b.credit);
@@ -443,11 +471,26 @@ export type DatevBatchInput = {
   expenses?: DatevExpenseInput[];
 };
 
+/**
+ * Belegdatum is exported as DDMM without a year; DATEV resolves it against the
+ * Wirtschaftsjahr, so one batch must stay inside a single Wirtschaftsjahr.
+ */
+export function datevRangeError(
+  opts: Pick<DatevExportOpts, "wjBeginn" | "dateFrom" | "dateTo">,
+): string | null {
+  const wjEnd = new Date(opts.wjBeginn);
+  wjEnd.setFullYear(wjEnd.getFullYear() + 1);
+  if (opts.dateFrom >= opts.wjBeginn && opts.dateTo < wjEnd) return null;
+  return "Der Zeitraum umfasst mehr als ein Wirtschaftsjahr. Das DATEV-Belegdatum enthält kein Jahr — bitte jedes Jahr einzeln exportieren.";
+}
+
 export function buildDatevCsv(
   inputs: DatevInvoiceInput[] | DatevBatchInput,
   opts: DatevExportOpts,
   now: Date = new Date(),
 ): string {
+  const rangeError = datevRangeError(opts);
+  if (rangeError) throw new Error(rangeError);
   const batch: DatevBatchInput = Array.isArray(inputs) ? { invoices: inputs } : inputs;
   const headerLine = buildHeaderLine(opts, now);
   const columnLine = COLUMN_HEADERS.map(quote).join(";");

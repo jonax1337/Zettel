@@ -63,7 +63,7 @@ def test_t_interpolation_safe_against_missing_kwargs():
 _PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
 
-@pytest.mark.parametrize("key", ["skonto_inline", "skonto_offer_text", "credit_note_ref", "offer_disclaimer", "page_n_of_m"])
+@pytest.mark.parametrize("key", ["skonto_inline", "skonto_offer_text", "credit_note_ref", "offer_disclaimer", "page_n_of_m", "totals_net_at_rate", "totals_vat_at_rate"])
 def test_de_and_en_share_the_same_placeholders(key: str):
     de_holders = set(_PLACEHOLDER_RE.findall(_DE[key]))
     en_holders = set(_PLACEHOLDER_RE.findall(_EN[key]))

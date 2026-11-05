@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SidecarErrorInfo } from "./types";
 
-export type ExtractedParty = {
+type ExtractedParty = {
   name: string | null;
   street: string;
   postalCode: string;
@@ -16,9 +16,18 @@ export type ExtractedLineItem = {
   description: string;
   quantity: number;
   unit: string;
-  unitPrice: number; // cents
+  unitPrice: number; // cents, rounded: not exact for prices like 0,3249 EUR
+  unitPriceDecimal: string; // euros, exact (e.g. "0.3249")
   vatRate: number;
-  lineTotal: number; // cents
+  lineTotal: number; // cents, as stated by the supplier (includes line allowances)
+  categoryCode: string | null;
+};
+
+/** One row of the supplier's VAT breakdown: what is actually owed per rate. */
+export type ExtractedTaxGroup = {
+  vatRate: number;
+  basis: number; // cents
+  tax: number; // cents
   categoryCode: string | null;
 };
 
@@ -34,10 +43,11 @@ export type ExtractedInvoice = {
   seller: ExtractedParty;
   buyer: ExtractedParty;
   lineItems: ExtractedLineItem[];
-  totals: { subtotal: number; vatAmount: number; total: number };
+  taxGroups: ExtractedTaxGroup[];
+  totals: { subtotal: number; net: number; vatAmount: number; total: number };
 };
 
-export type ExtractResultFound = {
+type ExtractResultFound = {
   success: true;
   found: true;
   profile: string;
@@ -45,12 +55,12 @@ export type ExtractResultFound = {
   data: ExtractedInvoice;
 };
 
-export type ExtractResultNotFound = {
+type ExtractResultNotFound = {
   success: true;
   found: false;
 };
 
-export type ExtractResultError = {
+type ExtractResultError = {
   success: false;
   error: SidecarErrorInfo;
 };

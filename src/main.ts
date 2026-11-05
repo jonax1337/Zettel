@@ -1,5 +1,7 @@
 import { mount } from "svelte";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+// Must load before the router so its hashchange listener runs first and can hold back a blocked navigation.
+import "./lib/utils/unsaved-guard.svelte";
 import App from "./App.svelte";
 import "./app.css";
 import "./lib/theme.svelte";

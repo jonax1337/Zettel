@@ -55,6 +55,11 @@
     children,
     ...rest
   }: Props = $props();
+
+  // Icon-only buttons have no text; their tooltip doubles as the accessible name.
+  const iconOnlyLabel = $derived(
+    size === "icon" ? (rest as { title?: string; "aria-label"?: string })["aria-label"] ?? (rest as { title?: string }).title : undefined,
+  );
 </script>
 
 {#if href}
@@ -70,6 +75,7 @@
   <button
     class={cn(buttonVariants({ variant, size }), klass)}
     {...rest as HTMLButtonAttributes}
+    aria-label={iconOnlyLabel ?? (rest as HTMLButtonAttributes)["aria-label"]}
   >
     {@render children?.()}
   </button>

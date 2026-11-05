@@ -14,6 +14,7 @@ import {
   createRecurring,
   generateInvoiceFromRecurring,
   mapRecurring,
+  templatePrefillRejection,
   updateRecurring,
   type RecurringFormInput,
 } from "./recurring";
@@ -55,6 +56,7 @@ const recurringRow = {
   last_generated_at: null,
   payment_terms_days: 14,
   is_reverse_charge: 1,
+  reverse_charge_type: "intra_eu",
   supply_kind: "services",
   notes: null,
   payment_terms: null,
@@ -69,6 +71,7 @@ describe("recurring supply kind", () => {
     insert.mockReset();
     select.mockReset();
     createInvoice.mockReset();
+    execute.mockResolvedValue({ rowsAffected: 1 });
   });
 
   it("is read from the stored template", () => {
@@ -95,7 +98,7 @@ describe("recurring supply kind", () => {
     interval: "monthly",
     startDate: at(2026, 1, 15),
     paymentTermsDays: 14,
-    isReverseCharge: true,
+    reverseChargeType: "intra_eu",
     supplyKind: "services",
     notes: null,
     paymentTerms: null,
@@ -127,5 +130,94 @@ describe("recurring supply kind", () => {
 
     const [sql, binds] = execute.mock.calls.find(([sql]) => String(sql).includes("UPDATE recurring_invoices"))!;
     expect(assignedValues(sql, binds)).toMatchObject({ is_reverse_charge: 1, supply_kind: supplyKind });
+  });
+
+  it.each(["none", "intra_eu", "third_country"] as const)(
+    "stores and hands on the reverse-charge type %s",
+    async (reverseChargeType) => {
+      insert.mockResolvedValueOnce(4);
+      await createRecurring({ ...formInput, reverseChargeType });
+      const [sql, binds] = insert.mock.calls[0];
+      expect(insertedValues(sql, binds)).toMatchObject({
+        reverse_charge_type: reverseChargeType,
+        is_reverse_charge: reverseChargeType === "none" ? 0 : 1,
+      });
+
+      const stored = insertedValues(sql, binds);
+      select
+        .mockResolvedValueOnce([
+          {
+            ...recurringRow,
+            is_reverse_charge: stored.is_reverse_charge,
+            reverse_charge_type: stored.reverse_charge_type,
+          },
+        ])
+        .mockResolvedValueOnce([]);
+      execute.mockResolvedValue({ rowsAffected: 1 });
+      await generateInvoiceFromRecurring(4);
+      expect(createInvoice).toHaveBeenCalledWith(expect.objectContaining({ reverseChargeType }));
+    },
+  );
+
+  it("reads a legacy row that only has the boolean as intra-EU", () => {
+    expect(mapRecurring({ ...recurringRow, reverse_charge_type: "none" }).reverseChargeType).toBe("intra_eu");
+    expect(
+      mapRecurring({ ...recurringRow, is_reverse_charge: 0, reverse_charge_type: "none" }).reverseChargeType,
+    ).toBe("none");
+  });
+});
+
+describe("generateInvoiceFromRecurring", () => {
+  beforeEach(() => {
+    execute.mockReset();
+    select.mockReset();
+    createInvoice.mockReset();
+    select.mockResolvedValueOnce([recurringRow]).mockResolvedValueOnce([]);
+  });
+
+  it("claims the due period before creating the invoice", async () => {
+    const order: string[] = [];
+    execute.mockImplementation(async () => {
+      order.push("claim");
+      return { rowsAffected: 1 };
+    });
+    createInvoice.mockImplementation(async () => {
+      order.push("invoice");
+      return 77;
+    });
+
+    expect(await generateInvoiceFromRecurring(4)).toBe(77);
+
+    expect(order).toEqual(["claim", "invoice"]);
+    const [sql, binds] = execute.mock.calls[0];
+    expect(sql).toContain("WHERE id = ? AND next_due_date = ?");
+    expect(binds.slice(2)).toEqual([4, recurringRow.next_due_date]);
+  });
+
+  it("creates no second invoice when a concurrent click already claimed the period", async () => {
+    execute.mockResolvedValue({ rowsAffected: 0 });
+
+    await expect(generateInvoiceFromRecurring(4)).rejects.toThrow("bereits eine Rechnung");
+    expect(createInvoice).not.toHaveBeenCalled();
+  });
+
+  it("releases the claim when the invoice cannot be created", async () => {
+    execute.mockResolvedValue({ rowsAffected: 1 });
+    createInvoice.mockRejectedValueOnce(new Error("Customer 2 not found"));
+
+    await expect(generateInvoiceFromRecurring(4)).rejects.toThrow("Customer 2 not found");
+
+    const [, releaseBinds] = execute.mock.calls[1];
+    expect(releaseBinds.slice(0, 3)).toEqual([null, recurringRow.next_due_date, 4]);
+  });
+});
+
+describe("templatePrefillRejection", () => {
+  it("accepts a EUR invoice", () => {
+    expect(templatePrefillRejection({ currency: "EUR" })).toBeNull();
+  });
+
+  it("refuses a foreign-currency invoice, whose prices would be taken as EUR", () => {
+    expect(templatePrefillRejection({ currency: "USD" })).toContain("USD");
   });
 });

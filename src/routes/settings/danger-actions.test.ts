@@ -36,7 +36,7 @@ describe("dangerActionLabel", () => {
   it("names each action", () => {
     expect(dangerActionLabel({ kind: "wipeAll" })).toBe("Alle Geschäftsdaten löschen");
     expect(dangerActionLabel({ kind: "resetCounters" })).toBe(
-      "Nummerierungs-Counter zurücksetzen",
+      "Nummernzähler zurücksetzen",
     );
     expect(dangerActionLabel({ kind: "wipeTables", tables: ["invoices"] })).toBe("1 Tabelle leeren");
   });

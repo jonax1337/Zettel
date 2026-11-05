@@ -15,7 +15,8 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
-from invoice.zugferd import render_zugferd_xml, _vat_groups, _PROFILE_URNS
+from invoice.vat import vat_groups
+from invoice.zugferd import render_zugferd_xml, _PROFILE_URNS
 
 GOLDEN_DIR = Path(__file__).parent / "goldens"
 GOLDEN_DIR.mkdir(exist_ok=True)
@@ -117,7 +118,7 @@ class TestZugferdSemantics:
     def test_credit_note_inverts_amounts(self, payloads):
         payload = payloads("01-standard-19.json")
         payload["invoice"]["isCreditNote"] = True
-        groups = _vat_groups(payload["items"], is_klein=False, sign=-1)
+        groups = vat_groups(payload["items"], is_klein=False, sign=-1)
         assert all(g["basis"] <= 0 for g in groups)
         assert all(g["tax"] <= 0 for g in groups)
 
@@ -129,7 +130,7 @@ class TestVatGrouping:
             {"lineTotal": 5000, "vatRate": 7},
             {"lineTotal": 2000, "vatRate": 19},
         ]
-        groups = _vat_groups(items, is_klein=False)
+        groups = vat_groups(items, is_klein=False)
         assert len(groups) == 2
         rate_19 = next(g for g in groups if g["rate"] == 19)
         rate_7 = next(g for g in groups if g["rate"] == 7)
@@ -140,13 +141,13 @@ class TestVatGrouping:
 
     def test_kleinunternehmer_zeros_vat(self):
         items = [{"lineTotal": 10000, "vatRate": 19}]
-        groups = _vat_groups(items, is_klein=True)
+        groups = vat_groups(items, is_klein=True)
         assert len(groups) == 1
         assert groups[0]["rate"] == 0
         assert groups[0]["tax"] == 0
 
     def test_empty_items_returns_zero_group(self):
-        groups = _vat_groups([], is_klein=False)
+        groups = vat_groups([], is_klein=False)
         assert len(groups) == 1
         assert groups[0]["basis"] == 0
 
@@ -156,14 +157,14 @@ class TestVatGrouping:
             {"lineTotal": 1000, "vatRate": 7},
             {"lineTotal": 1000, "vatRate": 0},
         ]
-        groups = _vat_groups(items, is_klein=False)
+        groups = vat_groups(items, is_klein=False)
         assert [g["rate"] for g in groups] == [0, 7, 19]
 
     def test_half_cent_tax_rounds_up_like_the_app(self):
         # 150 ct * 19 % = 28.5 ct; the app (Math.round) books 29, banker's rounding gives 28.
-        groups = _vat_groups([{"lineTotal": 150, "vatRate": 19}], is_klein=False)
+        groups = vat_groups([{"lineTotal": 150, "vatRate": 19}], is_klein=False)
         assert groups[0]["tax"] == 29
 
     def test_credit_note_tax_mirrors_the_invoice_tax(self):
-        groups = _vat_groups([{"lineTotal": 150, "vatRate": 19}], is_klein=False, sign=-1)
+        groups = vat_groups([{"lineTotal": 150, "vatRate": 19}], is_klein=False, sign=-1)
         assert (groups[0]["basis"], groups[0]["tax"]) == (-150, -29)

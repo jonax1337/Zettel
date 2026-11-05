@@ -7,8 +7,10 @@ import { UTF8_BOM } from "$lib/utils/csv";
 import {
   buildUstvaReport,
   convertGroupsToEur,
+  formatUstvaAmount,
   sumOutgoingNet,
   sumReverseChargePurchases,
+  truncateToWholeEuros,
   ustvaToCsv,
   VAT_ACCOUNTING_LABELS,
   type InvoiceGroupRow,
@@ -274,7 +276,42 @@ describe("buildUstvaReport", () => {
 
     const report = await buildUstvaReport(2026, 1, "accrual");
 
-    expect(amountsByKz(report)["81"]).toBe(10_000 + 9_244);
+    expect(amountsByKz(report)["81"]).toBe(19_200);
+  });
+
+  it("truncates every Bemessungsgrundlage to whole euros but keeps cents on the Vorsteuer", async () => {
+    vi.mocked(select).mockImplementation(async (sql: string) => {
+      if (sql.includes("GROUP BY e.reverse_charge_type"))
+        return [{ reverse_charge_type: "intra_eu", net: 4_099 }] as never;
+      if (sql.includes("GROUP BY i.id, ii.vat_rate"))
+        return [invoiceGroup({ invoice_id: 1, vat_rate: 19, net: 10_099 })] as never;
+      if (sql.includes("SUM(e.vat_amount)")) return [{ vat: 1_999 }] as never;
+      return [] as never;
+    });
+
+    const report = await buildUstvaReport(2026, 1, "accrual");
+    const amounts = amountsByKz(report);
+
+    expect(amounts["81"]).toBe(10_000);
+    expect(amounts["46"]).toBe(4_000);
+    expect(amounts["66"]).toBe(1_999);
+    expect(report.rows.filter((r) => r.wholeEuros).map((r) => r.kz)).toEqual([
+      "81", "86", "41", "21", "43", "45", "46", "84",
+    ]);
+    expect(report.rows.find((r) => r.kz === "66")?.wholeEuros).toBe(false);
+  });
+
+  it("takes Kennzahl 66 from the stored expense VAT instead of recomputing it with SQL ROUND", async () => {
+    mockDb();
+
+    await buildUstvaReport(2026, 1, "accrual");
+
+    const vatSql = vi
+      .mocked(select)
+      .mock.calls.map(([sql]) => sql)
+      .find((sql) => sql.includes("e.vat_amount"));
+    expect(vatSql).toBeDefined();
+    expect(vatSql).not.toContain("ROUND(");
   });
 
   it("takes Kennzahl 81 from payments under Ist-Versteuerung", async () => {
@@ -313,14 +350,41 @@ describe("ustvaToCsv", () => {
     dateTo: 0,
     vatAccounting: "accrual",
     rows: [
-      { kz: "81", label: "Leistungen; 19 %", amount: -123_456, computedFrom: "Stornos negativ." },
+      { kz: "81", label: "Leistungen; 19 %", amount: -123_400, wholeEuros: true, computedFrom: "Stornos negativ." },
+      { kz: "66", label: "Vorsteuer", amount: 4_567, wholeEuros: false, computedFrom: "Eingang." },
     ],
   };
 
   it("emits BOM, header, German decimals and quotes fields containing the delimiter", () => {
     expect(ustvaToCsv(report)).toBe(
       `${UTF8_BOM}Kennzahl;Beschreibung;Betrag (EUR);Berechnet aus\r\n` +
-        `81;"Leistungen; 19 %";-1234,56;Stornos negativ.\r\n`,
+        `81;"Leistungen; 19 %";-1234;Stornos negativ.\r\n` +
+        `66;Vorsteuer;45,67;Eingang.\r\n`,
     );
+  });
+});
+
+describe("truncateToWholeEuros", () => {
+  it.each([
+    [12_399, 12_300],
+    [12_300, 12_300],
+    [99, 0],
+    [-99, 0],
+    [-12_399, -12_300],
+    [0, 0],
+  ])("%i cent -> %i cent", (cents, expected) => {
+    expect(truncateToWholeEuros(cents)).toBe(expected);
+  });
+});
+
+describe("formatUstvaAmount", () => {
+  const row = { kz: "81", label: "", computedFrom: "" };
+
+  it("shows whole euros without cents for Bemessungsgrundlagen", () => {
+    expect(formatUstvaAmount({ ...row, amount: 123_400, wholeEuros: true })).toMatch(/^1\.234\s*€$/);
+  });
+
+  it("shows euro and cent for tax amounts", () => {
+    expect(formatUstvaAmount({ ...row, amount: 123_456, wholeEuros: false })).toMatch(/^1\.234,56\s*€$/);
   });
 });

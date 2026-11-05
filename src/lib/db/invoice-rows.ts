@@ -1,10 +1,5 @@
+import { DEFAULT_CURRENCY, DEFAULT_PDF_LANGUAGE, mapDatedLineItem } from "./doc-queries";
 import type { Invoice, InvoiceItem, InvoiceStatus } from "./schema";
-
-/** Shown wherever a customer name is missing. */
-export const MISSING_NAME = "—";
-
-const DEFAULT_CURRENCY = "EUR";
-const DEFAULT_PDF_LANGUAGE = "de";
 
 /** snake_case as returned from SQLite. */
 export type InvoiceRow = {
@@ -108,18 +103,5 @@ export function mapInvoice(r: InvoiceRow): Invoice {
 }
 
 export function mapItem(r: InvoiceItemRow): InvoiceItem {
-  return {
-    id: r.id,
-    invoiceId: r.invoice_id,
-    position: r.position,
-    description: r.description,
-    quantity: r.quantity,
-    unit: r.unit,
-    unitPrice: r.unit_price,
-    vatRate: r.vat_rate,
-    lineTotal: r.line_total,
-    longDescription: r.long_description,
-    linePeriodStart: r.line_period_start,
-    linePeriodEnd: r.line_period_end,
-  };
+  return { id: r.id, invoiceId: r.invoice_id, ...mapDatedLineItem(r) };
 }

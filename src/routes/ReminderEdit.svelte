@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { push, replace } from "svelte-spa-router";
   import {
     buildReminderDraft,
     createReminder,
@@ -11,15 +11,18 @@
     updateReminder,
     type ReminderFields,
   } from "$lib/db/reminders";
-  import { getInvoice } from "$lib/db/invoices";
+  import { DEFAULT_CURRENCY } from "$lib/db/doc-queries";
+  import { getInvoice, loadCreditedCent } from "$lib/db/invoices";
   import type { Reminder, ReminderInvoiceSnapshot, ReminderLevel } from "$lib/db/schema";
   import { parseSnapshot } from "$lib/db/snapshot-json";
-  import { fromIsoDate, toIsoDate, formatDate } from "$lib/utils/date";
-  import { centsToEur, eurStringToCents } from "$lib/utils/money";
+  import { fromIsoDate, toIsoDate, formatDate, nowUnix } from "$lib/utils/date";
+  import { formatMoney } from "$lib/utils/currency";
+  import { eurStringToCents } from "$lib/utils/money";
   import { generateReminderPdf } from "$lib/sidecar/reminder";
+  import { COMPANY_INCOMPLETE_CODE } from "$lib/sidecar/company-guard";
+  import { ensureCompanyDataComplete, notifyCompanyIncomplete } from "$lib/utils/company-guard";
   import {
     Button,
-    Card,
     ConfirmDialog,
     DatePicker,
     Input,
@@ -28,10 +31,13 @@
     toast,
   } from "$lib/ui";
   import { FileText, Send, Trash2 } from "$lib/brand-icons";
-  import { open as openShell } from "@tauri-apps/plugin-shell";
+  import { openPath } from "@tauri-apps/plugin-opener";
+  import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
+  import { sendDateWarning } from "./invoice/date-warnings";
   import BackLink from "./parts/entity/BackLink.svelte";
   import { parseId } from "./parts/entity/edit-target";
   import { centsToPriceText } from "./parts/entity/format";
+  import PdfLocation from "./parts/entity/PdfLocation.svelte";
   import SectionCard from "./parts/reminder/SectionCard.svelte";
   import {
     UNKNOWN_NAME,
@@ -47,6 +53,8 @@
   let generating = $state(false);
   let error = $state<string | null>(null);
   let confirmDeleteOpen = $state(false);
+  let sendDialogOpen = $state(false);
+  let sendDate = $state(toIsoDate(nowUnix()));
 
   let reminderId = $state<number | null>(null);
   let invoiceId = $state<number | null>(null);
@@ -62,11 +70,15 @@
   let notes = $state("");
   let status = $state<Reminder["status"]>("draft");
   let originalCents = $state(0);
+  let currency = $state(DEFAULT_CURRENCY);
   let pdfPath = $state<string | null>(null);
 
   const readonly = $derived(status !== "draft");
   const feeCents = $derived(eurStringToCents(feeStr));
   const totalDueCents = $derived(originalCents + feeCents + eurStringToCents(interestStr));
+  const sendWarning = $derived(
+    sendDate ? sendDateWarning(fromIsoDate(sendDate), fromIsoDate(issueIso), nowUnix()) : null,
+  );
 
   $effect(() => {
     init();
@@ -96,7 +108,11 @@
     level = requestedLevel;
     invoiceNumber = source.invoice.number;
     customerName = customerNameFromSnapshot(source.invoice.customerSnapshot);
-    originalCents = remindableAmountCents(source.invoice);
+    originalCents = remindableAmountCents({
+      ...source.invoice,
+      creditedCent: await loadCreditedCent(sourceInvoiceId),
+    });
+    currency = source.invoice.currency;
     issueIso = toIsoDate(draft.issueDate);
     dueIso = toIsoDate(draft.dueDate);
     feeStr = centsToPriceText(draft.feeCents);
@@ -115,6 +131,7 @@
     invoiceNumber = snapshot.invoiceNumber ?? UNKNOWN_NAME;
     customerName = snapshot.customerName ?? UNKNOWN_NAME;
     originalCents = reminder.originalTotalCents;
+    currency = (await getInvoice(reminder.invoiceId))?.invoice.currency ?? DEFAULT_CURRENCY;
     issueIso = toIsoDate(reminder.issueDate);
     dueIso = toIsoDate(reminder.dueDate);
     feeStr = centsToPriceText(reminder.feeCents);
@@ -150,54 +167,70 @@
       }
       return reminderId;
     } catch (e) {
-      toast.error(String(e));
+      toast.error("Mahnung konnte nicht gespeichert werden", String(e));
       return null;
     } finally {
       saving = false;
     }
   }
 
+  /** A freshly created reminder gets its own route, so a reload cannot create a duplicate draft. */
+  function showSavedReminder(savedId: number) {
+    if (mode === "new") replace(`/reminders/${savedId}`);
+  }
+
   async function saveAndStay() {
     const savedId = await save();
-    if (savedId !== null && mode === "new") push(`/reminders/${savedId}`);
+    if (savedId !== null) showSavedReminder(savedId);
   }
 
   async function openPdf(path: string) {
     try {
-      await openShell(path);
+      await openPath(path);
     } catch (e) {
       toast.error("PDF konnte nicht geöffnet werden", String(e));
     }
   }
 
   async function generatePdf() {
-    const savedId = await save();
+    const savedId = readonly ? reminderId : await save();
     if (savedId === null) return;
     generating = true;
     try {
       const res = await generateReminderPdf(savedId);
       if (!res.success) {
-        toast.error(`PDF fehlgeschlagen: ${res.error.message}`);
-        return;
+        if (res.error.code === COMPANY_INCOMPLETE_CODE) notifyCompanyIncomplete(res.error.message);
+        else toast.error("PDF konnte nicht erstellt werden", res.error.message);
+      } else {
+        pdfPath = res.pdfPath;
+        toast.success("PDF erstellt");
+        await openPdf(res.pdfPath);
       }
-      pdfPath = res.pdfPath;
-      toast.success("PDF erstellt");
-      await openPdf(res.pdfPath);
     } catch (e) {
-      toast.error(String(e));
+      toast.error("PDF konnte nicht erstellt werden", String(e));
     } finally {
       generating = false;
     }
+    showSavedReminder(savedId);
   }
 
-  async function markSent() {
-    if (reminderId === null) return;
+  function openSendDialog() {
+    sendDate = toIsoDate(nowUnix());
+    sendDialogOpen = true;
+  }
+
+  async function confirmSend() {
+    sendDialogOpen = false;
+    if (!(await ensureCompanyDataComplete())) return;
+    const savedId = await save();
+    if (savedId === null) return;
     try {
-      await markReminderSent(reminderId);
+      await markReminderSent(savedId, fromIsoDate(sendDate));
       status = "sent";
       toast.success("Als versendet markiert");
+      showSavedReminder(savedId);
     } catch (e) {
-      toast.error(String(e));
+      toast.error("Mahnung konnte nicht als versendet markiert werden", String(e));
     }
   }
 
@@ -208,7 +241,7 @@
       toast.success("Mahnung gelöscht");
       push("/reminders");
     } catch (e) {
-      toast.error(String(e));
+      toast.error("Mahnung konnte nicht gelöscht werden", String(e));
     }
   }
 </script>
@@ -232,7 +265,13 @@
       </p>
     </div>
     {#if readonly}
-      <span class="text-sm text-muted-foreground">Versendet — schreibgeschützt</span>
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-muted-foreground">Versendet — schreibgeschützt</span>
+        <Button variant="outline" onclick={generatePdf} disabled={generating}>
+          <FileText class="size-4" />
+          PDF neu erzeugen
+        </Button>
+      </div>
     {:else}
       <div class="flex gap-2">
         <Button variant="outline" onclick={saveAndStay} disabled={saving}>
@@ -261,19 +300,19 @@
     <SectionCard title="Beträge">
       <div class="flex justify-between text-sm">
         <span>Offener Rechnungsbetrag</span>
-        <span class="font-mono">{centsToEur(originalCents)}</span>
+        <span class="font-mono">{formatMoney(originalCents, currency)}</span>
       </div>
       <div class="flex flex-col gap-1.5">
-        <Label>Mahngebühr (EUR)</Label>
+        <Label>Mahngebühr ({currency})</Label>
         <Input bind:value={feeStr} disabled={readonly} />
       </div>
       <div class="flex flex-col gap-1.5">
-        <Label>Verzugszinsen (EUR)</Label>
+        <Label>Verzugszinsen ({currency})</Label>
         <Input bind:value={interestStr} disabled={readonly} />
       </div>
       <div class="flex justify-between text-base font-semibold border-t pt-2">
         <span>Zu zahlender Gesamtbetrag</span>
-        <span class="font-mono">{centsToEur(totalDueCents)}</span>
+        <span class="font-mono">{formatMoney(totalDueCents, currency)}</span>
       </div>
     </SectionCard>
   </div>
@@ -290,17 +329,7 @@
   </SectionCard>
 
   {#if pdfPath}
-    <Card class="mb-4">
-      <div class="p-5 flex items-center justify-between gap-4">
-        <div class="text-sm">
-          <div class="font-medium">PDF</div>
-          <div class="text-xs text-muted-foreground font-mono">{pdfPath}</div>
-        </div>
-        <Button variant="outline" size="sm" onclick={() => openPdf(pdfPath!)}>
-          Öffnen
-        </Button>
-      </div>
-    </Card>
+    <PdfLocation path={pdfPath} onOpen={() => openPdf(pdfPath!)} />
   {/if}
 
   {#if reminderId !== null && !readonly}
@@ -309,7 +338,7 @@
         <Trash2 class="size-4" />
         Löschen
       </Button>
-      <Button variant="outline" onclick={markSent}>
+      <Button variant="outline" onclick={openSendDialog} disabled={saving}>
         <Send class="size-4" />
         Als versendet markieren
       </Button>
@@ -321,10 +350,23 @@
       Hinweis: Diese Mahnung ist eine Zahlungserinnerung — keine Rechtsberatung. Für gerichtliche Mahnverfahren bitte rechtliche Beratung einholen.
     </p>
     <p class="mt-1">
-      Mahngebühr: {centsToEur(feeCents)} · Fällig: {formatDate(fromIsoDate(dueIso))}
+      Mahngebühr: {formatMoney(feeCents, currency)} · Fällig: {formatDate(fromIsoDate(dueIso))}
     </p>
   </div>
 {/if}
+
+<DateConfirmDialog
+  bind:open={sendDialogOpen}
+  bind:date={sendDate}
+  title="Als versendet markieren"
+  description="Danach ist die Mahnung schreibgeschützt und kann nicht mehr bearbeitet oder gelöscht werden."
+  dateInputId="reminder-send-date"
+  dateLabel="Versendet am"
+  hint="Standard ist heute. Für Nacherfassung das tatsächliche Datum eintragen."
+  confirmLabel="Als versendet markieren"
+  warning={sendWarning}
+  onConfirm={confirmSend}
+/>
 
 <ConfirmDialog
   bind:open={confirmDeleteOpen}
