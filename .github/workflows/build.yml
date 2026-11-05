@@ -19,10 +19,58 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # Release gate for tags: the tag must match the version in every manifest,
+  # and a pre-release tag (vX.Y.Z-rc.N) must point at a commit on release/vX.Y.
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      prerelease: ${{ steps.kind.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify ref
+        id: kind
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" = tag ] && [[ "$REF_NAME" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Tag matches app version
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node scripts/version.mjs check "$TAG"
+
+      - name: Pre-release tag sits on its release branch
+        if: steps.kind.outputs.prerelease == 'true'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          MINOR="$(echo "$TAG" | sed -E 's/^v([0-9]+\.[0-9]+)\..*/\1/')"
+          BRANCH="release/v${MINOR}"
+          git fetch --no-tags origin "refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" \
+            || { echo "::error::Branch ${BRANCH} existiert nicht auf origin."; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" "origin/${BRANCH}" \
+            || { echo "::error::${TAG} zeigt nicht auf einen Commit in ${BRANCH}."; exit 1; }
+
   build:
+    needs: prepare
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -148,8 +196,18 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build --config src-tauri/tauri.bundle.conf.json --target ${{ matrix.rust-target }} --bundles deb,updater
 
+      # MSI (WiX) rejects non-numeric pre-release versions such as 0.23.0-rc.1,
+      # so release candidates ship the NSIS installer only — it is also what
+      # the updater installs.
+      - name: Build Tauri app (Windows release candidate — NSIS only)
+        if: matrix.os == 'windows-latest' && needs.prepare.outputs.prerelease == 'true'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri build --config src-tauri/tauri.bundle.conf.json --target ${{ matrix.rust-target }} --bundles nsis
+
       - name: Build Tauri app
-        if: matrix.os != 'ubuntu-22.04'
+        if: matrix.os != 'ubuntu-22.04' && !(matrix.os == 'windows-latest' && needs.prepare.outputs.prerelease == 'true')
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -175,9 +233,12 @@ jobs:
           if-no-files-found: warn
 
   release:
-    needs: build
+    needs: [prepare, build]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
 
@@ -242,6 +303,9 @@ jobs:
           PY
           cat latest.json
 
+      # Always a draft: publishing by hand is the release gate. Publishing then
+      # triggers update-feed.yml, which moves the beta channel feed. A
+      # pre-release never becomes "latest", so stable clients never see it.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -249,4 +313,6 @@ jobs:
             dist/**/*
             latest.json
           draft: true
+          prerelease: ${{ needs.prepare.outputs.prerelease }}
+          make_latest: ${{ needs.prepare.outputs.prerelease == 'true' && 'false' || 'true' }}
           generate_release_notes: true
