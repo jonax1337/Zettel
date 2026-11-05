@@ -15,6 +15,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(25);
 /// build runs in the GUI subsystem, so without this flag every console child
 /// gets a visible, empty console of its own. Piped stdio is unaffected.
 pub fn background_command(program: impl AsRef<OsStr>) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut cmd = Command::new(program);
     #[cfg(windows)]
     {
