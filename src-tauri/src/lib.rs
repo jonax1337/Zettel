@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, Runtime, plugin::TauriPlugin};
+use tauri::{plugin::TauriPlugin, AppHandle, Manager, Runtime};
 use tauri_plugin_sql::{Migration, MigrationKind, PluginConfig};
 use tauri_plugin_window_state::StateFlags;
 
@@ -15,6 +15,7 @@ mod sidecar;
 mod tenants;
 #[cfg(test)]
 mod testutil;
+mod updates;
 mod validator;
 
 /// `(version, description, file name without `.sql` in src/lib/db/migrations)`.
@@ -51,14 +52,22 @@ fn build_migrations() -> Vec<Migration> {
         (16, "v0.11_pauschal_mode", "0015_v0.11_pauschal_mode"),
         (17, "v0.11_tax_prepayments", "0016_v0.11_tax_prepayments"),
         (18, "v0.11_other_income", "0017_v0.11_other_income"),
-        (19, "v0.11_fix_storno_eur_total", "0018_v0.11_fix_storno_eur_total"),
+        (
+            19,
+            "v0.11_fix_storno_eur_total",
+            "0018_v0.11_fix_storno_eur_total"
+        ),
         (20, "v0.12_service_periods", "0019_v0.12_service_periods"),
         (21, "v0.14_catalog", "0020_v0.14_catalog"),
         (22, "v0.14_skonto", "0021_v0.14_skonto"),
         (23, "v0.15_partial_payments", "0022_v0.15_partial_payments"),
         (24, "v0.15_auto_backup", "0023_v0.15_auto_backup"),
         (25, "v0.16_pdf_language", "0024_v0.16_pdf_language"),
-        (26, "v0.16_expense_categories", "0025_v0.16_expense_categories"),
+        (
+            26,
+            "v0.16_expense_categories",
+            "0025_v0.16_expense_categories"
+        ),
         (27, "v0.22_tax_options", "0026_v0.22_tax_options"),
         (28, "v0.23_lifecycle", "0027_v0.23_lifecycle"),
     ]
@@ -152,6 +161,7 @@ pub fn run() {
             tenants::relocate_active_tenant,
             tenants::remove_tenant,
             exchange::fetch_ecb_exchange_rate,
+            updates::check_for_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -177,8 +187,8 @@ mod tests {
     fn migrations_set_the_user_version_matching_their_registry_version() {
         for migration in build_migrations() {
             let pragma = format!("PRAGMA user_version = {};", migration.version);
-            let sets_other_version = migration.sql.contains("PRAGMA user_version")
-                && !migration.sql.contains(&pragma);
+            let sets_other_version =
+                migration.sql.contains("PRAGMA user_version") && !migration.sql.contains(&pragma);
             assert!(
                 !sets_other_version,
                 "migration {} ({}) sets a different user_version",
@@ -274,7 +284,12 @@ mod tests {
             count(&other_pool_connection, "SELECT COUNT(*) FROM invoices");
 
             migrate(&mut conn, LIFECYCLE_VERSION..=LIFECYCLE_VERSION);
-            Migrated { _dir: dir, conn, other_pool_connection, counts_before }
+            Migrated {
+                _dir: dir,
+                conn,
+                other_pool_connection,
+                counts_before,
+            }
         }
 
         #[test]
@@ -357,13 +372,19 @@ mod tests {
             let m = migrated_from_version_27();
             let offer: String = m
                 .conn
-                .query_row("SELECT reverse_charge_type FROM offers WHERE id = 1", [], |r| r.get(0))
+                .query_row(
+                    "SELECT reverse_charge_type FROM offers WHERE id = 1",
+                    [],
+                    |r| r.get(0),
+                )
                 .unwrap();
             let recurring: String = m
                 .conn
-                .query_row("SELECT reverse_charge_type FROM recurring_invoices WHERE id = 1", [], |r| {
-                    r.get(0)
-                })
+                .query_row(
+                    "SELECT reverse_charge_type FROM recurring_invoices WHERE id = 1",
+                    [],
+                    |r| r.get(0),
+                )
                 .unwrap();
             assert_eq!((offer.as_str(), recurring.as_str()), ("intra_eu", "none"));
         }

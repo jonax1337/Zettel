@@ -1,0 +1,83 @@
+name: Update beta feed
+
+# The stable channel reads releases/latest/download/latest.json, which GitHub
+# resolves to the newest non-pre-release. The beta channel reads the rolling
+# release `beta-feed` instead; this workflow copies the latest.json of every
+# published release (stable or pre-release) there, but only if it is newer, so
+# publishing a hotfix for an older line never rolls beta users back.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag whose latest.json the beta feed should serve (e.g. v0.23.0-rc.1)'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beta-feed
+  cancel-in-progress: false
+
+env:
+  FEED_TAG: beta-feed
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  update:
+    if: github.event_name == 'workflow_dispatch' || github.event.release.tag_name != 'beta-feed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch candidate and current feed
+        env:
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          mkdir -p candidate current
+          gh release download "$TAG" --pattern latest.json --dir candidate
+          # Only a missing release counts as "no feed yet". Any other failure
+          # must abort, or a stale candidate would overwrite a newer feed.
+          if gh release view "$FEED_TAG" >/dev/null 2>view.err; then
+            gh release download "$FEED_TAG" --pattern latest.json --dir current
+          elif grep -qi "not found" view.err; then
+            echo "No beta feed yet — it will be created."
+          else
+            cat view.err >&2
+            exit 1
+          fi
+
+      - name: Decide whether the candidate is newer
+        id: compare
+        shell: python
+        run: |
+          import json, os, pathlib
+
+          def key(version):
+              core, _, pre = version.partition("-")
+              nums = tuple(int(p) for p in core.split("."))
+              if not pre:
+                  return nums, (1,)
+              ids = tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in pre.split("."))
+              return nums, (0,) + ids
+
+          candidate = json.loads(pathlib.Path("candidate/latest.json").read_text())["version"]
+          current_file = pathlib.Path("current/latest.json")
+          current = json.loads(current_file.read_text())["version"] if current_file.exists() else None
+          newer = current is None or key(candidate) > key(current)
+          print(f"candidate={candidate} current={current} newer={newer}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"newer={'true' if newer else 'false'}\n")
+
+      - name: Publish to beta feed
+        if: steps.compare.outputs.newer == 'true'
+        run: |
+          if ! gh release view "$FEED_TAG" >/dev/null 2>&1; then
+            gh release create "$FEED_TAG" --prerelease --latest=false \
+              --title "Beta update feed" \
+              --notes "Rolling updater feed for the in-app beta channel. Maintained by update-feed.yml — do not delete."
+          fi
+          gh release upload "$FEED_TAG" candidate/latest.json --clobber

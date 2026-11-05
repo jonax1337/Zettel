@@ -50,7 +50,11 @@ pub async fn import_expense_pdf(
     Ok(path_string(&destination))
 }
 
-fn import_pdf(src: &Path, incoming_root: &Path, vendor_slug: Option<&str>) -> Result<PathBuf, String> {
+fn import_pdf(
+    src: &Path,
+    incoming_root: &Path,
+    vendor_slug: Option<&str>,
+) -> Result<PathBuf, String> {
     if !src.is_file() {
         return Err(format!("Quelldatei nicht gefunden: {}", src.display()));
     }
@@ -139,8 +143,11 @@ fn adopt_pdf_versions(previous: &Path, target: &Path) -> Result<(), String> {
                 .to_string()
         };
         let moved = fs::create_dir_all(&versions_dir).and_then(|()| {
-            let destination =
-                first_free_path(&versions_dir, &format!("{target_stem}{suffix}"), extension_of(&source));
+            let destination = first_free_path(
+                &versions_dir,
+                &format!("{target_stem}{suffix}"),
+                extension_of(&source),
+            );
             move_file(&source, &destination)
         });
         if let Err(e) = moved {
@@ -289,10 +296,16 @@ mod tests {
     #[test]
     fn first_free_path_counts_up_from_two() {
         let dir = TempDir::new("free-path");
-        assert_eq!(first_free_path(dir.path(), "a", "pdf"), dir.path().join("a.pdf"));
+        assert_eq!(
+            first_free_path(dir.path(), "a", "pdf"),
+            dir.path().join("a.pdf")
+        );
         fs::write(dir.path().join("a.pdf"), b"").unwrap();
         fs::write(dir.path().join("a-2.pdf"), b"").unwrap();
-        assert_eq!(first_free_path(dir.path(), "a", "pdf"), dir.path().join("a-3.pdf"));
+        assert_eq!(
+            first_free_path(dir.path(), "a", "pdf"),
+            dir.path().join("a-3.pdf")
+        );
     }
 
     #[test]
@@ -352,12 +365,17 @@ mod tests {
     fn a_pdf_stored_in_a_previous_root_joins_the_version_chain_of_the_new_path() {
         let dir = TempDir::new("adopt-legacy");
         let legacy = dir.path().join("home/Documents/Zettel/Rechnungen/RE-1.pdf");
-        let legacy_versions = dir.path().join("home/Documents/Zettel/Rechnungen").join(VERSIONS_DIR);
+        let legacy_versions = dir
+            .path()
+            .join("home/Documents/Zettel/Rechnungen")
+            .join(VERSIONS_DIR);
         fs::create_dir_all(&legacy_versions).unwrap();
         fs::write(&legacy, b"issued").unwrap();
         fs::write(legacy_versions.join("RE-1__100.pdf"), b"first").unwrap();
         fs::write(legacy_versions.join("RE-2__100.pdf"), b"other invoice").unwrap();
-        let target = dir.path().join("onedrive/Dokumente/Zettel/Rechnungen/RE-1.pdf");
+        let target = dir
+            .path()
+            .join("onedrive/Dokumente/Zettel/Rechnungen/RE-1.pdf");
 
         tauri::async_runtime::block_on(archive_pdf_version(
             path_string(&target),
@@ -366,7 +384,10 @@ mod tests {
         .unwrap();
 
         let versions = pdf_versions(&target).unwrap();
-        let contents: Vec<Vec<u8>> = versions.iter().map(|v| fs::read(&v.path).unwrap()).collect();
+        let contents: Vec<Vec<u8>> = versions
+            .iter()
+            .map(|v| fs::read(&v.path).unwrap())
+            .collect();
         assert_eq!(versions.len(), 2);
         assert!(contents.contains(&b"issued".to_vec()));
         assert!(contents.contains(&b"first".to_vec()));
@@ -390,7 +411,11 @@ mod tests {
         let versions = pdf_versions(&pdf).unwrap();
         assert_eq!(versions.len(), 1);
         assert_eq!(fs::read(&versions[0].path).unwrap(), b"v1");
-        assert!(!versions[0].path.ends_with("-2.pdf"), "{}", versions[0].path);
+        assert!(
+            !versions[0].path.ends_with("-2.pdf"),
+            "{}",
+            versions[0].path
+        );
     }
 
     #[test]
@@ -408,13 +433,17 @@ mod tests {
 
         assert_eq!(versions.len(), 2);
         assert_eq!(versions.iter().filter(|v| v.current).count(), 1);
-        assert!(versions.iter().any(|v| v.path.ends_with("RE-1__100.pdf") && !v.current));
+        assert!(versions
+            .iter()
+            .any(|v| v.path.ends_with("RE-1__100.pdf") && !v.current));
     }
 
     #[test]
     fn versions_are_empty_without_versions_dir_or_current_file() {
         let dir = TempDir::new("versions-empty");
-        assert!(pdf_versions(&dir.path().join("RE-1.pdf")).unwrap().is_empty());
+        assert!(pdf_versions(&dir.path().join("RE-1.pdf"))
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -422,11 +451,9 @@ mod tests {
         let dir = TempDir::new("save-text");
         let target = dir.path().join("a/b/export.csv");
 
-        let saved = tauri::async_runtime::block_on(save_text_file(
-            path_string(&target),
-            "x;y".into(),
-        ))
-        .unwrap();
+        let saved =
+            tauri::async_runtime::block_on(save_text_file(path_string(&target), "x;y".into()))
+                .unwrap();
 
         assert_eq!(saved, path_string(&target));
         assert_eq!(fs::read_to_string(&target).unwrap(), "x;y");

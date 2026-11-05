@@ -160,7 +160,9 @@ pub fn active_documents_root_for(app: &AppHandle) -> Result<PathBuf, String> {
 /// collect.
 #[tauri::command]
 pub async fn get_documents_root(app: AppHandle) -> Result<String, String> {
-    Ok(active_documents_root_for(&app)?.to_string_lossy().into_owned())
+    Ok(active_documents_root_for(&app)?
+        .to_string_lossy()
+        .into_owned())
 }
 
 /// Datei, die das SQL-Plugin für die aktive DB öffnet. Spiegelt dessen
@@ -215,7 +217,9 @@ fn tenant_entries(cfg: TenantConfig) -> Vec<TenantEntry> {
         label: t.label,
         path: t.path,
     });
-    std::iter::once(default_entry).chain(custom_entries).collect()
+    std::iter::once(default_entry)
+        .chain(custom_entries)
+        .collect()
 }
 
 #[tauri::command]
@@ -300,7 +304,11 @@ fn relocate(cfg: &mut TenantConfig, path: &str, label: &str) -> Result<(), Strin
             }
         }
         None => {
-            let label = if label.is_empty() { RELOCATED_DEFAULT_LABEL } else { label };
+            let label = if label.is_empty() {
+                RELOCATED_DEFAULT_LABEL
+            } else {
+                label
+            };
             cfg.active = Some(cfg.push_tenant(label.to_string(), path.to_string()));
         }
     }

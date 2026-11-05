@@ -8,7 +8,9 @@
 
 ## Checks
 
-- [ ] `pnpm check` ist grün
+- [ ] `pnpm check` und `pnpm test` sind grün
+- [ ] Falls Rust betroffen: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test --lib` (in `src-tauri/`)
+- [ ] Falls Sidecar/CLI betroffen: `pytest` in `sidecar/`
 - [ ] Manuell getestet (mind. Happy-Path)
 - [ ] Falls Sidecar/ZUGFeRD betroffen: Beispiel-Rechnung gegen einen Validator geprüft
 - [ ] Falls UI-Änderung: keine Regression bei Light/Dark-Theme

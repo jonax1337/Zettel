@@ -15,6 +15,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(25);
 /// build runs in the GUI subsystem, so without this flag every console child
 /// gets a visible, empty console of its own. Piped stdio is unaffected.
 pub fn background_command(program: impl AsRef<OsStr>) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut cmd = Command::new(program);
     #[cfg(windows)]
     {
@@ -33,7 +34,11 @@ pub fn output_within(mut child: Child, timeout: Duration) -> io::Result<Option<O
     let deadline = Instant::now() + timeout;
     loop {
         if let Some(status) = child.try_wait()? {
-            return Ok(Some(Output { status, stdout: collect(stdout), stderr: collect(stderr) }));
+            return Ok(Some(Output {
+                status,
+                stdout: collect(stdout),
+                stderr: collect(stderr),
+            }));
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
@@ -55,7 +60,9 @@ fn drain(mut pipe: impl Read + Send + 'static) -> JoinHandle<Vec<u8>> {
 }
 
 fn collect(reader: Option<JoinHandle<Vec<u8>>>) -> Vec<u8> {
-    reader.and_then(|handle| handle.join().ok()).unwrap_or_default()
+    reader
+        .and_then(|handle| handle.join().ok())
+        .unwrap_or_default()
 }
 
 /// Runs blocking work (child processes, file I/O) off the async runtime's
@@ -74,7 +81,11 @@ mod tests {
     use std::process::Stdio;
 
     fn spawn_piped(command: &mut Command) -> Child {
-        command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap()
+        command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
     }
 
     #[cfg(windows)]
@@ -109,7 +120,9 @@ mod tests {
     fn a_child_that_finishes_in_time_returns_its_output() {
         let child = spawn_piped(&mut echo_hello());
 
-        let output = output_within(child, Duration::from_secs(20)).unwrap().unwrap();
+        let output = output_within(child, Duration::from_secs(20))
+            .unwrap()
+            .unwrap();
 
         assert!(output.status.success());
         assert!(String::from_utf8_lossy(&output.stdout).contains("hello"));

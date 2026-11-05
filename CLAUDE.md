@@ -6,7 +6,7 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 - **Released:** v0.22.0 on `main`. Auto-Update aktiv seit v0.4.3.
 - **DB schema:** `user_version = 28` (letzte Migration `0027_v0.23_lifecycle.sql`).
 - **Dev-Linie:** neue Arbeit auf `release/vX.Y`-Branches.
-- **Test-Suite:** 902 Vitest-Cases (`pnpm test`, Zeitzone in `vite.config.ts` auf Europe/Berlin gepinnt) + 270 Pytest-Cases (`sidecar/tests/`, inkl. CLI-Logik; 19 weitere brauchen den lokalen KoSIT-Validator; `sidecar/tests/fixtures/invoice-parity.json` wird von Vitest und Pytest gemeinsam geprüft) + 116 Rust-Tests (`cargo test`). Pure-Math (Totals/Tax/Skonto/Currency/Date/DATEV) ist voll abgedeckt, Sidecar deckt ZUGFeRD-XML-Goldens + KoSIT-Validator-Roundtrip + i18n ab.
+- **Test-Suite:** 1004 Vitest-Cases (`pnpm test`, Zeitzone in `vite.config.ts` auf Europe/Berlin gepinnt) + 270 Pytest-Cases (`sidecar/tests/`, inkl. CLI-Logik; 19 weitere brauchen den lokalen KoSIT-Validator; `sidecar/tests/fixtures/invoice-parity.json` wird von Vitest und Pytest gemeinsam geprüft) + 116 Rust-Tests (`cargo test`). Pure-Math (Totals/Tax/Skonto/Currency/Date/DATEV) ist voll abgedeckt, Sidecar deckt ZUGFeRD-XML-Goldens + KoSIT-Validator-Roundtrip + i18n ab.
 
 ## Architecture
 
@@ -83,6 +83,9 @@ Eine neue Migration `000N_<name>.sql` heißt **immer drei Stellen gleichzeitig a
 - CI: `.github/workflows/build.yml` Matrix windows-latest / macos-14 (arm64) / macos-13 (x86_64) / ubuntu-22.04. Jeder Runner installiert Python+GTK+Tauri-Deps, baut `python sidecar/build.py`, dann `pnpm tauri:build`.
 - **Resources-Split** (v0.10-Fix): Production-Resources (`sidecar/dist`, `tools/jre`, `kosit-validator`) leben in `tauri.bundle.conf.json`, **nicht** in `tauri.conf.json`. Dev-Build hat sie nicht — sonst emittiert `cargo:rerun-if-changed` tausende Files und Tauri-Build crashed mit `Zugriff verweigert (os error 5)` durch AV-Interferenz auf Windows. `pnpm tauri:build` lädt die Bundle-Conf als Overlay.
 - **Updater:** Ed25519-signiert, statisches `latest.json` bei GitHub Releases. Tauri-2-Quirk: NSIS-Setup-Sig ist `-setup.exe.sig`, nicht `*.nsis.zip.sig`. `bundle.createUpdaterArtifacts: true` muss in `tauri.conf.json` gesetzt sein.
+- **Update-Kanäle:** Check läuft über den Rust-Command `updates::check_for_update(channel)`, nicht über JS-`check()` (kann keine Endpoints wechseln). `stable` = `releases/latest` (nie Pre-Releases), `beta` = Rolling-Release `beta-feed`, gepflegt von `update-feed.yml` bei jedem veröffentlichten Release. Wahl in `localStorage` (`zettel.update_channel`), Toggle im Settings-Hub.
+- **Versionen/Releases:** Version nur via `pnpm version:set <semver>` ändern (package.json, tauri.conf.json, Cargo.toml, Cargo.lock), CI prüft Gleichheit. RC = Tag `vX.Y.Z-rc.N` auf einem Commit in `release/vX.Y` → Draft-Pre-Release (Windows nur NSIS, MSI kann keine `-rc`). Details `docs/auto-update-setup.md`.
+- **CI:** `ci.yml` (Frontend check/test/build, Sidecar pytest, Rust fmt/clippy `-D warnings`/test, Sammel-Check „CI ok"), `build.yml` (Installer + Release), `update-feed.yml` (Beta-Feed).
 - **Linux/macOS-Caveat:** WeasyPrint lädt Pango/Cairo dynamisch vom System. User brauchen `libpango1.0-0 libcairo2 libgdk-pixbuf2.0-0` (apt) bzw. `brew install pango cairo gdk-pixbuf`.
 - Windows-Install-Path: `C:\Users\<user>\AppData\Local\zettel\` (NSIS user-scope).
 

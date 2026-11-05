@@ -1,0 +1,14 @@
+# Categories for GitHub's generated release notes (build.yml → generate_release_notes).
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+  categories:
+    - title: Neue Funktionen
+      labels: [enhancement, feature]
+    - title: Fehlerbehebungen
+      labels: [bug]
+    - title: Abhängigkeiten
+      labels: [dependencies]
+    - title: Sonstiges
+      labels: ['*']

@@ -177,11 +177,12 @@ pub async fn validate_einvoice_xml(
 
 fn validate_pdf(app: &AppHandle, pdf_path: &str) -> Result<ValidationReport, String> {
     let extract = sidecar::extract_xml_only(app, pdf_path)?;
-    let found = extract.get("found").and_then(|v| v.as_bool()).unwrap_or(false);
+    let found = extract
+        .get("found")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     if !found {
-        return Err(
-            "PDF enthält kein Factur-X/ZUGFeRD-XML — Validierung nicht möglich.".into(),
-        );
+        return Err("PDF enthält kein Factur-X/ZUGFeRD-XML — Validierung nicht möglich.".into());
     }
     let xml = extract
         .get("xml")
@@ -195,7 +196,11 @@ fn validate_pdf(app: &AppHandle, pdf_path: &str) -> Result<ValidationReport, Str
 }
 
 /// Runs the validator on `input`, writing its report into `run_dir`.
-fn validate_in(app: &AppHandle, input: &Path, run_dir: &RunDir) -> Result<ValidationReport, String> {
+fn validate_in(
+    app: &AppHandle,
+    input: &Path,
+    run_dir: &RunDir,
+) -> Result<ValidationReport, String> {
     let dir = resolve_validator_dir(app);
     let jar = dir.join(VALIDATOR_JAR);
     let scenarios = dir.join(SCENARIOS_FILE);
@@ -465,7 +470,9 @@ mod tests {
     #[test]
     fn simplify_strips_verbatim_prefix() {
         assert_eq!(
-            simplify(PathBuf::from(r"\\?\C:\Users\x\zettel\kosit-validator\validator.jar")),
+            simplify(PathBuf::from(
+                r"\\?\C:\Users\x\zettel\kosit-validator\validator.jar"
+            )),
             PathBuf::from(r"C:\Users\x\zettel\kosit-validator\validator.jar")
         );
         // Already-simple paths pass through unchanged.

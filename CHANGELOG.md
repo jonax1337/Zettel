@@ -6,6 +6,12 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+- **Beta-Updates.** Einstellungen → „Beta-Updates" schaltet auf den Beta-Kanal: Release Candidates (`vX.Y.Z-rc.N`) werden vor dem stabilen Release angeboten und installiert. Ohne Häkchen kommen wie bisher nur stabile Versionen. Wer eine RC installiert hat, bleibt standardmäßig im Beta-Kanal.
+
+### Changed
+- **CI:** Rust-Formatierung und Clippy (`-D warnings`) sind Pflicht, Frontend-Build und Versionsgleichheit aller Manifeste werden geprüft. Ein Release-Tag muss zur App-Version passen, ein RC-Tag auf dem passenden `release/vX.Y`-Branch liegen.
+
 ### Fixed
 - **Datum auf PDF und E-Rechnung einen Tag zu früh.** Der Sidecar gab Daten in UTC aus, die App speichert lokale Mitternacht. Rechnungsdatum, Fälligkeit, Leistungszeitraum, Skonto-Frist und Mahnungen erscheinen jetzt korrekt (Europe/Berlin). Bereits erzeugte PDFs bitte neu erzeugen.
 - **Teilzahlungen gingen nie durch.** Die Tabelle `invoices` ließ den Status `partial` per CHECK nicht zu; die Zahlung wurde gespeichert, der Status nicht, und ein erneuter Bank-Import buchte doppelt. Die Migration erlaubt den Status und repariert betroffene Rechnungen.
