@@ -15,6 +15,7 @@ mod sidecar;
 mod tenants;
 #[cfg(test)]
 mod testutil;
+mod updates;
 mod validator;
 
 /// `(version, description, file name without `.sql` in src/lib/db/migrations)`.
@@ -152,6 +153,7 @@ pub fn run() {
             tenants::relocate_active_tenant,
             tenants::remove_tenant,
             exchange::fetch_ecb_exchange_rate,
+            updates::check_for_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

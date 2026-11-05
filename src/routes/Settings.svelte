@@ -1,6 +1,6 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
-  import { Card, CardContent, Button, PageHeader, toast, PERSISTENT_TOAST } from "$lib/ui";
+  import { Card, CardContent, Button, Checkbox, Label, PageHeader, toast, PERSISTENT_TOAST } from "$lib/ui";
   import {
     Building2,
     FileText,
@@ -11,7 +11,7 @@
     RefreshCw,
   } from "$lib/brand-icons";
   import { version as appVersion } from "../../package.json";
-  import { checkForUpdate } from "$lib/updater";
+  import { checkForUpdate, getUpdateChannel, setUpdateChannel } from "$lib/updater";
   import { cn } from "$lib/utils";
 
   type Category = {
@@ -63,6 +63,18 @@
   ];
 
   let updateChecking = $state(false);
+  let betaUpdates = $state(getUpdateChannel() === "beta");
+
+  function onBetaUpdatesChange(enabled: boolean) {
+    try {
+      setUpdateChannel(enabled ? "beta" : "stable");
+    } catch (e) {
+      betaUpdates = !enabled;
+      toast.error("Einstellung nicht gespeichert", String(e));
+      return;
+    }
+    if (enabled) void onCheckUpdate();
+  }
 
   async function onCheckUpdate() {
     updateChecking = true;
@@ -94,6 +106,18 @@
     <span class="text-muted-foreground">
       Version <code class="text-foreground">v{appVersion}</code>
     </span>
+    <div
+      class="flex items-center gap-2"
+      title="Release Candidates vor dem offiziellen Release erhalten. Beim Abschalten bleibt die installierte Version, bis eine neuere stabile Version erscheint."
+    >
+      <Checkbox
+        id="beta-updates"
+        bind:checked={betaUpdates}
+        onCheckedChange={onBetaUpdatesChange}
+        disabled={updateChecking}
+      />
+      <Label for="beta-updates" class="font-normal">Beta-Updates</Label>
+    </div>
     <Button
       type="button"
       variant="outline"
