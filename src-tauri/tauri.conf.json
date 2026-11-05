@@ -46,6 +46,12 @@
       "nsis": {
         "installerHooks": "installer-hooks.nsh"
       }
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libpango-1.0-0", "libpangoft2-1.0-0", "libharfbuzz0b", "libfontconfig1"],
+        "recommends": ["libharfbuzz-subset0"]
+      }
     }
   },
   "plugins": {

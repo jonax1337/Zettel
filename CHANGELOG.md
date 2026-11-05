@@ -29,6 +29,8 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 - **Kundenadresse** auf Entwürfen wird beim Speichern und Ausstellen aktualisiert.
 - Kunden und Lieferanten mit Belegen lassen sich nicht mehr löschen.
 - Sidecar und Validator brechen nach einem Timeout ab, statt ewig zu hängen.
+- **Linux: CLI findet die Datenbank.** `zettel-cli` sucht `zettel.db` und `zettel-sandbox.db` unter `~/.config/digital.laux.zettel/` (dort legt tauri-plugin-sql sie ab); `sandbox.flag` und `tenants.json` bleiben im Data-Dir.
+- **Linux-`.deb` deklariert die PDF-Abhängigkeiten** (`libpango-1.0-0`, `libpangoft2-1.0-0`, `libharfbuzz0b`, `libfontconfig1`; empfohlen: `libharfbuzz-subset0`), damit WeasyPrint auf frischen Systemen läuft. Getestet auf Ubuntu 22.04, 24.04 und 26.04.
 
 ### Changed
 - **PDF-Ablage:** PDFs liegen im echten Dokumente-Ordner des Systems (bei OneDrive-Umleitung dort), derselbe Ort, den Backups sichern. Bestehende PDFs bleiben, wo sie sind, und werden weiter gefunden.

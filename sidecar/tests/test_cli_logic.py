@@ -530,3 +530,32 @@ class TestInvoiceListYear:
         monkeypatch.setattr(cli, "connect", lambda: SharedConnection(con))
         cli.cmd_invoice_list(SimpleNamespace(status=None, year=2026))
         assert "RE-2026-0001" in capsys.readouterr().out
+
+
+class TestResolveDbPath:
+    @pytest.fixture
+    def dirs(self, cli, monkeypatch, tmp_path):
+        data, config = tmp_path / "data", tmp_path / "config"
+        monkeypatch.setattr(cli.sys, "platform", "linux")
+        monkeypatch.setenv("XDG_DATA_HOME", str(data))
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+        (data / cli.APP_IDENTIFIER).mkdir(parents=True)
+        return data / cli.APP_IDENTIFIER, config / cli.APP_IDENTIFIER
+
+    def test_default_db_is_in_config_dir(self, cli, dirs):
+        assert cli.resolve_db_path() == dirs[1] / "zettel.db"
+
+    def test_sandbox_db_is_in_config_dir_flag_in_data_dir(self, cli, dirs):
+        (dirs[0] / "sandbox.flag").touch()
+        assert cli.resolve_db_path() == dirs[1] / "zettel-sandbox.db"
+
+    def test_active_tenant_path_is_used_as_is(self, cli, dirs, tmp_path):
+        tenant_db = tmp_path / "t.db"
+        (dirs[0] / "tenants.json").write_text(
+            f'{{"active": "a", "tenants": [{{"id": "a", "path": "{tenant_db.as_posix()}"}}]}}'
+        )
+        assert cli.resolve_db_path() == tenant_db
+
+    def test_windows_and_macos_keep_a_single_dir(self, cli, dirs, monkeypatch):
+        monkeypatch.setattr(cli.sys, "platform", "darwin")
+        assert cli.app_config_dir() == cli.app_data_dir()
