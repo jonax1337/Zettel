@@ -77,8 +77,6 @@ const TIMER_ALREADY_RUNNING = "Es läuft bereits ein Timer. Bitte zuerst stoppen
 const NO_TIMER_RUNNING = "Es läuft kein Timer.";
 const BILLED_ENTRY = "Abgerechnete Einträge können nicht geändert oder gelöscht werden.";
 const RUNNING_ENTRY = "Ein laufender Timer kann nicht bearbeitet werden. Bitte zuerst stoppen.";
-const UNLINK_ONLY_FOR_DRAFTS =
-  "Die Abrechnung kann nur gelöst werden, solange die Rechnung noch ein Entwurf ist.";
 const RUNNING_TIMER_CONDITION = "t.started_at IS NOT NULL AND t.ended_at IS NULL";
 
 async function selectEntries(where: string, binds: unknown[]): Promise<TimeEntryListRow[]> {
@@ -215,14 +213,4 @@ export async function stopTimer(): Promise<TimeEntryListRow> {
   );
   if (result.rowsAffected !== 1) throw new Error(NO_TIMER_RUNNING);
   return { ...running, endedAt, durationMinutes };
-}
-
-/** Takes an entry back out of its invoice, as long as that invoice is still a draft. */
-export async function unlinkTimeEntry(id: number): Promise<void> {
-  const result = await execute(
-    `UPDATE time_entries SET invoice_id = NULL, updated_at = unixepoch()
-     WHERE id = ? AND invoice_id IN (SELECT id FROM invoices WHERE status = 'draft')`,
-    [id],
-  );
-  if (result.rowsAffected !== 1) throw new Error(UNLINK_ONLY_FOR_DRAFTS);
 }

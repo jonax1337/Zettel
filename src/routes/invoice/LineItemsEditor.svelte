@@ -22,7 +22,7 @@
     type LineItemForm,
   } from "./line-items";
   import { commitPriceText } from "../parts/entity/format";
-  import { VAT_RATE_ITEMS, vatRateForNewItem } from "../parts/entity/vat";
+  import { VAT_RATE_ITEMS, vatRateForNewItem } from "$lib/utils/vat";
 
   type Props = {
     items: LineItemForm[];

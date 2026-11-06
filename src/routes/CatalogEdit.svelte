@@ -11,7 +11,7 @@
   import { createEntityForm } from "./parts/entity/entity-form.svelte";
   import EntityFormShell from "./parts/entity/EntityFormShell.svelte";
   import { centsToPriceText } from "./parts/entity/format";
-  import { STANDARD_VAT_RATE } from "./parts/entity/vat";
+  import { STANDARD_VAT_RATE } from "$lib/utils/vat";
 
   type Props = {
     mode: "new" | "edit";

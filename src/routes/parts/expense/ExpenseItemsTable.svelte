@@ -6,7 +6,7 @@
   import { Button, Card, Input, Select } from "$lib/ui";
   import { Package, Plus, Trash2 } from "$lib/brand-icons";
   import { commitPriceText } from "../entity/format";
-  import { VAT_RATE_ITEMS } from "../entity/vat";
+  import { VAT_RATE_ITEMS } from "$lib/utils/vat";
   import type { ExpenseItemRow } from "./expense-form";
 
   type Props = {

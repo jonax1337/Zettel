@@ -7,10 +7,10 @@ vi.mock("./client", async (importOriginal) => ({
   ...(await import("./sqlite-test-db")).sqliteClient(sqlite),
 }));
 
-import { createInvoice, deleteInvoice, getInvoice, issueInvoice, type InvoiceFormInput } from "./invoices";
+import { cancelInvoice, createInvoice, deleteInvoice, getInvoice, issueInvoice, type InvoiceFormInput } from "./invoices";
 import { createProject } from "./projects";
 import { billTimeEntries, previewTimeBilling } from "./time-billing";
-import { createTimeEntry, listTimeEntries, unlinkTimeEntry, updateTimeEntry } from "./time-entries";
+import { createTimeEntry, listTimeEntries, updateTimeEntry } from "./time-entries";
 import { itemsPayload } from "$lib/sidecar/payload";
 import { addDaysUnix, startOfDayUnix } from "$lib/utils/date";
 
@@ -256,20 +256,38 @@ describe("the draft and its entries", () => {
     await expect(billTimeEntries(Object.values(entry), GROUPED)).resolves.toBeGreaterThan(0);
   });
 
-  it("lets a single entry be taken out of the draft and billed elsewhere", async () => {
-    const first = await billTimeEntries(Object.values(entry), GROUPED);
+  it("frees the entries when the draft is discarded", async () => {
+    const id = await billTimeEntries(Object.values(entry), GROUPED);
 
-    await unlinkTimeEntry(entry.review);
+    await cancelInvoice(id);
+
+    expect(invoiceIdsOfEntries()).toEqual([null, null, null]);
+    expect((await getInvoice(id))!.invoice.status).toBe("cancelled");
+    await expect(billTimeEntries(Object.values(entry), GROUPED)).resolves.toBeGreaterThan(id);
+  });
+
+  it("frees only the entries of the discarded draft", async () => {
+    const first = await billTimeEntries([entry.konzept], GROUPED);
     const second = await billTimeEntries([entry.review], GROUPED);
 
-    expect(invoiceIdsOfEntries()).toEqual([first, second, first]);
+    await cancelInvoice(second);
+
+    expect(invoiceIdsOfEntries()).toEqual([first, null, null]);
+  });
+
+  it("keeps the entries billed when the invoice cannot be discarded", async () => {
+    const id = await billTimeEntries(Object.values(entry), GROUPED);
+    await issueInvoice(id);
+
+    await expect(cancelInvoice(id)).rejects.toThrow();
+
+    expect(invoiceIdsOfEntries()).toEqual([id, id, id]);
   });
 
   it("keeps an issued invoice's entries billed", async () => {
     const id = await billTimeEntries(Object.values(entry), GROUPED);
     await issueInvoice(id);
 
-    await expect(unlinkTimeEntry(entry.konzept)).rejects.toThrow("Entwurf");
     await expect(updateTimeEntry(entry.konzept, {
       projectId: website,
       entryDate: day(5),

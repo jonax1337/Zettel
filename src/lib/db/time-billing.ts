@@ -6,8 +6,8 @@ import { previewBilling, type BillingOptions, type BillingPreview } from "$lib/t
 import { toBillableEntry } from "$lib/time/summary";
 import { addDaysUnix, startOfDayUnix } from "$lib/utils/date";
 import { defaultPaymentTermsText } from "$lib/utils/payment-terms";
-import { vatRateForNewItem } from "../../routes/parts/entity/vat";
-import { skontoFormFromSettings, skontoInput } from "../../routes/invoice/skonto-form";
+import { vatRateForNewItem } from "$lib/utils/vat";
+import { skontoFormFromSettings, skontoInput } from "$lib/utils/skonto-form";
 
 /** What the user chooses in the billing dialog; the VAT rate follows the settings. */
 export type TimeBillingOptions = Pick<BillingOptions, "grouping" | "incrementMinutes">;

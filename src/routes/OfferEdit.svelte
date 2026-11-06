@@ -30,7 +30,7 @@
   import SkontoFields from "./invoice/SkontoFields.svelte";
   import { createDocumentFormData } from "./invoice/document-form.svelte";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
-  import { vatRateForNewItem } from "./parts/entity/vat";
+  import { vatRateForNewItem } from "$lib/utils/vat";
   import {
     exchangeRateError,
     linePeriodError,
@@ -51,7 +51,7 @@
     skontoFormFromStored,
     skontoInput,
     type SkontoForm,
-  } from "./invoice/skonto-form";
+  } from "$lib/utils/skonto-form";
 
   type Props = {
     mode: "new" | "edit";

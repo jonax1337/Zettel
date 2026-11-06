@@ -20,6 +20,8 @@
   import BankImport from "./routes/BankImport.svelte";
   import ExpensesList from "./routes/ExpensesList.svelte";
   import ExpenseEdit from "./routes/ExpenseEdit.svelte";
+  import TimeTracking from "./routes/TimeTracking.svelte";
+  import TimeProjects from "./routes/TimeProjects.svelte";
   import RemindersList from "./routes/RemindersList.svelte";
   import ReminderEdit from "./routes/ReminderEdit.svelte";
   import UstvaReport from "./routes/UstvaReport.svelte";
@@ -91,6 +93,8 @@
     "/expenses": ExpensesList,
     "/expenses/new": editorRoute(ExpenseEdit, "new"),
     "/expenses/:id": editorRoute(ExpenseEdit, "edit"),
+    "/time": TimeTracking,
+    "/time/projects": TimeProjects,
     "/reminders": RemindersList,
     "/reminders/new/:invoiceId/:level": editorRoute(ReminderEdit, "new"),
     "/reminders/new/:invoiceId": editorRoute(ReminderEdit, "new"),

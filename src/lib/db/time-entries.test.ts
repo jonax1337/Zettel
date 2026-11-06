@@ -23,7 +23,6 @@ import {
   listTimeEntries,
   startTimer,
   stopTimer,
-  unlinkTimeEntry,
   updateTimeEntry,
   type TimeEntryInput,
 } from "./time-entries";
@@ -234,27 +233,6 @@ describe("billed entries", () => {
 
     expect(entry.invoiceStatus).toBe("draft");
     expect(entry.invoiceNumber).toMatch(/^Entwurf #/);
-  });
-
-  it("can be taken out of a draft invoice", async () => {
-    await unlinkTimeEntry(entryId);
-
-    expect((await listTimeEntries())[0].invoiceId).toBeNull();
-    await deleteTimeEntry(entryId);
-  });
-
-  it("stay on an issued invoice", async () => {
-    database().exec("UPDATE invoices SET status = 'sent' WHERE id = 7");
-
-    await expect(unlinkTimeEntry(entryId)).rejects.toThrow("Entwurf");
-
-    expect((await listTimeEntries())[0].invoiceId).toBe(7);
-  });
-
-  it("cannot be taken out when they are not billed at all", async () => {
-    const open = await createTimeEntry(manual(websiteId));
-
-    await expect(unlinkTimeEntry(open)).rejects.toThrow("Entwurf");
   });
 });
 
