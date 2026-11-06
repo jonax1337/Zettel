@@ -1,6 +1,6 @@
 import type { TimeEntryInput, TimeEntryListRow } from "$lib/db/time-entries";
 import { formatDuration, parseDuration } from "$lib/time/duration";
-import { fromIsoDate, toIsoDate } from "$lib/utils/date";
+import { fromIsoDate, startOfDayUnix, toIsoDate } from "$lib/utils/date";
 
 export type EntryMode = "range" | "duration";
 
@@ -25,12 +25,16 @@ export function emptyEntryForm(projectId: string, isoDate: string): EntryFormVal
   return { projectId, date: isoDate, mode: "range", start: "", end: "", duration: "", description: "" };
 }
 
+/** Only a clock range within the entry's day can be edited as Von–Bis; a timer that ran past midnight shows its duration. */
+function isRangeWithinDay(row: TimeEntryListRow): boolean {
+  return row.startedAt !== null && row.endedAt !== null && startOfDayUnix(new Date(row.endedAt * 1000)) === row.entryDate;
+}
+
 export function formFromEntry(row: TimeEntryListRow): EntryFormValues {
-  const clocked = row.startedAt !== null && row.endedAt !== null;
   return {
     projectId: String(row.projectId),
     date: toIsoDate(row.entryDate),
-    mode: clocked ? "range" : "duration",
+    mode: isRangeWithinDay(row) ? "range" : "duration",
     start: row.startedAt === null ? "" : clockText(row.startedAt),
     end: row.endedAt === null ? "" : clockText(row.endedAt),
     duration: row.durationMinutes === null ? "" : formatDuration(row.durationMinutes),
@@ -59,8 +63,20 @@ function clockOnDay(isoDate: string, text: string): number | null {
   return new Date(year, month - 1, day, hours, minutes).getTime() / 1000;
 }
 
-/** The entry to store; throws a German message for input the user has to fix. */
-export function entryInputFromForm(values: EntryFormValues): TimeEntryInput {
+const TIMING_FIELDS = ["date", "mode", "start", "end", "duration"] as const;
+
+/** Whether the user left everything that determines the stored times and duration as the dialog showed it. */
+function timingUntouched(values: EntryFormValues, original: TimeEntryListRow): boolean {
+  const shown = formFromEntry(original);
+  return TIMING_FIELDS.every((field) => values[field] === shown[field]);
+}
+
+/**
+ * The entry to store; throws a German message for input the user has to fix.
+ * `original` is the entry being edited: its stored timing survives an edit that
+ * only touches project or description, because the form shows minutes only.
+ */
+export function entryInputFromForm(values: EntryFormValues, original: TimeEntryListRow | null = null): TimeEntryInput {
   if (values.projectId === "") throw new Error("Bitte ein Projekt wählen.");
   if (values.date === "") throw new Error("Bitte ein Datum wählen.");
   const base = {
@@ -68,6 +84,10 @@ export function entryInputFromForm(values: EntryFormValues): TimeEntryInput {
     entryDate: fromIsoDate(values.date),
     description: values.description,
   };
+  if (original && original.durationMinutes !== null && timingUntouched(values, original)) {
+    const { startedAt, endedAt, durationMinutes } = original;
+    return { ...base, timing: { mode: "keep", startedAt, endedAt, durationMinutes } };
+  }
   if (values.mode === "duration") {
     const durationMinutes = parseDuration(values.duration);
     if (durationMinutes === null) throw new Error("Bitte die Dauer als 1:30 oder 1,5 angeben.");

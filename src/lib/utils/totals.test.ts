@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { computeLineTotal, computeTotals } from "./totals";
 
 describe("computeLineTotal", () => {
+  it("does not throw on half-typed editor input", () => {
+    expect(computeLineTotal({ quantity: Number.NaN, unitPrice: 500, vatRate: 19 })).toBeNaN();
+    expect(computeLineTotal({ quantity: 2, unitPrice: 0.5, vatRate: 19 })).toBe(1);
+  });
   it("multiplies quantity × unitPrice (cent integer)", () => {
     expect(computeLineTotal({ quantity: 1, unitPrice: 10000, vatRate: 19 })).toBe(10000);
     expect(computeLineTotal({ quantity: 3, unitPrice: 999, vatRate: 19 })).toBe(2997);
@@ -11,6 +15,24 @@ describe("computeLineTotal", () => {
     expect(computeLineTotal({ quantity: 0.5, unitPrice: 5000, vatRate: 19 })).toBe(2500);
     // 1.5h × 999 cents = 1498.5 → 1499 (Math.round half-up for positives)
     expect(computeLineTotal({ quantity: 1.5, unitPrice: 999, vatRate: 19 })).toBe(1499);
+  });
+  it("rounds exact half cents up where the float product falls just below", () => {
+    // 0.47 * 8550 is 4018.4999999999995 in floating point; the exact product is 4018.5.
+    expect(computeLineTotal({ quantity: 0.47, unitPrice: 8550, vatRate: 19 })).toBe(4019);
+    // 4.1 * 15 is 61.49999999999999; the exact product is 61.5.
+    expect(computeLineTotal({ quantity: 4.1, unitPrice: 15, vatRate: 19 })).toBe(62);
+  });
+  it("rounds negative half cents towards positive infinity like Math.round", () => {
+    expect(computeLineTotal({ quantity: 1.5, unitPrice: -333, vatRate: 19 })).toBe(-499);
+    expect(computeLineTotal({ quantity: -0.47, unitPrice: 8550, vatRate: 19 })).toBe(-4018);
+  });
+  it("keeps four quantity decimals exact", () => {
+    expect(computeLineTotal({ quantity: 1.2345, unitPrice: 10000, vatRate: 19 })).toBe(12345);
+    expect(computeLineTotal({ quantity: 0.0001, unitPrice: 5000, vatRate: 19 })).toBe(1);
+  });
+  it("stays exact beyond the 2^53 range of a float product", () => {
+    // Float: 12345.6789 * 98765432101 rounds to ...699; the exact result is ...698.
+    expect(computeLineTotal({ quantity: 12345.6789, unitPrice: 98765432101, vatRate: 19 })).toBe(1219326311138698);
   });
   it("handles zero", () => {
     expect(computeLineTotal({ quantity: 0, unitPrice: 12345, vatRate: 19 })).toBe(0);

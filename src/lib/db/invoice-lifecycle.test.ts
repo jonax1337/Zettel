@@ -70,8 +70,8 @@ describe("canReopenInvoice", () => {
     expect(canReopenInvoice({ number: REAL_NUMBER, status }, clean)).toBe(false);
   });
 
-  it("allows picking up a discarded unnumbered draft, but not a cancelled numbered invoice", () => {
-    expect(canReopenInvoice({ number: DRAFT_NUMBER, status: "cancelled" }, clean)).toBe(true);
+  it("forbids reopening a discarded draft or a cancelled numbered invoice", () => {
+    expect(canReopenInvoice({ number: DRAFT_NUMBER, status: "cancelled" }, clean)).toBe(false);
     expect(canReopenInvoice({ number: REAL_NUMBER, status: "cancelled" }, clean)).toBe(false);
   });
 });

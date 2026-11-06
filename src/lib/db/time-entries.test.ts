@@ -7,6 +7,7 @@ vi.mock("./client", async (importOriginal) => ({
   ...(await import("./sqlite-test-db")).sqliteClient(sqlite),
 }));
 
+import { entryInputFromForm, formFromEntry } from "../../routes/time/entry-form";
 import { assertCustomerDeletable } from "./references";
 import {
   createProject,
@@ -281,6 +282,45 @@ describe("listing", () => {
     await startTimer(websiteId, "läuft");
 
     expect((await listTimeEntries({ status: "open" })).map((e) => e.description)).toContain("läuft");
+  });
+});
+
+describe("editing a stopped timer entry", () => {
+  const storedTiming = () =>
+    rows("SELECT entry_date, started_at, ended_at, duration_minutes FROM time_entries");
+
+  async function saveUnchanged(id: number): Promise<void> {
+    const [row] = await listTimeEntries();
+    await updateTimeEntry(id, entryInputFromForm(formFromEntry(row), row));
+  }
+
+  it("keeps the seconds-precise times and the duration when saved unchanged", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    setClock(at(5, 9, 0, 0));
+    const id = await startTimer(websiteId, "Sprint");
+    setClock(at(5, 10, 29, 40));
+    await stopTimer();
+    const before = storedTiming();
+
+    await saveUnchanged(id);
+
+    expect(storedTiming()).toEqual(before);
+    expect(before).toEqual([
+      { entry_date: day(5), started_at: at(5, 9), ended_at: at(5, 10, 29, 40), duration_minutes: 90 },
+    ]);
+  });
+
+  it("keeps a timer that ran past midnight when saved unchanged", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    setClock(at(5, 23, 30));
+    const id = await startTimer(websiteId, "Nachtschicht");
+    setClock(at(6, 0, 10));
+    await stopTimer();
+    const before = storedTiming();
+
+    await saveUnchanged(id);
+
+    expect(storedTiming()).toEqual(before);
   });
 });
 

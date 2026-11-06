@@ -76,6 +76,12 @@ describe("formFromEntry", () => {
     });
   });
 
+  it("shows a timer that ended on another day as its duration", () => {
+    const overnight = { ...row, startedAt: at(23, 30), endedAt: new Date(2026, 4, 6, 0, 10).getTime() / 1000, durationMinutes: 40 };
+
+    expect(formFromEntry(overnight)).toMatchObject({ mode: "duration", duration: "0:40" });
+  });
+
   it("round-trips through the input conversion", () => {
     expect(entryInputFromForm(formFromEntry(row))).toMatchObject({
       timing: { mode: "range", startedAt: row.startedAt, endedAt: row.endedAt },
@@ -94,5 +100,44 @@ describe("timeRangeText", () => {
 
   it("has no times for a plain duration", () => {
     expect(timeRangeText({ startedAt: null, endedAt: null })).toBeNull();
+  });
+});
+
+describe("entryInputFromForm for a stored entry", () => {
+  const stored = {
+    projectId: 3,
+    entryDate: midnight,
+    startedAt: at(9, 0) + 5,
+    endedAt: at(10, 29) + 40,
+    durationMinutes: 90,
+    description: "Review",
+  } as TimeEntryListRow;
+
+  it("keeps the stored timing while only the description changes", () => {
+    const input = entryInputFromForm({ ...formFromEntry(stored), description: "Neu" }, stored);
+
+    expect(input.timing).toEqual({
+      mode: "keep",
+      startedAt: stored.startedAt,
+      endedAt: stored.endedAt,
+      durationMinutes: 90,
+    });
+    expect(input.description).toBe("Neu");
+  });
+
+  it("recomputes the timing once a time is edited", () => {
+    const input = entryInputFromForm({ ...formFromEntry(stored), end: "11:00" }, stored);
+
+    expect(input.timing).toEqual({ mode: "range", startedAt: at(9, 0), endedAt: at(11, 0) });
+  });
+
+  it("recomputes the timing when the day changes", () => {
+    const input = entryInputFromForm({ ...formFromEntry(stored), date: "2026-05-06" }, stored);
+
+    expect(input.timing.mode).toBe("range");
+  });
+
+  it("treats a new entry as typed", () => {
+    expect(entryInputFromForm(form({ mode: "range", start: "9:00", end: "10:00" }), null).timing.mode).toBe("range");
   });
 });

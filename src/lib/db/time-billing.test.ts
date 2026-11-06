@@ -7,7 +7,15 @@ vi.mock("./client", async (importOriginal) => ({
   ...(await import("./sqlite-test-db")).sqliteClient(sqlite),
 }));
 
-import { cancelInvoice, createInvoice, deleteInvoice, getInvoice, issueInvoice, type InvoiceFormInput } from "./invoices";
+import {
+  cancelInvoice,
+  createInvoice,
+  deleteInvoice,
+  getInvoice,
+  issueInvoice,
+  reopenDraft,
+  type InvoiceFormInput,
+} from "./invoices";
 import { createProject } from "./projects";
 import { billTimeEntries, previewTimeBilling } from "./time-billing";
 import { createTimeEntry, listTimeEntries, updateTimeEntry } from "./time-entries";
@@ -264,6 +272,16 @@ describe("the draft and its entries", () => {
     expect(invoiceIdsOfEntries()).toEqual([null, null, null]);
     expect((await getInvoice(id))!.invoice.status).toBe("cancelled");
     await expect(billTimeEntries(Object.values(entry), GROUPED)).resolves.toBeGreaterThan(id);
+  });
+
+  it("does not let a discarded draft come back with its time lines", async () => {
+    const id = await billTimeEntries(Object.values(entry), GROUPED);
+    await cancelInvoice(id);
+
+    await expect(reopenDraft(id)).rejects.toThrow("wieder bearbeitet");
+
+    expect((await getInvoice(id))!.invoice.status).toBe("cancelled");
+    expect(invoiceIdsOfEntries()).toEqual([null, null, null]);
   });
 
   it("frees only the entries of the discarded draft", async () => {

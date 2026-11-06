@@ -34,6 +34,12 @@ describe("resolveTiming", () => {
     });
   });
 
+  it("hands back the stored columns of a kept timing, even across midnight", () => {
+    const stored = { startedAt: at(23, 30), endedAt: at(0, 10, 6), durationMinutes: 40 };
+
+    expect(resolveTiming(DAY, { mode: "keep", ...stored })).toEqual(stored);
+  });
+
   it("rejects a range that ends before or when it starts", () => {
     expect(() => resolveTiming(DAY, { mode: "range", startedAt: at(10), endedAt: at(9) })).toThrow("nach dem Beginn");
     expect(() => resolveTiming(DAY, { mode: "range", startedAt: at(10), endedAt: at(10) })).toThrow("nach dem Beginn");

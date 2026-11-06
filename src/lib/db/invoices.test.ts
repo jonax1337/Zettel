@@ -744,6 +744,7 @@ describe("reopenDraft", () => {
     ["with a draft credit note", invoiceRow({ status: "sent" }), 0, creditNoteFor7("draft")],
     ["that is paid", invoiceRow({ status: "paid" }), 0, null],
     ["that is cancelled and numbered", invoiceRow({ status: "cancelled" }), 0, null],
+    ["that is a discarded draft", invoiceRow({ status: "cancelled", number: "DRAFT-a1b2c3d4" }), 0, null],
   ])("refuses an invoice %s", async (_label, invoice, payments, creditNote) => {
     reopenSituation(invoice, payments, creditNote);
 

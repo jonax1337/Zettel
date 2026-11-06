@@ -26,6 +26,37 @@
       "expected": { "subtotal": 3, "vatAmount": 0, "total": 3 }
     },
     {
+      "name": "line total is the exact product (0,47 x 85,50 EUR is 40,185 EUR)",
+      "items": [{ "quantity": 0.47, "unitPrice": 8550, "vatRate": 19 }],
+      "isKleinunternehmer": false,
+      "isReverseCharge": false,
+      "expected": { "subtotal": 4019, "vatAmount": 764, "total": 4783 }
+    },
+    {
+      "name": "line total is the exact product (4,1 x 0,15 EUR is 0,615 EUR)",
+      "items": [{ "quantity": 4.1, "unitPrice": 15, "vatRate": 19 }],
+      "isKleinunternehmer": false,
+      "isReverseCharge": false,
+      "expected": { "subtotal": 62, "vatAmount": 12, "total": 74 }
+    },
+    {
+      "name": "negative discount line reduces the net and the VAT",
+      "items": [
+        { "quantity": 1, "unitPrice": 10000, "vatRate": 19 },
+        { "quantity": -1, "unitPrice": 250, "vatRate": 19 }
+      ],
+      "isKleinunternehmer": false,
+      "isReverseCharge": false,
+      "expected": { "subtotal": 9750, "vatAmount": 1853, "total": 11603 }
+    },
+    {
+      "name": "negative half cent line total rounds towards positive infinity",
+      "items": [{ "quantity": 1.5, "unitPrice": -333, "vatRate": 19 }],
+      "isKleinunternehmer": false,
+      "isReverseCharge": false,
+      "expected": { "subtotal": -499, "vatAmount": -95, "total": -594 }
+    },
+    {
       "name": "negative VAT half rounds towards positive infinity",
       "items": [{ "quantity": 1, "unitPrice": -250, "vatRate": 19 }],
       "isKleinunternehmer": false,

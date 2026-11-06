@@ -19,6 +19,7 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 - **CI:** Rust-Formatierung und Clippy (`-D warnings`) sind Pflicht, Frontend-Build und Versionsgleichheit aller Manifeste werden geprüft. Ein Release-Tag muss zur App-Version passen, ein RC-Tag auf dem passenden `release/vX.Y`-Branch liegen.
 
 ### Fixed
+- **Positionsbeträge mit Kommamengen** werden jetzt exakt kaufmännisch gerundet (vorher in Einzelfällen 1 Cent zu wenig, z. B. 0,47 × 85,50 € = 40,185 € ergab 40,18 €); gilt in der App und in der CLI.
 - **Teil-Wiederherstellung der Rechnungen schlug immer fehl** (`invoice_attachments: no such table`): Die Restore-Liste führte noch eine Tabelle, die Migration 0013 längst entfernt hatte. Ein neuer Test spielt den Teil-Restore gegen das echte, migrierte Schema durch.
 - **Datum auf PDF und E-Rechnung einen Tag zu früh.** Der Sidecar gab Daten in UTC aus, die App speichert lokale Mitternacht. Rechnungsdatum, Fälligkeit, Leistungszeitraum, Skonto-Frist und Mahnungen erscheinen jetzt korrekt (Europe/Berlin). Bereits erzeugte PDFs bitte neu erzeugen.
 - **Teilzahlungen gingen nie durch.** Die Tabelle `invoices` ließ den Status `partial` per CHECK nicht zu; die Zahlung wurde gespeichert, der Status nicht, und ein erneuter Bank-Import buchte doppelt. Die Migration erlaubt den Status und repariert betroffene Rechnungen.

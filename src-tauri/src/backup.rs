@@ -95,6 +95,12 @@ const TABLES_NEWER_THAN_MIN_PARTIAL_SCHEMA: [&str; 4] = [
     "projects",
     "time_entries",
 ];
+/// Of those, the tables holding work that is entered independently of the
+/// invoices: a backup that predates them says nothing about it, so the live
+/// rows stay (payments and seals, in contrast, belong to the replaced invoices
+/// and go with them).
+const TIME_TRACKING_TABLES: [&str; 2] = ["projects", "time_entries"];
+const TIME_ENTRIES_TABLE: &str = "time_entries";
 const INVOICE_SEALS_TABLE: &str = "invoice_seals";
 const SETTINGS_ROW_ID: i64 = 1;
 /// `settings` columns holding the last drawn document number.
@@ -990,15 +996,26 @@ fn restore_sections(
         0
     };
     let triggers = drop_triggers(&tx)?;
+    let mut missing_in_backup = Vec::new();
     for table in &tables {
+        if TABLES_NEWER_THAN_MIN_PARTIAL_SCHEMA.contains(table)
+            && table_columns(&tx, "bak", table)?.is_empty()
+        {
+            missing_in_backup.push(*table);
+        }
+    }
+    let kept_live: Vec<&str> = missing_in_backup
+        .iter()
+        .copied()
+        .filter(|table| TIME_TRACKING_TABLES.contains(table))
+        .collect();
+    for table in tables.iter().filter(|table| !kept_live.contains(table)) {
         tx.execute_batch(&format!("DELETE FROM main.{table};"))
             .map_err(|e| format!("{table}: {e}"))?;
     }
     // Parents before children — the reverse of the deletion order.
     for table in tables.iter().rev() {
-        if TABLES_NEWER_THAN_MIN_PARTIAL_SCHEMA.contains(table)
-            && table_columns(&tx, "bak", table)?.is_empty()
-        {
+        if missing_in_backup.contains(table) {
             continue;
         }
         let columns = shared_columns(&tx, table).map_err(|e| format!("{table}: {e}"))?;
@@ -1006,6 +1023,9 @@ fn restore_sections(
             "INSERT INTO main.{table} ({columns}) SELECT {columns} FROM bak.{table};"
         ))
         .map_err(|e| format!("{table}: {e}"))?;
+    }
+    if kept_live.contains(&TIME_ENTRIES_TABLE) {
+        unlink_time_entries_from_invoices(&tx)?;
     }
     keep_number_counters_ahead(&tx, &live_counters, sections.invoices)?;
     ensure_no_new_dangling_references(&tx, &violations_before, &tables)?;
@@ -1023,6 +1043,15 @@ fn restore_sections(
     recreate_triggers(&tx, &triggers)?;
     tx.commit().map_err(|e| e.to_string())?;
     Ok(outcome)
+}
+
+/// The restored invoices come from a backup that predates time tracking, so
+/// their ids no longer stand for the invoices the live entries were billed on.
+fn unlink_time_entries_from_invoices(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute_batch(&format!(
+        "UPDATE main.{TIME_ENTRIES_TABLE} SET invoice_id = NULL;"
+    ))
+    .map_err(|e| format!("{TIME_ENTRIES_TABLE}: {e}"))
 }
 
 /// Live seals the restore removes for good: all of them when the backup
@@ -1360,6 +1389,19 @@ mod tests {
         rows
     }
 
+    fn time_entry_invoice_ids(path: &Path) -> Vec<Option<i64>> {
+        let conn = Connection::open(path).unwrap();
+        let mut statement = conn
+            .prepare("SELECT invoice_id FROM time_entries ORDER BY id")
+            .unwrap();
+        let rows = statement
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        rows
+    }
+
     #[test]
     fn restore_sections_runs_on_the_real_schema() {
         let all_migrations = crate::build_migrations().len();
@@ -1402,15 +1444,29 @@ mod tests {
                 assert_eq!(number, expected, "{wanted:?}");
                 assert_eq!(trigger_sql(&live), triggers_before, "{wanted:?}");
                 let entries_expected: &[&str] = match (wanted.invoices, backup_has_time_entries) {
-                    (false, _) => &["live"],
                     (true, true) => &["backup"],
-                    (true, false) => &[],
+                    _ => &["live"],
                 };
                 assert_eq!(
                     time_entry_descriptions(&live),
                     entries_expected,
                     "{wanted:?} from {backup_migrations}"
                 );
+                let invoice_ids_expected = if wanted.invoices && !backup_has_time_entries {
+                    None
+                } else {
+                    Some(1)
+                };
+                assert_eq!(
+                    time_entry_invoice_ids(&live),
+                    [invoice_ids_expected],
+                    "{wanted:?} from {backup_migrations}"
+                );
+                let projects: i64 = Connection::open(&live)
+                    .unwrap()
+                    .query_row("SELECT COUNT(*) FROM projects", [], |row| row.get(0))
+                    .unwrap();
+                assert_eq!(projects, 1, "{wanted:?} from {backup_migrations}");
                 let seals_expected = wanted
                     .invoices
                     .then_some(backup_migrations == all_migrations);
@@ -1584,6 +1640,55 @@ mod tests {
             .unwrap();
         assert_eq!(payments, 0);
         assert_eq!(tag_of(&live, "invoices"), "backup");
+    }
+
+    #[test]
+    fn restoring_invoices_from_a_backup_without_time_tracking_keeps_the_live_time_data() {
+        let dir = TempDir::new("restore-without-time-tracking");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+        Connection::open(&live)
+            .unwrap()
+            .execute_batch(
+                "ALTER TABLE time_entries ADD COLUMN invoice_id INTEGER;
+                 UPDATE time_entries SET invoice_id = 1;",
+            )
+            .unwrap();
+        Connection::open(&staged)
+            .unwrap()
+            .execute_batch("DROP TABLE projects; DROP TABLE time_entries;")
+            .unwrap();
+
+        restore_sections(&live, &staged, sections(false, true, false)).unwrap();
+
+        assert_eq!(tag_of(&live, "projects"), "live");
+        assert_eq!(tag_of(&live, "time_entries"), "live");
+        assert_eq!(time_entry_invoice_ids(&live), [None]);
+        assert_eq!(tag_of(&live, "invoices"), "backup");
+    }
+
+    #[test]
+    fn restoring_invoices_from_a_backup_with_time_tracking_replaces_the_live_time_data() {
+        let dir = TempDir::new("restore-with-time-tracking");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+        for path in [&live, &staged] {
+            Connection::open(path)
+                .unwrap()
+                .execute_batch(
+                    "ALTER TABLE time_entries ADD COLUMN invoice_id INTEGER;
+                     UPDATE time_entries SET invoice_id = 1;",
+                )
+                .unwrap();
+        }
+
+        restore_sections(&live, &staged, sections(false, true, false)).unwrap();
+
+        assert_eq!(tag_of(&live, "projects"), "backup");
+        assert_eq!(tag_of(&live, "time_entries"), "backup");
+        assert_eq!(time_entry_invoice_ids(&live), [Some(1)]);
     }
 
     /// Audit triggers on a few tables and the lock triggers of the real schema.

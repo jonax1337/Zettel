@@ -22,15 +22,15 @@ export function canCancelInvoice(invoice: LifecycleFacts): boolean {
 
 /**
  * A sent invoice may go back to draft (keeping its number) as long as nothing
- * has been booked against it; a discarded draft may be picked up again. Any
- * credit note that is not cancelled blocks it, a draft one too: it mirrors the
- * invoice's current items and would no longer match after an edit.
+ * has been booked against it. A discarded draft stays discarded: discarding
+ * frees its time entries for other invoices. Any credit note that is not
+ * cancelled blocks it, a draft one too: it mirrors the invoice's current items
+ * and would no longer match after an edit.
  */
 export function canReopenInvoice(
   invoice: LifecycleFacts,
   facts: { paymentCount: number; hasCreditNote: boolean },
 ): boolean {
-  if (invoice.status === "cancelled") return isDraftNumber(invoice.number);
   return invoice.status === "sent" && facts.paymentCount === 0 && !facts.hasCreditNote;
 }
 

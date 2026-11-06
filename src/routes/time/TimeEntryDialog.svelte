@@ -44,7 +44,7 @@
   async function save() {
     saving = true;
     try {
-      const input = entryInputFromForm(form);
+      const input = entryInputFromForm(form, entry);
       if (entry) await updateTimeEntry(entry.id, input);
       else await createTimeEntry(input);
       toast.success(entry ? "Eintrag gespeichert" : "Eintrag angelegt");

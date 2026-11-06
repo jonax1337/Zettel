@@ -3,10 +3,15 @@ import { MAX_ENTRY_MINUTES } from "./duration";
 
 const SECONDS_PER_MINUTE = 60;
 
-/** A manual entry is either a clock range on its day or a plain duration. */
+/**
+ * A manual entry is either a clock range on its day or a plain duration. "keep"
+ * hands back the stored columns of an entry whose timing was not edited, so a
+ * stopped timer keeps its seconds and a midnight crossing.
+ */
 export type TimeEntryTiming =
   | { mode: "range"; startedAt: number; endedAt: number }
-  | { mode: "duration"; durationMinutes: number };
+  | { mode: "duration"; durationMinutes: number }
+  | ({ mode: "keep" } & ResolvedTiming);
 
 export type ResolvedTiming = {
   startedAt: number | null;
@@ -23,6 +28,10 @@ export function elapsedMinutes(startedAt: number, endedAt: number): number {
 
 /** Validated columns for a manual entry on `entryDate`; throws a German message otherwise. */
 export function resolveTiming(entryDate: number, timing: TimeEntryTiming): ResolvedTiming {
+  if (timing.mode === "keep") {
+    const { startedAt, endedAt, durationMinutes } = timing;
+    return { startedAt, endedAt, durationMinutes };
+  }
   if (timing.mode === "duration") {
     const { durationMinutes } = timing;
     if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > MAX_ENTRY_MINUTES) {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { push, replace, router } from "svelte-spa-router";
   import { listProjects, type ProjectListRow } from "$lib/db/projects";
   import {
@@ -117,12 +118,13 @@
     reload: reloadAll,
   });
 
-  // The command palette's "Zeit erfassen" arrives as /time?new=1.
-  let openedFromQuery = false;
+  // The command palette's "Zeit erfassen" arrives as /time?new=1, also while this page is already open.
+  // Clearing the query afterwards lets the next palette use change it again.
   $effect(() => {
-    if (openedFromQuery || projects.loading || queryParam(router.querystring, "new") !== "1") return;
-    openedFromQuery = true;
-    if (selectable.length > 0) openCreate();
+    if (projects.loading || queryParam(router.querystring, "new") !== "1") return;
+    untrack(() => {
+      if (selectable.length > 0) openCreate();
+    });
     replace("/time");
   });
 </script>
