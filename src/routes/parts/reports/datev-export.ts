@@ -26,10 +26,22 @@ export function resolveItemAccounts<I extends CategorizedItem>(
   skr: Skr,
 ): I[] {
   return items.map((item) => {
-    if (!item.categoryId || item.datevAccount) return item;
+    if (!item.categoryId) return item;
     const category = categoriesById.get(item.categoryId);
-    return category ? { ...item, datevAccount: accountForSkr(category, skr) } : item;
+    if (!category || isExplicitAccount(item.datevAccount, category, skr)) return item;
+    return { ...item, datevAccount: accountForSkr(category, skr) };
   });
+}
+
+/**
+ * Since v0.22.0 the expense form wrote the category's SKR03 account into every categorized item,
+ * so a stored SKR03 account of the category is a leftover hint, not an entry. With SKR04 it must
+ * not override the category's SKR04 account.
+ */
+function isExplicitAccount(account: string | null, category: ExpenseCategory, skr: Skr): boolean {
+  if (!account) return false;
+  const isStaleSkr03Hint = skr === "SKR04" && account === accountForSkr(category, "SKR03");
+  return !isStaleSkr03Hint;
 }
 
 export function describeExportCounts(invoiceCount: number, expenseCount: number): string {

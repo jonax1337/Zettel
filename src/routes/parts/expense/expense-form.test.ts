@@ -3,7 +3,9 @@ import type { Vendor } from "$lib/db/schema";
 import type { ExtractedInvoice, ExtractedText } from "$lib/sidecar/extract";
 import { fromIsoDate } from "$lib/utils/date";
 import { computeLineTotal } from "$lib/utils/totals";
+import type { ExpenseCategory } from "$lib/db/schema";
 import {
+  applyCategory,
   applyInvoiceExtract,
   applyTextExtract,
   emptyExpenseForm,
@@ -238,6 +240,33 @@ describe("applyTextExtract", () => {
     applyTextExtract(form, text({ totalCents: null }), null);
     applyTextExtract(form, text({ totalCents: 0 }), null);
     expect(form.items[0].unitPrice).toBe(0);
+  });
+});
+
+describe("applyCategory", () => {
+  const hosting = {
+    id: 1,
+    name: "Hosting",
+    datevAccountSkr03: "4930",
+    datevAccountSkr04: "6805",
+  } as ExpenseCategory;
+
+  it("stores category id and name but no account, since the SKR is only chosen at export", () => {
+    const row = emptyItemRow();
+    applyCategory(row, hosting);
+    expect([row.categoryId, row.category, row.datevAccount]).toEqual([1, "Hosting", null]);
+  });
+
+  it("keeps an account the user typed", () => {
+    const row = emptyItemRow({ datevAccount: "4999" });
+    applyCategory(row, hosting);
+    expect(row.datevAccount).toBe("4999");
+  });
+
+  it("switches to free text without touching name or account", () => {
+    const row = emptyItemRow({ categoryId: 1, category: "Hosting", datevAccount: "4999" });
+    applyCategory(row, undefined);
+    expect([row.categoryId, row.category, row.datevAccount]).toEqual([null, "Hosting", "4999"]);
   });
 });
 

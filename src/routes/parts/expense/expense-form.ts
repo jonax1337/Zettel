@@ -1,5 +1,5 @@
 import type { ExpenseItemInput } from "$lib/db/expenses";
-import type { Expense, Vendor } from "$lib/db/schema";
+import type { Expense, ExpenseCategory, Vendor } from "$lib/db/schema";
 import type {
   ExtractedInvoice,
   ExtractedLineItem,
@@ -95,6 +95,16 @@ export function itemInputFromRow(row: ExpenseItemRow): ExpenseItemInput {
     unitPrice: row.unitPrice,
     vatRate: row.vatRate,
   };
+}
+
+/** The DATEV account is resolved per category and SKR at export time; only an account typed in is stored. */
+export function applyCategory(item: ExpenseItemRow, category: ExpenseCategory | undefined): void {
+  if (!category) {
+    item.categoryId = null;
+    return;
+  }
+  item.categoryId = category.id;
+  item.category = category.name;
 }
 
 /** Fills the form from the supplier's ZUGFeRD data; fields the invoice does not carry stay untouched. */
