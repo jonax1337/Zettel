@@ -34,8 +34,8 @@ Bei jedem Versionswechsel von Zettel die Tabelle und die Änderungshistorie (Abs
 
 1. **Angebot** (`AN-JJJJ-NNNN`): wird als PDF/A-3 erzeugt. Angebote können in eine Rechnung umgewandelt werden.
 2. **Rechnung als Entwurf**: Positionen, Kunde und Konditionen erfassen. Ein Entwurf trägt nur einen Platzhalter (`Entwurf #xxxx`) und noch keine Rechnungsnummer. Entwürfe dürfen frei geändert und gelöscht werden.
-3. **Rechnung ausstellen** (Versand oder PDF-Erzeugung): Erst jetzt wird die fortlaufende Rechnungsnummer (`RE-JJJJ-NNNN`) vergeben, das PDF erzeugt und die Rechnung **versiegelt** (siehe 3.5). Ab hier ist sie nicht mehr änderbar.
-4. **Versand**: [per E-Mail aus dem Mailprogramm / per Post / Download aus Zettel]. Der Versandzeitpunkt wird in Zettel festgehalten.
+3. **Rechnung ausstellen** (Versand oder PDF-Erzeugung): Erst jetzt wird die fortlaufende Rechnungsnummer (`RE-JJJJ-NNNN`) vergeben, das PDF erzeugt und die Rechnung **versiegelt** (siehe 3.5). Ab hier ist sie nicht mehr änderbar, außer über „Zurück zu Entwurf“ (nur für versendete Rechnungen ohne erfasste Zahlung und ohne Stornorechnung; die Rechnung behält ihre Nummer, der Schritt wird versiegelt und protokolliert, siehe 3.3).
+4. **Versand**: [per E-Mail aus dem Mailprogramm / per Post / Download aus Zettel]. Zettel setzt den Versendet-Zeitpunkt beim Ausstellen, nicht erst, wenn die E-Mail im Mailprogramm tatsächlich abgeschickt wird (Zettel übergibt nur PDF und Empfänger an das Mailprogramm). [Wie du den tatsächlichen Versand nachweist, z. B. gesendete E-Mail im Mail-Archiv.]
 5. **Zahlung**: Zahlungseingänge werden je Rechnung erfasst (Datum, Betrag). Teilzahlungen sind möglich; die Rechnung gilt erst bei vollständiger Zahlung als bezahlt.
 6. **Mahnung** (`MA-JJJJ-NNNN`): bei Zahlungsverzug erzeugt Zettel eine Mahnung als PDF zur Rechnung.
 7. **Korrektur / Storno**: Fehler in einer ausgestellten Rechnung werden nicht durch Ändern, sondern durch eine **Stornorechnung** (Gutschrift mit Bezug auf die Originalrechnung) und eine neue Rechnung korrigiert. [Ergänzen: eigener Ablauf bei Stornos, z. B. Rücksprache mit dem Kunden.]
@@ -65,29 +65,30 @@ Rechnungsformat: [PDF/A-3 mit eingebettetem ZUGFeRD/Factur-X-XML / XRechnung (CI
 ### 3.1 Systemüberblick
 
 - Zettel ist eine **lokale Desktop-Anwendung** (Windows / macOS / Linux). Es gibt keinen Server und keine Cloud; die Daten verlassen den Rechner nur durch Aktionen, die du auslöst (E-Mail-Versand, Backup in einen Cloud-Ordner, Export).
-- Daten liegen in einer **SQLite-Datenbank** im Anwendungsdatenordner (Windows: `%APPDATA%\digital.laux.zettel\`, macOS: `~/Library/Application Support/digital.laux.zettel/`, Linux: `~/.local/share/digital.laux.zettel/`).
-- Belege (PDF) liegen im Dokumentenordner: `<Dokumente>/Zettel/{Rechnungen,Angebote,Mahnungen,Eingangsrechnungen,Backups}/`. [Abweichender Speicherort, falls geändert: ___]
+- Daten liegen in einer **SQLite-Datenbank** im Anwendungsdatenordner (Windows: `%APPDATA%\digital.laux.zettel\`, macOS: `~/Library/Application Support/digital.laux.zettel/`, Linux: Datenbanken in `~/.config/digital.laux.zettel/`, übrige App-Daten wie `sandbox.flag`, `tenants.json` und `pending_restore/` in `~/.local/share/digital.laux.zettel/`).
+- Belege (PDF) liegen im Dokumentenordner `<Dokumente-Root>/{Rechnungen,Angebote,Mahnungen,Eingangsrechnungen,Backups}/`. Der Root ist `<Dokumente>/Zettel` (Standard), `<Dokumente>/Zettel-Sandbox` (Sandbox) bzw. `<Dokumente>/Zettel/Mandanten/<Mandanten-ID>` (eigener Mandant); `<Dokumente>` ist der Ordner „Dokumente“ des Betriebssystems (unter Windows folgt er einer Umleitung nach OneDrive). [Tatsächlicher Pfad auf dem eingesetzten Rechner: ___]
 - Eingesetzter Rechner: [Gerät, Betriebssystem, Speicherort der Daten, Festplattenverschlüsselung ja/nein].
 
 ### 3.2 Belegformate
 
-- Ausgangsrechnungen: PDF/A-3 mit eingebettetem maschinenlesbarem XML (ZUGFeRD/Factur-X, Profil EN 16931) oder XRechnung 3.0 (CII). Das PDF ist das archivierte Original.
+- Ausgangsrechnungen: PDF/A-3 mit eingebettetem maschinenlesbarem XML (ZUGFeRD/Factur-X, Profil EN 16931) oder XRechnung 3.0 (CII). Bei ZUGFeRD/Factur-X ist das PDF das archivierte Original. Bei XRechnung ist die `.xml` das Original, das PDF nur eine Darstellung; die versendete Datei bleibt aufbewahrt (ein späterer erneuter Export liest Leitweg-ID und E-Mail des Kunden aus den dann aktuellen Kundendaten und kann abweichen).
+- Eingehende reine XML-E-Rechnungen (z. B. XRechnung) kann Zettel prüfen, aber nicht als Eingangsrechnung importieren; sie werden außerhalb von Zettel archiviert: [Ablageort].
 - Beträge werden als ganze Cent gespeichert (keine Rundungsfehler durch Fließkommazahlen).
 - Die Rechnungsnummern sind fortlaufend und lückenlos; Entwürfe verbrauchen keine Nummer.
-- Zettel kann erzeugte E-Rechnungen mit dem KoSIT-Validator prüfen (Menü „Validieren“).
+- Zettel kann erzeugte E-Rechnungen mit dem KoSIT-Validator prüfen (Sidebar „E-Rechnung validieren“ bzw. „Validieren“ im Rechnungsdetail).
 
 ### 3.3 Unveränderbarkeit ausgestellter Rechnungen
 
 - Nur **Entwürfe** sind änderbar. Eine ausgestellte Rechnung (versendet, teilweise bezahlt, bezahlt) kann in der Oberfläche nicht bearbeitet werden.
 - Korrekturen erfolgen per Stornorechnung und neuer Rechnung (2.1).
-- Stellt man eine ausgestellte Rechnung bewusst wieder auf Entwurf zurück, wird das als eigenes Siegel („reopen“) festgehalten und ist nachvollziehbar.
+- Ausnahme „Zurück zu Entwurf“: möglich nur für versendete Rechnungen ohne erfasste Zahlung und ohne Stornorechnung. Die Rechnung behält ihre Nummer; der Schritt wird als eigenes Siegel („reopen“) festgehalten und im Änderungsprotokoll geführt. Beim erneuten Ausstellen entsteht ein neues Siegel. [Wann du das nutzt und wie du es dokumentierst, z. B. nur vor dem Versand an den Kunden.]
 - Die PDF-Dateien werden bei einer Neuerzeugung versioniert und nicht überschrieben.
 
 ### 3.4 Änderungsprotokoll (Audit-Log)
 
 - Datenbank-Trigger schreiben jede Änderung (Anlegen, Ändern, Löschen) an Rechnungen, Positionen, Zahlungen, Mahnungen, Ausgaben, Kunden, Lieferanten und Einstellungen in die Tabelle `audit_log`: Zeitpunkt, Tabelle, Datensatz, Aktion, alte und neue Werte.
 - Das Protokoll wird **in der Datenbank** geführt und ist damit auch bei Änderungen über die Kommandozeile (`cli/zettel.py`) vollständig.
-- Die Tabelle ist **append-only**: Datenbank-Trigger verhindern das Ändern und Löschen von Protokollzeilen.
+- Die Tabelle ist **append-only**: Datenbank-Trigger verhindern das Ändern und Löschen von Protokollzeilen (Schutz vor Versehen und Fehlern der App, nicht vor gezielten Eingriffen in die Datenbank, siehe 3.5).
 - Daten löschen („Gefahrenbereich“) entfernt das Protokoll nicht; gelöschte ausgestellte Rechnungen bleiben darin sichtbar.
 - Eine Teil-Wiederherstellung aus einem Backup (4.3) wird als ein Eintrag `restore` protokolliert.
 
@@ -96,7 +97,7 @@ Rechnungsformat: [PDF/A-3 mit eingebettetem ZUGFeRD/Factur-X-XML / XRechnung (CI
 - Beim Ausstellen einer Rechnung berechnet Zettel einen SHA-256-Hash über den Inhalt (Rechnungskopf und Positionen) und hängt ihn als **Siegel** an eine Kette (`invoice_seals`). Jedes Siegel enthält zusätzlich den Hash seines Vorgängers; eine nachträglich geänderte, entfernte oder eingefügte Zeile bricht die Kette.
 - Nicht versiegelt sind Felder, die sich legitim nach dem Ausstellen ändern (Status, Versand-/Zahlungsdatum, bezahlter Betrag, interne Notizen, PDF-Pfad).
 - Rechnungen, die aus einer älteren Programmversion stammen, werden beim Programmstart nachträglich versiegelt. Der Nachweis beginnt für diese Rechnungen dann erst zu diesem Zeitpunkt.
-- Die Hash-Kette schützt vor unbemerkter Manipulation, ist aber **keine qualifizierte Signatur** und kein Zeitstempel einer dritten Stelle. Wer Zugriff auf den Rechner hat, kann die gesamte Datenbank ersetzen; dagegen helfen nur Zugriffsschutz (5.2) und Backups an getrennten Orten (4.1).
+- Die Hash-Kette macht Änderungen sichtbar, die an ihr vorbei erfolgen (z. B. über einen Fehler oder ein anderes Programm). Sie ist ein einfacher SHA-256 ohne geheimen Schlüssel und ohne externen Anker, **keine qualifizierte Signatur** und kein Zeitstempel einer dritten Stelle; die Sperr-Trigger sind gewöhnliche SQLite-Trigger. Wer die Datenbank mit einem SQLite-Werkzeug bearbeitet, kann Trigger entfernen und die Kette neu berechnen oder die gesamte Datenbank ersetzen. Dagegen helfen Zugriffsschutz (5.2) und Backups an getrennten Orten (4.1) sowie das regelmäßige Festhalten des letzten Prüfstands (5.1).
 
 ### 3.6 Integritätsprüfung
 
@@ -106,7 +107,8 @@ Rechnungsformat: [PDF/A-3 mit eingebettetem ZUGFeRD/Factur-X-XML / XRechnung (CI
 
 ### 3.7 Schnittstellen und Exporte
 
-- Export: DATEV-Buchungsstapel (CSV), CSV-Listen, XRechnung-XML, Backup-ZIP.
+- Export: DATEV-Buchungsstapel (CSV), UStVA- und Anlage-EÜR-Auswertung (CSV), Änderungsprotokoll (CSV), XRechnung-XML, Backup-ZIP.
+- Versand per E-Mail: Zettel übergibt PDF und Empfänger an das lokale Mail-Programm (kein SMTP, keine Kopie der Nachricht in Zettel). Die versendete E-Mail archivierst du im Mail-Programm (Aufbewahrung siehe 4.2).
 - Maschinelle Auswertbarkeit für Betriebsprüfungen (Datenzugriff Z1–Z3): [Vorgehen, z. B. Export als CSV/DATEV und Herausgabe der PDF-Belege auf Datenträger].
 
 ## 4. Betriebsdokumentation
@@ -115,20 +117,22 @@ Rechnungsformat: [PDF/A-3 mit eingebettetem ZUGFeRD/Factur-X-XML / XRechnung (CI
 
 - Zettel erstellt auf Wunsch ein **Backup** (ZIP mit Datenbank-Snapshot, allen Beleg-PDFs und Manifest). [Automatisch alle ___ Tage / manuell jeweils ___.]
 - Backups können mit einem Passwort **verschlüsselt** werden (AES-256-GCM, Schlüsselableitung Argon2id). Es wird kein Passwort gespeichert; **ohne Passwort ist ein verschlüsseltes Backup unbrauchbar**. Passwort ablegen: [Passwortmanager / Tresor].
-- Speicherorte: lokal `<Dokumente>/Zettel/Backups/` und zusätzlich [externe Festplatte / verschlüsselter Cloud-Ordner / NAS]. Mindestens eine Kopie liegt außerhalb des Rechners.
+- Speicherorte: lokal `<Dokumente-Root>/Backups/` (siehe 3.1) und zusätzlich [externe Festplatte / verschlüsselter Cloud-Ordner / NAS]. Mindestens eine Kopie liegt außerhalb des Rechners.
 - Prüfung: [vierteljährlich] ein Backup testweise wiederherstellen (am besten im Sandbox-Modus von Zettel) und die Integritätsprüfung durchführen.
 
 ### 4.2 Aufbewahrung
 
-Nach derzeitigem Stand (bitte mit der Steuerberatung abgleichen):
+*Keine Rechtsberatung — Fristen im Einzelfall mit Steuerberater abstimmen.*
 
 | Unterlagen | Frist |
 |---|---|
-| Buchungsbelege, z. B. Rechnungen (ein- und ausgehend) | 8 Jahre |
-| Bücher, Aufzeichnungen, Jahresabschlüsse, Verfahrensdokumentation | 10 Jahre |
-| Empfangene und abgesandte Handels- und Geschäftsbriefe (z. B. Angebote, Mahnungen) | 6 Jahre |
+| Buchungsbelege, z. B. Ausgangs- und Eingangsrechnungen | 8 Jahre¹ |
+| Bücher, Aufzeichnungen (auch die Zettel-Datenbank und DATEV-Exporte), Jahresabschlüsse, Inventare, Verfahrensdokumentation | 10 Jahre |
+| Empfangene und abgesandte Handels- und Geschäftsbriefe (z. B. Angebote, Mahnungen, versendete E-Mails) | 6 Jahre |
 
-- Die Frist beginnt mit Ende des Kalenderjahres, in dem der Beleg entstanden ist.
+¹ § 147 Abs. 3 AO in der Fassung des Bürokratieentlastungsgesetzes IV; gilt für Unterlagen, deren Aufbewahrungsfrist am 1.1.2025 noch nicht abgelaufen war.
+
+- Die Frist beginnt mit Ende des Kalenderjahres, in dem der Beleg entstanden ist. Sie läuft nicht ab, solange die Steuer, für die die Unterlagen von Bedeutung sind, noch festgesetzt werden kann, z. B. bei laufender Betriebsprüfung (Ablaufhemmung, § 147 Abs. 3 Satz 5 AO).
 - Die Verfahrensdokumentation wird so lange aufbewahrt wie die Unterlagen, auf die sie sich bezieht, auch in älteren Fassungen.
 - Während der Frist werden Daten und Belege **nicht gelöscht**. Die Funktion „Daten löschen“ in Zettel wird für Echtdaten nicht benutzt.
 - Lesbarkeit: Backups und PDF/A-Belege werden [jährlich] auf Lesbarkeit geprüft. Bei einem Datenträger- oder Systemwechsel werden Daten vollständig migriert.
@@ -138,7 +142,7 @@ Nach derzeitigem Stand (bitte mit der Steuerberatung abgleichen):
 - **Vollständige Wiederherstellung**: ersetzt die gesamte Datenbank samt Änderungsprotokoll und Siegelkette durch den Stand des Backups und wird beim nächsten Programmstart angewendet. Alles, was nach dem Backup entstanden ist, geht verloren; Zettel legt vorher ein Sicherheits-Backup an.
 - **Teil-Wiederherstellung** (Kunden, Rechnungen, Einstellungen einzeln): ersetzt nur die gewählten Bereiche.
   - Das Änderungsprotokoll bleibt erhalten; es erhält genau einen Eintrag `restore` mit den wiederhergestellten Bereichen. Die einzelnen ersetzten Zeilen werden nicht protokolliert.
-  - Wird der Bereich Rechnungen wiederhergestellt, werden auch die Siegel aus dem Backup übernommen. Enthält das Backup noch keine Siegel (ältere Version), werden die Rechnungen beim nächsten Start neu versiegelt; danach die Integritätsprüfung ausführen.
+  - **Ausnahme von „append-only“:** Wird der Bereich Rechnungen wiederhergestellt, entfernt Zettel dafür kurzzeitig alle Trigger, ersetzt `invoice_seals` durch die Siegel aus dem Backup und stellt die Trigger wieder her. Siegel, die nach dem Backup entstanden sind, gehen dabei verloren (Zettel warnt davor); protokolliert wird der Vorgang als der eine Eintrag `restore`. Enthält das Backup noch keine Siegel (ältere Version), werden die Rechnungen beim nächsten Start neu versiegelt; danach die Integritätsprüfung ausführen.
   - Rechnungsnummernzähler werden nie zurückgesetzt, damit keine Nummer doppelt vergeben wird.
 - Jede Wiederherstellung wird hier festgehalten: [Datum, Grund, Backup-Datei, durchgeführt von, Ergebnis der Integritätsprüfung].
 
@@ -155,6 +159,7 @@ Nach derzeitigem Stand (bitte mit der Steuerberatung abgleichen):
 | Kontrolle | Rhythmus | Verantwortlich | Nachweis |
 |---|---|---|---|
 | Integritätsprüfung durchführen, Meldungen klären | [monatlich und vor jeder Übergabe an die Steuerberatung] | [Name] | [Notiz/Ablage] |
+| Letzten Prüfstand festhalten: Ergebnis der Integritätsprüfung (Anzahl Siegel/Rechnungen) und Siegel-Hash der zuletzt ausgestellten Rechnung (Rechnungsdetail → Änderungsverlauf, erste 12 Zeichen) notieren und getrennt vom Rechner ablegen | [monatlich] | [Name] | [Notiz/Ablage] |
 | Lückenlose Rechnungsnummern prüfen (Rechnungsliste) | [vierteljährlich] | [Name] | [Notiz/Ablage] |
 | Offene Posten und Zahlungseingänge abgleichen | [wöchentlich] | [Name] | [Notiz/Ablage] |
 | Backup erstellt und extern abgelegt | [wöchentlich] | [Name] | [Backup-Dateiname/Datum] |
