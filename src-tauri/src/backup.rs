@@ -70,11 +70,10 @@ const CUSTOMER_TABLES: [&str; 1] = ["customers"];
 /// Children before their parents, so deleting in this order is FK-safe.
 /// Offers point at the invoice they were converted into, payments and
 /// reminders (without a declared FK) at the invoice they belong to.
-const INVOICE_TABLES: [&str; 9] = [
+const INVOICE_TABLES: [&str; 8] = [
     "offer_items",
     "offers",
     "invoice_payments",
-    "invoice_attachments",
     "reminders",
     "invoice_items",
     "invoices",
@@ -1156,6 +1155,55 @@ mod tests {
             .unwrap()
     }
 
+    /// DB built by the real migrations. The stub tables of `create_db` mirror
+    /// `INVOICE_TABLES`, so only this catches a restorable table the real
+    /// schema no longer has.
+    fn migrated_db(path: &Path) -> Connection {
+        let conn = Connection::open(path).unwrap();
+        for migration in crate::build_migrations() {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn
+    }
+
+    fn seed_issued_invoice(conn: &Connection, number: &str) {
+        conn.execute_batch(&format!(
+            "INSERT INTO customers (id, customer_number, name) VALUES (1, 'K-0001', 'Acme');
+             INSERT INTO invoices (number, customer_id, issue_date, due_date, status)
+               VALUES ('{number}', 1, 1, 2, 'sent');"
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn restore_sections_runs_on_the_real_schema() {
+        let combos = [
+            sections(true, false, false),
+            sections(false, true, false),
+            sections(false, false, true),
+            sections(true, true, false),
+        ];
+        for (i, wanted) in combos.into_iter().enumerate() {
+            let dir = TempDir::new(&format!("restore-real-{i}"));
+            let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+            seed_issued_invoice(&migrated_db(&live), "RE-LIVE");
+            seed_issued_invoice(&migrated_db(&staged), "RE-BACKUP");
+
+            restore_sections(&live, &staged, wanted).unwrap_or_else(|e| panic!("{wanted:?}: {e}"));
+
+            let number: String = Connection::open(&live)
+                .unwrap()
+                .query_row("SELECT number FROM invoices", [], |row| row.get(0))
+                .unwrap();
+            let expected = if wanted.invoices {
+                "RE-BACKUP"
+            } else {
+                "RE-LIVE"
+            };
+            assert_eq!(number, expected, "{wanted:?}");
+        }
+    }
+
     fn write_zip(path: &Path, entries: &[(&str, &[u8])]) {
         let mut zip = ZipWriter::new(File::create(path).unwrap());
         for (name, content) in entries {
@@ -1261,7 +1309,7 @@ mod tests {
 
         restore_sections(&live, &staged, sections(false, true, false)).unwrap();
 
-        for table in ["invoice_payments", "reminders", "invoice_attachments"] {
+        for table in ["invoice_payments", "reminders"] {
             assert_eq!(tag_of(&live, table), "backup", "{table}");
         }
     }
