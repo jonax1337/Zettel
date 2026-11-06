@@ -24,6 +24,7 @@
     defaultBackupFilename,
     isPasswordRequiredError,
     restoreSealWarning,
+    restoreTimeEntryWarning,
     type PartialRestoreOutcome,
   } from "./backup-form";
 
@@ -147,8 +148,9 @@
         "Wiederherstellung abgeschlossen",
         `Die ausgewählten Bereiche wurden eingespielt. Der vorherige Stand liegt in ${safetyBackup}.`,
       );
-      const warning = restored && restoreSealWarning(restored);
-      if (warning) {
+      const warnings = restored ? [restoreSealWarning(restored), restoreTimeEntryWarning(restored)] : [];
+      for (const warning of warnings) {
+        if (!warning) continue;
         toast.show(warning.title, {
           description: warning.description,
           variant: "warning",

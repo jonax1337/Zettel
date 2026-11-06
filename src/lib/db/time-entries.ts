@@ -157,11 +157,15 @@ export async function createTimeEntry(input: TimeEntryInput): Promise<number> {
 
 /** Only open, finished entries can be edited; a billed one is part of an invoice. */
 export async function updateTimeEntry(id: number, input: TimeEntryInput): Promise<void> {
-  const { startedAt, endedAt, durationMinutes } = resolveTiming(input.entryDate, input.timing);
   const current = await getTimeEntry(id);
   if (!current) throw new Error("Der Zeiteintrag wurde nicht gefunden.");
   if (current.invoiceId !== null) throw new Error(BILLED_ENTRY);
   if (current.durationMinutes === null) throw new Error(RUNNING_ENTRY);
+  const { startedAt, endedAt, durationMinutes } = resolveTiming(input.entryDate, input.timing, {
+    startedAt: current.startedAt,
+    endedAt: current.endedAt,
+    durationMinutes: current.durationMinutes,
+  });
   if (current.projectId !== input.projectId) await assertProjectUsable(input.projectId);
 
   const result = await execute(

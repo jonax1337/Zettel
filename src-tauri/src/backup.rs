@@ -100,6 +100,7 @@ const TABLES_NEWER_THAN_MIN_PARTIAL_SCHEMA: [&str; 4] = [
 /// rows stay (payments and seals, in contrast, belong to the replaced invoices
 /// and go with them).
 const TIME_TRACKING_TABLES: [&str; 2] = ["projects", "time_entries"];
+const PROJECTS_TABLE: &str = "projects";
 const TIME_ENTRIES_TABLE: &str = "time_entries";
 const INVOICE_SEALS_TABLE: &str = "invoice_seals";
 const SETTINGS_ROW_ID: i64 = 1;
@@ -162,6 +163,9 @@ pub struct PartialRestoreOutcome {
     /// are gone with the restore, and so are the seals. 0 when the invoice
     /// section was not restored.
     dropped_live_seals: u32,
+    /// Live time entries that were billed on an invoice and are open again:
+    /// the restored invoices come from a backup that does not know them.
+    unlinked_time_entries: u32,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -1009,6 +1013,9 @@ fn restore_sections(
         .copied()
         .filter(|table| TIME_TRACKING_TABLES.contains(table))
         .collect();
+    if sections.customers {
+        ensure_kept_projects_keep_their_customers(&tx, &kept_live)?;
+    }
     for table in tables.iter().filter(|table| !kept_live.contains(table)) {
         tx.execute_batch(&format!("DELETE FROM main.{table};"))
             .map_err(|e| format!("{table}: {e}"))?;
@@ -1024,11 +1031,18 @@ fn restore_sections(
         ))
         .map_err(|e| format!("{table}: {e}"))?;
     }
-    if kept_live.contains(&TIME_ENTRIES_TABLE) {
-        unlink_time_entries_from_invoices(&tx)?;
-    }
+    let unlinked_time_entries = if kept_live.contains(&TIME_ENTRIES_TABLE) {
+        unlink_time_entries_from_invoices(&tx)?
+    } else {
+        0
+    };
     keep_number_counters_ahead(&tx, &live_counters, sections.invoices)?;
-    ensure_no_new_dangling_references(&tx, &violations_before, &tables)?;
+    let restored_tables: Vec<&str> = tables
+        .iter()
+        .copied()
+        .filter(|table| !kept_live.contains(table))
+        .collect();
+    ensure_no_new_dangling_references(&tx, &violations_before, &restored_tables)?;
     let seals_from_backup = if sections.invoices {
         reset_seal_sequence(&tx)?;
         Some(!table_columns(&tx, "bak", INVOICE_SEALS_TABLE)?.is_empty())
@@ -1038,6 +1052,7 @@ fn restore_sections(
     let outcome = PartialRestoreOutcome {
         seals_from_backup,
         dropped_live_seals,
+        unlinked_time_entries,
     };
     record_restore(&tx, sections, &outcome)?;
     recreate_triggers(&tx, &triggers)?;
@@ -1045,12 +1060,43 @@ fn restore_sections(
     Ok(outcome)
 }
 
+/// Live projects belong to the live customers. A backup that predates time
+/// tracking has no say over them, and restoring its customers would leave the
+/// projects pointing at customers it lacks or, for a foreign backup, at other
+/// ones under the same id. Without live projects there is nothing to protect.
+fn ensure_kept_projects_keep_their_customers(
+    conn: &rusqlite::Connection,
+    kept_live: &[&str],
+) -> Result<(), String> {
+    if !kept_live.contains(&PROJECTS_TABLE) {
+        return Ok(());
+    }
+    let live_projects: i64 = conn
+        .query_row(
+            &format!("SELECT COUNT(*) FROM main.{PROJECTS_TABLE}"),
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("{PROJECTS_TABLE}: {e}"))?;
+    if live_projects == 0 {
+        return Ok(());
+    }
+    Err(format!(
+        "Teil-Wiederherstellung abgebrochen: {live_projects} Zeiterfassungs-Projekte gehören zu Kunden, die diese Sicherung nicht enthält oder anders belegt hat. Bitte alle Bereiche vollständig wiederherstellen oder die Kunden nicht mit wiederherstellen."
+    ))
+}
+
 /// The restored invoices come from a backup that predates time tracking, so
 /// their ids no longer stand for the invoices the live entries were billed on.
-fn unlink_time_entries_from_invoices(conn: &rusqlite::Connection) -> Result<(), String> {
-    conn.execute_batch(&format!(
-        "UPDATE main.{TIME_ENTRIES_TABLE} SET invoice_id = NULL;"
-    ))
+/// Returns how many billed entries are open again.
+fn unlink_time_entries_from_invoices(conn: &rusqlite::Connection) -> Result<u32, String> {
+    conn.execute(
+        &format!(
+            "UPDATE main.{TIME_ENTRIES_TABLE} SET invoice_id = NULL WHERE invoice_id IS NOT NULL"
+        ),
+        [],
+    )
+    .map(|unlinked| unlinked as u32)
     .map_err(|e| format!("{TIME_ENTRIES_TABLE}: {e}"))
 }
 
@@ -1125,6 +1171,7 @@ fn record_restore(
         "sections": sections.names(),
         "seals_from_backup": outcome.seals_from_backup,
         "dropped_live_seals": outcome.dropped_live_seals,
+        "unlinked_time_entries": outcome.unlinked_time_entries,
     });
     conn.execute(
         "INSERT INTO main.audit_log (table_name, row_id, action, new_values)
@@ -1402,6 +1449,13 @@ mod tests {
         rows
     }
 
+    fn tag_of_invoice_number(path: &Path) -> String {
+        Connection::open(path)
+            .unwrap()
+            .query_row("SELECT number FROM invoices", [], |row| row.get(0))
+            .unwrap()
+    }
+
     #[test]
     fn restore_sections_runs_on_the_real_schema() {
         let all_migrations = crate::build_migrations().len();
@@ -1429,13 +1483,17 @@ mod tests {
                 drop((live_db, staged_db));
                 let triggers_before = trigger_sql(&live);
 
+                if wanted.customers && wanted.invoices && !backup_has_time_entries {
+                    let err = restore_sections(&live, &staged, wanted).unwrap_err();
+                    assert!(err.contains("Zeiterfassungs-Projekte"), "{err}");
+                    assert_eq!(row_count(&live, "projects"), 1, "{err}");
+                    assert_eq!(tag_of_invoice_number(&live), "RE-LIVE", "{err}");
+                    continue;
+                }
                 let outcome = restore_sections(&live, &staged, wanted)
                     .unwrap_or_else(|e| panic!("{wanted:?} from {backup_migrations}: {e}"));
 
-                let number: String = Connection::open(&live)
-                    .unwrap()
-                    .query_row("SELECT number FROM invoices", [], |row| row.get(0))
-                    .unwrap();
+                let number = tag_of_invoice_number(&live);
                 let expected = if wanted.invoices {
                     "RE-BACKUP"
                 } else {
@@ -1467,6 +1525,11 @@ mod tests {
                     .query_row("SELECT COUNT(*) FROM projects", [], |row| row.get(0))
                     .unwrap();
                 assert_eq!(projects, 1, "{wanted:?} from {backup_migrations}");
+                let unlinked_expected = u32::from(wanted.invoices && !backup_has_time_entries);
+                assert_eq!(
+                    outcome.unlinked_time_entries, unlinked_expected,
+                    "{wanted:?} from {backup_migrations}"
+                );
                 let seals_expected = wanted
                     .invoices
                     .then_some(backup_migrations == all_migrations);
@@ -1652,7 +1715,8 @@ mod tests {
             .unwrap()
             .execute_batch(
                 "ALTER TABLE time_entries ADD COLUMN invoice_id INTEGER;
-                 UPDATE time_entries SET invoice_id = 1;",
+                 UPDATE time_entries SET invoice_id = 1;
+                 INSERT INTO time_entries (tag, invoice_id) VALUES ('live', NULL);",
             )
             .unwrap();
         Connection::open(&staged)
@@ -1660,12 +1724,13 @@ mod tests {
             .execute_batch("DROP TABLE projects; DROP TABLE time_entries;")
             .unwrap();
 
-        restore_sections(&live, &staged, sections(false, true, false)).unwrap();
+        let outcome = restore_sections(&live, &staged, sections(false, true, false)).unwrap();
 
         assert_eq!(tag_of(&live, "projects"), "live");
-        assert_eq!(tag_of(&live, "time_entries"), "live");
-        assert_eq!(time_entry_invoice_ids(&live), [None]);
+        assert_eq!(time_entry_invoice_ids(&live), [None, None]);
         assert_eq!(tag_of(&live, "invoices"), "backup");
+        assert_eq!(outcome.unlinked_time_entries, 1);
+        assert_eq!(restore_details(&live)["unlinked_time_entries"], 1);
     }
 
     #[test]
@@ -1689,6 +1754,84 @@ mod tests {
         assert_eq!(tag_of(&live, "projects"), "backup");
         assert_eq!(tag_of(&live, "time_entries"), "backup");
         assert_eq!(time_entry_invoice_ids(&live), [Some(1)]);
+    }
+
+    /// Live DB at the current schema, backup DB from before time tracking
+    /// (schema 29), both holding customer 1 with an issued invoice.
+    fn live_and_pre_time_tracking_backup(dir: &TempDir) -> (PathBuf, PathBuf) {
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        let live_db = migrated_db(&live, crate::build_migrations().len());
+        seed_issued_invoice(&live_db, "RE-LIVE");
+        let staged_db = migrated_db(&staged, 29);
+        seed_issued_invoice(&staged_db, "RE-BACKUP");
+        (live, staged)
+    }
+
+    #[test]
+    fn restoring_customers_aborts_when_a_live_project_belongs_to_a_customer_the_backup_lacks() {
+        let dir = TempDir::new("restore-project-customer-missing");
+        let (live, staged) = live_and_pre_time_tracking_backup(&dir);
+        Connection::open(&live)
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO customers (id, customer_number, name) VALUES (2, 'K-0002', 'Neu');
+                 INSERT INTO projects (id, customer_id, name) VALUES (1, 2, 'Projekt');",
+            )
+            .unwrap();
+
+        let err = restore_sections(&live, &staged, sections(true, true, false)).unwrap_err();
+
+        assert!(err.contains("1 Zeiterfassungs-Projekte"), "{err}");
+        assert!(!err.contains("Verweise würden ins Leere zeigen"), "{err}");
+        assert_eq!(row_count(&live, "customers"), 2);
+        assert_eq!(row_count(&live, "projects"), 1);
+        assert_eq!(tag_of_invoice_number(&live), "RE-LIVE");
+    }
+
+    #[test]
+    fn restoring_customers_without_live_projects_works_with_a_backup_without_time_tracking() {
+        let dir = TempDir::new("restore-no-projects");
+        let (live, staged) = live_and_pre_time_tracking_backup(&dir);
+
+        restore_sections(&live, &staged, sections(true, true, false)).unwrap();
+
+        assert_eq!(tag_of_invoice_number(&live), "RE-BACKUP");
+    }
+
+    #[test]
+    fn restoring_only_invoices_keeps_live_projects_of_customers_the_backup_lacks() {
+        let dir = TempDir::new("restore-invoices-keep-projects");
+        let (live, staged) = live_and_pre_time_tracking_backup(&dir);
+        Connection::open(&live)
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO customers (id, customer_number, name) VALUES (2, 'K-0002', 'Neu');
+                 INSERT INTO projects (id, customer_id, name) VALUES (1, 2, 'Projekt');",
+            )
+            .unwrap();
+
+        restore_sections(&live, &staged, sections(false, true, false)).unwrap();
+
+        assert_eq!(row_count(&live, "projects"), 1);
+        assert_eq!(tag_of_invoice_number(&live), "RE-BACKUP");
+    }
+
+    #[test]
+    fn dangling_references_in_kept_live_time_data_do_not_block_a_restore() {
+        let dir = TempDir::new("restore-kept-time-data-dangling");
+        let (live, staged) = live_and_pre_time_tracking_backup(&dir);
+        Connection::open(&live)
+            .unwrap()
+            .execute_batch(
+                "PRAGMA foreign_keys=OFF;
+                 INSERT INTO time_entries (project_id, entry_date, duration_minutes)
+                   VALUES (99, 1, 30);",
+            )
+            .unwrap();
+
+        restore_sections(&live, &staged, sections(false, true, false)).unwrap();
+
+        assert_eq!(row_count(&live, "time_entries"), 1);
     }
 
     /// Audit triggers on a few tables and the lock triggers of the real schema.
@@ -1784,7 +1927,8 @@ mod tests {
             serde_json::json!({
                 "sections": ["customers", "invoices", "settings"],
                 "seals_from_backup": true,
-                "dropped_live_seals": 1
+                "dropped_live_seals": 1,
+                "unlinked_time_entries": 0
             })
         );
     }
@@ -1957,7 +2101,11 @@ mod tests {
 
         assert_eq!(
             serde_json::to_value(&outcome).unwrap(),
-            serde_json::json!({ "sealsFromBackup": true, "droppedLiveSeals": 1 })
+            serde_json::json!({
+                "sealsFromBackup": true,
+                "droppedLiveSeals": 1,
+                "unlinkedTimeEntries": 0
+            })
         );
     }
 

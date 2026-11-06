@@ -179,6 +179,14 @@ describe("manual entries", () => {
     expect(await listTimeEntries()).toEqual([]);
   });
 
+  it("refuses a kept timing on a new entry", async () => {
+    await expect(createTimeEntry(manual(websiteId, { timing: { mode: "keep" } }))).rejects.toThrow(
+      "braucht Beginn und Ende oder eine Dauer",
+    );
+
+    expect(await listTimeEntries()).toEqual([]);
+  });
+
   it("keeps the entries of an archived project listed and editable", async () => {
     const id = await createTimeEntry(manual(websiteId));
     await setProjectArchived(websiteId, true);
@@ -308,6 +316,20 @@ describe("editing a stopped timer entry", () => {
     expect(before).toEqual([
       { entry_date: day(5), started_at: at(5, 9), ended_at: at(5, 10, 29, 40), duration_minutes: 90 },
     ]);
+  });
+
+  it("takes the kept timing from the stored row, not from the caller", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    setClock(at(5, 9, 0, 0));
+    const id = await startTimer(websiteId, "Sprint");
+    setClock(at(5, 10, 29, 40));
+    await stopTimer();
+    const before = storedTiming();
+
+    await updateTimeEntry(id, manual(websiteId, { description: "Neu", timing: { mode: "keep" } }));
+
+    expect(storedTiming()).toEqual(before);
+    expect((await listTimeEntries())[0].description).toBe("Neu");
   });
 
   it("keeps a timer that ran past midnight when saved unchanged", async () => {

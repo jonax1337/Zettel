@@ -5,13 +5,13 @@ const SECONDS_PER_MINUTE = 60;
 
 /**
  * A manual entry is either a clock range on its day or a plain duration. "keep"
- * hands back the stored columns of an entry whose timing was not edited, so a
- * stopped timer keeps its seconds and a midnight crossing.
+ * stands for the stored columns of the entry being edited, so a stopped timer
+ * keeps its seconds and a midnight crossing; it carries no values of its own.
  */
 export type TimeEntryTiming =
   | { mode: "range"; startedAt: number; endedAt: number }
   | { mode: "duration"; durationMinutes: number }
-  | ({ mode: "keep" } & ResolvedTiming);
+  | { mode: "keep" };
 
 export type ResolvedTiming = {
   startedAt: number | null;
@@ -26,11 +26,14 @@ export function elapsedMinutes(startedAt: number, endedAt: number): number {
   return Math.max(1, Math.round((endedAt - startedAt) / SECONDS_PER_MINUTE));
 }
 
-/** Validated columns for a manual entry on `entryDate`; throws a German message otherwise. */
-export function resolveTiming(entryDate: number, timing: TimeEntryTiming): ResolvedTiming {
+/**
+ * Validated columns for a manual entry on `entryDate`; throws a German message
+ * otherwise. `stored` is the entry being edited, the only source of a "keep".
+ */
+export function resolveTiming(entryDate: number, timing: TimeEntryTiming, stored?: ResolvedTiming): ResolvedTiming {
   if (timing.mode === "keep") {
-    const { startedAt, endedAt, durationMinutes } = timing;
-    return { startedAt, endedAt, durationMinutes };
+    if (!stored) throw new Error("Ein neuer Zeiteintrag braucht Beginn und Ende oder eine Dauer.");
+    return stored;
   }
   if (timing.mode === "duration") {
     const { durationMinutes } = timing;

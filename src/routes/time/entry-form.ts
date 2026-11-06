@@ -85,8 +85,7 @@ export function entryInputFromForm(values: EntryFormValues, original: TimeEntryL
     description: values.description,
   };
   if (original && original.durationMinutes !== null && timingUntouched(values, original)) {
-    const { startedAt, endedAt, durationMinutes } = original;
-    return { ...base, timing: { mode: "keep", startedAt, endedAt, durationMinutes } };
+    return { ...base, timing: { mode: "keep" } };
   }
   if (values.mode === "duration") {
     const durationMinutes = parseDuration(values.duration);

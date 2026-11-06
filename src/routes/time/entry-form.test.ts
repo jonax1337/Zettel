@@ -116,12 +116,7 @@ describe("entryInputFromForm for a stored entry", () => {
   it("keeps the stored timing while only the description changes", () => {
     const input = entryInputFromForm({ ...formFromEntry(stored), description: "Neu" }, stored);
 
-    expect(input.timing).toEqual({
-      mode: "keep",
-      startedAt: stored.startedAt,
-      endedAt: stored.endedAt,
-      durationMinutes: 90,
-    });
+    expect(input.timing).toEqual({ mode: "keep" });
     expect(input.description).toBe("Neu");
   });
 
