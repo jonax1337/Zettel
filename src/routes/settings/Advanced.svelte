@@ -126,7 +126,8 @@
       <DangerSection title="Alle Geschäftsdaten löschen">
         {#snippet description()}
           Rechnungen, Angebote, Mahnungen, Ausgaben, Kunden, Lieferanten, wiederkehrende
-          Rechnungen & Vorauszahlungen — Einstellungen (Firma, Steuerprofil, Logo) bleiben.
+          Rechnungen, Vorauszahlungen, Projekte & Zeiteinträge — Einstellungen (Firma,
+          Steuerprofil, Logo) bleiben.
         {/snippet}
         <Button
           type="button"
