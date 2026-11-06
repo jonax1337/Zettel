@@ -669,7 +669,7 @@ describe("markPaid", () => {
 });
 
 describe("deleteInvoice", () => {
-  it("removes the payments of the deleted invoice, which have no FK cascade", async () => {
+  it("removes the payments of the deleted invoice, which have no FK cascade, and frees its time entries", async () => {
     db.select.mockResolvedValue([invoiceRow({ status: "cancelled", number: "DRAFT-abc" })]);
 
     await deleteInvoice(7);
@@ -677,6 +677,7 @@ describe("deleteInvoice", () => {
     const statements = db.execute.mock.calls.map(([sql]) => String(sql));
     expect(statements).toEqual([
       "DELETE FROM invoice_payments WHERE invoice_id = ?",
+      "UPDATE time_entries SET invoice_id = NULL, updated_at = unixepoch() WHERE invoice_id = ?",
       "DELETE FROM invoices WHERE id = ?",
     ]);
   });

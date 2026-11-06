@@ -248,7 +248,7 @@
           </label>
           <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
             <Checkbox bind:checked={restoreSections.invoices} />
-            Rechnungen + PDFs <span class="text-muted-foreground">(inkl. Zahlungen, Mahnungen, Anhänge, Angebote, wiederkehrende Rechnungen)</span>
+            Rechnungen + PDFs <span class="text-muted-foreground">(inkl. Zahlungen, Mahnungen, Anhänge, Angebote, wiederkehrende Rechnungen, Zeiterfassung)</span>
           </label>
           <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
             <Checkbox bind:checked={restoreSections.settings} />

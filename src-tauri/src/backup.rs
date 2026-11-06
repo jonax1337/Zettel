@@ -40,7 +40,7 @@ use crate::tenants::{self, active_documents_root_for};
 /// `CURRENT_DB_SCHEMA_VERSION` in `src/lib/utils/schema-version.ts` and the
 /// highest migration version in `lib.rs` (a test in `lib.rs` checks the
 /// latter).
-pub(crate) const CURRENT_SCHEMA: u32 = 31;
+pub(crate) const CURRENT_SCHEMA: u32 = 32;
 
 const MANIFEST_NAME: &str = "manifest.json";
 const DB_ENTRY: &str = "zettel.db";
@@ -70,22 +70,31 @@ const CUSTOMER_TABLES: [&str; 1] = ["customers"];
 /// Children before their parents, so deleting in this order is FK-safe.
 /// Offers point at the invoice they were converted into, payments and
 /// reminders (without a declared FK) at the invoice they belong to. The seals
-/// of the hash chain travel with the invoices they seal.
-const INVOICE_TABLES: [&str; 9] = [
+/// of the hash chain travel with the invoices they seal. Time entries point at
+/// the invoice they were billed on and at their project, so they travel with
+/// both.
+const INVOICE_TABLES: [&str; 11] = [
     "offer_items",
     "offers",
     "invoice_payments",
     "invoice_seals",
     "reminders",
+    "time_entries",
     "invoice_items",
     "invoices",
+    "projects",
     "recurring_invoice_items",
     "recurring_invoices",
 ];
 const SETTINGS_TABLES: [&str; 1] = ["settings"];
 /// Restorable tables created after `MIN_PARTIAL_RESTORE_SCHEMA`: a backup
 /// without them simply had no rows yet.
-const TABLES_NEWER_THAN_MIN_PARTIAL_SCHEMA: [&str; 2] = ["invoice_payments", "invoice_seals"];
+const TABLES_NEWER_THAN_MIN_PARTIAL_SCHEMA: [&str; 4] = [
+    "invoice_payments",
+    "invoice_seals",
+    "projects",
+    "time_entries",
+];
 const INVOICE_SEALS_TABLE: &str = "invoice_seals";
 const SETTINGS_ROW_ID: i64 = 1;
 /// `settings` columns holding the last drawn document number.
@@ -1327,6 +1336,30 @@ mod tests {
         .unwrap();
     }
 
+    /// A project of the seeded customer with one time entry billed on the
+    /// seeded invoice; `description` tells live and backup rows apart.
+    fn seed_billed_time_entry(conn: &Connection, description: &str) {
+        conn.execute_batch(&format!(
+            "INSERT INTO projects (id, customer_id, name) VALUES (1, 1, 'Projekt');
+             INSERT INTO time_entries (project_id, entry_date, duration_minutes, description, invoice_id)
+               VALUES (1, 1, 90, '{description}', 1);"
+        ))
+        .unwrap();
+    }
+
+    fn time_entry_descriptions(path: &Path) -> Vec<String> {
+        let conn = Connection::open(path).unwrap();
+        let mut statement = conn
+            .prepare("SELECT description FROM time_entries ORDER BY id")
+            .unwrap();
+        let rows = statement
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        rows
+    }
+
     #[test]
     fn restore_sections_runs_on_the_real_schema() {
         let all_migrations = crate::build_migrations().len();
@@ -1342,8 +1375,16 @@ mod tests {
             for backup_migrations in [all_migrations, pre_seal_migrations] {
                 let dir = TempDir::new(&format!("restore-real-{i}-{backup_migrations}"));
                 let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
-                seed_issued_invoice(&migrated_db(&live, all_migrations), "RE-LIVE");
-                seed_issued_invoice(&migrated_db(&staged, backup_migrations), "RE-BACKUP");
+                let live_db = migrated_db(&live, all_migrations);
+                seed_issued_invoice(&live_db, "RE-LIVE");
+                seed_billed_time_entry(&live_db, "live");
+                let staged_db = migrated_db(&staged, backup_migrations);
+                seed_issued_invoice(&staged_db, "RE-BACKUP");
+                let backup_has_time_entries = backup_migrations == all_migrations;
+                if backup_has_time_entries {
+                    seed_billed_time_entry(&staged_db, "backup");
+                }
+                drop((live_db, staged_db));
                 let triggers_before = trigger_sql(&live);
 
                 let outcome = restore_sections(&live, &staged, wanted)
@@ -1360,6 +1401,16 @@ mod tests {
                 };
                 assert_eq!(number, expected, "{wanted:?}");
                 assert_eq!(trigger_sql(&live), triggers_before, "{wanted:?}");
+                let entries_expected: &[&str] = match (wanted.invoices, backup_has_time_entries) {
+                    (false, _) => &["live"],
+                    (true, true) => &["backup"],
+                    (true, false) => &[],
+                };
+                assert_eq!(
+                    time_entry_descriptions(&live),
+                    entries_expected,
+                    "{wanted:?} from {backup_migrations}"
+                );
                 let seals_expected = wanted
                     .invoices
                     .then_some(backup_migrations == all_migrations);

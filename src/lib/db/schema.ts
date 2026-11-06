@@ -537,3 +537,31 @@ export const catalogItems = sqliteTable("catalog_items", {
 
 export type CatalogItem = typeof catalogItems.$inferSelect;
 export type CatalogItemInsert = typeof catalogItems.$inferInsert;
+
+export const projects = sqliteTable("projects", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  customerId: integer("customer_id").notNull(),
+  name: text("name").notNull(),
+  hourlyRateCent: integer("hourly_rate_cent").notNull().default(0),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+});
+
+export const timeEntries = sqliteTable("time_entries", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: integer("project_id").notNull(),
+  /** Local midnight of the work day. */
+  entryDate: integer("entry_date").notNull(),
+  startedAt: integer("started_at"),
+  endedAt: integer("ended_at"),
+  /** Null only while the timer runs. */
+  durationMinutes: integer("duration_minutes"),
+  description: text("description").notNull().default(""),
+  invoiceId: integer("invoice_id"),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+});
+
+export type Project = typeof projects.$inferSelect;
+export type TimeEntry = typeof timeEntries.$inferSelect;
