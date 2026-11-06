@@ -282,6 +282,17 @@ describe("credit notes", () => {
     expect(boundInsertColumns(sql, binds)).toMatchObject({ total: -5_000, eur_total_cent: -4_630 });
   });
 
+  it("takes the frozen EUR total of the original for a full refund", async () => {
+    db.select.mockImplementation(
+      creditNoteSql(invoiceRow({ currency: "USD", exchange_rate: "1,08", eur_total_cent: 9_259 })),
+    );
+
+    await createCreditNoteFromInvoice(7);
+
+    const [sql, binds] = db.insert.mock.calls[0];
+    expect(boundInsertColumns(sql, binds)).toMatchObject({ total: -10_000, eur_total_cent: -9_259 });
+  });
+
   it("keeps the Kleinunternehmer treatment of the original although the setting changed since", async () => {
     const vatItem = { ...itemRow, vat_rate: 19 };
     db.select.mockImplementation(creditNoteSql(invoiceRow({ is_kleinunternehmer: 1 }), [vatItem]));

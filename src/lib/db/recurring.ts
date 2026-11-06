@@ -14,6 +14,7 @@ import type {
   RecurringInvoiceItem,
 } from "./schema";
 import { addDaysUnix, nowUnix } from "$lib/utils/date";
+import { assertQuantities, roundQuantity } from "$lib/utils/totals";
 
 const DUE_SOON_DAYS = 7;
 const TEMPLATE_CURRENCY = DEFAULT_CURRENCY;
@@ -216,6 +217,8 @@ async function writeRecurringItems(
   recurringId: number,
   items: RecurringItemInput[],
 ): Promise<void> {
+  // Before the DELETE: a missing quantity must not leave the template without its old items.
+  const quantities = items.map((it) => roundQuantity(it.quantity));
   await execute("DELETE FROM recurring_invoice_items WHERE recurring_id = ?", [
     recurringId,
   ]);
@@ -230,7 +233,7 @@ async function writeRecurringItems(
         recurringId,
         i + 1,
         it.description,
-        it.quantity,
+        quantities[i],
         it.unit,
         it.unitPrice,
         it.vatRate,
@@ -243,6 +246,7 @@ async function writeRecurringItems(
 }
 
 export async function createRecurring(input: RecurringFormInput): Promise<number> {
+  assertQuantities(input.items);
   const id = await insert(
     `INSERT INTO recurring_invoices
       (name, customer_id, interval, start_date, next_due_date, payment_terms_days,
@@ -271,6 +275,7 @@ export async function updateRecurring(
   id: number,
   input: RecurringFormInput,
 ): Promise<void> {
+  assertQuantities(input.items);
   await execute(
     `UPDATE recurring_invoices SET
       name = ?, customer_id = ?, interval = ?, start_date = ?,

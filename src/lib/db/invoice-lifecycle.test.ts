@@ -11,6 +11,7 @@ import {
   creditedCentSql,
   isIssuedCreditNote,
   isSettledByCreditNote,
+  keepsStoredAmounts,
   notSettledByCreditNoteSql,
   openBalanceCent,
   settledByCreditNoteSql,
@@ -47,6 +48,20 @@ describe("canCancelInvoice", () => {
 
   it.each(["sent", "partial", "paid", "cancelled"] as const)("forbids cancelling a %s invoice", (status) => {
     expect(canCancelInvoice({ number: REAL_NUMBER, status })).toBe(false);
+  });
+});
+
+describe("keepsStoredAmounts", () => {
+  it("is false for a draft that never got a real number: it follows the current rounding", () => {
+    expect(keepsStoredAmounts({ number: DRAFT_NUMBER, isCreditNote: false })).toBe(false);
+  });
+
+  it("is true for a reopened invoice, which already carries its issued number", () => {
+    expect(keepsStoredAmounts({ number: REAL_NUMBER, isCreditNote: false })).toBe(true);
+  });
+
+  it("is true for a credit note, also while it still has a draft placeholder number", () => {
+    expect(keepsStoredAmounts({ number: DRAFT_NUMBER, isCreditNote: true })).toBe(true);
   });
 });
 

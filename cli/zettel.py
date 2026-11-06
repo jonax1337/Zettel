@@ -150,8 +150,17 @@ def js_round(v: float) -> int:
     return math.floor(v + 0.5)
 
 
+QUANTITY_SCALE = 10_000  # Mengen haben höchstens vier Nachkommastellen (wie im ZUGFeRD-XML)
+
+
+def round_quantity(quantity: float) -> float:
+    """Spiegel von roundQuantity in src/lib/utils/totals.ts: die gespeicherte Menge ist die, mit der gerechnet wird."""
+    return js_round(quantity * QUANTITY_SCALE) / QUANTITY_SCALE
+
+
 def compute_line_total(quantity: float, unit_price_cent: int) -> int:
-    return js_round(quantity * unit_price_cent)
+    """Menge x Einzelpreis exakt in Cent, .5 Richtung +unendlich; die Float-Rechnung rundet 0,47 x 8550 falsch ab."""
+    return (js_round(quantity * QUANTITY_SCALE) * unit_price_cent + QUANTITY_SCALE // 2) // QUANTITY_SCALE
 
 
 def compute_totals(items: list[dict], is_kleinunternehmer: bool, is_reverse_charge: bool) -> dict:
@@ -972,7 +981,7 @@ def parse_items_arg(spec: str | None) -> list[dict]:
         items.append(
             {
                 "description": fields[0],
-                "quantity": qty,
+                "quantity": round_quantity(qty),
                 "unit": fields[2] or DEFAULT_UNIT,
                 "unitPrice": js_round(price_eur * CENTS_PER_EUR),
                 "vatRate": int(vat),

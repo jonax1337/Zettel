@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canReopenOffer } from "./offer-actions";
+import { canReopenOffer, offerKeepsStoredAmounts } from "./offer-actions";
 
 describe("canReopenOffer", () => {
   it.each(["sent", "rejected", "expired"] as const)("allows %s offers", (status) => {
@@ -16,5 +16,15 @@ describe("canReopenOffer", () => {
 
   it("rejects drafts", () => {
     expect(canReopenOffer({ status: "draft", convertedInvoiceId: null })).toBe(false);
+  });
+});
+
+describe("offerKeepsStoredAmounts", () => {
+  it("is true for a draft with a stored PDF, e.g. a sent offer that was reopened", () => {
+    expect(offerKeepsStoredAmounts({ pdfPath: "C:/Zettel/Angebote/AN-2026-0001.pdf" })).toBe(true);
+  });
+
+  it("is false for a draft that never had a PDF", () => {
+    expect(offerKeepsStoredAmounts({ pdfPath: null })).toBe(false);
   });
 });

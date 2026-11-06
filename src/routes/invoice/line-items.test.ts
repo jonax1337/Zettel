@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogItem } from "$lib/db/schema";
+import { computeLineTotal } from "$lib/utils/totals";
 import {
   lineItemFromCatalog,
   lineItemFromStored,
+  lineItemsFromStored,
   moveLineItem,
   newLineItem,
   toLineItemInputs,
+  toTotalsItem,
   zeroVatRates,
 } from "./line-items";
 
@@ -85,6 +88,68 @@ describe("toLineItemInputs", () => {
     const [input] = toLineItemInputs([item]);
     expect(input.linePeriodStart).toBeTypeOf("number");
     expect(input.linePeriodEnd).toBeNull();
+  });
+});
+
+describe("stored line totals", () => {
+  // Stored under the former float rounding: 0,47 x 85,50 EUR was 40,18 EUR, the exact product is 40,19 EUR.
+  const stored = {
+    description: "Beratung",
+    quantity: 0.47,
+    unit: "Stk",
+    unitPrice: 8550,
+    vatRate: 19,
+    longDescription: null,
+    linePeriodStart: null,
+    linePeriodEnd: null,
+    lineTotal: 4018,
+  };
+
+  it("are handed on while quantity and price are the stored ones", () => {
+    const item = lineItemFromStored(stored);
+    expect(toLineItemInputs([item])[0].fixedLineTotal).toBe(4018);
+    expect(toTotalsItem(item).fixedLineTotal).toBe(4018);
+  });
+
+  it("are dropped once the quantity or the price was edited", () => {
+    const item = lineItemFromStored(stored);
+    item.quantity = 0.5;
+    expect(toLineItemInputs([item])[0].fixedLineTotal).toBeUndefined();
+    item.quantity = 0.47;
+    item.unitPrice = 8600;
+    expect(toTotalsItem(item).fixedLineTotal).toBeUndefined();
+  });
+
+  it("do not exist for a new position or a stored one without an amount", () => {
+    const { lineTotal: _, ...template } = stored;
+    expect(toLineItemInputs([newLineItem()])[0].fixedLineTotal).toBeUndefined();
+    expect(toLineItemInputs([lineItemFromStored(template)])[0].fixedLineTotal).toBeUndefined();
+  });
+});
+
+describe("lineItemsFromStored", () => {
+  const stored = {
+    description: "Beratung",
+    quantity: 0.47,
+    unit: "Stk",
+    unitPrice: 8550,
+    vatRate: 19,
+    longDescription: null,
+    linePeriodStart: null,
+    linePeriodEnd: null,
+    lineTotal: 4018,
+  };
+
+  it("keeps the stored amounts when asked to", () => {
+    const [item] = lineItemsFromStored([stored], true);
+    expect(toLineItemInputs([item])[0].fixedLineTotal).toBe(4018);
+    expect(computeLineTotal(toTotalsItem(item))).toBe(4018);
+  });
+
+  it("computes every position anew otherwise, so the exact product wins over the old rounding", () => {
+    const [item] = lineItemsFromStored([stored], false);
+    expect(toLineItemInputs([item])[0].fixedLineTotal).toBeUndefined();
+    expect(computeLineTotal(toTotalsItem(item))).toBe(4019);
   });
 });
 

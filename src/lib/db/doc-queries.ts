@@ -1,6 +1,6 @@
 import { containsPattern, execute, select } from "./client";
 import { periodForYear } from "$lib/dashboard/period";
-import { computeLineTotal, type TotalsItem } from "$lib/utils/totals";
+import { computeLineTotal, roundQuantity, type TotalsItem } from "$lib/utils/totals";
 
 /** Shown wherever a customer or vendor name is missing. */
 export const MISSING_NAME = "—";
@@ -77,6 +77,8 @@ export async function writeLineItems<T extends LineItemInput>(
   items: T[],
   extraColumns: (item: T) => Record<string, unknown>,
 ): Promise<void> {
+  // Before the DELETE: a missing quantity must not leave the document without its old items.
+  const quantities = items.map((item) => roundQuantity(item.quantity));
   await execute(`DELETE FROM ${table} WHERE ${parentColumn} = ?`, [parentId]);
   for (const [index, item] of items.entries()) {
     const extra = extraColumns(item);
@@ -97,7 +99,7 @@ export async function writeLineItems<T extends LineItemInput>(
         parentId,
         index + 1,
         item.description,
-        item.quantity,
+        quantities[index],
         item.unit,
         item.unitPrice,
         item.vatRate,

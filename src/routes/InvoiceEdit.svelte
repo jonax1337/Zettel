@@ -10,6 +10,7 @@
     type ReverseChargeType,
     type SupplyKind,
   } from "$lib/db/invoices";
+  import { keepsStoredAmounts } from "$lib/db/invoice-lifecycle";
   import type { Customer, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
   import { computeEurTotalCent } from "$lib/utils/currency";
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
@@ -36,13 +37,15 @@
   import {
     exchangeRateError,
     linePeriodError,
+    quantityError,
     reverseChargeError,
     servicePeriodError,
   } from "./invoice/form-validation";
   import {
-    lineItemFromStored,
+    lineItemsFromStored,
     newLineItem,
     toLineItemInputs,
+    toTotalsItem,
     type LineItemForm,
   } from "./invoice/line-items";
   import { restoreVatRates, zeroVatRatesRemembering, type VatRateSnapshot } from "./invoice/reverse-charge";
@@ -111,7 +114,7 @@
   const reverseChargeSender = $derived(settings ? { isKleinunternehmer, vatId: settings.vatId } : null);
 
   const totals = $derived(
-    settings ? computeTotals(items, { isKleinunternehmer, isReverseCharge }) : { subtotal: 0, vatAmount: 0, total: 0 },
+    settings ? computeTotals(items.map(toTotalsItem), { isKleinunternehmer, isReverseCharge }) : { subtotal: 0, vatAmount: 0, total: 0 },
   );
 
   // Reverse charge forces 0 % VAT; the rates come back when it is switched off again.
@@ -188,7 +191,7 @@
     pdfLanguage = invoice.pdfLanguage;
     buyerReference = invoice.buyerReference ?? "";
     followedLeitweg = { customerId: invoice.customerId, leitwegId: buyerReference };
-    items = storedItems.map(lineItemFromStored);
+    items = lineItemsFromStored(storedItems, keepsStoredAmounts(invoice));
   }
 
   function formError(): string | null {
@@ -199,7 +202,8 @@
         : null) ??
       exchangeRateError(currency, exchangeRate) ??
       (serviceMode === "period" ? servicePeriodError(servicePeriodStartIso, servicePeriodEndIso) : null) ??
-      linePeriodError(items)
+      linePeriodError(items) ??
+      quantityError(items)
     );
   }
 

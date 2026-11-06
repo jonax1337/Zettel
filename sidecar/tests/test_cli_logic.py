@@ -39,6 +39,22 @@ class TestJsRound:
         assert cli.js_round(value) == expected
 
 
+class TestComputeLineTotal:
+    @pytest.mark.parametrize(
+        "quantity, unit_price, expected",
+        [
+            (0.47, 8550, 4019),  # float product is 4018.4999999999995
+            (4.1, 15, 62),  # float product is 61.49999999999999
+            (1.5, -333, -499),  # negative half cent goes towards +infinity like Math.round
+            (1.2345, 10000, 12345),
+            (0.00025, 10000, 3),  # the fifth quantity decimal is a JS-style half, not a banker's one
+            (12345.6789, 98765432101, 1219326311138698),
+        ],
+    )
+    def test_is_the_exact_product_rounded_like_the_app(self, cli, quantity, unit_price, expected):
+        assert cli.compute_line_total(quantity, unit_price) == expected
+
+
 class TestComputeTotals:
     def test_rounds_vat_per_line_like_the_app(self, cli):
         items = [
@@ -65,6 +81,10 @@ class TestDraftNumbers:
 
 
 class TestParseItems:
+    def test_quantity_has_at_most_four_decimals(self, cli):
+        (item,) = cli.parse_items_arg("Beratung|0,12346|h|1000,00|19")
+        assert item["quantity"] == 0.1235
+
     def test_full_item(self, cli):
         (item,) = cli.parse_items_arg("Beratung|2,5|h|80,50|19|Langtext")
         assert item == {
