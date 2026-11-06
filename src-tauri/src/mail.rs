@@ -28,7 +28,9 @@ pub enum MailOutcome {
     // Only Simple MAPI reports a discarded compose window; the launchers on macOS/Linux cannot tell.
     #[cfg_attr(not(windows), allow(dead_code))]
     Cancelled,
-    Unavailable { message: String },
+    Unavailable {
+        message: String,
+    },
 }
 
 impl MailOutcome {
