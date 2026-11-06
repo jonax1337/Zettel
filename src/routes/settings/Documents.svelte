@@ -3,6 +3,7 @@
   import SettingsShell from "./SettingsShell.svelte";
   import SettingsFormFooter from "./SettingsFormFooter.svelte";
   import DocumentNumberingCard from "./DocumentNumberingCard.svelte";
+  import ExpenseCategoryEuerCard from "./ExpenseCategoryEuerCard.svelte";
   import MailTemplateEditor from "./MailTemplateEditor.svelte";
   import { SettingsForm } from "./settings-form.svelte";
   import type { Settings } from "$lib/db/schema";
@@ -192,6 +193,8 @@
           </div>
         </CardContent>
       </Card>
+
+      <ExpenseCategoryEuerCard />
 
       <SettingsFormFooter saving={form.saving} error={form.error} />
     </form>
