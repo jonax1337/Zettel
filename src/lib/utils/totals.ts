@@ -37,8 +37,12 @@ function scaleQuantity(quantity: number): number {
   return Math.round(quantity * QUANTITY_SCALE);
 }
 
-/** The quantity as it is stored and printed; the line total is computed from exactly this value. */
+/**
+ * The quantity as it is stored and printed; the line total is computed from exactly this value.
+ * Throws for a missing quantity (a cleared number field arrives as null) instead of storing 0.
+ */
 export function roundQuantity(quantity: number): number {
+  if (!Number.isFinite(quantity)) throw new Error("Menge fehlt oder ist ungültig.");
   return scaleQuantity(quantity) / QUANTITY_SCALE;
 }
 

@@ -217,6 +217,8 @@ async function writeRecurringItems(
   recurringId: number,
   items: RecurringItemInput[],
 ): Promise<void> {
+  // Before the DELETE: a missing quantity must not leave the template without its old items.
+  const quantities = items.map((it) => roundQuantity(it.quantity));
   await execute("DELETE FROM recurring_invoice_items WHERE recurring_id = ?", [
     recurringId,
   ]);
@@ -231,7 +233,7 @@ async function writeRecurringItems(
         recurringId,
         i + 1,
         it.description,
-        roundQuantity(it.quantity),
+        quantities[i],
         it.unit,
         it.unitPrice,
         it.vatRate,

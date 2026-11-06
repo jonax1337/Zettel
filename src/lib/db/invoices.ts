@@ -427,9 +427,9 @@ export async function findCreditNoteFor(invoiceId: number): Promise<Invoice | nu
  * exactly the negative of the original, also where the original was issued under an
  * older rounding. The user can edit quantities in the draft to model partial refunds
  * (an edited position is computed again). The foreign-currency terms of the original carry over, because
- * the mirrored unit prices are denominated in that currency; the EUR total is
- * derived from the credit note's own total. The Kleinunternehmer treatment is the
- * original's, not today's setting.
+ * the mirrored unit prices are denominated in that currency, and so does its frozen
+ * EUR total (derived again only where the original has none). The Kleinunternehmer
+ * treatment is the original's, not today's setting.
  */
 export function creditNoteInputFor(
   invoice: Invoice,
@@ -451,6 +451,7 @@ export function creditNoteInputFor(
     servicePeriodEnd: invoice.servicePeriodEnd,
     currency: invoice.currency,
     exchangeRate: invoice.exchangeRate,
+    eurTotalCent: invoice.eurTotalCent ?? undefined,
     isKleinunternehmer: invoice.isKleinunternehmer,
     buyerReference: invoice.buyerReference,
     items: items.map((it) => ({

@@ -32,6 +32,13 @@ export function linePeriodError(
   return `Positions-Zeitraum: Enddatum vor Startdatum (${reversed.description || "ohne Beschreibung"}).`;
 }
 
+/** A cleared number field is null in the form state; saving it would store the position as 0. */
+export function quantityError(items: { description: string; quantity: number }[]): string | null {
+  const missing = items.find((item) => !Number.isFinite(item.quantity));
+  if (!missing) return null;
+  return `Menge fehlt oder ist ungültig (${missing.description || "ohne Beschreibung"}).`;
+}
+
 export type ReverseChargeSender = { isKleinunternehmer: boolean; vatId: string | null };
 type ReverseChargeCustomer = { vatId: string | null };
 

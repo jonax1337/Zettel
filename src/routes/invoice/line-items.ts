@@ -79,6 +79,14 @@ export function lineItemFromStored(row: StoredLineItem): LineItemForm {
   };
 }
 
+/**
+ * The editor rows of a stored document. Where the amounts are not kept, every position
+ * is computed anew, so a draft that never left the building follows the current rounding.
+ */
+export function lineItemsFromStored(rows: StoredLineItem[], keepStoredAmounts: boolean): LineItemForm[] {
+  return rows.map((row) => lineItemFromStored(keepStoredAmounts ? row : { ...row, lineTotal: undefined }));
+}
+
 /** The stored amount while quantity and price are still the stored ones; an edited position is computed again. */
 function keptLineTotal(item: LineItemForm): number | undefined {
   const { stored } = item;

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogItem } from "$lib/db/schema";
+import { computeLineTotal } from "$lib/utils/totals";
 import {
   lineItemFromCatalog,
   lineItemFromStored,
+  lineItemsFromStored,
   moveLineItem,
   newLineItem,
   toLineItemInputs,
@@ -122,6 +124,32 @@ describe("stored line totals", () => {
     const { lineTotal: _, ...template } = stored;
     expect(toLineItemInputs([newLineItem()])[0].fixedLineTotal).toBeUndefined();
     expect(toLineItemInputs([lineItemFromStored(template)])[0].fixedLineTotal).toBeUndefined();
+  });
+});
+
+describe("lineItemsFromStored", () => {
+  const stored = {
+    description: "Beratung",
+    quantity: 0.47,
+    unit: "Stk",
+    unitPrice: 8550,
+    vatRate: 19,
+    longDescription: null,
+    linePeriodStart: null,
+    linePeriodEnd: null,
+    lineTotal: 4018,
+  };
+
+  it("keeps the stored amounts when asked to", () => {
+    const [item] = lineItemsFromStored([stored], true);
+    expect(toLineItemInputs([item])[0].fixedLineTotal).toBe(4018);
+    expect(computeLineTotal(toTotalsItem(item))).toBe(4018);
+  });
+
+  it("computes every position anew otherwise, so the exact product wins over the old rounding", () => {
+    const [item] = lineItemsFromStored([stored], false);
+    expect(toLineItemInputs([item])[0].fixedLineTotal).toBeUndefined();
+    expect(computeLineTotal(toTotalsItem(item))).toBe(4019);
   });
 });
 

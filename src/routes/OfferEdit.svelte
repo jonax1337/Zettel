@@ -9,6 +9,7 @@
   } from "$lib/db/offers";
   import type { ReverseChargeType, SupplyKind } from "$lib/db/invoices";
   import type { Offer, OfferItem, Settings } from "$lib/db/schema";
+  import { offerKeepsStoredAmounts } from "./offer/offer-actions";
   import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { computeTotals } from "$lib/utils/totals";
   import {
@@ -34,11 +35,12 @@
   import {
     exchangeRateError,
     linePeriodError,
+    quantityError,
     reverseChargeError,
     servicePeriodError,
   } from "./invoice/form-validation";
   import {
-    lineItemFromStored,
+    lineItemsFromStored,
     newLineItem,
     toLineItemInputs,
     toTotalsItem,
@@ -161,7 +163,7 @@
       servicePeriodStartIso = toIsoDate(offer.servicePeriodStart);
       servicePeriodEndIso = toIsoDate(offer.servicePeriodEnd);
     }
-    items = storedItems.map(lineItemFromStored);
+    items = lineItemsFromStored(storedItems, offerKeepsStoredAmounts(offer));
   }
 
   function formError(): string | null {
@@ -171,7 +173,8 @@
       (settings ? reverseChargeError(reverseChargeType, settings, reference.selectedCustomer, items) : null) ??
       exchangeRateError(currency, exchangeRate) ??
       (serviceMode === "period" ? servicePeriodError(servicePeriodStartIso, servicePeriodEndIso) : null) ??
-      linePeriodError(items)
+      linePeriodError(items) ??
+      quantityError(items)
     );
   }
 

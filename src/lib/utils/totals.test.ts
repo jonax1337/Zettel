@@ -9,9 +9,12 @@ describe("roundQuantity", () => {
     expect(roundQuantity(2.5)).toBe(2.5);
     expect(roundQuantity(-1.5)).toBe(-1.5);
   });
-  it("leaves non-numbers alone", () => {
-    expect(roundQuantity(Number.NaN)).toBeNaN();
-  });
+  it.each([null, undefined, Number.NaN, Number.POSITIVE_INFINITY])(
+    "refuses %s instead of storing a quantity of 0",
+    (missing) => {
+      expect(() => roundQuantity(missing as unknown as number)).toThrow("Menge fehlt oder ist ungültig.");
+    },
+  );
 });
 
 describe("computeLineTotal", () => {

@@ -115,8 +115,7 @@
             <td class="px-1.5 @3xl:px-2 py-1.5">
               <Input
                 type="number"
-                step="0.01"
-                min="0"
+                step="any"
                 bind:value={item.quantity}
                 disabled={!editable}
                 class="px-2 @3xl:px-3 [&::-webkit-inner-spin-button]:appearance-none @3xl:[&::-webkit-inner-spin-button]:appearance-auto"

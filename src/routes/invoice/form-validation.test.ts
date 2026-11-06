@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   exchangeRateError,
   linePeriodError,
+  quantityError,
   reverseChargeError,
   reverseChargeState,
   servicePeriodError,
@@ -59,6 +60,24 @@ describe("linePeriodError", () => {
         { description: "b", periodStartIso: "2026-03-05", periodEndIso: "" },
       ]),
     ).toBeNull();
+  });
+});
+
+describe("quantityError", () => {
+  it.each([null, Number.NaN])("names the position whose quantity field was cleared (%s)", (cleared) => {
+    const message = quantityError([
+      { description: "OK", quantity: 1 },
+      { description: "Beratung", quantity: cleared as unknown as number },
+    ]);
+    expect(message).toBe("Menge fehlt oder ist ungültig (Beratung).");
+  });
+
+  it("labels a position without description", () => {
+    expect(quantityError([{ description: "", quantity: Number.NaN }])).toContain("ohne Beschreibung");
+  });
+
+  it("accepts zero and negative quantities, which are legitimate (discounts, credit lines)", () => {
+    expect(quantityError([{ description: "a", quantity: 0 }, { description: "b", quantity: -2.5 }])).toBeNull();
   });
 });
 

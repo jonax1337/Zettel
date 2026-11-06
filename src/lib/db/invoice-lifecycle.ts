@@ -21,6 +21,16 @@ export function canCancelInvoice(invoice: LifecycleFacts): boolean {
 }
 
 /**
+ * Whether the editor keeps the line totals an invoice draft was saved with. A credit
+ * note mirrors its original, and an invoice that already carries a real number was
+ * issued once (it is a reopened draft); both keep their amounts as long as a position
+ * stays as it is. Only a draft that never got a number is computed anew.
+ */
+export function keepsStoredAmounts(invoice: Pick<Invoice, "number" | "isCreditNote">): boolean {
+  return invoice.isCreditNote || !isDraftNumber(invoice.number);
+}
+
+/**
  * A sent invoice may go back to draft (keeping its number) as long as nothing
  * has been booked against it. A discarded draft stays discarded: discarding
  * frees its time entries for other invoices. Any credit note that is not
