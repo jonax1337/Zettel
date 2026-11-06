@@ -7,8 +7,9 @@ vi.mock("./client", async (importOriginal) => ({
   ...(await import("./sqlite-test-db")).sqliteClient(sqlite),
 }));
 
-import { listInvoiceHistory } from "./audit";
-import { createCreditNoteFromInvoice, issueInvoice } from "./invoices";
+import { hasReleasedTimeEntries, listInvoiceHistory } from "./audit";
+import { createCreditNoteFromInvoice, issueInvoice, reopenDraft } from "./invoices";
+import { addPayment } from "./invoice-payments";
 import { createProject } from "./projects";
 import {
   billTimeEntries,
@@ -110,6 +111,35 @@ describe("releaseTimeEntriesOfReversedInvoice", () => {
     expect(invoiceIdsOfEntries()).toEqual([null, null, otherInvoice]);
   });
 
+  it("frees the entries when a credit note credits more than the invoice total", async () => {
+    const { id, total } = await issuedTimeInvoice();
+    seedCreditNote(id, total + 500);
+
+    await expect(releaseTimeEntriesOfReversedInvoice(id)).resolves.toBe(2);
+
+    expect(invoiceIdsOfEntries()).toEqual([null, null]);
+  });
+
+  it("frees the entries of an invoice that was paid before the credit note", async () => {
+    const { id, total } = await issuedTimeInvoice();
+    await addPayment({ invoiceId: id, paidAt: day(10), amountCent: total });
+    seedCreditNote(id, total);
+
+    await expect(releaseTimeEntriesOfReversedInvoice(id)).resolves.toBe(2);
+
+    expect(invoiceIdsOfEntries()).toEqual([null, null]);
+  });
+
+  it("never frees the entries of an invoice with a total of 0", async () => {
+    const { id } = await issuedTimeInvoice();
+    database().prepare("UPDATE invoices SET total = 0 WHERE id = ?").run(id);
+    seedCreditNote(id, 0);
+
+    await expect(releaseTimeEntriesOfReversedInvoice(id)).rejects.toThrow("nicht vollständig storniert");
+
+    expect(invoiceIdsOfEntries()).toEqual([id, id]);
+  });
+
   it("refuses a partially reversed invoice and keeps the entries billed", async () => {
     const { id, total } = await issuedTimeInvoice();
     seedCreditNote(id, total - 1);
@@ -184,6 +214,45 @@ describe("releaseTimeEntriesOfReversedInvoice", () => {
     await expect(releaseTimeEntriesOfReversedInvoice(id)).rejects.toThrow();
 
     expect(rows("SELECT id FROM audit_log WHERE table_name = 'time_entries'")).toEqual([]);
+  });
+});
+
+describe("reopening the credit note of a released invoice", () => {
+  async function issuedCreditNote(): Promise<{ id: number; creditNoteId: number }> {
+    const { id } = await issuedTimeInvoice();
+    const creditNoteId = await createCreditNoteFromInvoice(id);
+    await issueInvoice(creditNoteId);
+    return { id, creditNoteId };
+  }
+
+  it("is refused once the time entries of the original were released", async () => {
+    const { id, creditNoteId } = await issuedCreditNote();
+    await releaseTimeEntriesOfReversedInvoice(id);
+
+    await expect(reopenDraft(creditNoteId)).rejects.toThrow("Zeiten wieder freigegeben");
+
+    expect(rows<{ status: string }>("SELECT status FROM invoices WHERE id = ?", creditNoteId)[0].status).toBe("sent");
+  });
+
+  it("stays possible while nothing was released", async () => {
+    const { creditNoteId } = await issuedCreditNote();
+
+    await reopenDraft(creditNoteId);
+
+    expect(rows<{ status: string }>("SELECT status FROM invoices WHERE id = ?", creditNoteId)[0].status).toBe("draft");
+  });
+});
+
+describe("hasReleasedTimeEntries", () => {
+  it("is true only for the invoice whose entries were released", async () => {
+    const { id, total } = await issuedTimeInvoice();
+    seedCreditNote(id, total);
+    expect(await hasReleasedTimeEntries(id)).toBe(false);
+
+    await releaseTimeEntriesOfReversedInvoice(id);
+
+    expect(await hasReleasedTimeEntries(id)).toBe(true);
+    expect(await hasReleasedTimeEntries(id + 1)).toBe(false);
   });
 });
 

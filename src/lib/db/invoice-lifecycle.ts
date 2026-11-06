@@ -35,13 +35,20 @@ export function keepsStoredAmounts(invoice: Pick<Invoice, "number" | "isCreditNo
  * has been booked against it. A discarded draft stays discarded: discarding
  * frees its time entries for other invoices. Any credit note that is not
  * cancelled blocks it, a draft one too: it mirrors the invoice's current items
- * and would no longer match after an edit.
+ * and would no longer match after an edit. A credit note whose original had its
+ * time entries released stays issued: edited down, it would no longer reverse the
+ * original in full while its hours are already billed elsewhere.
  */
 export function canReopenInvoice(
   invoice: LifecycleFacts,
-  facts: { paymentCount: number; hasCreditNote: boolean },
+  facts: { paymentCount: number; hasCreditNote: boolean; timeReleasedOnOriginal: boolean },
 ): boolean {
-  return invoice.status === "sent" && facts.paymentCount === 0 && !facts.hasCreditNote;
+  return (
+    invoice.status === "sent" &&
+    facts.paymentCount === 0 &&
+    !facts.hasCreditNote &&
+    !facts.timeReleasedOnOriginal
+  );
 }
 
 export function canCreateCreditNote(invoice: Pick<Invoice, "status" | "isCreditNote">): boolean {

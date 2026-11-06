@@ -13,6 +13,7 @@
     reopenDraft,
   } from "$lib/db/invoices";
   import { creditedCentOf, isSettledByCreditNote, openBalanceCent } from "$lib/db/invoice-lifecycle";
+  import { hasReleasedTimeEntries } from "$lib/db/audit";
   import { listPayments } from "$lib/db/invoice-payments";
   import { listRemindersForInvoice } from "$lib/db/reminders";
   import { countReleasableTimeEntries, releaseTimeEntriesOfReversedInvoice } from "$lib/db/time-billing";
@@ -84,6 +85,7 @@
   let payments = $state<InvoicePayment[]>([]);
   let reminders = $state<Reminder[]>([]);
   let releasableTimeCount = $state(0);
+  let timeReleasedOnOriginal = $state(false);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let loadToken = 0;
@@ -106,6 +108,8 @@
   let confirmReopenOpen = $state(false);
   let confirmCreditNoteOpen = $state(false);
   let confirmReleaseTimeOpen = $state(false);
+  // The dialog outlives the reload that follows a release, which resets releasableTimeCount.
+  let confirmReleaseTimeCount = $state(0);
   let findingsDialogOpen = $state(false);
   let sendDialogOpen = $state(false);
   let issueForPdfDialogOpen = $state(false);
@@ -135,7 +139,7 @@
   );
   const canExportXrechnung = $derived(!!invoice && xrechnungAllowed(invoice));
   const canReopenDraft = $derived(
-    !!invoice && canReopenAsDraft(invoice, payments.length, !!creditNote),
+    !!invoice && canReopenAsDraft(invoice, payments.length, !!creditNote, timeReleasedOnOriginal),
   );
   const isOverdue = $derived(
     !!invoice && isInvoiceOverdue(invoice, settledByCreditNote, nowUnix()),
@@ -191,6 +195,7 @@
       pdfVersions = versions;
       originalInvoice = related.original;
       creditNote = related.creditNote;
+      timeReleasedOnOriginal = related.timeReleasedOnOriginal;
       payments = loadedPayments;
       reminders = loadedReminders;
       releasableTimeCount = loadedReleasableTime;
@@ -206,11 +211,12 @@
   }
 
   async function fetchRelatedInvoices(inv: Invoice) {
-    const [original, creditNote] = await Promise.all([
+    const [original, creditNote, timeReleasedOnOriginal] = await Promise.all([
       inv.correctsInvoiceId ? getInvoice(inv.correctsInvoiceId) : null,
       inv.isCreditNote ? null : findCreditNoteFor(inv.id),
+      inv.correctsInvoiceId ? hasReleasedTimeEntries(inv.correctsInvoiceId) : false,
     ]);
-    return { original: original?.invoice ?? null, creditNote };
+    return { original: original?.invoice ?? null, creditNote, timeReleasedOnOriginal };
   }
 
   async function fetchPayments(inv: Invoice): Promise<InvoicePayment[]> {
@@ -313,7 +319,7 @@
   function performReleaseTime() {
     if (!invoice) return;
     const { id } = invoice;
-    const count = releasableTimeCount;
+    const count = confirmReleaseTimeCount;
     return actions.run(`${count === 1 ? "1 Zeiteintrag" : `${count} Zeiteinträge`} wieder freigegeben`, () =>
       releaseTimeEntriesOfReversedInvoice(id),
     );
@@ -635,7 +641,10 @@
         busy={actions.busy}
         onRequestXrechnung={exportXrechnung}
         onRequestReopenDraft={() => (confirmReopenOpen = true)}
-        onRequestReleaseTime={() => (confirmReleaseTimeOpen = true)}
+        onRequestReleaseTime={() => {
+          confirmReleaseTimeCount = releasableTimeCount;
+          confirmReleaseTimeOpen = true;
+        }}
         onRequestCancel={() => (confirmCancelOpen = true)}
         onRequestCreditNote={() => (confirmCreditNoteOpen = true)}
         onRequestDelete={() => (confirmDeleteOpen = true)}
@@ -757,7 +766,7 @@
   <ConfirmDialog
     bind:open={confirmReleaseTimeOpen}
     title="Zeiten wieder freigeben?"
-    description={`${displayInvoiceNumber(invoice)} ist vollständig storniert. ${releasableTimeCount === 1 ? "1 abgerechneter Zeiteintrag wird" : `${releasableTimeCount} abgerechnete Zeiteinträge werden`} wieder offen und lässt sich erneut abrechnen. Die Freigabe wird im Änderungsverlauf protokolliert.`}
+    description={`${displayInvoiceNumber(invoice)} ist vollständig storniert. ${confirmReleaseTimeCount === 1 ? "1 abgerechneter Zeiteintrag wird" : `${confirmReleaseTimeCount} abgerechnete Zeiteinträge werden`} wieder offen und lässt sich erneut abrechnen. Die Freigabe wird im Änderungsverlauf protokolliert.`}
     confirmLabel="Freigeben"
     onConfirm={performReleaseTime}
   />

@@ -1,3 +1,4 @@
+import { hasReleasedTimeEntries } from "./audit";
 import { execute, insert, select, toSqlBool } from "./client";
 import {
   buildDocumentFilter,
@@ -675,10 +676,14 @@ export async function reopenDraft(id: number): Promise<void> {
   const facts = {
     paymentCount: await countPayments(id),
     hasCreditNote: (await findCreditNoteFor(id)) !== null,
+    timeReleasedOnOriginal:
+      invoice.correctsInvoiceId !== null && (await hasReleasedTimeEntries(invoice.correctsInvoiceId)),
   };
   if (!canReopenInvoice(invoice, facts)) {
     throw new Error(
-      "Nur versendete Rechnungen ohne Zahlungen und ohne Stornorechnung können wieder bearbeitet werden.",
+      facts.timeReleasedOnOriginal
+        ? "Für die Originalrechnung wurden Zeiten wieder freigegeben – die Stornorechnung kann nicht mehr zum Entwurf werden."
+        : "Nur versendete Rechnungen ohne Zahlungen und ohne Stornorechnung können wieder bearbeitet werden.",
     );
   }
   // Seal first: should the status change then fail, an issued invoice behind a

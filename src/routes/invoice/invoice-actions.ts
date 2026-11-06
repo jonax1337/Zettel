@@ -62,12 +62,16 @@ export function canDiscardInvoice(invoice: Pick<ActionInvoice, "status" | "numbe
   return canCancelInvoice(invoice);
 }
 
-/** `hasCreditNote` counts a draft credit note too: it mirrors the current items and would no longer match. */
+/**
+ * `hasCreditNote` counts a draft credit note too: it mirrors the current items and would no longer match.
+ * `timeReleasedOnOriginal`: the time entries of the credit note's original were freed again.
+ */
 export function canReopenAsDraft(
   invoice: ActionInvoice,
   paymentCount: number,
   hasCreditNote: boolean,
+  timeReleasedOnOriginal: boolean,
 ): boolean {
-  if (invoice.status !== "sent" || hasCreditNote) return false;
+  if (invoice.status !== "sent" || hasCreditNote || timeReleasedOnOriginal) return false;
   return paymentCount === 0 && (invoice.amountPaidCent ?? 0) === 0;
 }

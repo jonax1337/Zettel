@@ -34,6 +34,16 @@ type AuditRow = {
   new_values: string | null;
 };
 
+/** Whether `releaseTimeEntriesOfReversedInvoice` ever freed time entries of the invoice. */
+export async function hasReleasedTimeEntries(invoiceId: number): Promise<boolean> {
+  const [{ released }] = await select<{ released: number }>(
+    `SELECT EXISTS(SELECT 1 FROM audit_log
+             WHERE table_name = 'time_entries' AND parent_id = ? AND action = 'update') AS released`,
+    [invoiceId],
+  );
+  return released === 1;
+}
+
 const INVOICE_CHILD_TABLES = ["invoice_items", "invoice_payments", "reminders", "time_entries"];
 
 function parseValues(json: string | null): AuditValues | null {
