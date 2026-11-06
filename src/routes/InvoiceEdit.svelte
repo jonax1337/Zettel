@@ -15,7 +15,12 @@
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { defaultPaymentTermsText } from "$lib/utils/payment-terms";
   import { computeTotals } from "$lib/utils/totals";
-  import { Button, Card, CardContent, DatePicker, Label, Select, Textarea, toast } from "$lib/ui";
+  import {
+    followCustomerLeitweg,
+    normalizeBuyerReference,
+    type FollowedLeitweg,
+  } from "$lib/xrechnung/buyer-reference";
+  import { Button, Card, CardContent, DatePicker, Input, Label, Select, Textarea, toast } from "$lib/ui";
   import { AlertTriangle } from "$lib/brand-icons";
   import BackLink from "./parts/entity/BackLink.svelte";
   import CurrencyFields from "./invoice/CurrencyFields.svelte";
@@ -84,6 +89,9 @@
   let exchangeRate = $state("");
   let skonto = $state<SkontoForm>(defaultSkontoForm());
   let pdfLanguage = $state<"de" | "en">("de");
+  let buyerReference = $state("");
+  // The customer whose Leitweg-ID the field currently follows; a different buyer reference was entered by the user.
+  let followedLeitweg: FollowedLeitweg = { customerId: null, leitwegId: "" };
 
   // A stored invoice keeps the Kleinunternehmer status it was created with, whatever the settings say now.
   let storedKleinunternehmer = $state<boolean | null>(null);
@@ -118,6 +126,16 @@
     untrack(() => {
       dueDateIso = followDerivedDueDate(dueDateIso, derivedDueDateIso, nextDerived);
       derivedDueDateIso = nextDerived;
+    });
+  });
+
+  $effect(() => {
+    const customer = reference.selectedCustomer;
+    const next = { customerId: customer?.id ?? null, leitwegId: customer?.leitwegId ?? "" };
+    untrack(() => {
+      const followed = followCustomerLeitweg(buyerReference, followedLeitweg, next);
+      buyerReference = followed.value;
+      followedLeitweg = followed.followed;
     });
   });
 
@@ -168,6 +186,8 @@
     exchangeRate = invoice.exchangeRate ?? "";
     skonto = skontoFormFromStored(invoice.skontoPercent, invoice.skontoDays);
     pdfLanguage = invoice.pdfLanguage;
+    buyerReference = invoice.buyerReference ?? "";
+    followedLeitweg = { customerId: invoice.customerId, leitwegId: buyerReference };
     items = storedItems.map(lineItemFromStored);
   }
 
@@ -202,6 +222,7 @@
       servicePeriodEnd: usesPeriod ? fromIsoDate(servicePeriodEndIso) : null,
       ...skontoInput(skonto, !isCreditNote),
       pdfLanguage,
+      buyerReference: normalizeBuyerReference(buyerReference),
     };
   }
 
@@ -262,6 +283,7 @@
       exchangeRate,
       skonto,
       pdfLanguage,
+      buyerReference,
     }),
     () => !loading && reference.loaded,
   );
@@ -336,6 +358,15 @@
             bind:endIso={servicePeriodEndIso}
           />
           <CurrencyFields bind:currency bind:exchangeRate totalCent={totals.total} disabled={isCreditNote} />
+          {#if reference.selectedCustomer?.receivesXrechnung || buyerReference}
+            <div class="col-span-2 flex flex-col gap-1.5">
+              <Label>Leitweg-ID / Käuferreferenz</Label>
+              <Input bind:value={buyerReference} placeholder="z. B. 04011000-1234512345-35" />
+              <p class="text-xs text-muted-foreground">
+                Pflicht für XRechnungen. Kommt vom Kunden und kann pro Rechnung überschrieben werden.
+              </p>
+            </div>
+          {/if}
           <!-- A Storno keeps the reverse-charge type of the invoice it corrects. -->
           {#if !isCreditNote}
             <ReverseChargeField

@@ -25,7 +25,7 @@ import {
 } from "./invoice-lifecycle";
 import { recomputeInvoiceStatus } from "./invoice-payments";
 import { drawNextNumber } from "./numbering";
-import { loadSettings } from "./queries";
+import { getCustomer, loadSettings } from "./queries";
 import { parseSnapshot } from "./snapshot-json";
 import { buildCustomerSnapshot } from "./snapshots";
 import type {
@@ -39,6 +39,7 @@ import { computeEurTotalCent } from "$lib/utils/currency";
 import { nowUnix, toUnix } from "$lib/utils/date";
 import { displayInvoiceNumber, draftPlaceholder, isDraftNumber } from "$lib/utils/invoice-number";
 import { computeTotals, type Totals } from "$lib/utils/totals";
+import { normalizeBuyerReference, resolveBuyerReference } from "$lib/xrechnung/buyer-reference";
 
 export { displayInvoiceNumber, isDraftNumber };
 
@@ -83,6 +84,8 @@ export type InvoiceFormInput = {
   skontoPercent?: number | null;
   skontoDays?: number | null;
   pdfLanguage?: PdfLanguage;
+  /** BT-10 / Leitweg-ID. Left out, a new invoice takes the customer's; null clears it. */
+  buyerReference?: string | null;
   /** Defaults to the current setting; a credit note takes the flag of the invoice it corrects. */
   isKleinunternehmer?: boolean;
 };
@@ -231,6 +234,7 @@ export async function createInvoice(formInput: InvoiceFormInput): Promise<number
   const input = await withCorrectedCurrency(formInput);
   const settings = await loadSettings();
   const snapshot = await buildCustomerSnapshot(input.customerId);
+  const customer = input.buyerReference === undefined ? await getCustomer(input.customerId) : null;
   const isCreditNote = !!input.isCreditNote;
   const isKleinunternehmer = input.isKleinunternehmer ?? settings.isKleinunternehmer;
   const sign = creditNoteSign(isCreditNote);
@@ -246,8 +250,8 @@ export async function createInvoice(formInput: InvoiceFormInput): Promise<number
        status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
        reverse_charge_type, supply_kind, notes, payment_terms, is_credit_note, corrects_invoice_id,
        currency, exchange_rate, eur_total_cent, notes_internal, follow_up_date,
-       service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language, buyer_reference)
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       draftPlaceholder(),
       input.customerId,
@@ -276,6 +280,7 @@ export async function createInvoice(formInput: InvoiceFormInput): Promise<number
       isCreditNote ? null : input.skontoPercent ?? null,
       isCreditNote ? null : input.skontoDays ?? null,
       input.pdfLanguage ?? settings.defaultPdfLanguage,
+      resolveBuyerReference(input.buyerReference, customer?.leitwegId ?? null),
     ],
   );
   await writeItems(id, input.items);
@@ -313,7 +318,7 @@ export async function updateInvoice(
       notes_internal = ?, follow_up_date = ?,
       service_period_start = ?, service_period_end = ?,
       skonto_percent = ?, skonto_days = ?,
-      pdf_language = ?,
+      pdf_language = ?, buyer_reference = ?,
       updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -342,6 +347,7 @@ export async function updateInvoice(
       current.isCreditNote ? null : input.skontoPercent ?? null,
       current.isCreditNote ? null : input.skontoDays ?? null,
       input.pdfLanguage ?? current.pdfLanguage,
+      normalizeBuyerReference(orKeep(input.buyerReference, current.buyerReference)),
       id,
     ],
   );
@@ -440,6 +446,7 @@ export function creditNoteInputFor(
     currency: invoice.currency,
     exchangeRate: invoice.exchangeRate,
     isKleinunternehmer: invoice.isKleinunternehmer,
+    buyerReference: invoice.buyerReference,
     items: items.map((it) => ({
       description: it.description,
       quantity: it.quantity,

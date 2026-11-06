@@ -350,6 +350,8 @@ type CustomerRow = {
   email: string | null;
   phone: string | null;
   vat_id: string | null;
+  leitweg_id: string | null;
+  receives_xrechnung: number;
   notes: string | null;
   follow_up_date: number | null;
   created_at: number;
@@ -369,6 +371,8 @@ function mapCustomer(r: CustomerRow): Customer {
     email: r.email,
     phone: r.phone,
     vatId: r.vat_id,
+    leitwegId: r.leitweg_id,
+    receivesXrechnung: r.receives_xrechnung === 1,
     notes: r.notes,
     followUpDate: r.follow_up_date,
     createdAt: r.created_at,
@@ -402,10 +406,12 @@ export async function getCustomer(id: number): Promise<Customer | null> {
 
 export type CustomerInput = Omit<
   Customer,
-  "id" | "customerNumber" | "createdAt" | "updatedAt" | "followUpDate"
+  "id" | "customerNumber" | "createdAt" | "updatedAt" | "followUpDate" | "leitwegId" | "receivesXrechnung"
 > & {
   customerNumber?: string;
   followUpDate?: number | null;
+  leitwegId?: string | null;
+  receivesXrechnung?: boolean;
 };
 
 export async function createCustomer(input: CustomerInput): Promise<number> {
@@ -414,8 +420,8 @@ export async function createCustomer(input: CustomerInput): Promise<number> {
   return insert(
     `INSERT INTO customers
       (customer_number, name, contact_person, street, postal_code, city, country, email, phone, vat_id, notes,
-       follow_up_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       follow_up_date, leitweg_id, receives_xrechnung)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.name,
@@ -429,6 +435,8 @@ export async function createCustomer(input: CustomerInput): Promise<number> {
       input.vatId ?? null,
       input.notes ?? null,
       input.followUpDate ?? null,
+      input.leitwegId ?? null,
+      input.receivesXrechnung ? 1 : 0,
     ],
   );
 }
@@ -441,7 +449,7 @@ export async function updateCustomer(
     `UPDATE customers SET
       name = ?, contact_person = ?, street = ?, postal_code = ?, city = ?,
       country = ?, email = ?, phone = ?, vat_id = ?, notes = ?,
-      follow_up_date = ?,
+      follow_up_date = ?, leitweg_id = ?, receives_xrechnung = ?,
       updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -456,6 +464,8 @@ export async function updateCustomer(
       input.vatId ?? null,
       input.notes ?? null,
       input.followUpDate ?? null,
+      input.leitwegId ?? null,
+      input.receivesXrechnung ? 1 : 0,
       id,
     ],
   );

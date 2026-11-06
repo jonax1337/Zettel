@@ -65,6 +65,9 @@ DEFAULT_SKONTO_PERCENT = 2.0
 DEFAULT_SKONTO_DAYS = 7
 # unixepoch() needs SQLite 3.38+; older Python builds ship an older SQLite.
 SQL_NOW = "CAST(strftime('%s', 'now') AS INTEGER)"
+# Spiegel von src/lib/xrechnung/preflight.ts (BR-DE-27/28)
+XRECHNUNG_MIN_PHONE_DIGITS = 3
+XRECHNUNG_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+$")
 
 # ----------------------------------------------------------------------------
 # DB-Auflösung (Spiegel von src-tauri/src/tenants.rs)
@@ -379,6 +382,11 @@ def skonto_of(inv: dict) -> dict | None:
     }
 
 
+def trimmed(value):
+    """Spiegel von .trim() in payload.ts: was die Vorprüfung akzeptiert hat, landet unverändert im XML."""
+    return value.strip() if isinstance(value, str) else value
+
+
 def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dict, output_path: str) -> dict:
     skonto = skonto_of(inv)
     return {
@@ -409,6 +417,7 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
             "skontoDeadline": skonto["deadlineUnix"] if skonto else None,
             "amountPaidCent": inv["amount_paid_cent"] or 0,
             "pdfLanguage": inv["pdf_language"] or DEFAULT_PDF_LANGUAGE,
+            "buyerReference": inv["buyer_reference"],
         },
         "items": [
             {
@@ -427,15 +436,15 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
         ],
         "company": {
             "companyName": company["company_name"],
-            "ownerName": company["owner_name"],
+            "ownerName": trimmed(company["owner_name"]),
             "street": company["street"],
             "postalCode": company["postal_code"],
             "city": company["city"],
             "country": company["country"],
             "taxNumber": company["tax_number"],
             "vatId": company["vat_id"],
-            "email": company["email"],
-            "phone": company["phone"],
+            "email": trimmed(company["email"]),
+            "phone": trimmed(company["phone"]),
             "website": company["website"],
             "bankName": company["bank_name"],
             "bankIban": company["bank_iban"],
@@ -451,12 +460,68 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
             "postalCode": customer.get("postalCode") or customer.get("postal_code"),
             "city": customer.get("city"),
             "country": customer.get("country"),
+            "email": trimmed(customer.get("email")),
             "vatId": customer.get("vatId") or customer.get("vat_id"),
         },
         "outputPath": output_path,
         "profile": company["zugferd_profile"] or DEFAULT_PDF_PROFILE,
         "settings": {"pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME},
     }
+
+
+def _blank(value) -> bool:
+    return value is None or not str(value).strip()
+
+
+def _has_address(street, postal_code, city) -> bool:
+    return not (_blank(street) or _blank(postal_code) or _blank(city))
+
+
+def _has_phone_number(phone) -> bool:
+    return len(re.sub(r"[^0-9]", "", phone or "")) >= XRECHNUNG_MIN_PHONE_DIGITS
+
+
+def _is_email(value) -> bool:
+    return bool(XRECHNUNG_EMAIL_PATTERN.fullmatch((value or "").strip()))
+
+
+def with_live_customer_fallbacks(buyer_reference, snapshot: dict, live) -> tuple[str | None, dict]:
+    """Spiegel von withLiveCustomerFallbacks() in src/lib/xrechnung/export-data.ts: eine ausgestellte
+    Rechnung bleibt unverändert, fehlende Leitweg-ID und Kunden-E-Mail kommen vom aktuellen Kunden."""
+    live_leitweg = live["leitweg_id"] if live else None
+    live_email = live["email"] if live else None
+    own = (buyer_reference or "").strip() or (live_leitweg or "").strip() or None
+    customer = dict(snapshot)
+    if _blank(customer.get("email")):
+        customer["email"] = live_email or customer.get("email")
+    return own, customer
+
+
+def missing_xrechnung_fields(buyer_reference: str | None, company: dict, customer: dict) -> list[str]:
+    """Spiegel von missingXrechnungFields() in src/lib/xrechnung/preflight.ts: deutsche Labels
+    der Pflichtangaben (BR-DE-1 bis BR-DE-16, elektronische Adressen); leer = exportierbar."""
+    missing = []
+    if _blank(buyer_reference):
+        missing.append("Leitweg-ID / Käuferreferenz")
+    if _blank(company["company_name"]):
+        missing.append("Firmenname des Verkäufers")
+    if not _has_address(company["street"], company["postal_code"], company["city"]):
+        missing.append("Anschrift des Verkäufers")
+    if _blank(company["owner_name"]):
+        missing.append("Ansprechpartner des Verkäufers (Inhaber:in)")
+    if not _has_phone_number(company["phone"]):
+        missing.append("Telefonnummer des Verkäufers")
+    if not _is_email(company["email"]):
+        missing.append("E-Mail-Adresse des Verkäufers")
+    if _blank(company["vat_id"]) and _blank(company["tax_number"]):
+        missing.append("USt-IdNr. oder Steuernummer des Verkäufers")
+    if _blank(company["bank_iban"]):
+        missing.append("Zahlungsweg (IBAN des Verkäufers)")
+    if not _has_address(customer.get("street"), customer.get("postalCode"), customer.get("city")):
+        missing.append("Anschrift des Kunden")
+    if not _is_email(customer.get("email")):
+        missing.append("E-Mail-Adresse des Kunden")
+    return missing
 
 
 # ----------------------------------------------------------------------------
@@ -740,6 +805,28 @@ def generate_pdf_for(con, invoice_id: int) -> tuple[str, str]:
     return inv["number"], resp["pdfPath"]
 
 
+def export_xrechnung_for(con, invoice_id: int) -> tuple[str, str]:
+    """Spiegel von exportInvoiceXrechnung(): XML neben dem PDF, oder Abbruch mit der Liste fehlender Angaben."""
+    inv, items, cust = load_invoice_full(con, invoice_id)
+    if is_draft_number(inv["number"]):
+        sys.exit("Entwürfe können nicht als XRechnung exportiert werden. Bitte die Rechnung erst ausstellen (invoice:issue).")
+    settings = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+    live = con.execute("SELECT leitweg_id, email FROM customers WHERE id = ?", (inv["customer_id"],)).fetchone()
+    buyer_reference, cust = with_live_customer_fallbacks(inv["buyer_reference"], cust, live)
+    inv = {**inv, "buyer_reference": buyer_reference}
+    missing = missing_xrechnung_fields(buyer_reference, settings, cust)
+    if missing:
+        sys.exit("Für die XRechnung fehlen Angaben:\n" + "\n".join(f"  - {label}" for label in missing))
+    out_dir = pdf_output_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    output_path = out_dir / f"{safe_filename(inv['number'])}.xml"
+    resp = call_sidecar("generate_xrechnung", build_pdf_payload(inv, items, cust, settings, str(output_path)))
+    if not resp.get("success"):
+        err = resp.get("error", {})
+        sys.exit(f"XRechnung-Fehler [{err.get('code')}]: {err.get('message')}\n{err.get('details', '')[:ERROR_DETAIL_CHARS]}")
+    return inv["number"], resp["xmlPath"]
+
+
 def parse_items_arg(spec: str | None) -> list[dict]:
     """Format: 'Beschreibung|Menge|Einheit|Einzelpreis-Euro[|MwSt%][|Langtext]'.
     Mehrere Positionen mit ; trennen."""
@@ -810,9 +897,10 @@ def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, total
             status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
             reverse_charge_type, supply_kind, notes, payment_terms, is_credit_note, corrects_invoice_id,
             currency, exchange_rate, eur_total_cent, notes_internal, follow_up_date,
-            service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language)
+            service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language,
+            buyer_reference)
            VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL,
-                   ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)""",
+                   ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?)""",
         (
             draft_placeholder(),
             customer["id"],
@@ -837,6 +925,7 @@ def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, total
             skonto_percent,
             skonto_days,
             pdf_language,
+            (customer["leitweg_id"] or "").strip() or None,
         ),
     )
     return cur.lastrowid
@@ -911,6 +1000,12 @@ def cmd_invoice_show(args) -> None:
 def cmd_invoice_pdf(args) -> None:
     with connect() as con:
         number, path = generate_pdf_for(con, args.id)
+    print(f"{number}: {path}")
+
+
+def cmd_invoice_xrechnung(args) -> None:
+    with connect() as con:
+        number, path = export_xrechnung_for(con, args.id)
     print(f"{number}: {path}")
 
 
@@ -1060,6 +1155,10 @@ def main() -> None:
     p_pdf = sub.add_parser("invoice:pdf", help="PDF generieren")
     p_pdf.add_argument("id", type=int)
     p_pdf.set_defaults(func=cmd_invoice_pdf)
+
+    p_xr = sub.add_parser("invoice:xrechnung", help="XRechnung (CII) neben dem PDF erzeugen")
+    p_xr.add_argument("id", type=int)
+    p_xr.set_defaults(func=cmd_invoice_xrechnung)
 
     p_iss = sub.add_parser("invoice:issue", help="Draft bereitstellen (Nummer ziehen)")
     p_iss.add_argument("id", type=int)

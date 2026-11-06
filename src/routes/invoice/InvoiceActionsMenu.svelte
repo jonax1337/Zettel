@@ -1,7 +1,7 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
   import { DropdownItem, DropdownMenu, DropdownSeparator, MoreActionsTrigger } from "$lib/ui";
-  import { Ban, FileWarning, Pencil, Repeat, Trash2, Undo2 } from "$lib/brand-icons";
+  import { Ban, Download, FileWarning, Pencil, Repeat, Trash2, Undo2 } from "$lib/brand-icons";
   import type { Invoice, ReminderLevel } from "$lib/db/schema";
   import { canDiscardInvoice } from "./invoice-actions";
   import { REMINDER_CREATE_LABEL } from "./reminder-levels";
@@ -12,7 +12,9 @@
     creatableReminderLevel: ReminderLevel | null;
     canCreateCreditNote: boolean;
     canReopenDraft: boolean;
+    canExportXrechnung: boolean;
     busy: boolean;
+    onRequestXrechnung: () => void;
     onRequestReopenDraft: () => void;
     onRequestCancel: () => void;
     onRequestCreditNote: () => void;
@@ -23,7 +25,9 @@
     creatableReminderLevel,
     canCreateCreditNote,
     canReopenDraft,
+    canExportXrechnung,
     busy,
+    onRequestXrechnung,
     onRequestReopenDraft,
     onRequestCancel,
     onRequestCreditNote,
@@ -52,6 +56,11 @@
   {#if canCreateCreditNote}
     <DropdownItem disabled={busy} onSelect={onRequestCreditNote}>
       <Ban /> Stornorechnung erstellen
+    </DropdownItem>
+  {/if}
+  {#if canExportXrechnung}
+    <DropdownItem disabled={busy} onSelect={onRequestXrechnung}>
+      <Download /> XRechnung exportieren
     </DropdownItem>
   {/if}
   {#if !invoice.isCreditNote}

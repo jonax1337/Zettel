@@ -112,7 +112,8 @@ CREATE TABLE invoices (
     eur_total_cent INTEGER, notes_internal TEXT, follow_up_date INTEGER,
     service_period_start INTEGER, service_period_end INTEGER, skonto_percent REAL,
     skonto_days INTEGER, pdf_language TEXT, pdf_path TEXT,
-    amount_paid_cent INTEGER DEFAULT 0, sent_at INTEGER, paid_at INTEGER, updated_at INTEGER
+    amount_paid_cent INTEGER DEFAULT 0, sent_at INTEGER, paid_at INTEGER, updated_at INTEGER,
+    buyer_reference TEXT
 );
 CREATE TABLE invoice_payments (
     id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER, paid_at INTEGER,
@@ -515,7 +516,7 @@ class TestDraftDueDate:
         customer = {
             "id": 1, "customer_number": "K-0001", "name": "A", "contact_person": None,
             "street": None, "postal_code": None, "city": None, "country": None,
-            "email": None, "vat_id": None,
+            "email": None, "vat_id": None, "leitweg_id": None,
         }
         settings = {"default_payment_terms_days": 14, "is_kleinunternehmer": 0}
         totals = {"subtotal": 100, "vatAmount": 19, "total": 119}

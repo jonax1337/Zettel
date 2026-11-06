@@ -126,6 +126,8 @@ export const customers = sqliteTable("customers", {
   email: text("email"),
   phone: text("phone"),
   vatId: text("vat_id"),
+  leitwegId: text("leitweg_id"),
+  receivesXrechnung: integer("receives_xrechnung", { mode: "boolean" }).notNull().default(false),
   notes: text("notes"),
   followUpDate: integer("follow_up_date"),
   createdAt: integer("created_at")
@@ -195,6 +197,7 @@ export const invoices = sqliteTable("invoices", {
   skontoDays: integer("skonto_days"),
   amountPaidCent: integer("amount_paid_cent").notNull().default(0),
   pdfLanguage: text("pdf_language", { enum: ["de", "en"] }).notNull().default("de"),
+  buyerReference: text("buyer_reference"),
 });
 
 export const invoicePayments = sqliteTable("invoice_payments", {

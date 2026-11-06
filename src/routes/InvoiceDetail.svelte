@@ -18,7 +18,14 @@
   import type { Invoice, InvoiceItem, InvoicePayment, Reminder } from "$lib/db/schema";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate, formatDateTime, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
-  import { generateInvoicePdf, listPdfVersions, type PdfVersion } from "$lib/sidecar/invoice";
+  import {
+    exportInvoiceXrechnung,
+    generateInvoicePdf,
+    listPdfVersions,
+    type PdfVersion,
+    type XrechnungExport,
+  } from "$lib/sidecar/invoice";
+  import { COMPANY_SETTINGS_ROUTE } from "$lib/utils/company-completeness";
   import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import { resolveCustomerEmail, sendDocumentByMail } from "$lib/mail/send";
   import { validatePdf, type ValidationReport } from "$lib/validator";
@@ -37,6 +44,7 @@
   import InternalNotesCard from "./invoice/InternalNotesCard.svelte";
   import {
     canCreateCreditNote as creditNoteAllowed,
+    canExportXrechnung as xrechnungAllowed,
     canRecordPayments,
     canReopenAsDraft,
     creditNoteCoverage,
@@ -83,6 +91,7 @@
   let customerEmail = $state<string | null>(null);
   // The mail program keeps the hand-off call open until its message window is closed.
   let mailing = $state(false);
+  let xrechnungExport = $state<XrechnungExport | null>(null);
   let pdfVersions = $state<PdfVersion[]>([]);
   // Findings only exist in memory: the DB keeps status and count, not the report.
   let validationResult = $state<{ invoiceId: number; report: ValidationReport } | null>(null);
@@ -120,6 +129,7 @@
   const canCreateCreditNote = $derived(
     !!invoice && creditNoteAllowed(invoice, !!creditNote),
   );
+  const canExportXrechnung = $derived(!!invoice && xrechnungAllowed(invoice));
   const canReopenDraft = $derived(
     !!invoice && canReopenAsDraft(invoice, payments.length, !!creditNote),
   );
@@ -151,6 +161,7 @@
       loading = true;
       actions.clearPdfError();
     }
+    xrechnungExport = null;
     error = null;
     try {
       const res = await getInvoice(invoiceId);
@@ -432,6 +443,27 @@
     }
   }
 
+  async function exportXrechnung() {
+    if (!invoice) return;
+    const { id } = invoice;
+    await actions.exclusive("action", async () => {
+      try {
+        xrechnungExport = await exportInvoiceXrechnung(id);
+        if (xrechnungExport.status === "exported") toast.success("XRechnung exportiert");
+      } catch (e) {
+        toast.error("XRechnung-Export fehlgeschlagen", String(e));
+      }
+    });
+  }
+
+  async function revealXrechnung(xmlPath: string) {
+    try {
+      await revealItemInDir(xmlPath);
+    } catch (e) {
+      toast.error("Ordner konnte nicht geöffnet werden", String(e));
+    }
+  }
+
   function announcePdfCreated(pdfPath: string, report: ValidationReport | null | undefined) {
     const openAction = { label: "Öffnen", onClick: () => openPath(pdfPath) };
     if (report && !report.valid) {
@@ -574,7 +606,9 @@
         {creatableReminderLevel}
         {canCreateCreditNote}
         {canReopenDraft}
+        {canExportXrechnung}
         busy={actions.busy}
+        onRequestXrechnung={exportXrechnung}
         onRequestReopenDraft={() => (confirmReopenOpen = true)}
         onRequestCancel={() => (confirmCancelOpen = true)}
         onRequestCreditNote={() => (confirmCreditNoteOpen = true)}
@@ -591,6 +625,32 @@
     {:else}
       <PdfLocation path={lastPdfPath} />
     {/if}
+  {/if}
+
+  {#if xrechnungExport?.status === "exported"}
+    {@const xmlPath = xrechnungExport.xmlPath}
+    <PdfLocation
+      label="XRechnung"
+      path={xmlPath}
+      openLabel="Ordner öffnen"
+      onOpen={() => revealXrechnung(xmlPath)}
+    />
+  {:else if xrechnungExport?.status === "incomplete"}
+    <NoticeCard tone="warning" title="XRechnung nicht möglich: Pflichtangaben fehlen">
+      <ul class="mt-1 list-disc pl-5 text-muted-foreground">
+        {#each xrechnungExport.missing as field (field)}
+          <li>{field}</li>
+        {/each}
+      </ul>
+      <p class="mt-2 text-xs text-muted-foreground">
+        Leitweg-ID und E-Mail des Kunden werden aus den aktuellen Kundendaten gelesen; die Anschrift stammt
+        aus der ausgestellten Rechnung.
+      </p>
+      <div class="mt-3 flex gap-2">
+        <Button href={COMPANY_SETTINGS_ROUTE} size="sm" variant="outline">Firmendaten</Button>
+        <Button href={`/customers/${invoice.customerId}`} size="sm" variant="outline">Kunde bearbeiten</Button>
+      </div>
+    </NoticeCard>
   {/if}
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">

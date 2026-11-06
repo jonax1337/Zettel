@@ -1,0 +1,61 @@
+{
+  "command": "generate_xrechnung",
+  "payload": {
+    "invoice": {
+      "number": "RE-2026-XR-03",
+      "issueDate": 1747353600,
+      "deliveryDate": 1747353600,
+      "dueDate": 1748563200,
+      "isKleinunternehmer": false,
+      "paymentTerms": "Zahlbar innerhalb von 14 Tagen ohne Abzug.",
+      "buyerReference": "04011000-1234512345-35",
+      "subtotal": 250000,
+      "vatAmount": 0,
+      "total": 250000,
+      "isReverseCharge": true,
+      "reverseChargeType": "intra_eu",
+      "notes": "Leistung an Gebietskörperschaft in den Niederlanden."
+    },
+    "items": [
+      {
+        "position": 1,
+        "description": "Beratungsleistung Q2",
+        "quantity": 20,
+        "unit": "h",
+        "unitPrice": 12500,
+        "vatRate": 0,
+        "lineTotal": 250000
+      }
+    ],
+    "company": {
+      "companyName": "Laux Digital GmbH",
+      "ownerName": "Jonas Laux",
+      "street": "Musterstr. 1",
+      "postalCode": "10115",
+      "city": "Berlin",
+      "country": "DE",
+      "taxNumber": "12/345/67890",
+      "vatId": "DE123456789",
+      "email": "rechnung@laux.digital",
+      "phone": "+49 30 1234567",
+      "website": "laux.digital",
+      "bankName": "Sparkasse",
+      "bankIban": "DE89370400440532013000",
+      "bankBic": "COBADEFFXXX",
+      "isKleinunternehmer": false,
+      "kleinunternehmerNote": "",
+      "logoPath": null
+    },
+    "customer": {
+      "name": "Stadsdeel Centrum",
+      "contactPerson": null,
+      "street": "Herengracht 123",
+      "postalCode": "1015 BG",
+      "city": "Amsterdam",
+      "country": "NL",
+      "vatId": "NL123456789B01",
+      "email": "facturen@centrum.example.nl"
+    },
+    "outputPath": "test-payloads/out-10-xrechnung-reverse-charge.xml"
+  }
+}

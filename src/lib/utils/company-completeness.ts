@@ -27,6 +27,6 @@ export function companyIncompleteMessage(missing: string[]): string {
   return `Firmendaten unvollständig: ${missing.join(", ")}. Bitte unter Einstellungen → Unternehmen ergänzen.`;
 }
 
-function isBlank(value: string | null | undefined): boolean {
+export function isBlank(value: string | null | undefined): boolean {
   return !value || value.trim() === "";
 }
