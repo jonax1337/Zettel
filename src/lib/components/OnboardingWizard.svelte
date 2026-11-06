@@ -3,6 +3,7 @@
   import {
     Button,
     Dialog,
+    IbanInput,
     Input,
     Label,
     Card,
@@ -192,7 +193,7 @@
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>IBAN</Label>
-            <Input bind:value={draft.bankIban} placeholder="DE…" />
+            <IbanInput bind:value={draft.bankIban} placeholder="DE…" />
           </div>
           <div class="flex flex-col gap-1.5">
             <Label>BIC</Label>

@@ -32,7 +32,7 @@ def _validator_available() -> bool:
     )
 
 
-pytestmark = pytest.mark.skipif(
+requires_validator = pytest.mark.skipif(
     not _validator_available(),
     reason="KoSIT validator not installed",
 )
@@ -90,6 +90,7 @@ def _validate_xml(xml_path: Path, out_dir: Path) -> tuple[bool, list[str]]:
     return valid, msgs[:5]
 
 
+@requires_validator
 @pytest.mark.parametrize("payload_file", [
     "01-standard-19.json",
     "02-mixed-vat.json",

@@ -26,17 +26,16 @@ Sollte eine Lizenz hier fehlerhaft oder veraltet sein: bitte ein Issue öffnen o
 | `tailwind-merge` | ^2.5 | MIT | Tailwind-Class-Merge |
 | `tailwind-variants` | ^0.3 | MIT | Variant-API |
 | `drizzle-orm` | ^0.36 | Apache-2.0 | Schema-Typen (nur compile-time) |
-| `drizzle-kit` | ^0.28 | MIT | Schema-Generator |
 | `@tauri-apps/api` | ^2.1 | Apache-2.0 OR MIT | Tauri-Bridge |
 | `@tauri-apps/cli` | ^2.1 | Apache-2.0 OR MIT | Build-Tool |
-| `@tauri-apps/plugin-*` | ^2.x | Apache-2.0 OR MIT | dialog / opener / process / shell / sql / updater / window-state |
+| `@tauri-apps/plugin-*` | ^2.x | Apache-2.0 OR MIT | dialog / opener / process / sql / updater / window-state |
 
 ## Rust (`src-tauri/Cargo.toml`)
 
 | Crate | Lizenz | Verwendung |
 |---|---|---|
 | `tauri` | Apache-2.0 OR MIT | Application-Framework |
-| `tauri-plugin-*` | Apache-2.0 OR MIT | sql / updater / dialog / opener / process / shell / window-state |
+| `tauri-plugin-*` | Apache-2.0 OR MIT | sql / updater / dialog / opener / process / window-state |
 | `serde` / `serde_json` | Apache-2.0 OR MIT | JSON-Serialisierung (Sidecar-IPC) |
 | `tokio` | MIT | Async-Runtime |
 | `ureq` | Apache-2.0 OR MIT | Synchroner HTTP-Client (ECB-Wechselkurs, Updater) |
