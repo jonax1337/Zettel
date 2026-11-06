@@ -38,6 +38,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Iterator
 
@@ -630,19 +631,43 @@ def sha256_hex(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def seal_value(value):
-    """Ein REAL mit ganzzahligem Wert (1.0) wird wie in JS als Ganzzahl serialisiert."""
-    return int(value) if isinstance(value, float) and value.is_integer() else value
+def js_number(value: float) -> str:
+    """Rendert eine Zahl wie JavaScripts Number.prototype.toString (kürzeste Round-Trip-Ziffern,
+    Dezimalschreibweise für Exponenten -7 < e < 21), damit Python und JS dieselben Bytes hashen."""
+    if value == 0:
+        return "0"
+    sign, digits, exponent = Decimal(repr(value)).as_tuple()
+    digits_text = "".join(map(str, digits)).rstrip("0")
+    point = exponent + len(digits)
+    count = len(digits_text)
+    if count <= point <= 21:
+        body = digits_text + "0" * (point - count)
+    elif 0 < point <= 21:
+        body = f"{digits_text[:point]}.{digits_text[point:]}"
+    elif -6 < point <= 0:
+        body = f"0.{'0' * -point}{digits_text}"
+    else:
+        mantissa = digits_text[0] + (f".{digits_text[1:]}" if count > 1 else "")
+        body = f"{mantissa}e{'+' if point > 0 else '-'}{abs(point - 1)}"
+    return f"-{body}" if sign else body
+
+
+def canonical_json(value) -> str:
+    """JSON ohne Whitespace wie JSON.stringify; json.dumps formatiert Floats selbst (repr), daher hier Zahlen zuerst."""
+    if isinstance(value, list):
+        return "[" + ",".join(canonical_json(element) for element in value) + "]"
+    if isinstance(value, float):
+        return js_number(value)
+    return json.dumps(value, ensure_ascii=False)
 
 
 def canonical_seal_document(invoice: dict, items: list[dict]) -> str:
-    document = [
+    return canonical_json([
         SEAL_DOCUMENT_TAG,
         SEAL_FORMAT_VERSION,
-        [seal_value(invoice[column]) for column in SEALED_INVOICE_COLUMNS],
-        [[seal_value(item[column]) for column in SEALED_ITEM_COLUMNS] for item in items],
-    ]
-    return json.dumps(document, ensure_ascii=False, separators=(",", ":"))
+        [invoice[column] for column in SEALED_INVOICE_COLUMNS],
+        [[item[column] for column in SEALED_ITEM_COLUMNS] for item in items],
+    ])
 
 
 def seal_content_hash(invoice: dict, items: list[dict]) -> str:

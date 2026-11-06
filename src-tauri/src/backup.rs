@@ -144,6 +144,10 @@ pub struct PartialRestoreOutcome {
     /// invoice section was not restored; `Some(false)` for a backup from
     /// before the seals existed, whose invoices the next start seals anew.
     seals_from_backup: Option<bool>,
+    /// Live seals whose hash is not in the backup: the invoices they sealed
+    /// are gone with the restore, and so are the seals. 0 when the invoice
+    /// section was not restored.
+    dropped_live_seals: u32,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -972,6 +976,11 @@ fn restore_sections(
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let violations_before = foreign_key_violations(&tx)?;
     let live_counters = number_counters(&tx, "main")?;
+    let dropped_live_seals = if sections.invoices {
+        count_live_seals_missing_from_backup(&tx)?
+    } else {
+        0
+    };
     let triggers = drop_triggers(&tx)?;
     for table in &tables {
         tx.execute_batch(&format!("DELETE FROM main.{table};"))
@@ -993,15 +1002,45 @@ fn restore_sections(
     keep_number_counters_ahead(&tx, &live_counters, sections.invoices)?;
     ensure_no_new_dangling_references(&tx, &violations_before, &tables)?;
     let seals_from_backup = if sections.invoices {
+        reset_seal_sequence(&tx)?;
         Some(!table_columns(&tx, "bak", INVOICE_SEALS_TABLE)?.is_empty())
     } else {
         None
     };
-    let outcome = PartialRestoreOutcome { seals_from_backup };
+    let outcome = PartialRestoreOutcome {
+        seals_from_backup,
+        dropped_live_seals,
+    };
     record_restore(&tx, sections, &outcome)?;
     recreate_triggers(&tx, &triggers)?;
     tx.commit().map_err(|e| e.to_string())?;
     Ok(outcome)
+}
+
+/// Live seals the restore removes for good: all of them when the backup
+/// predates the seals.
+fn count_live_seals_missing_from_backup(conn: &rusqlite::Connection) -> Result<u32, String> {
+    let backup_has_seals = !table_columns(conn, "bak", INVOICE_SEALS_TABLE)?.is_empty();
+    let query = if backup_has_seals {
+        "SELECT COUNT(*) FROM main.invoice_seals live
+         WHERE NOT EXISTS (SELECT 1 FROM bak.invoice_seals WHERE hash = live.hash)"
+    } else {
+        "SELECT COUNT(*) FROM main.invoice_seals"
+    };
+    conn.query_row(query, [], |row| row.get(0))
+        .map_err(|e| format!("{INVOICE_SEALS_TABLE}: {e}"))
+}
+
+/// The integrity check treats an AUTOINCREMENT counter above the highest seal
+/// id as removed seals. The copy only ever raises the counter, so a restore
+/// from an older backup has to pull it back to the restored chain.
+fn reset_seal_sequence(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute_batch(&format!(
+        "DELETE FROM main.sqlite_sequence WHERE name = '{INVOICE_SEALS_TABLE}';
+         INSERT INTO main.sqlite_sequence (name, seq)
+           SELECT '{INVOICE_SEALS_TABLE}', MAX(id) FROM main.{INVOICE_SEALS_TABLE} HAVING COUNT(*) > 0;"
+    ))
+    .map_err(|e| format!("{INVOICE_SEALS_TABLE}: {e}"))
 }
 
 /// `(name, CREATE TRIGGER sql)` of every trigger in `main`.
@@ -1048,6 +1087,7 @@ fn record_restore(
     let details = serde_json::json!({
         "sections": sections.names(),
         "seals_from_backup": outcome.seals_from_backup,
+        "dropped_live_seals": outcome.dropped_live_seals,
     });
     conn.execute(
         "INSERT INTO main.audit_log (table_name, row_id, action, new_values)
@@ -1242,17 +1282,57 @@ mod tests {
         new_values TEXT
     );";
 
-    /// DB with every restorable table holding one row tagged `tag`.
+    /// The columns of the real `invoice_seals` that the restore touches.
+    const SEALS_DDL: &str =
+        "CREATE TABLE invoice_seals (id INTEGER PRIMARY KEY AUTOINCREMENT, tag TEXT, hash TEXT);";
+
+    /// DB with every restorable table holding one row tagged `tag`; its seal
+    /// has the hash `<tag>-1`.
     fn create_db(path: &Path, tag: &str) {
         let conn = open_current_db(path);
         conn.execute_batch(AUDIT_LOG_DDL).unwrap();
         for table in all_tables() {
+            let ddl = if table == INVOICE_SEALS_TABLE {
+                SEALS_DDL.to_string()
+            } else {
+                format!("CREATE TABLE {table} (id INTEGER PRIMARY KEY, tag TEXT);")
+            };
             conn.execute_batch(&format!(
-                "CREATE TABLE {table} (id INTEGER PRIMARY KEY, tag TEXT);
-                 INSERT INTO {table} (tag) VALUES ('{tag}');"
+                "{ddl} INSERT INTO {table} (tag) VALUES ('{tag}');"
             ))
             .unwrap();
         }
+        conn.execute_batch(&format!(
+            "UPDATE {INVOICE_SEALS_TABLE} SET hash = '{tag}-' || id;"
+        ))
+        .unwrap();
+    }
+
+    /// Replaces the seals of `path` by one per hash, in this order.
+    fn set_seal_hashes(path: &Path, hashes: &[&str]) {
+        let conn = Connection::open(path).unwrap();
+        conn.execute_batch(
+            "DELETE FROM invoice_seals; DELETE FROM sqlite_sequence WHERE name = 'invoice_seals';",
+        )
+        .unwrap();
+        for hash in hashes {
+            conn.execute(
+                "INSERT INTO invoice_seals (tag, hash) VALUES ('seal', ?1)",
+                [hash],
+            )
+            .unwrap();
+        }
+    }
+
+    fn seal_sequence(path: &Path) -> Option<i64> {
+        Connection::open(path)
+            .unwrap()
+            .query_row(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'invoice_seals'",
+                [],
+                |row| row.get(0),
+            )
+            .ok()
     }
 
     fn tag_of(path: &Path, table: &str) -> String {
@@ -1487,7 +1567,8 @@ mod tests {
             restore_details(&live),
             serde_json::json!({
                 "sections": ["customers", "invoices", "settings"],
-                "seals_from_backup": true
+                "seals_from_backup": true,
+                "dropped_live_seals": 1
             })
         );
     }
@@ -1551,6 +1632,84 @@ mod tests {
         );
     }
 
+    /// Live seals `live_hashes`, backup seals `backup_hashes`, invoices restored.
+    fn restore_invoices_with_seals(
+        label: &str,
+        live_hashes: &[&str],
+        backup_hashes: &[&str],
+    ) -> (PathBuf, PartialRestoreOutcome, TempDir) {
+        let dir = TempDir::new(label);
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+        set_seal_hashes(&live, live_hashes);
+        set_seal_hashes(&staged, backup_hashes);
+        add_audit_and_lock_triggers(&live);
+
+        let outcome = restore_sections(&live, &staged, sections(false, true, false)).unwrap();
+        (live, outcome, dir)
+    }
+
+    #[test]
+    fn live_seals_missing_from_the_backup_are_counted_and_logged() {
+        let (live, outcome, _dir) =
+            restore_invoices_with_seals("restore-dropped-seals", &["a", "b", "c"], &["a"]);
+
+        assert_eq!(outcome.dropped_live_seals, 2);
+        assert_eq!(restore_details(&live)["dropped_live_seals"], 2);
+        assert_eq!(row_count(&live, "invoice_seals"), 1);
+    }
+
+    #[test]
+    fn nothing_is_reported_when_the_backup_holds_every_live_seal() {
+        let (live, outcome, _dir) =
+            restore_invoices_with_seals("restore-kept-seals", &["a", "b"], &["a", "b", "c"]);
+
+        assert_eq!(outcome.dropped_live_seals, 0);
+        assert_eq!(restore_details(&live)["dropped_live_seals"], 0);
+    }
+
+    #[test]
+    fn a_backup_without_seals_drops_every_live_seal() {
+        let dir = TempDir::new("restore-all-seals-dropped");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+        set_seal_hashes(&live, &["a", "b", "c"]);
+        Connection::open(&staged)
+            .unwrap()
+            .execute_batch("DROP TABLE invoice_seals;")
+            .unwrap();
+
+        let outcome = restore_sections(&live, &staged, sections(false, true, false)).unwrap();
+
+        assert_eq!(outcome.dropped_live_seals, 3);
+        assert_eq!(seal_sequence(&live), None);
+    }
+
+    #[test]
+    fn no_seal_is_dropped_when_the_invoice_section_is_not_restored() {
+        let dir = TempDir::new("restore-seals-not-dropped");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+        set_seal_hashes(&live, &["a", "b"]);
+
+        let outcome = restore_sections(&live, &staged, sections(true, false, false)).unwrap();
+
+        assert_eq!(outcome.dropped_live_seals, 0);
+        assert_eq!(restore_details(&live)["dropped_live_seals"], 0);
+        assert_eq!(seal_sequence(&live), Some(2));
+    }
+
+    #[test]
+    fn the_seal_sequence_follows_the_restored_chain_not_the_live_one() {
+        let (live, _, _dir) =
+            restore_invoices_with_seals("restore-seal-sequence", &["a", "b", "c"], &["a"]);
+
+        assert_eq!(seal_sequence(&live), Some(1));
+    }
+
     #[test]
     fn a_failed_restore_keeps_the_triggers_and_logs_nothing() {
         let dir = TempDir::new("restore-triggers-rollback");
@@ -1582,7 +1741,7 @@ mod tests {
 
         assert_eq!(
             serde_json::to_value(&outcome).unwrap(),
-            serde_json::json!({ "sealsFromBackup": true })
+            serde_json::json!({ "sealsFromBackup": true, "droppedLiveSeals": 1 })
         );
     }
 
@@ -1602,10 +1761,12 @@ mod tests {
             .filter(|t| *t != "invoices")
             .chain(SETTINGS_TABLES)
         {
-            conn.execute_batch(&format!(
-                "CREATE TABLE {table} (id INTEGER PRIMARY KEY, tag TEXT);"
-            ))
-            .unwrap();
+            let ddl = if table == INVOICE_SEALS_TABLE {
+                SEALS_DDL.to_string()
+            } else {
+                format!("CREATE TABLE {table} (id INTEGER PRIMARY KEY, tag TEXT);")
+            };
+            conn.execute_batch(&ddl).unwrap();
         }
         for id in customer_ids {
             conn.execute("INSERT INTO customers (id, tag) VALUES (?1, 'c')", [id])

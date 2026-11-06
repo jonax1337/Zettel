@@ -15,6 +15,7 @@
     invoice_deleted: "Die versiegelte Rechnung wurde gelöscht.",
     reopened_without_seal: "Die Rechnung ist wieder ein Entwurf, ohne dass die Wiedereröffnung versiegelt wurde.",
     unsealed: "Noch nicht versiegelt.",
+    chain_truncated: "Hash-Kette: Die letzten Siegel wurden entfernt.",
   };
 
   let report = $state<IntegrityReport | null>(null);
@@ -63,12 +64,16 @@
       <li class="flex items-start gap-2 text-sm {problem.severity === 'error' ? 'text-destructive' : 'text-warning'}">
         <AlertTriangle class="size-4 shrink-0 mt-0.5" />
         <span class="break-words">
-          {#if problem.invoiceNumber !== null}
-            <a href="/invoices/{problem.invoiceId}" use:link class="font-medium underline">{invoiceLabel(problem)}</a>
+          {#if problem.kind === "chain_truncated"}
+            {PROBLEM_TEXT[problem.kind]}
           {:else}
-            <span class="font-medium">{invoiceLabel(problem)}</span>
+            {#if problem.invoiceNumber !== null}
+              <a href="/invoices/{problem.invoiceId}" use:link class="font-medium underline">{invoiceLabel(problem)}</a>
+            {:else}
+              <span class="font-medium">{invoiceLabel(problem)}</span>
+            {/if}
+            : {PROBLEM_TEXT[problem.kind]}
           {/if}
-          : {PROBLEM_TEXT[problem.kind]}
         </span>
       </li>
     {/each}

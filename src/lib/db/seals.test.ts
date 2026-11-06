@@ -45,6 +45,7 @@ type SealRow = {
 const fixture = JSON.parse(fixtureJson) as {
   documents: (SealedContent & { name: string; canonical: string; contentHash: string })[];
   chain: { invoiceId: number; kind: SealKind; sealedAt: number; document: string; prevHash: string; hash: string }[];
+  numbers: { value: number; js: string }[];
 };
 
 const ISSUE_DATE = 1_750_000_000;
@@ -103,6 +104,10 @@ describe("the seal format shared with cli/zettel.py", () => {
     }
     expect(fixture.chain[0].prevHash).toBe(GENESIS_HASH);
     expect(fixture.chain[1].prevHash).toBe(fixture.chain[0].hash);
+  });
+
+  it.each(fixture.numbers.map((n) => [n.js, n] as const))("renders the number %s", (_, { value, js }) => {
+    expect(JSON.stringify(value)).toBe(js);
   });
 });
 
@@ -305,11 +310,97 @@ describe("verifying the chain itself", () => {
     expect(problems.some((p) => p.kind === "unsealed" && p.invoiceId === 2)).toBe(true);
   });
 
+  it("reports seals removed from the end of the chain", async () => {
+    await chainOfTwo();
+    database().exec("DROP TRIGGER invoice_seals_no_delete; DELETE FROM invoice_seals WHERE id = 2");
+
+    const { problems } = await verifyInvoiceChain();
+
+    expect(problems).toContainEqual({ kind: "chain_truncated", severity: "error", invoiceId: 0, invoiceNumber: null, sealId: null });
+    expect(await problemKinds()).toEqual(["chain_truncated", "unsealed"]);
+  });
+
+  it("reports a chain emptied completely", async () => {
+    await chainOfTwo();
+    database().exec("DROP TRIGGER invoice_seals_no_delete; DELETE FROM invoice_seals");
+
+    expect(await problemKinds()).toEqual(["chain_truncated", "unsealed", "unsealed"]);
+  });
+
+  it("does not report a chain that never had a seal", async () => {
+    expect(await problemKinds()).toEqual([]);
+  });
+
   it("reports a seal that does not start at the genesis hash", async () => {
     await chainOfTwo();
     database().exec("DROP TRIGGER invoice_seals_no_delete; DELETE FROM invoice_seals WHERE id = 1");
 
     expect((await problemKinds()).filter((kind) => kind === "chain_broken")).toEqual(["chain_broken"]);
+  });
+});
+
+describe("verifying many invoices", () => {
+  const INVOICE_COUNT = 300;
+
+  function insertSentInvoices(count: number, firstNumber: number) {
+    const insertInvoice = database().prepare(
+      `INSERT INTO invoices (number, customer_id, customer_snapshot, issue_date, due_date, status, sent_at)
+       VALUES (?, 1, '{}', ?, ?, 'sent', ?)`,
+    );
+    const insertItem = database().prepare("INSERT INTO invoice_items (invoice_id, position, description) VALUES (?, ?, ?)");
+    database().exec("BEGIN");
+    for (let n = firstNumber; n < firstNumber + count; n++) {
+      const id = Number(insertInvoice.run(`RE-2026-${n}`, ISSUE_DATE, ISSUE_DATE, ISSUE_DATE + n).lastInsertRowid);
+      insertItem.run(id, 1, "Beratung");
+      insertItem.run(id, 2, "Entwicklung");
+    }
+    database().exec("COMMIT");
+  }
+
+  async function selectsDuringVerification(): Promise<number> {
+    const prepare = vi.spyOn(database(), "prepare");
+    await verifyInvoiceChain();
+    const selects = prepare.mock.calls.filter(([query]) => String(query).trimStart().startsWith("SELECT")).length;
+    prepare.mockRestore();
+    return selects;
+  }
+
+  it("issues the same few queries however many invoices there are, and still finds a tampered one", async () => {
+    insertSentInvoices(2, 1);
+    await sealPendingInvoices();
+    const selectsForTwo = await selectsDuringVerification();
+
+    insertSentInvoices(INVOICE_COUNT, 3);
+    await sealPendingInvoices();
+    database().exec("UPDATE invoice_items SET description = 'Manipuliert' WHERE invoice_id = 150 AND position = 2");
+
+    expect(await selectsDuringVerification()).toBe(selectsForTwo);
+    expect(selectsForTwo).toBeLessThanOrEqual(4);
+    expect(await verifyInvoiceChain()).toMatchObject({
+      sealCount: INVOICE_COUNT + 2,
+      problems: [{ kind: "content_changed", invoiceId: 150, invoiceNumber: "RE-2026-150" }],
+    });
+  });
+});
+
+describe("appending several seals at once", () => {
+  it("appends one after the other, so the app never collides with itself", async () => {
+    const ids = [await createInvoice(FORM), await createInvoice(FORM), await createInvoice(FORM)];
+
+    await Promise.all(ids.map((id) => appendSeal(id, "issue")));
+
+    const appended = seals();
+    expect(appended.map((s) => s.invoice_id)).toEqual(ids);
+    expect(appended.map((s) => s.prev_hash)).toEqual([GENESIS_HASH, appended[0].hash, appended[1].hash]);
+  });
+
+  it("goes on with the next append when one fails", async () => {
+    const id = await createInvoice(FORM);
+
+    const results = await Promise.allSettled([appendSeal(9999, "issue"), appendSeal(id, "issue")]);
+
+    expect(results.map((r) => r.status)).toEqual(["rejected", "fulfilled"]);
+    expect(seals().map((s) => s.invoice_id)).toEqual([id]);
   });
 });
 

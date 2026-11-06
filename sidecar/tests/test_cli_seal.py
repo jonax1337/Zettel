@@ -18,8 +18,9 @@ FIXTURE_PATH = Path(__file__).parent / "fixtures" / "invoice-seal.json"
 FIXTURE = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 DOCUMENTS = {doc["name"]: doc for doc in FIXTURE["documents"]}
 
-pytestmark = pytest.mark.skipif(
-    sqlite3.sqlite_version_info < (3, 38), reason="migrations use unixepoch() (SQLite 3.38+)"
+# Older migrations default created_at to unixepoch(), which an INSERT cannot evaluate before SQLite 3.38.
+needs_unixepoch = pytest.mark.skipif(
+    sqlite3.sqlite_version_info < (3, 38), reason="column defaults use unixepoch() (SQLite 3.38+)"
 )
 
 
@@ -94,7 +95,13 @@ class TestSharedFixture:
         assert FIXTURE["chain"][0]["prevHash"] == cli.GENESIS_HASH
         assert FIXTURE["chain"][1]["prevHash"] == FIXTURE["chain"][0]["hash"]
 
+    @pytest.mark.parametrize("case", FIXTURE["numbers"], ids=lambda c: c["js"])
+    def test_numbers_render_like_javascript(self, cli, case):
+        assert cli.js_number(case["value"]) == case["js"]
+        assert cli.canonical_json([case["value"]]) == f"[{case['js']}]"
 
+
+@needs_unixepoch
 class TestSealFromDatabase:
     def test_stored_values_hash_like_the_fixture(self, cli, con):
         """REAL columns come back as 1.0 / 2.0 and must hash like the app's integers."""
@@ -118,6 +125,7 @@ class TestSealFromDatabase:
             assert seal["hash"] == expected
 
 
+@needs_unixepoch
 class TestIssueInvoiceSeals:
     def test_issuing_appends_an_issue_seal_of_the_final_content(self, cli, con):
         invoice_id = insert_draft(con, cli)
@@ -201,6 +209,7 @@ class TestIssueInvoiceSeals:
         assert len(attempts) == cli.SEAL_APPEND_ATTEMPTS
 
 
+@needs_unixepoch
 class TestCliWritesAreAudited:
     def test_issuing_logs_the_status_change_and_the_final_number(self, cli, con):
         invoice_id = insert_draft(con, cli)

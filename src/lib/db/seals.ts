@@ -54,8 +54,10 @@ export type IntegrityProblemKind =
   | "content_changed"
   | "invoice_deleted"
   | "reopened_without_seal"
-  | "unsealed";
+  | "unsealed"
+  | "chain_truncated";
 
+/** `chain_truncated` concerns the chain, not an invoice: invoiceId 0, no number, no seal. */
 export type IntegrityProblem = {
   kind: IntegrityProblemKind;
   severity: "error" | "warning";
@@ -161,8 +163,7 @@ async function appendSealOnce(invoiceId: number, kind: SealKind): Promise<void> 
   );
 }
 
-/** Seals the invoice's current content. A seal appended concurrently makes prev_hash collide: read the chain again. */
-export async function appendSeal(invoiceId: number, kind: SealKind): Promise<void> {
+async function appendSealWithRetry(invoiceId: number, kind: SealKind): Promise<void> {
   for (let attempt = 1; ; attempt++) {
     try {
       await appendSealOnce(invoiceId, kind);
@@ -171,6 +172,16 @@ export async function appendSeal(invoiceId: number, kind: SealKind): Promise<voi
       if (attempt >= MAX_APPEND_ATTEMPTS || !isUniqueViolation(error)) throw error;
     }
   }
+}
+
+// Appends of this app run one at a time, so they only ever collide with the CLI.
+let lastAppend: Promise<void> = Promise.resolve();
+
+/** Seals the invoice's current content. A seal appended concurrently makes prev_hash collide: read the chain again. */
+export function appendSeal(invoiceId: number, kind: SealKind): Promise<void> {
+  const appended = lastAppend.then(() => appendSealWithRetry(invoiceId, kind));
+  lastAppend = appended.catch(() => {});
+  return appended;
 }
 
 /**
@@ -216,35 +227,57 @@ async function chainProblems(seals: SealRow[], numbers: Map<number, string>): Pr
   return problems;
 }
 
-async function latestSealProblem(seal: SealRow, invoice: InvoiceHead | undefined): Promise<IntegrityProblem | null> {
+/** AUTOINCREMENT remembers the highest id ever used, so trailing seals cannot be removed unnoticed. */
+async function chainTruncationProblem(seals: SealRow[]): Promise<IntegrityProblem | null> {
+  const [sequence] = await select<{ seq: number }>("SELECT seq FROM sqlite_sequence WHERE name = 'invoice_seals'");
+  const lastId = seals.at(-1)?.id ?? 0;
+  return sequence && sequence.seq > lastId ? problem("chain_truncated", 0, null, null) : null;
+}
+
+type InvoiceRow = SealedContent & InvoiceHead;
+type InvoiceRows = Map<number, InvoiceRow>;
+
+/** Two queries for all invoices and their items, so the check does not query once per invoice. */
+async function loadInvoiceRows(): Promise<InvoiceRows> {
+  const invoices = await select<SealedRow>(`SELECT id, status, ${SEALED_INVOICE_COLUMNS.join(", ")} FROM invoices`);
+  const items = await select<SealedRow>(
+    `SELECT invoice_id, ${SEALED_ITEM_COLUMNS.join(", ")} FROM invoice_items ORDER BY invoice_id, position, id`,
+  );
+  const rows: InvoiceRows = new Map(
+    invoices.map((invoice) => {
+      const { id, number, status } = invoice as InvoiceHead;
+      return [id, { id, number, status, invoice, items: [] }];
+    }),
+  );
+  for (const item of items) rows.get(item.invoice_id as number)?.items.push(item);
+  return rows;
+}
+
+async function latestSealProblem(seal: SealRow, row: InvoiceRow | undefined): Promise<IntegrityProblem | null> {
   if (seal.kind !== "issue") {
-    return invoice && ISSUED_STATUSES.includes(invoice.status)
-      ? problem("unsealed", invoice.id, invoice.number, null)
-      : null;
+    return row && ISSUED_STATUSES.includes(row.status) ? problem("unsealed", row.id, row.number, null) : null;
   }
-  if (!invoice) return problem("invoice_deleted", seal.invoice_id, null, seal.id);
-  if (!ISSUED_STATUSES.includes(invoice.status)) {
-    return problem("reopened_without_seal", invoice.id, invoice.number, seal.id);
-  }
-  const currentHash = await currentContentHash(invoice.id);
-  return currentHash === seal.content_hash ? null : problem("content_changed", invoice.id, invoice.number, seal.id);
+  if (!row) return problem("invoice_deleted", seal.invoice_id, null, seal.id);
+  if (!ISSUED_STATUSES.includes(row.status)) return problem("reopened_without_seal", row.id, row.number, seal.id);
+  return (await contentHashOf(row)) === seal.content_hash ? null : problem("content_changed", row.id, row.number, seal.id);
 }
 
 /** Walks the whole chain and compares every issued invoice with its latest seal. */
 export async function verifyInvoiceChain(): Promise<IntegrityReport> {
   const seals = await select<SealRow>("SELECT * FROM invoice_seals ORDER BY id");
-  const invoices = await select<InvoiceHead>("SELECT id, number, status FROM invoices");
-  const byId = new Map(invoices.map((invoice) => [invoice.id, invoice]));
+  const rows = await loadInvoiceRows();
   const latestByInvoice = new Map(seals.map((seal) => [seal.invoice_id, seal]));
 
-  const problems = await chainProblems(seals, new Map(invoices.map((invoice) => [invoice.id, invoice.number])));
+  const problems = await chainProblems(seals, new Map([...rows].map(([id, row]) => [id, row.number])));
+  const truncated = await chainTruncationProblem(seals);
+  if (truncated) problems.push(truncated);
   for (const seal of latestByInvoice.values()) {
-    const found = await latestSealProblem(seal, byId.get(seal.invoice_id));
+    const found = await latestSealProblem(seal, rows.get(seal.invoice_id));
     if (found) problems.push(found);
   }
-  for (const invoice of invoices) {
-    if (ISSUED_STATUSES.includes(invoice.status) && !latestByInvoice.has(invoice.id)) {
-      problems.push(problem("unsealed", invoice.id, invoice.number, null));
+  for (const row of rows.values()) {
+    if (ISSUED_STATUSES.includes(row.status) && !latestByInvoice.has(row.id)) {
+      problems.push(problem("unsealed", row.id, row.number, null));
     }
   }
   return { checkedAt: nowUnix(), sealCount: seals.length, sealedInvoiceCount: latestByInvoice.size, problems };

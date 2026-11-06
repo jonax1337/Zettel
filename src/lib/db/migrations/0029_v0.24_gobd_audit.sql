@@ -3,7 +3,8 @@
 
 CREATE TABLE audit_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  changed_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  -- Not unixepoch(): the CLI also runs on SQLite older than 3.38, and every audited write fills this.
+  changed_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
   table_name TEXT NOT NULL,
   row_id INTEGER NOT NULL,
   -- The invoice or expense a position, payment or reminder belongs to.

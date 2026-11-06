@@ -6,7 +6,7 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 - **Released:** v0.22.0 on `main`. Auto-Update aktiv seit v0.4.3.
 - **DB schema:** `user_version = 30` (letzte Migration `0029_v0.24_gobd_audit.sql`).
 - **Dev-Linie:** neue Arbeit auf `release/vX.Y`-Branches.
-- **Test-Suite:** 1004 Vitest-Cases (`pnpm test`, Zeitzone in `vite.config.ts` auf Europe/Berlin gepinnt) + 270 Pytest-Cases (`sidecar/tests/`, inkl. CLI-Logik; 19 weitere brauchen den lokalen KoSIT-Validator; `sidecar/tests/fixtures/invoice-parity.json` wird von Vitest und Pytest gemeinsam geprüft) + 116 Rust-Tests (`cargo test`). Pure-Math (Totals/Tax/Skonto/Currency/Date/DATEV) ist voll abgedeckt, Sidecar deckt ZUGFeRD-XML-Goldens + KoSIT-Validator-Roundtrip + i18n ab.
+- **Test-Suite:** 1296 Vitest-Cases (`pnpm test`, Zeitzone in `vite.config.ts` auf Europe/Berlin gepinnt) + 383 Pytest-Cases (`sidecar/tests/`, inkl. CLI-Logik; 29 weitere werden ohne lokalen KoSIT-Validator bzw. unter Windows übersprungen; `sidecar/tests/fixtures/invoice-parity.json` wird von Vitest und Pytest gemeinsam geprüft) + 148 Rust-Tests (`cargo test`). Pure-Math (Totals/Tax/Skonto/Currency/Date/DATEV) ist voll abgedeckt, Sidecar deckt ZUGFeRD-XML-Goldens + KoSIT-Validator-Roundtrip + i18n ab.
 
 ## Architecture
 
@@ -61,6 +61,12 @@ Eine neue Migration `000N_<name>.sql` heißt **immer drei Stellen gleichzeitig a
 - **Lazy Invoice Numbering** (nur Rechnungen): Drafts bekommen `DRAFT-<hex>`-Platzhalter; der echte `invoice_number_counter` wird **erst** in `issueInvoice()` (markSent / PDF) gezogen. `displayInvoiceNumber()` maskiert Platzhalter als „Entwurf #<4-hex>". Drafts löschen → keine Lücken. Angebote/Mahnungen/Ausgaben numerieren weiter eager.
 - **Multi-Currency:** `invoice.currency` + `exchange_rate` + eingefrorener `eur_total_cent` (BigInt-Fixed-Point, 8 Dezimalstellen). DATEV nimmt den eingefrorenen Wert. **Storno-Signum:** `eur_total_cent` muss dasselbe Vorzeichen wie `subtotal/total` haben — sonst falsch in KPIs (Migration `0018` flippt Altdaten).
 - **DB-Naming:** snake_case in SQL, gemappt auf camelCase in TS via `mapXxx()` Helpers in den jeweiligen Query-Modulen.
+
+### GoBD-Audit & Hash-Kette
+- Auditierte Tabellen haben **spaltenexplizite Trigger** → eine Migration, die einer auditierten Tabelle eine Spalte hinzufügt, muss deren Trigger droppen und via `tools/gen_audit_triggers.py` neu erzeugen (Guard-Test `audit-log.test.ts`).
+- `audit_log` und `invoice_seals` sind append-only (Lock-Trigger); der Teil-Restore droppt und recreated die Trigger in seiner Transaktion.
+- Eine Migration darf **nie** versiegelte Spalten ausgestellter Rechnungen umschreiben (Liste in `seals.ts`/`cli/zettel.py`, Format fixiert durch `invoice-seal.json`) — sonst falsche `content_changed`-Alarme.
+- Das Siegel-Format ist versioniert (`SEAL_FORMAT_VERSION`); `seals.ts` und `cli/zettel.py` müssen byte-identisch hashen (auch Float-Formatierung wie JS).
 
 ### Backdating, Sandbox
 - `markSent(id, sentAt?)` / `markPaid(id, paidAt?)` akzeptieren optionalen Unix-Timestamp (Default jetzt). UI-Plausibilitäts-Warnung nur soft.
