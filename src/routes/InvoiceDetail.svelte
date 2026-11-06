@@ -13,8 +13,10 @@
     reopenDraft,
   } from "$lib/db/invoices";
   import { creditedCentOf, isSettledByCreditNote, openBalanceCent } from "$lib/db/invoice-lifecycle";
+  import { hasReleasedTimeEntries } from "$lib/db/audit";
   import { listPayments } from "$lib/db/invoice-payments";
   import { listRemindersForInvoice } from "$lib/db/reminders";
+  import { countReleasableTimeEntries, releaseTimeEntriesOfReversedInvoice } from "$lib/db/time-billing";
   import type { Invoice, InvoiceItem, InvoicePayment, Reminder } from "$lib/db/schema";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate, formatDateTime, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
@@ -82,6 +84,8 @@
   const openCent = $derived(invoice ? Math.max(0, openBalanceCent({ ...invoice, creditedCent })) : 0);
   let payments = $state<InvoicePayment[]>([]);
   let reminders = $state<Reminder[]>([]);
+  let releasableTimeCount = $state(0);
+  let timeReleasedOnOriginal = $state(false);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let loadToken = 0;
@@ -103,6 +107,9 @@
   let confirmCancelOpen = $state(false);
   let confirmReopenOpen = $state(false);
   let confirmCreditNoteOpen = $state(false);
+  let confirmReleaseTimeOpen = $state(false);
+  // The dialog outlives the reload that follows a release, which resets releasableTimeCount.
+  let confirmReleaseTimeCount = $state(0);
   let findingsDialogOpen = $state(false);
   let sendDialogOpen = $state(false);
   let issueForPdfDialogOpen = $state(false);
@@ -132,7 +139,7 @@
   );
   const canExportXrechnung = $derived(!!invoice && xrechnungAllowed(invoice));
   const canReopenDraft = $derived(
-    !!invoice && canReopenAsDraft(invoice, payments.length, !!creditNote),
+    !!invoice && canReopenAsDraft(invoice, payments.length, !!creditNote, timeReleasedOnOriginal),
   );
   const isOverdue = $derived(
     !!invoice && isInvoiceOverdue(invoice, settledByCreditNote, nowUnix()),
@@ -172,12 +179,13 @@
         error = "Rechnung nicht gefunden.";
         return;
       }
-      const [versions, related, loadedPayments, loadedReminders, loadedEmail] = await Promise.all([
+      const [versions, related, loadedPayments, loadedReminders, loadedEmail, loadedReleasableTime] = await Promise.all([
         fetchPdfVersions(res.invoice.pdfPath),
         fetchRelatedInvoices(res.invoice),
         fetchPayments(res.invoice),
         fetchReminders(res.invoice),
         fetchCustomerEmail(res.invoice),
+        fetchReleasableTimeCount(res.invoice),
       ]);
       if (token !== loadToken) return;
       invoice = res.invoice;
@@ -187,8 +195,10 @@
       pdfVersions = versions;
       originalInvoice = related.original;
       creditNote = related.creditNote;
+      timeReleasedOnOriginal = related.timeReleasedOnOriginal;
       payments = loadedPayments;
       reminders = loadedReminders;
+      releasableTimeCount = loadedReleasableTime;
       void maybeAutoRevalidate();
     } catch (e) {
       if (token === loadToken) {
@@ -201,11 +211,12 @@
   }
 
   async function fetchRelatedInvoices(inv: Invoice) {
-    const [original, creditNote] = await Promise.all([
+    const [original, creditNote, timeReleasedOnOriginal] = await Promise.all([
       inv.correctsInvoiceId ? getInvoice(inv.correctsInvoiceId) : null,
       inv.isCreditNote ? null : findCreditNoteFor(inv.id),
+      inv.correctsInvoiceId ? hasReleasedTimeEntries(inv.correctsInvoiceId) : false,
     ]);
-    return { original: original?.invoice ?? null, creditNote };
+    return { original: original?.invoice ?? null, creditNote, timeReleasedOnOriginal };
   }
 
   async function fetchPayments(inv: Invoice): Promise<InvoicePayment[]> {
@@ -224,6 +235,15 @@
     } catch (e) {
       toast.error("Mahnungen konnten nicht geladen werden", String(e));
       return [];
+    }
+  }
+
+  async function fetchReleasableTimeCount(inv: Invoice): Promise<number> {
+    try {
+      return await countReleasableTimeEntries(inv.id);
+    } catch (e) {
+      toast.error("Abgerechnete Zeiten konnten nicht geprüft werden", String(e));
+      return 0;
     }
   }
 
@@ -294,6 +314,15 @@
         toast.error("Stornorechnung fehlgeschlagen", String(e));
       }
     });
+  }
+
+  function performReleaseTime() {
+    if (!invoice) return;
+    const { id } = invoice;
+    const count = confirmReleaseTimeCount;
+    return actions.run(`${count === 1 ? "1 Zeiteintrag" : `${count} Zeiteinträge`} wieder freigegeben`, () =>
+      releaseTimeEntriesOfReversedInvoice(id),
+    );
   }
 
   function rememberValidation(invoiceId: number, report: ValidationReport) {
@@ -608,9 +637,14 @@
         {canCreateCreditNote}
         {canReopenDraft}
         {canExportXrechnung}
+        canReleaseTime={releasableTimeCount > 0}
         busy={actions.busy}
         onRequestXrechnung={exportXrechnung}
         onRequestReopenDraft={() => (confirmReopenOpen = true)}
+        onRequestReleaseTime={() => {
+          confirmReleaseTimeCount = releasableTimeCount;
+          confirmReleaseTimeOpen = true;
+        }}
         onRequestCancel={() => (confirmCancelOpen = true)}
         onRequestCreditNote={() => (confirmCreditNoteOpen = true)}
         onRequestDelete={() => (confirmDeleteOpen = true)}
@@ -727,6 +761,14 @@
     confirmLabel="Erstellen"
     destructive
     onConfirm={performCreateCreditNote}
+  />
+
+  <ConfirmDialog
+    bind:open={confirmReleaseTimeOpen}
+    title="Zeiten wieder freigeben?"
+    description={`${displayInvoiceNumber(invoice)} ist vollständig storniert. ${confirmReleaseTimeCount === 1 ? "1 abgerechneter Zeiteintrag wird" : `${confirmReleaseTimeCount} abgerechnete Zeiteinträge werden`} wieder offen und lässt sich erneut abrechnen. Die Freigabe wird im Änderungsverlauf protokolliert.`}
+    confirmLabel="Freigeben"
+    onConfirm={performReleaseTime}
   />
 
   <DateConfirmDialog

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
   import { DropdownItem, DropdownMenu, DropdownSeparator, MoreActionsTrigger } from "$lib/ui";
-  import { Ban, Download, FileWarning, Pencil, Repeat, Trash2, Undo2 } from "$lib/brand-icons";
+  import { Ban, Clock, Download, FileWarning, Pencil, Repeat, Trash2, Undo2 } from "$lib/brand-icons";
   import type { Invoice, ReminderLevel } from "$lib/db/schema";
   import { canDiscardInvoice } from "./invoice-actions";
   import { REMINDER_CREATE_LABEL } from "./reminder-levels";
@@ -13,9 +13,11 @@
     canCreateCreditNote: boolean;
     canReopenDraft: boolean;
     canExportXrechnung: boolean;
+    canReleaseTime: boolean;
     busy: boolean;
     onRequestXrechnung: () => void;
     onRequestReopenDraft: () => void;
+    onRequestReleaseTime: () => void;
     onRequestCancel: () => void;
     onRequestCreditNote: () => void;
     onRequestDelete: () => void;
@@ -26,9 +28,11 @@
     canCreateCreditNote,
     canReopenDraft,
     canExportXrechnung,
+    canReleaseTime,
     busy,
     onRequestXrechnung,
     onRequestReopenDraft,
+    onRequestReleaseTime,
     onRequestCancel,
     onRequestCreditNote,
     onRequestDelete,
@@ -66,6 +70,11 @@
   {#if !invoice.isCreditNote}
     <DropdownItem onSelect={() => push(`/recurring/new?fromInvoice=${invoice.id}`)}>
       <Repeat /> Als wiederkehrende Rechnung speichern
+    </DropdownItem>
+  {/if}
+  {#if canReleaseTime}
+    <DropdownItem disabled={busy} onSelect={onRequestReleaseTime}>
+      <Clock /> Zeiten wieder freigeben
     </DropdownItem>
   {/if}
   {#if canReopenDraft}

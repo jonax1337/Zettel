@@ -141,18 +141,23 @@ describe("canDiscardInvoice", () => {
 
 describe("canReopenAsDraft", () => {
   it("allows a sent invoice without payments", () => {
-    expect(canReopenAsDraft(invoice(), 0, false)).toBe(true);
+    expect(canReopenAsDraft(invoice(), 0, false, false)).toBe(true);
   });
 
   it("is hidden once payments were recorded", () => {
-    expect(canReopenAsDraft(invoice(), 1, false)).toBe(false);
-    expect(canReopenAsDraft(invoice({ amountPaidCent: 500 }), 0, false)).toBe(false);
+    expect(canReopenAsDraft(invoice(), 1, false, false)).toBe(false);
+    expect(canReopenAsDraft(invoice({ amountPaidCent: 500 }), 0, false, false)).toBe(false);
   });
 
   it("is hidden for other statuses and for invoices cancelled by a credit note", () => {
-    expect(canReopenAsDraft(invoice({ status: "partial" }), 0, false)).toBe(false);
-    expect(canReopenAsDraft(invoice({ status: "paid" }), 0, false)).toBe(false);
-    expect(canReopenAsDraft(invoice(), 0, true)).toBe(false);
+    expect(canReopenAsDraft(invoice({ status: "partial" }), 0, false, false)).toBe(false);
+    expect(canReopenAsDraft(invoice({ status: "paid" }), 0, false, false)).toBe(false);
+    expect(canReopenAsDraft(invoice(), 0, true, false)).toBe(false);
+  });
+
+  it("is hidden for a credit note whose original had its time entries released", () => {
+    expect(canReopenAsDraft(invoice({ isCreditNote: true }), 0, false, true)).toBe(false);
+    expect(canReopenAsDraft(invoice({ isCreditNote: true }), 0, false, false)).toBe(true);
   });
 });
 

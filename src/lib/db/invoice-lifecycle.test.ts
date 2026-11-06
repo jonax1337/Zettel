@@ -66,7 +66,7 @@ describe("keepsStoredAmounts", () => {
 });
 
 describe("canReopenInvoice", () => {
-  const clean = { paymentCount: 0, hasCreditNote: false };
+  const clean = { paymentCount: 0, hasCreditNote: false, timeReleasedOnOriginal: false };
 
   it("allows reopening a sent invoice without payments or credit note", () => {
     expect(canReopenInvoice({ number: REAL_NUMBER, status: "sent" }, clean)).toBe(true);
@@ -78,6 +78,11 @@ describe("canReopenInvoice", () => {
 
   it("forbids reopening an invoice that has a credit note", () => {
     const facts = { ...clean, hasCreditNote: true };
+    expect(canReopenInvoice({ number: REAL_NUMBER, status: "sent" }, facts)).toBe(false);
+  });
+
+  it("forbids reopening a credit note once time entries of its original were released", () => {
+    const facts = { ...clean, timeReleasedOnOriginal: true };
     expect(canReopenInvoice({ number: REAL_NUMBER, status: "sent" }, facts)).toBe(false);
   });
 

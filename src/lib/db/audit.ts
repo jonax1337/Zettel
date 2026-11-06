@@ -1,6 +1,8 @@
 /**
  * Read side of the GoBD audit log (#143). The triggers in migration 0029 fill
  * `audit_log`; insert/delete rows hold the whole row, update rows only the changed columns.
+ * Freeing time entries of a reversed invoice (`releaseTimeEntriesOfReversedInvoice`) appends
+ * its own `time_entries` rows, in the same shape.
  */
 import { select } from "./client";
 import { CSV_LINE_BREAK, UTF8_BOM, escapeCsvField } from "$lib/utils/csv";
@@ -32,7 +34,17 @@ type AuditRow = {
   new_values: string | null;
 };
 
-const INVOICE_CHILD_TABLES = ["invoice_items", "invoice_payments", "reminders"];
+/** Whether `releaseTimeEntriesOfReversedInvoice` ever freed time entries of the invoice. */
+export async function hasReleasedTimeEntries(invoiceId: number): Promise<boolean> {
+  const [{ released }] = await select<{ released: number }>(
+    `SELECT EXISTS(SELECT 1 FROM audit_log
+             WHERE table_name = 'time_entries' AND parent_id = ? AND action = 'update') AS released`,
+    [invoiceId],
+  );
+  return released === 1;
+}
+
+const INVOICE_CHILD_TABLES = ["invoice_items", "invoice_payments", "reminders", "time_entries"];
 
 function parseValues(json: string | null): AuditValues | null {
   return json === null ? null : (JSON.parse(json) as AuditValues);

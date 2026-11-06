@@ -1,5 +1,6 @@
 import { execute, insert, select } from "./client";
 import { MISSING_NAME } from "./doc-queries";
+import { fullyReversedSql } from "./invoice-lifecycle";
 import { getProject } from "./projects";
 import type { InvoiceStatus, TimeEntry } from "./schema";
 import { elapsedMinutes, resolveTiming, type TimeEntryTiming } from "$lib/time/entry-timing";
@@ -43,6 +44,8 @@ export type TimeEntryListRow = TimeEntry & {
   /** Display form, so a draft shows as "Entwurf #1a2b". Null while the entry is open. */
   invoiceNumber: string | null;
   invoiceStatus: InvoiceStatus | null;
+  /** The billed invoice is fully reversed by credit notes, so its entries can be freed there. */
+  invoiceReversed: boolean;
 };
 
 type TimeEntryListSqlRow = TimeEntryRow & {
@@ -52,6 +55,7 @@ type TimeEntryListSqlRow = TimeEntryRow & {
   customer_name: string | null;
   invoice_number: string | null;
   invoice_status: InvoiceStatus | null;
+  invoice_reversed: 0 | 1;
 };
 
 export type TimeEntryStatusFilter = "open" | "billed" | "all";
@@ -82,7 +86,8 @@ const RUNNING_TIMER_CONDITION = "t.started_at IS NOT NULL AND t.ended_at IS NULL
 async function selectEntries(where: string, binds: unknown[]): Promise<TimeEntryListRow[]> {
   const rows = await select<TimeEntryListSqlRow>(
     `SELECT t.*, p.name AS project_name, p.hourly_rate_cent, p.customer_id,
-            c.name AS customer_name, i.number AS invoice_number, i.status AS invoice_status
+            c.name AS customer_name, i.number AS invoice_number, i.status AS invoice_status,
+            COALESCE(${fullyReversedSql("i")}, 0) AS invoice_reversed
      FROM time_entries t
      JOIN projects p ON p.id = t.project_id
      LEFT JOIN customers c ON c.id = p.customer_id
@@ -102,6 +107,7 @@ async function selectEntries(where: string, binds: unknown[]): Promise<TimeEntry
         ? null
         : displayInvoiceNumber({ number: r.invoice_number, status: r.invoice_status }),
     invoiceStatus: r.invoice_status,
+    invoiceReversed: r.invoice_reversed === 1,
   }));
 }
 

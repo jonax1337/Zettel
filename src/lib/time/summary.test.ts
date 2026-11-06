@@ -21,6 +21,7 @@ function row(overrides: Partial<TimeEntryListRow> & Pick<TimeEntryListRow, "id">
     customerName: "Acme",
     invoiceNumber: null,
     invoiceStatus: null,
+    invoiceReversed: false,
     ...overrides,
   };
 }

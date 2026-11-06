@@ -60,6 +60,9 @@
                 >
                   <Badge variant="success">abgerechnet · {entry.invoiceNumber}</Badge>
                 </a>
+                {#if entry.invoiceReversed}
+                  <Badge variant="warning" class="ml-1">Rechnung storniert</Badge>
+                {/if}
               {:else if entry.durationMinutes === null}
                 <Badge variant="warning">läuft</Badge>
               {:else}
