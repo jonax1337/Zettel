@@ -16,7 +16,9 @@ DATEV Kanzlei-Rechnungswesen importieren das Format direkt.
    mit in den Stapel sollen (Standard: alles); die Vorschau zeigt die Anzahl
 5. Datei speichern, dem Steuerberater per Mail/Cloud schicken
 
-Berater- und Mandantennummer im Header sind Platzhalter; dein Steuerberater trägt
+Berater- und Mandantennummer im Header kannst du auf dem Export-Bildschirm eintragen
+(Felder „Beraternr. (Platzhalter)“ und „Mandantennr. (Platzhalter)“, Zettel merkt sich
+die letzte Eingabe); ohne deine Angaben sind sie Platzhalter. Dein Steuerberater trägt
 sie beim Import um. Der Stapel wird nicht festgeschrieben, die Datei ist UTF-8 mit
 BOM, Zeilenenden sind CRLF.
 

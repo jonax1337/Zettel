@@ -17,7 +17,7 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 | Persistenz | `@tauri-apps/plugin-sql` (SQLite); Drizzle nur als Type-Source (`schema.ts`) |
 | PDF/XML | WeasyPrint + Jinja2, `factur-x` + `lxml` (Sidecar) |
 | E-Rechnung-Validierung | KoSIT-Validator (`validator.jar`, **Java**) auf gebundelter jlink-JRE, von Rust als CLI gespawnt |
-| Tests | Vitest (inkl. echte SQLite-DB via `src/lib/db/sqlite-test-db.ts`), Pytest (`sidecar/tests/`), `cargo test` |
+| Tests | Vitest (inkl. echte SQLite-DB via `src/lib/db/sqlite-test-db.ts`; Zeitzone in `vite.config.ts` auf Europe/Berlin gepinnt), Pytest (`sidecar/tests/`), `cargo test` |
 
 `pnpm tauri:dev` (App) · `pnpm dev` (nur Frontend, DB-Calls schlagen fehl) · `pnpm check` · `pnpm test` · `pnpm db:generate` · `pnpm tauri:build` (mit `tauri.bundle.conf.json`-Overlay) · `cd sidecar && pytest`.
 
@@ -34,8 +34,8 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 - **Money:** immer Cent (Integer) in der DB, Anzeige via `src/lib/utils/money.ts`. Niemals float.
 - **Nummern** (in Settings konfigurierbar): Kunden `K-0001`, Lieferanten `L-0001`, Rechnungen `RE-2026-0001`, Angebote `AN-…`, Ausgaben `EX-…`, Mahnungen `MA-…`.
 - **Lazy Invoice Numbering** (nur Rechnungen): Entwürfe tragen `DRAFT-<hex>`; der echte `invoice_number_counter` wird erst in `issueInvoice()` gezogen. `displayInvoiceNumber()` maskiert den Platzhalter als „Entwurf #<4-hex>". Entwürfe löschen → keine Lücken. Angebote/Mahnungen/Ausgaben numerieren eager.
-- **Multi-Currency:** `invoice.currency` + `exchange_rate` + eingefrorener `eur_total_cent` (BigInt-Fixed-Point, 8 Dezimalstellen); DATEV nimmt den eingefrorenen Wert. **Storno-Signum:** `eur_total_cent` hat dasselbe Vorzeichen wie `subtotal`/`total`, sonst falsche KPIs.
-- **Exakte Positionsbeträge:** `computeLineTotal` (`src/lib/utils/totals.ts`) rechnet Menge × Preis exakt (BigInt, Menge ≤ 4 Nachkommastellen, Halbwerte Richtung +∞), USt je Position gerundet. Mengen werden mit ≤ 4 Nachkommastellen gespeichert. Gespeicherte Beträge (`fixedLineTotal`) bleiben bei Stornorechnungen, ausgestellten/wieder geöffneten Rechnungen und versendeten Angeboten unverändert, bis Menge oder Preis der Position geändert wird. Die CLI spiegelt die Regel; Parität per `sidecar/tests/fixtures/invoice-parity.json` (Vitest und Pytest prüfen dieselbe Datei).
+- **Multi-Currency:** `invoice.currency` + `exchange_rate` + eingefrorener `eur_total_cent` (BigInt-Fixed-Point, 8 Dezimalstellen); DATEV nimmt den eingefrorenen Wert. **Storno-Signum:** `eur_total_cent` hat dasselbe Vorzeichen wie `subtotal`/`total`, sonst falsche KPIs. Den EUR-Betrag einer Stornorechnung entscheidet die DB-Schicht (`creditNoteEurTotal`): volle Erstattung = negierter eingefrorener EUR-Betrag der Originalrechnung, Teilstorno zu deren Kurs.
+- **Exakte Positionsbeträge:** `computeLineTotal` (`src/lib/utils/totals.ts`) rechnet Menge × Preis exakt (BigInt, Menge ≤ 4 Nachkommastellen, Halbwerte Richtung +∞), USt je Position gerundet. Mengen werden mit ≤ 4 Nachkommastellen gespeichert. Ausgestellte Rechnungen, wieder geöffnete Rechnungsentwürfe mit Nummer, Stornorechnungen dazu und Angebote, zu denen bereits ein PDF erzeugt wurde, behalten ihre gespeicherten Beträge (`fixedLineTotal`; `keepsStoredAmounts`, `offerKeepsStoredAmounts`), bis Menge oder Preis einer Position geändert werden. Die CLI spiegelt nur die exakte Berechnung (`compute_line_total`, `round_quantity`), nicht die „Beträge behalten“-Regel des App-Editors; Parität per `sidecar/tests/fixtures/invoice-parity.json` (Vitest und Pytest prüfen dieselbe Datei).
 - `markSent(id, sentAt?)` / `markPaid(id, paidAt?)` akzeptieren einen optionalen Unix-Timestamp (Backdating); die UI warnt nur weich.
 
 ## Migrationen (vier Sync-Punkte)
@@ -43,16 +43,17 @@ Eine neue Migration `000N_<name>.sql` heißt **immer vier Stellen gleichzeitig a
 1. `PRAGMA user_version = N+1;` am Ende der Migration (Datei `0031_…` setzt 32).
 2. `CURRENT_SCHEMA` in `src-tauri/src/backup.rs` — sonst lehnt der Restore frische Backups ab (`Schema neuer als App-Version`).
 3. `CURRENT_DB_SCHEMA_VERSION` in `src/lib/utils/schema-version.ts`.
-4. Eine Zeile `(version, "beschreibung", "000N_<name>")` im `up_migrations!`-Makro in `build_migrations()` in `lib.rs` — für **beide** DB-Pfade (`sqlite:zettel.db`, `sqlite:zettel-sandbox.db`). Ein Rust-Test prüft lückenlose Versionen, `user_version` je Datei und `CURRENT_SCHEMA`.
+4. Eine Zeile `(version, "beschreibung", "000N_<name>")` im `up_migrations!`-Makro in `build_migrations()` in `lib.rs` — registriert für `sqlite:zettel.db`, `sqlite:zettel-sandbox.db` und die DB des aktiven eigenen Mandanten (`sql_plugin()` in `lib.rs`). Ein Rust-Test prüft lückenlose Versionen, `user_version` je Datei und `CURRENT_SCHEMA`.
 
-**Geshippte Migrationen sind unveränderlich** (Inhalt ändern = neue Migration). `.gitattributes` pinnt LF für `*.sql`, weil `include_str!` byte-stabil über Plattformen sein muss.
+**Geshippte Migrationen sind unveränderlich** (Inhalt ändern = neue Migration). `.gitattributes` pinnt LF für `*.sql`, weil `include_str!` byte-stabil über Plattformen sein muss. Eine Migration darf versiegelte Spalten ausgestellter Rechnungen (`SEALED_*_COLUMNS` in `seals.ts`) nie umschreiben, sonst melden alle betroffenen Rechnungen falsch `content_changed`.
 
 ## GoBD (Änderungsprotokoll, Siegel)
-- `audit_log` und `invoice_seals` sind per Lock-Trigger append-only (Migration 0029); `danger.ts` löscht sie nie. Wer sie über die App ändern kann, hat einen Security-Bug.
+- `audit_log` und `invoice_seals` sind per Lock-Trigger append-only (Migration 0029); `danger.ts` löscht sie nie. Wer sie über die App ändern kann, hat einen Security-Bug. Das ist Schutz vor Versehen, kein kryptografischer (`chainHashOf` ist einfaches SHA-256, die Trigger sind gewöhnliche SQLite-Trigger).
+- **Teil-Restore** (`restore_sections` in `backup.rs`) entfernt innerhalb seiner Transaktion **alle** Trigger (aus `sqlite_master` gelesen, danach wieder angelegt, ein neuer Trigger ist also automatisch abgedeckt) und ersetzt `invoice_seals` durch die des Backups; das ist die dokumentierte Ausnahme von „append-only“ und ein `restore`-Eintrag im Audit-Log.
 - Auditierte Tabellen stehen in `tools/gen_audit_triggers.py`. Die Trigger nennen jede Spalte: **eine neue Spalte an einer auditierten Tabelle braucht neu erzeugte Trigger in einer neuen Migration** (`python tools/gen_audit_triggers.py`; Guard-Test `src/lib/db/audit-log.test.ts` schlägt sonst fehl).
-- **Keine Feature-Spalten an versiegelten Rechnungstabellen** — von der Feature-Tabelle auf die Rechnung verlinken (wie `time_entries.invoice_id`).
-- Rechnungen mit echter Nummer sind nicht löschbar, nur per Stornorechnung korrigierbar (`invoice-lifecycle.ts`).
-- Die CLI berechnet identische Siegel (`cli/zettel.py`, Format fixiert durch `sidecar/tests/fixtures/invoice-seal.json`); `invoice:issue` hängt ein Siegel an.
+- **Neue Spalten an `invoices`/`invoice_items`:** Trigger neu erzeugen und bewusst entscheiden, ob die Spalte versiegelt wird (dann neue `SEAL_FORMAT_VERSION`). Reine Feature-Verknüpfungen gehören in eine eigene Tabelle (wie `time_entries.invoice_id`).
+- **Siegelformat:** `SEAL_FORMAT_VERSION` in `seals.ts` und `cli/zettel.py` muss byte-identisch hashen (auch JS-artige Zahlenformatierung, `js_number`); Änderungen an `SEALED_*_COLUMNS` ändern den Hash jeder alten Rechnung. Format fixiert durch `sidecar/tests/fixtures/invoice-seal.json`; `invoice:issue` hängt ein Siegel an.
+- Im normalen Ablauf sind Rechnungen mit echter Nummer nicht löschbar, nur per Stornorechnung korrigierbar (`invoice-lifecycle.ts`); „Daten löschen“ (`danger.ts`) löscht sie dennoch, Protokoll und Siegel bleiben, die Integritätsprüfung meldet `invoice_deleted`.
 
 ## Zeiterfassung
 Abrechnung legt zuerst den Rechnungsentwurf an und beansprucht die Zeiteinträge dann per **bedingtem UPDATE** (`invoice_id IS NULL`), damit ein Eintrag nicht doppelt abgerechnet wird. Einträge werden nur frei, wenn der Entwurf gelöscht bzw. verworfen wird; ein verworfener Entwurf lässt sich nicht wieder öffnen.
@@ -89,14 +90,16 @@ python -m venv .venv
 .venv/Scripts/activate     # Win — bash: source .venv/bin/activate
 pip install -r requirements.txt
 pytest                     # einige Tests brauchen den lokalen KoSIT-Validator (tools/download-validator.sh)
-python build.py            # PyInstaller-Bundle nach sidecar/dist/
+python build.py            # PyInstaller-Bundle nach sidecar/dist/ (pyinstaller==6.22.3 im venv, gleicher Pin in build.yml)
 ```
+**Validator (dev):** `validator.rs::resolve_java` sucht Java in dieser Reihenfolge: dev `tools/jre/bin/java` → Release-Resources `jre/bin/java` → System-`java`. Im Dev-Build braucht der Validator `tools/jre` (`tools/build-jre.sh`, jlink-JRE) und `tools/kosit-validator` (`tools/download-validator.sh`).
 Dev-Python-Lookup: `ZETTEL_PYTHON` → `sidecar/.venv` → `python` im PATH. **GTK3-Runtime (Windows):** `_add_gtk_dll_path` in `main.py` sucht frozen → exe-dir → `C:\Program Files\GTK3-Runtime Win64\` → msys64; Override `ZETTEL_GTK_PATH`. Der Windows-Build kopiert **jede** `.dll` aus dem GTK-Dir neben die exe (keine Allowlist, die GTK-Varianten shippen verschiedene Lib-Versionen).
 
 ## AppData & Pfade
 - **App-Daten** (DB, `sandbox.flag`, `tenants.json`, `pending_restore/`): Windows `%APPDATA%\digital.laux.zettel\`, macOS `~/Library/Application Support/digital.laux.zettel/`, Linux `~/.local/share/digital.laux.zettel/` — die eingebauten DBs liegen unter Linux in `~/.config/digital.laux.zettel/`.
 - **PDFs + Backups** unter dem Dokumente-Root: `<Dokumente>/Zettel` (Standard), `<Dokumente>/Zettel-Sandbox`, `<Dokumente>/Zettel/Mandanten/<tenant-id>`; Unterordner `{Rechnungen,Angebote,Mahnungen,Eingangsrechnungen/<vendor>,Backups}`. `<Dokumente>` ist der Windows-Known-Folder (folgt OneDrive). Einzige Quelle: `tenants::active_documents_root` (Command `get_documents_root`); die CLI spiegelt es.
-- `backup.rs`: staged Restore nach `pending_restore/`, läuft **vor** dem SQL-Plugin-Init (`apply_pending_restore_blocking()`); App-Identifier ist hardcoded `digital.laux.zettel`.
+- `backup.rs`: staged Restore nach `pending_restore/`, läuft **vor** dem SQL-Plugin-Init (`apply_pending_restore_blocking()`); die vorherige DB bleibt als `zettel.db.bak` liegen; App-Identifier ist hardcoded `digital.laux.zettel`. Verschlüsselte Backups tragen den Magic-Header `ZETTEL-ENC-1` (`crypto.rs`).
+- **Sandbox:** `sandbox.flag` im AppData-Dir; `client.ts` wählt danach `sqlite:zettel-sandbox.db`, `Layout.svelte` zeigt das Banner. CSV-Export läuft über `save_text_file` (`fs_export.rs`, kein `plugin-fs`).
 
 ## Git workflow
 - Feature-Arbeit auf `release/vX.Y`-Branches via PR (Squash-Merge); `main` = letztes shipped Release; konsolidierender PR `release/vX.Y → main` beim Release. Conventional Commits.

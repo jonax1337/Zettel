@@ -10,7 +10,7 @@ Die Inhalte dieser Datei sowie der Anwendung sind eine **technische Beschreibung
 
 ## EN 16931 / ZUGFeRD / Factur-X
 
-Zettel erzeugt PDF/A-3 mit eingebettetem CII-XML in den Profilen **BASIC**, **EN 16931** (Standard) und **EXTENDED**. Validiert wird gegen den offiziellen [KoSIT-Validator](https://github.com/itplr-kosit/validator) (im Release-Build mitgeliefert).
+Zettel erzeugt PDF/A-3 mit eingebettetem CII-XML. Geprüft wird mit dem mitgelieferten [KoSIT-Validator](https://github.com/itplr-kosit/validator) (Release-Build); dessen Konfiguration deckt **EN 16931** (Standardprofil) und **XRechnung** ab. **BASIC** und **EXTENDED** setzen nur eine andere Profil-URN auf denselben Inhalt und werden weder vom Validator noch gegen das XSD geprüft — im Zweifel EN 16931 verwenden.
 
 **Was wir nach bestem Wissen umsetzen:**
 
@@ -21,7 +21,7 @@ Zettel erzeugt PDF/A-3 mit eingebettetem CII-XML in den Profilen **BASIC**, **EN
 - Lange Positions-Beschreibungen (BT-154)
 - Käuferreferenz / Leitweg-ID (BT-10), wenn sie an der Rechnung gesetzt ist
 
-**Positionsbeträge:** Menge × Einzelpreis wird exakt in Cent berechnet; halbe Cent werden zum höheren Wert gerundet. Jede Position wird einzeln gerundet, die USt ebenfalls je Position. Mengen werden mit höchstens vier Nachkommastellen gespeichert. Ausgestellte Rechnungen, Stornorechnungen dazu und versendete Angebote behalten ihre gespeicherten Beträge auf den Cent, auch wenn sie aus der Zeit vor dieser Rundungsregel stammen.
+**Positionsbeträge:** Menge × Einzelpreis wird exakt in Cent berechnet; halbe Cent werden zum höheren Wert gerundet. Jede Position wird einzeln gerundet, die USt ebenfalls je Position. Mengen werden mit höchstens vier Nachkommastellen gespeichert. Ausgestellte Rechnungen, wieder geöffnete Rechnungsentwürfe mit Nummer, Stornorechnungen dazu und Angebote, zu denen bereits ein PDF erzeugt wurde, behalten ihre gespeicherten Beträge, bis Menge oder Preis einer Position geändert werden — auch wenn sie aus der Zeit vor dieser Rundungsregel stammen.
 
 **Aber:** Validierungs-Profile entwickeln sich weiter. Wir testen gegen den aktuellen KoSIT-Validator zum Zeitpunkt jedes Releases. Wenn dein Empfänger eine spezielle Validierungs-Regel (z.B. ein bestimmtes B2B-Portal) anwendet, kann es Edge-Cases geben. Bug-Reports mit konkretem Validator-Output sind willkommen — siehe Issue-Template „ZUGFeRD validation".
 
@@ -38,11 +38,11 @@ Rechnungen lassen sich zusätzlich als **XRechnung 3.0 (CII)** exportieren — a
 *Keine Rechtsberatung — Stichtage und Ausnahmen im Einzelfall mit dem Steuerberater abstimmen.*
 
 - **Empfangen:** Unternehmen müssen E-Rechnungen im B2B-Bereich seit dem **1.1.2025** empfangen können.
-- **Ausstellen:** Die Pflicht zum Ausstellen wird schrittweise **ab 2027 bzw. 2028** eingeführt. **Kleinunternehmer** (§ 19 UStG) sind von der Pflicht zum Ausstellen ausgenommen.
+- **Ausstellen:** Die Pflicht gilt schrittweise: ab dem **1.1.2027** für Unternehmen mit mehr als 800.000 € Vorjahresumsatz, ab dem **1.1.2028** für alle. Sie betrifft inländische B2B-Umsätze; Kleinbetragsrechnungen bis 250 € und Fahrausweise sind ausgenommen, ebenso **Kleinunternehmer** (§ 19 UStG, § 34a UStDV).
 
 Was Zettel dazu bietet:
 
-- **Ausgang:** ZUGFeRD/Factur-X (PDF/A-3 mit eingebettetem XML) in den Profilen EN 16931 und EXTENDED sowie XRechnung (XML). Ob das Profil **BASIC** bei deinem Empfänger als E-Rechnung gilt, klärst du mit dem Steuerberater; im Zweifel das Standardprofil EN 16931 verwenden. MINIMUM und BASIC WL bietet Zettel nicht an.
+- **Ausgang:** ZUGFeRD/Factur-X (PDF/A-3 mit eingebettetem XML) im Profil EN 16931 sowie XRechnung (XML); beide prüft der gebündelte Validator. BASIC und EXTENDED bietet Zettel zusätzlich an, prüft sie aber nicht (siehe oben); ob sie bei deinem Empfänger als E-Rechnung gelten, klärst du mit dem Steuerberater. MINIMUM und BASIC WL bietet Zettel nicht an.
 - **Eingang:** Zettel liest eingehende ZUGFeRD-/Factur-X-PDFs aus (Eingangsrechnungen → Drop-Zone). Reine XML-Dateien (z.B. XRechnung) lassen sich mit „E-Rechnung validieren" prüfen, aber nicht als Eingangsrechnung importieren. PDFs ohne XML liest Zettel nur über eine Text-Heuristik als Vorschlag; Scans werden nicht erkannt.
 - **Ablage:** Zettel kopiert das importierte Original-PDF (mit dem eingebetteten XML) nach `Eingangsrechnungen/<Lieferant>/`; maßgeblich ist das Original, nicht die erfassten Felder. Wie lange und in welcher Form du empfangene E-Rechnungen aufbewahren musst, klärst du mit dem Steuerberater.
 
@@ -54,9 +54,9 @@ Die [Grundsätze zur ordnungsmäßigen Führung und Aufbewahrung von Büchern, A
 
 - Erzeugte Rechnungs-PDFs sind durch das eingebettete ZUGFeRD-XML inhaltlich identisch maschinen- und menschen-lesbar
 - **Änderungsprotokoll:** Datenbank-Trigger schreiben jede Änderung (Anlegen, Ändern, Löschen) an Rechnungen, Positionen, Zahlungen, Mahnungen, Ausgaben, Kunden, Lieferanten und Einstellungen mit alten und neuen Werten in die Tabelle `audit_log`. Die Tabelle ist append-only: Trigger verhindern das Ändern und Löschen von Zeilen, auch für Änderungen über die CLI. „Daten löschen" entfernt das Protokoll nicht.
-- **Rechnungssiegel:** Beim Ausstellen (und beim bewussten Zurücksetzen auf Entwurf) hängt Zettel ein Siegel an eine SHA-256-Hash-Kette über den Rechnungsinhalt (`invoice_seals`, ebenfalls append-only).
+- **Rechnungssiegel:** Beim Ausstellen (und beim bewussten Zurücksetzen auf Entwurf) hängt Zettel ein Siegel an eine SHA-256-Hash-Kette über den Rechnungsinhalt (`invoice_seals`, ebenfalls append-only). Die Kette macht Änderungen sichtbar, die an ihr vorbei erfolgen; gegen gezielte Manipulation der Datenbank schützt sie nicht (siehe Tabelle unten).
 - **Integritätsprüfung:** Einstellungen → Daten → „Integritätsprüfung" vergleicht jede ausgestellte Rechnung mit ihrem Siegel und meldet unterbrochene Ketten, geänderte oder gelöschte Rechnungen. Das Änderungsprotokoll lässt sich als CSV exportieren.
-- Rechnungen mit vergebener Nummer lassen sich nicht löschen und nicht ohne Stornorechnung stornieren; nur Entwürfe ohne Nummer können verworfen werden.
+- Im normalen Ablauf lassen sich Rechnungen mit vergebener Nummer nicht löschen und nicht ohne Stornorechnung stornieren; nur Entwürfe ohne Nummer können verworfen werden. Eine Ausnahme ist „Daten löschen“ (Einstellungen → Erweitert): Es löscht auch ausgestellte Rechnungen; Änderungsprotokoll und Siegel bleiben, die Integritätsprüfung meldet die Rechnungen dann als gelöscht.
 - Stornos werden als Credit Note **zusätzlich** angelegt, nicht als Löschung der Originalrechnung — die ursprüngliche Rechnungsnummer bleibt belegt
 - Rechnungs-Nummern sind lückenlos: Drafts bekommen einen `DRAFT-…`-Platzhalter, der echte Nummern-Counter wird erst beim Ausstellen gezogen (siehe `displayInvoiceNumber()`). Gelöschte Drafts erzeugen keine Lücke.
 - DATEV-Export (Format 700) erlaubt Übergabe an den Steuerberater in branchenüblichem Format
@@ -66,7 +66,7 @@ Die [Grundsätze zur ordnungsmäßigen Führung und Aufbewahrung von Büchern, A
 
 | GoBD-Aspekt | Status in Zettel |
 |---|---|
-| Append-only Audit-Log aller Änderungen | ⚠️ teilweise — Änderungsprotokoll und Rechnungssiegel sind vorhanden (s. o.), aber **keine qualifizierte elektronische Signatur** und **kein Zeitstempel einer dritten Stelle**. Wer Zugriff auf deinen Rechner hat, kann die gesamte Datenbank ersetzen; dagegen helfen Zugriffsschutz und Backups an getrennten Orten. Ältere Rechnungen werden beim Start nachträglich versiegelt — der Nachweis beginnt für sie erst dann. Nicht protokolliert werden u. a. Angebote, wiederkehrende Rechnungen und Zeiterfassung |
+| Append-only Audit-Log aller Änderungen | ⚠️ teilweise — Änderungsprotokoll und Rechnungssiegel sind vorhanden (s. o.), aber **keine qualifizierte elektronische Signatur** und **kein Zeitstempel einer dritten Stelle**. Die Hash-Kette ist ein einfacher SHA-256 ohne geheimen Schlüssel und ohne externen Anker, die Sperr-Trigger sind gewöhnliche SQLite-Trigger: Wer die Datenbank mit einem SQLite-Werkzeug bearbeitet, kann Trigger entfernen und die Kette neu berechnen oder die gesamte Datenbank ersetzen. Dagegen helfen Zugriffsschutz und Backups an getrennten Orten. **Ausnahme von „append-only“:** Eine Teil-Wiederherstellung des Bereichs Rechnungen entfernt die Trigger kurzzeitig, ersetzt `invoice_seals` durch die Siegel des Backups (Siegel, die nach dem Backup entstanden sind, gehen verloren) und stellt die Trigger wieder her; im Änderungsprotokoll steht dafür ein Eintrag `restore`. Jede ausgestellte Rechnung ohne Siegel versiegelt Zettel beim Start nachträglich und zeigt einen Hinweis — der Nachweis beginnt für sie erst dann, den Hinweis also nicht übergehen. Nicht protokolliert werden u. a. Angebote, wiederkehrende Rechnungen und Zeiterfassung |
 | Versionierung von Stammdaten (Kunde X hatte 2024 Adresse A, 2025 Adresse B) | ⚠️ teilweise — Änderungen an Kunden, Lieferanten und Einstellungen stehen mit alten und neuen Werten im Änderungsprotokoll, eine Versionierung der Stammdaten selbst gibt es nicht (der aktuelle Stand überschreibt den alten). Ausgestellte Rechnungen enthalten den damaligen Kundenstand (Snapshot beim Ausstellen) |
 | Verfahrensdokumentation | ⚠️ Du musst sie selbst erstellen — Zettel liefert nur die [Vorlage](./docs/verfahrensdokumentation.md), siehe Abschnitt unten |
 | Aufbewahrung der Originale (Fristen siehe unten) | ⚠️ Liegt bei dir — Zettel legt die PDFs im Dokumente-Ordner ab (siehe „Speicherorte"), Backup-Verantwortung ist deine |
@@ -155,12 +155,12 @@ Verwende die Zahl als groben Anhalt für Rücklagen, nicht für die Steuererklä
 | Unterlagen | Frist |
 |---|---|
 | Buchungsbelege, z. B. Ausgangs- und Eingangsrechnungen | 8 Jahre¹ |
-| Bücher, Aufzeichnungen, Jahresabschlüsse, Inventare, Verfahrensdokumentation | 10 Jahre |
+| Bücher, Aufzeichnungen (auch die Zettel-Datenbank und DATEV-Exporte), Jahresabschlüsse, Inventare, Verfahrensdokumentation | 10 Jahre |
 | Empfangene und abgesandte Handels- und Geschäftsbriefe (z. B. Angebote, Mahnungen, versendete E-Mails) | 6 Jahre |
 
 ¹ § 147 Abs. 3 AO in der Fassung des Bürokratieentlastungsgesetzes IV; gilt für Unterlagen, deren Aufbewahrungsfrist am 1.1.2025 noch nicht abgelaufen war.
 
-Frist beginnt jeweils mit dem Schluss des Kalenderjahres, in dem der Beleg entstanden ist. **Du** musst sicherstellen, dass die Dateien aus dem Dokumente-Ordner (siehe „Speicherorte") und die Backups so lange lesbar bleiben. Faustregel: 2× jährlich verschlüsseltes Backup auf externes Medium, zusätzlich Cloud nach Wahl. Während der Frist keine Belege oder Daten löschen; die Funktion „Daten löschen" gehört nicht in den Echtbetrieb.
+Frist beginnt jeweils mit dem Schluss des Kalenderjahres, in dem der Beleg entstanden ist. Sie läuft nicht ab, solange die Steuer, für die die Unterlagen von Bedeutung sind, noch festgesetzt werden kann, z. B. bei laufender Betriebsprüfung (Ablaufhemmung, § 147 Abs. 3 Satz 5 AO). **Du** musst sicherstellen, dass die Dateien aus dem Dokumente-Ordner (siehe „Speicherorte") und die Backups so lange lesbar bleiben. Faustregel: 2× jährlich verschlüsseltes Backup auf externes Medium, zusätzlich Cloud nach Wahl. Während der Frist keine Belege oder Daten löschen; die Funktion „Daten löschen" gehört nicht in den Echtbetrieb.
 
 ## Haftungsausschluss
 

@@ -35,7 +35,7 @@ cd ..
 pnpm tauri:dev
 ```
 
-Beim ersten Start wird die SQLite-DB im OS-AppData-Verzeichnis angelegt (`%APPDATA%\digital.laux.zettel\` auf Windows, `~/Library/Application Support/digital.laux.zettel/` auf macOS, `~/.config/digital.laux.zettel/` auf Linux; dort liegen auch `sandbox.flag` und `tenants.json` unter `~/.local/share/digital.laux.zettel/`). PDFs und Backups landen unter `<Dokumente>/Zettel`.
+Beim ersten Start wird die SQLite-DB im OS-AppData-Verzeichnis angelegt (`%APPDATA%\digital.laux.zettel\` auf Windows, `~/Library/Application Support/digital.laux.zettel/` auf macOS, `~/.config/digital.laux.zettel/` auf Linux). Unter Linux liegen `sandbox.flag`, `tenants.json` und `pending_restore/` getrennt davon in `~/.local/share/digital.laux.zettel/`. PDFs und Backups landen unter `<Dokumente>/Zettel`.
 
 ### Sandbox-Modus
 
