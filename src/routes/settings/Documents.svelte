@@ -3,8 +3,10 @@
   import SettingsShell from "./SettingsShell.svelte";
   import SettingsFormFooter from "./SettingsFormFooter.svelte";
   import DocumentNumberingCard from "./DocumentNumberingCard.svelte";
+  import MailTemplateEditor from "./MailTemplateEditor.svelte";
   import { SettingsForm } from "./settings-form.svelte";
   import type { Settings } from "$lib/db/schema";
+  import { DEFAULT_MAIL_TEMPLATES, MAIL_PLACEHOLDERS } from "$lib/mail/templates";
   import {
     Input,
     Label,
@@ -42,7 +44,7 @@
 
 <SettingsShell
   title="Dokumente"
-  description="Rechnungen, Angebote, Nummernkreise und E-Rechnung-Profil."
+  description="Rechnungen, Angebote, Nummernkreise, E-Mail-Vorlagen und E-Rechnung-Profil."
 >
   {#if form.loading}
     <p class="text-sm text-muted-foreground">Lade…</p>
@@ -146,6 +148,47 @@
                 überschreibbar. Das ZUGFeRD-XML bleibt sprach-neutral.
               </span>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>E-Mail-Vorlagen</CardTitle>
+          <CardDescription>
+            Betreff und Text für „Per E-Mail senden“. Ein leeres Feld verwendet den Standardtext
+            (grau hinterlegt). Platzhalter:
+            {#each MAIL_PLACEHOLDERS as placeholder, i (placeholder.token)}
+              <code class="font-mono text-foreground">{placeholder.token}</code> {placeholder.description}{i <
+              MAIL_PLACEHOLDERS.length - 1
+                ? ", "
+                : "."}
+            {/each}
+            Bei Mahnungen steht <code class="font-mono text-foreground">{"{nummer}"}</code> für die
+            Rechnungsnummer, <code class="font-mono text-foreground">{"{faellig}"}</code> für die neue
+            Zahlungsfrist.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div class="space-y-6">
+            <MailTemplateEditor
+              title="Rechnung"
+              defaults={DEFAULT_MAIL_TEMPLATES.invoice}
+              bind:subject={s.mailInvoiceSubject}
+              bind:body={s.mailInvoiceBody}
+            />
+            <MailTemplateEditor
+              title="Angebot"
+              defaults={DEFAULT_MAIL_TEMPLATES.offer}
+              bind:subject={s.mailOfferSubject}
+              bind:body={s.mailOfferBody}
+            />
+            <MailTemplateEditor
+              title="Mahnung"
+              defaults={DEFAULT_MAIL_TEMPLATES.reminder}
+              bind:subject={s.mailReminderSubject}
+              bind:body={s.mailReminderBody}
+            />
           </div>
         </CardContent>
       </Card>

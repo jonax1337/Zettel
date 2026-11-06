@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { link, push } from "svelte-spa-router";
   import BackLink from "./parts/entity/BackLink.svelte";
   import { createDocumentActions } from "./parts/entity/document-actions.svelte";
   import DocumentFactsCard from "./parts/entity/DocumentFactsCard.svelte";
   import DocumentLoadMessage from "./parts/entity/DocumentLoadMessage.svelte";
   import FactRow from "./parts/entity/FactRow.svelte";
+  import MailSendButton from "./parts/entity/MailSendButton.svelte";
   import PdfLocation from "./parts/entity/PdfLocation.svelte";
   import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
   import {
@@ -22,6 +24,7 @@
   import { SUPPLY_KIND_LABEL } from "./invoice/supply-kind";
   import { generateOfferPdf } from "$lib/sidecar/offer";
   import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
+  import { resolveCustomerEmail, sendDocumentByMail } from "$lib/mail/send";
   import {
     Badge,
     Button,
@@ -56,6 +59,12 @@
   let error = $state<string | null>(null);
   let loadToken = 0;
   let lastPdfPath = $state<string | null>(null);
+  let customerEmail = $state<string | null>(null);
+  // The mail program keeps the hand-off call open until its message window is closed.
+  let mailing = $state(false);
+  let mounted = true;
+  onDestroy(() => (mounted = false));
+  let confirmMarkSentAfterMailOpen = $state(false);
   let confirmDeleteOpen = $state(false);
   let confirmAcceptOpen = $state(false);
   let confirmRejectOpen = $state(false);
@@ -100,12 +109,16 @@
         error = "Angebot nicht gefunden.";
         return;
       }
-      const linkedInvoiceNumber = await findConvertedInvoiceNumber(res.offer);
+      const [linkedInvoiceNumber, loadedEmail] = await Promise.all([
+        findConvertedInvoiceNumber(res.offer),
+        fetchCustomerEmail(res.offer),
+      ]);
       if (token !== loadToken) return;
       offer = res.offer;
       items = res.items;
       lastPdfPath = res.offer.pdfPath;
       convertedInvoiceNumber = linkedInvoiceNumber;
+      customerEmail = loadedEmail;
     } catch (e) {
       if (token === loadToken) {
         if (offer?.id !== offerId) offer = null;
@@ -125,6 +138,13 @@
       toast.error("Verknüpfte Rechnung konnte nicht geladen werden", String(e));
       return null;
     }
+  }
+
+  function fetchCustomerEmail(source: Offer): Promise<string | null> {
+    return resolveCustomerEmail(
+      source.customerId,
+      parseCustomerSnapshot(source.customerSnapshot)?.email ?? null,
+    );
   }
 
   function openSendDialog() {
@@ -151,16 +171,61 @@
     });
   }
 
-  async function onGeneratePdf() {
+  async function createPdf(thenMail: boolean) {
     if (!offer) return;
     const { id } = offer;
     await actions.generatePdf(
       () => generateOfferPdf(id),
       async ({ pdfPath }) => {
         lastPdfPath = pdfPath;
-        toast.action("PDF erstellt", { label: "Öffnen", onClick: () => openPath(pdfPath) });
+        if (!thenMail) {
+          toast.action("PDF erstellt", { label: "Öffnen", onClick: () => openPath(pdfPath) });
+          return;
+        }
+        // Not awaited: the mail program holds the call open and must not keep the page busy.
+        void sendMail(pdfPath);
       },
     );
+  }
+
+  /** A draft may have been edited since its PDF was made, so it gets a fresh one. */
+  function requestMail() {
+    if (!offer || actions.busy || mailing) return;
+    if (lastPdfPath && offer.status !== "draft") void sendMail(lastPdfPath);
+    else void createPdf(true);
+  }
+
+  async function sendMail(pdfPath: string) {
+    if (!offer || !customerEmail || mailing) return;
+    const sent = offer;
+    mailing = true;
+    try {
+      const result = await sendDocumentByMail(
+        "offer",
+        {
+          number: sent.number,
+          totalCent: sent.total,
+          currency: sent.currency,
+          dueDate: sent.validUntil,
+          customer: customer?.name ?? "",
+        },
+        { to: customerEmail, attachmentPath: pdfPath },
+      );
+      // The call returns only when the mail window closes; by then the user may have moved on.
+      const stillOnThisOffer = mounted && offer?.id === sent.id;
+      if (result === "handed-off" && sent.status === "draft" && stillOnThisOffer) {
+        confirmMarkSentAfterMailOpen = true;
+      }
+    } catch (e) {
+      toast.error("E-Mail konnte nicht vorbereitet werden", String(e));
+    } finally {
+      mailing = false;
+    }
+  }
+
+  async function markSentAfterMail() {
+    sendDate = toIsoDate(nowUnix());
+    await confirmSend();
   }
 
   async function onConvert() {
@@ -216,10 +281,12 @@
         busy={actions.busy}
         generating={actions.generating}
         generateVariant={awaitsConversion ? "outline" : "default"}
-        onGenerate={onGeneratePdf}
+        onGenerate={() => createPdf(false)}
         onOpen={() => actions.usePdfFile(lastPdfPath, openPath)}
         onReveal={() => actions.usePdfFile(lastPdfPath, revealItemInDir)}
       />
+
+      <MailSendButton email={customerEmail} busy={actions.busy} sending={mailing} onSend={requestMail} />
 
       {#if offer.status === "draft"}
         <Button variant="outline" onclick={() => push(`/offers/${offer!.id}/edit`)}>
@@ -358,6 +425,14 @@
     confirmLabel="Abgelehnt"
     destructive
     onConfirm={() => actions.run("Als abgelehnt markiert", () => markRejected(offer!.id))}
+  />
+
+  <ConfirmDialog
+    bind:open={confirmMarkSentAfterMailOpen}
+    title="Als versendet markieren?"
+    description={`${offer.number} wurde an Ihr Mail-Programm übergeben. Soll das Angebot jetzt als versendet gelten?`}
+    confirmLabel="Als versendet markieren"
+    onConfirm={markSentAfterMail}
   />
 
   <DateConfirmDialog

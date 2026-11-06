@@ -39,6 +39,22 @@ describe("settings writes", () => {
     expect(lastSql()).not.toContain("last_auto_backup_at");
   });
 
+  it("saveSettings stores a blank mail template as NULL and keeps a filled one", async () => {
+    await saveSettings({
+      mailInvoiceSubject: "  ",
+      mailInvoiceBody: "Hallo {kunde},\n{nummer}",
+      mailOfferSubject: null,
+    });
+
+    const assignments = lastSql().replace(/^UPDATE settings SET /, "").split(", ");
+    const bindings = db.execute.mock.calls.at(-1)![1]!;
+    const bound = (column: string) =>
+      bindings[assignments.findIndex((assignment) => assignment.startsWith(`${column} =`))];
+    expect(bound("mail_invoice_subject")).toBeNull();
+    expect(bound("mail_invoice_body")).toBe("Hallo {kunde},\n{nummer}");
+    expect(bound("mail_offer_subject")).toBeNull();
+  });
+
   it("saveLastAutoBackupAt updates only the stamp", async () => {
     await saveLastAutoBackupAt(1_700_000_000);
 

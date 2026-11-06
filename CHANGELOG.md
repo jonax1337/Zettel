@@ -7,6 +7,7 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Added
+- **Per E-Mail senden (#141).** Rechnungen, Angebote und Mahnungen öffnen im Standard-Mail-Programm eine neue Nachricht mit Empfänger, Betreff, Text und angehängtem PDF, ohne SMTP und ohne Netzwerkzugriff: unter Windows über Simple MAPI (klassisches Outlook, Thunderbird u. a.), unter macOS über Mail.app, unter Linux über `xdg-email`. Geht das nicht (z. B. nur „neues Outlook“), öffnet Zettel eine `mailto:`-Nachricht und den PDF-Ordner mit einem Hinweis, das PDF von Hand anzuhängen. Ein Entwurfs-Angebot oder eine Entwurfs-Mahnung lässt sich danach auf Nachfrage als versendet markieren. Betreff und Text sind je Belegart unter Einstellungen → Dokumente anpassbar (Platzhalter `{nummer}`, `{betrag}`, `{faellig}`, `{firma}`, `{kunde}`).
 - **Beta-Updates.** Einstellungen → „Beta-Updates" schaltet auf den Beta-Kanal: Release Candidates (`vX.Y.Z-rc.N`) werden vor dem stabilen Release angeboten und installiert. Ohne Häkchen kommen wie bisher nur stabile Versionen. Wer eine RC installiert hat, bleibt standardmäßig im Beta-Kanal.
 
 ### Changed

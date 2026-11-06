@@ -100,6 +100,12 @@ export const settings = sqliteTable("settings", {
   taxReserveExpensesGross: integer("tax_reserve_expenses_gross", { mode: "boolean" })
     .notNull()
     .default(false),
+  mailInvoiceSubject: text("mail_invoice_subject"),
+  mailInvoiceBody: text("mail_invoice_body"),
+  mailOfferSubject: text("mail_offer_subject"),
+  mailOfferBody: text("mail_offer_body"),
+  mailReminderSubject: text("mail_reminder_subject"),
+  mailReminderBody: text("mail_reminder_body"),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),
