@@ -23,6 +23,8 @@
     backupPasswordProblem,
     defaultBackupFilename,
     isPasswordRequiredError,
+    restoreSealWarning,
+    type PartialRestoreOutcome,
   } from "./backup-form";
 
   type RestoreOutcome = "done" | "needsPassword" | "failed";
@@ -127,6 +129,7 @@
   async function onConfirmPartialRestore() {
     if (!pendingRestoreZip) return;
     let safetyBackup = "";
+    let restored = null as PartialRestoreOutcome | null;
     const outcome = await attemptRestore(async () => {
       // Staging first: it rejects a wrong or missing password before any
       // safety backup gets written.
@@ -137,13 +140,21 @@
         await invoke<void>("discard_pending_restore");
         throw new Error(`Sicherheits-Backup fehlgeschlagen, nichts wurde verändert: ${e}`);
       }
-      await invoke<void>("apply_pending_partial_restore");
+      restored = await invoke<PartialRestoreOutcome>("apply_pending_partial_restore");
     });
     if (outcome === "done") {
       toast.success(
         "Wiederherstellung abgeschlossen",
         `Die ausgewählten Bereiche wurden eingespielt. Der vorherige Stand liegt in ${safetyBackup}.`,
       );
+      const warning = restored && restoreSealWarning(restored);
+      if (warning) {
+        toast.show(warning.title, {
+          description: warning.description,
+          variant: "warning",
+          duration: PERSISTENT_TOAST,
+        });
+      }
     }
   }
 

@@ -53,6 +53,7 @@
   } from "./invoice/invoice-actions";
   import InvoiceActionsMenu from "./invoice/InvoiceActionsMenu.svelte";
   import InvoiceFactsCard from "./invoice/InvoiceFactsCard.svelte";
+  import InvoiceHistory from "./invoice/InvoiceHistory.svelte";
   import InvoicePdfActions from "./invoice/InvoicePdfActions.svelte";
   import LineItemsTable from "./invoice/LineItemsTable.svelte";
   import NoticeCard from "./invoice/NoticeCard.svelte";
@@ -689,6 +690,8 @@
   {/if}
 
   <InternalNotesCard {invoice} onSaved={load} />
+
+  <InvoiceHistory {invoice} />
 
   <ConfirmDialog
     bind:open={confirmDeleteOpen}

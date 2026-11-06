@@ -40,7 +40,7 @@ use crate::tenants::{self, active_documents_root_for};
 /// `CURRENT_DB_SCHEMA_VERSION` in `src/lib/utils/schema-version.ts` and the
 /// highest migration version in `lib.rs` (a test in `lib.rs` checks the
 /// latter).
-pub(crate) const CURRENT_SCHEMA: u32 = 29;
+pub(crate) const CURRENT_SCHEMA: u32 = 30;
 
 const MANIFEST_NAME: &str = "manifest.json";
 const DB_ENTRY: &str = "zettel.db";
@@ -69,12 +69,13 @@ const PASSWORD_REQUIRED: &str = "password_required";
 const CUSTOMER_TABLES: [&str; 1] = ["customers"];
 /// Children before their parents, so deleting in this order is FK-safe.
 /// Offers point at the invoice they were converted into, payments and
-/// reminders (without a declared FK) at the invoice they belong to.
+/// reminders (without a declared FK) at the invoice they belong to. The seals
+/// of the hash chain travel with the invoices they seal.
 const INVOICE_TABLES: [&str; 9] = [
     "offer_items",
     "offers",
     "invoice_payments",
-    "invoice_attachments",
+    "invoice_seals",
     "reminders",
     "invoice_items",
     "invoices",
@@ -84,7 +85,8 @@ const INVOICE_TABLES: [&str; 9] = [
 const SETTINGS_TABLES: [&str; 1] = ["settings"];
 /// Restorable tables created after `MIN_PARTIAL_RESTORE_SCHEMA`: a backup
 /// without them simply had no rows yet.
-const TABLES_NEWER_THAN_MIN_PARTIAL_SCHEMA: [&str; 1] = ["invoice_payments"];
+const TABLES_NEWER_THAN_MIN_PARTIAL_SCHEMA: [&str; 2] = ["invoice_payments", "invoice_seals"];
+const INVOICE_SEALS_TABLE: &str = "invoice_seals";
 const SETTINGS_ROW_ID: i64 = 1;
 /// `settings` columns holding the last drawn document number.
 const NUMBER_COUNTER_SUFFIX: &str = "_number_counter";
@@ -120,6 +122,31 @@ impl PartialRestoreSections {
         }
         tables
     }
+
+    fn names(&self) -> Vec<&'static str> {
+        [
+            (self.customers, "customers"),
+            (self.invoices, "invoices"),
+            (self.settings, "settings"),
+        ]
+        .into_iter()
+        .filter_map(|(selected, name)| selected.then_some(name))
+        .collect()
+    }
+}
+
+/// What the frontend needs to know about an applied partial restore.
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PartialRestoreOutcome {
+    /// Whether the restored invoices came with their seals. `None` when the
+    /// invoice section was not restored; `Some(false)` for a backup from
+    /// before the seals existed, whose invoices the next start seals anew.
+    seals_from_backup: Option<bool>,
+    /// Live seals whose hash is not in the backup: the invoices they sealed
+    /// are gone with the restore, and so are the seals. 0 when the invoice
+    /// section was not restored.
+    dropped_live_seals: u32,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -869,7 +896,9 @@ fn remove_if_present(path: &Path) -> io::Result<()> {
 /// connections via locks), attaches the staged backup DB, and copies only
 /// the chosen sections inside a single transaction.
 #[tauri::command]
-pub async fn apply_pending_partial_restore(app: AppHandle) -> Result<(), String> {
+pub async fn apply_pending_partial_restore(
+    app: AppHandle,
+) -> Result<PartialRestoreOutcome, String> {
     let data_dir = app_data_dir(&app)?;
     let config_dir = app_config_dir(&app)?;
     apply_partial_restore(&data_dir, &config_dir, documents_dir().as_deref())
@@ -882,7 +911,7 @@ fn apply_partial_restore(
     data_dir: &Path,
     config_dir: &Path,
     documents_dir: Option<&Path>,
-) -> Result<(), String> {
+) -> Result<PartialRestoreOutcome, String> {
     let pending_root = data_dir.join(PENDING_DIR);
     if !data_dir.join(PENDING_MARKER).exists() || !pending_root.is_dir() {
         return Err("Keine ausstehende Wiederherstellung gefunden.".into());
@@ -905,26 +934,31 @@ fn restore_staged_sections(
     live_db: &Path,
     sections: PartialRestoreSections,
     documents_root: Option<&Path>,
-) -> Result<(), String> {
+) -> Result<PartialRestoreOutcome, String> {
     let staged_db = pending_root.join(DB_ENTRY);
     if !staged_db.is_file() {
         return Err("Backup-Datenbank fehlt im pending-Ordner.".into());
     }
-    restore_sections(live_db, &staged_db, sections)?;
+    let outcome = restore_sections(live_db, &staged_db, sections)?;
     if sections.invoices {
         restore_pdfs(pending_root, documents_root, live_db);
     }
-    Ok(())
+    Ok(outcome)
 }
 
 /// Replaces the selected sections of `live_db` with those of `staged_db`.
 /// All-or-nothing: any failure, including a reference the restored rows
 /// leave dangling, rolls the transaction back.
+///
+/// The audit and seal-lock triggers are dropped for the copy and recreated
+/// from their stored SQL before the commit: the lock triggers would abort the
+/// replacement of `invoice_seals`, and the audit triggers would log every
+/// copied row. The restore leaves one `restore` row in `audit_log` instead.
 fn restore_sections(
     live_db: &Path,
     staged_db: &Path,
     sections: PartialRestoreSections,
-) -> Result<(), String> {
+) -> Result<PartialRestoreOutcome, String> {
     let tables = sections.tables();
     let mut conn = rusqlite::Connection::open(live_db).map_err(|e| e.to_string())?;
     // Both must run outside the transaction: `PRAGMA foreign_keys` is a no-op
@@ -941,6 +975,12 @@ fn restore_sections(
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let violations_before = foreign_key_violations(&tx)?;
     let live_counters = number_counters(&tx, "main")?;
+    let dropped_live_seals = if sections.invoices {
+        count_live_seals_missing_from_backup(&tx)?
+    } else {
+        0
+    };
+    let triggers = drop_triggers(&tx)?;
     for table in &tables {
         tx.execute_batch(&format!("DELETE FROM main.{table};"))
             .map_err(|e| format!("{table}: {e}"))?;
@@ -960,7 +1000,101 @@ fn restore_sections(
     }
     keep_number_counters_ahead(&tx, &live_counters, sections.invoices)?;
     ensure_no_new_dangling_references(&tx, &violations_before, &tables)?;
-    tx.commit().map_err(|e| e.to_string())
+    let seals_from_backup = if sections.invoices {
+        reset_seal_sequence(&tx)?;
+        Some(!table_columns(&tx, "bak", INVOICE_SEALS_TABLE)?.is_empty())
+    } else {
+        None
+    };
+    let outcome = PartialRestoreOutcome {
+        seals_from_backup,
+        dropped_live_seals,
+    };
+    record_restore(&tx, sections, &outcome)?;
+    recreate_triggers(&tx, &triggers)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(outcome)
+}
+
+/// Live seals the restore removes for good: all of them when the backup
+/// predates the seals.
+fn count_live_seals_missing_from_backup(conn: &rusqlite::Connection) -> Result<u32, String> {
+    let backup_has_seals = !table_columns(conn, "bak", INVOICE_SEALS_TABLE)?.is_empty();
+    let query = if backup_has_seals {
+        "SELECT COUNT(*) FROM main.invoice_seals live
+         WHERE NOT EXISTS (SELECT 1 FROM bak.invoice_seals WHERE hash = live.hash)"
+    } else {
+        "SELECT COUNT(*) FROM main.invoice_seals"
+    };
+    conn.query_row(query, [], |row| row.get(0))
+        .map_err(|e| format!("{INVOICE_SEALS_TABLE}: {e}"))
+}
+
+/// The integrity check treats an AUTOINCREMENT counter above the highest seal
+/// id as removed seals. The copy only ever raises the counter, so a restore
+/// from an older backup has to pull it back to the restored chain.
+fn reset_seal_sequence(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute_batch(&format!(
+        "DELETE FROM main.sqlite_sequence WHERE name = '{INVOICE_SEALS_TABLE}';
+         INSERT INTO main.sqlite_sequence (name, seq)
+           SELECT '{INVOICE_SEALS_TABLE}', MAX(id) FROM main.{INVOICE_SEALS_TABLE} HAVING COUNT(*) > 0;"
+    ))
+    .map_err(|e| format!("{INVOICE_SEALS_TABLE}: {e}"))
+}
+
+/// `(name, CREATE TRIGGER sql)` of every trigger in `main`.
+type TriggerDefinition = (String, String);
+
+/// Drops every trigger of `main` and returns their definitions.
+fn drop_triggers(conn: &rusqlite::Connection) -> Result<Vec<TriggerDefinition>, String> {
+    let triggers: Vec<TriggerDefinition> = conn
+        .prepare("SELECT name, sql FROM main.sqlite_master WHERE type = 'trigger'")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect()
+        })
+        .map_err(|e| format!("Trigger lesen: {e}"))?;
+    for (name, _) in &triggers {
+        conn.execute_batch(&format!(
+            "DROP TRIGGER main.\"{}\";",
+            name.replace('"', "\"\"")
+        ))
+        .map_err(|e| format!("Trigger {name} entfernen: {e}"))?;
+    }
+    Ok(triggers)
+}
+
+fn recreate_triggers(
+    conn: &rusqlite::Connection,
+    triggers: &[TriggerDefinition],
+) -> Result<(), String> {
+    for (name, sql) in triggers {
+        conn.execute_batch(sql)
+            .map_err(|e| format!("Trigger {name} wiederherstellen: {e}"))?;
+    }
+    Ok(())
+}
+
+/// The one `audit_log` entry a partial restore leaves; the replaced rows
+/// themselves are not logged.
+fn record_restore(
+    conn: &rusqlite::Connection,
+    sections: PartialRestoreSections,
+    outcome: &PartialRestoreOutcome,
+) -> Result<(), String> {
+    let details = serde_json::json!({
+        "sections": sections.names(),
+        "seals_from_backup": outcome.seals_from_backup,
+        "dropped_live_seals": outcome.dropped_live_seals,
+    });
+    conn.execute(
+        "INSERT INTO main.audit_log (table_name, row_id, action, new_values)
+         VALUES ('backup', 0, 'restore', ?1)",
+        [details.to_string()],
+    )
+    .map_err(|e| format!("audit_log: {e}"))?;
+    Ok(())
 }
 
 /// One row of `PRAGMA foreign_key_check`: table, rowid, parent table, FK id.
@@ -1109,6 +1243,7 @@ mod tests {
     use crate::sandbox;
     use crate::testutil::TempDir;
     use rusqlite::Connection;
+    use std::collections::BTreeMap;
 
     fn all_tables() -> impl Iterator<Item = &'static str> {
         CUSTOMER_TABLES
@@ -1137,16 +1272,127 @@ mod tests {
         conn
     }
 
-    /// DB with every restorable table holding one row tagged `tag`.
+    /// The columns of the real `audit_log` that the restore touches.
+    const AUDIT_LOG_DDL: &str = "CREATE TABLE audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        table_name TEXT NOT NULL,
+        row_id INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        new_values TEXT
+    );";
+
+    /// The columns of the real `invoice_seals` that the restore touches.
+    const SEALS_DDL: &str =
+        "CREATE TABLE invoice_seals (id INTEGER PRIMARY KEY AUTOINCREMENT, tag TEXT, hash TEXT);";
+
+    /// DB with every restorable table holding one row tagged `tag`; its seal
+    /// has the hash `<tag>-1`.
     fn create_db(path: &Path, tag: &str) {
         let conn = open_current_db(path);
+        conn.execute_batch(AUDIT_LOG_DDL).unwrap();
         for table in all_tables() {
+            let ddl = if table == INVOICE_SEALS_TABLE {
+                SEALS_DDL.to_string()
+            } else {
+                format!("CREATE TABLE {table} (id INTEGER PRIMARY KEY, tag TEXT);")
+            };
             conn.execute_batch(&format!(
-                "CREATE TABLE {table} (id INTEGER PRIMARY KEY, tag TEXT);
-                 INSERT INTO {table} (tag) VALUES ('{tag}');"
+                "{ddl} INSERT INTO {table} (tag) VALUES ('{tag}');"
             ))
             .unwrap();
         }
+        conn.execute_batch(&format!(
+            "UPDATE {INVOICE_SEALS_TABLE} SET hash = '{tag}-' || id;"
+        ))
+        .unwrap();
+    }
+
+    /// DB built by the first `count` real migrations. The stub tables of
+    /// `create_db` mirror `INVOICE_TABLES`, so only these catch a restorable
+    /// table the real schema no longer has.
+    fn migrated_db(path: &Path, count: usize) -> Connection {
+        let conn = Connection::open(path).unwrap();
+        for migration in crate::build_migrations().into_iter().take(count) {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn
+    }
+
+    fn seed_issued_invoice(conn: &Connection, number: &str) {
+        conn.execute_batch(&format!(
+            "INSERT INTO customers (id, customer_number, name) VALUES (1, 'K-0001', 'Acme');
+             INSERT INTO invoices (number, customer_id, issue_date, due_date, status)
+               VALUES ('{number}', 1, 1, 2, 'sent');"
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn restore_sections_runs_on_the_real_schema() {
+        let all_migrations = crate::build_migrations().len();
+        // Schema 29 is the last one before the seals existed.
+        let pre_seal_migrations = all_migrations - 1;
+        let combos = [
+            sections(true, false, false),
+            sections(false, true, false),
+            sections(false, false, true),
+            sections(true, true, false),
+        ];
+        for (i, wanted) in combos.into_iter().enumerate() {
+            for backup_migrations in [all_migrations, pre_seal_migrations] {
+                let dir = TempDir::new(&format!("restore-real-{i}-{backup_migrations}"));
+                let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+                seed_issued_invoice(&migrated_db(&live, all_migrations), "RE-LIVE");
+                seed_issued_invoice(&migrated_db(&staged, backup_migrations), "RE-BACKUP");
+                let triggers_before = trigger_sql(&live);
+
+                let outcome = restore_sections(&live, &staged, wanted)
+                    .unwrap_or_else(|e| panic!("{wanted:?} from {backup_migrations}: {e}"));
+
+                let number: String = Connection::open(&live)
+                    .unwrap()
+                    .query_row("SELECT number FROM invoices", [], |row| row.get(0))
+                    .unwrap();
+                let expected = if wanted.invoices {
+                    "RE-BACKUP"
+                } else {
+                    "RE-LIVE"
+                };
+                assert_eq!(number, expected, "{wanted:?}");
+                assert_eq!(trigger_sql(&live), triggers_before, "{wanted:?}");
+                let seals_expected = wanted
+                    .invoices
+                    .then_some(backup_migrations == all_migrations);
+                assert_eq!(outcome.seals_from_backup, seals_expected, "{wanted:?}");
+            }
+        }
+    }
+
+    /// Replaces the seals of `path` by one per hash, in this order.
+    fn set_seal_hashes(path: &Path, hashes: &[&str]) {
+        let conn = Connection::open(path).unwrap();
+        conn.execute_batch(
+            "DELETE FROM invoice_seals; DELETE FROM sqlite_sequence WHERE name = 'invoice_seals';",
+        )
+        .unwrap();
+        for hash in hashes {
+            conn.execute(
+                "INSERT INTO invoice_seals (tag, hash) VALUES ('seal', ?1)",
+                [hash],
+            )
+            .unwrap();
+        }
+    }
+
+    fn seal_sequence(path: &Path) -> Option<i64> {
+        Connection::open(path)
+            .unwrap()
+            .query_row(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'invoice_seals'",
+                [],
+                |row| row.get(0),
+            )
+            .ok()
     }
 
     fn tag_of(path: &Path, table: &str) -> String {
@@ -1261,7 +1507,7 @@ mod tests {
 
         restore_sections(&live, &staged, sections(false, true, false)).unwrap();
 
-        for table in ["invoice_payments", "reminders", "invoice_attachments"] {
+        for table in ["invoice_payments", "reminders"] {
             assert_eq!(tag_of(&live, table), "backup", "{table}");
         }
     }
@@ -1289,9 +1535,280 @@ mod tests {
         assert_eq!(tag_of(&live, "invoices"), "backup");
     }
 
+    /// Audit triggers on a few tables and the lock triggers of the real schema.
+    fn add_audit_and_lock_triggers(path: &Path) {
+        let mut ddl = String::new();
+        for table in ["customers", "invoices", "settings"] {
+            for (event, row) in [("INSERT", "NEW"), ("UPDATE", "NEW"), ("DELETE", "OLD")] {
+                ddl.push_str(&format!(
+                    "CREATE TRIGGER audit_{table}_{event} AFTER {event} ON {table}
+                     BEGIN
+                       INSERT INTO audit_log (table_name, row_id, action)
+                       VALUES ('{table}', {row}.id, lower('{event}'));
+                     END;"
+                ));
+            }
+        }
+        for table in ["audit_log", "invoice_seals"] {
+            for event in ["UPDATE", "DELETE"] {
+                ddl.push_str(&format!(
+                    "CREATE TRIGGER {table}_no_{event} BEFORE {event} ON {table}
+                     BEGIN SELECT RAISE(ABORT, 'locked'); END;"
+                ));
+            }
+        }
+        Connection::open(path).unwrap().execute_batch(&ddl).unwrap();
+    }
+
+    fn trigger_sql(path: &Path) -> BTreeMap<String, String> {
+        let conn = Connection::open(path).unwrap();
+        let mut statement = conn
+            .prepare("SELECT name, sql FROM sqlite_master WHERE type = 'trigger'")
+            .unwrap();
+        let triggers = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        triggers
+    }
+
+    /// `(table_name, row_id, action, new_values)` of every `audit_log` row.
+    fn audit_rows(path: &Path) -> Vec<(String, i64, String, Option<String>)> {
+        let conn = Connection::open(path).unwrap();
+        let mut statement = conn
+            .prepare("SELECT table_name, row_id, action, new_values FROM audit_log ORDER BY id")
+            .unwrap();
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        rows
+    }
+
+    fn row_count(path: &Path, table: &str) -> i64 {
+        Connection::open(path)
+            .unwrap()
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap()
+    }
+
+    fn restore_details(path: &Path) -> serde_json::Value {
+        let (.., details) = audit_rows(path).remove(0);
+        serde_json::from_str(&details.unwrap()).unwrap()
+    }
+
+    #[test]
+    fn restore_passes_the_audit_and_lock_triggers_and_logs_one_restore_row() {
+        let dir = TempDir::new("restore-triggers");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+        add_audit_and_lock_triggers(&live);
+        let triggers_before = trigger_sql(&live);
+
+        let outcome = restore_sections(&live, &staged, sections(true, true, true)).unwrap();
+
+        assert_eq!(outcome.seals_from_backup, Some(true));
+        assert_eq!(tag_of(&live, "invoice_seals"), "backup");
+        assert_eq!(trigger_sql(&live), triggers_before);
+        let rows = audit_rows(&live);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(
+            (rows[0].0.as_str(), rows[0].1, rows[0].2.as_str()),
+            ("backup", 0, "restore")
+        );
+        assert_eq!(
+            restore_details(&live),
+            serde_json::json!({
+                "sections": ["customers", "invoices", "settings"],
+                "seals_from_backup": true,
+                "dropped_live_seals": 1
+            })
+        );
+    }
+
+    #[test]
+    fn the_recreated_triggers_log_and_lock_again() {
+        let dir = TempDir::new("restore-triggers-active");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+        add_audit_and_lock_triggers(&live);
+        restore_sections(&live, &staged, sections(true, true, false)).unwrap();
+
+        let conn = Connection::open(&live).unwrap();
+        conn.execute("INSERT INTO customers (tag) VALUES ('later')", [])
+            .unwrap();
+        let lock = conn.execute("DELETE FROM invoice_seals", []);
+
+        assert!(lock.is_err());
+        assert_eq!(audit_rows(&live).last().unwrap().2, "insert");
+    }
+
+    #[test]
+    fn seals_stay_untouched_when_the_invoice_section_is_not_restored() {
+        let dir = TempDir::new("restore-seals-untouched");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+        add_audit_and_lock_triggers(&live);
+
+        let outcome = restore_sections(&live, &staged, sections(true, false, false)).unwrap();
+
+        assert_eq!(outcome.seals_from_backup, None);
+        assert_eq!(tag_of(&live, "invoice_seals"), "live");
+        assert_eq!(
+            restore_details(&live)["seals_from_backup"],
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn a_backup_without_seals_clears_the_live_seals_and_reports_it() {
+        let dir = TempDir::new("restore-without-seals");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+        Connection::open(&staged)
+            .unwrap()
+            .execute_batch("DROP TABLE invoice_seals;")
+            .unwrap();
+        add_audit_and_lock_triggers(&live);
+
+        let outcome = restore_sections(&live, &staged, sections(false, true, false)).unwrap();
+
+        assert_eq!(outcome.seals_from_backup, Some(false));
+        assert_eq!(row_count(&live, "invoice_seals"), 0);
+        assert_eq!(tag_of(&live, "invoices"), "backup");
+        assert_eq!(
+            restore_details(&live)["seals_from_backup"],
+            serde_json::json!(false)
+        );
+    }
+
+    /// Live seals `live_hashes`, backup seals `backup_hashes`, invoices restored.
+    fn restore_invoices_with_seals(
+        label: &str,
+        live_hashes: &[&str],
+        backup_hashes: &[&str],
+    ) -> (PathBuf, PartialRestoreOutcome, TempDir) {
+        let dir = TempDir::new(label);
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+        set_seal_hashes(&live, live_hashes);
+        set_seal_hashes(&staged, backup_hashes);
+        add_audit_and_lock_triggers(&live);
+
+        let outcome = restore_sections(&live, &staged, sections(false, true, false)).unwrap();
+        (live, outcome, dir)
+    }
+
+    #[test]
+    fn live_seals_missing_from_the_backup_are_counted_and_logged() {
+        let (live, outcome, _dir) =
+            restore_invoices_with_seals("restore-dropped-seals", &["a", "b", "c"], &["a"]);
+
+        assert_eq!(outcome.dropped_live_seals, 2);
+        assert_eq!(restore_details(&live)["dropped_live_seals"], 2);
+        assert_eq!(row_count(&live, "invoice_seals"), 1);
+    }
+
+    #[test]
+    fn nothing_is_reported_when_the_backup_holds_every_live_seal() {
+        let (live, outcome, _dir) =
+            restore_invoices_with_seals("restore-kept-seals", &["a", "b"], &["a", "b", "c"]);
+
+        assert_eq!(outcome.dropped_live_seals, 0);
+        assert_eq!(restore_details(&live)["dropped_live_seals"], 0);
+    }
+
+    #[test]
+    fn a_backup_without_seals_drops_every_live_seal() {
+        let dir = TempDir::new("restore-all-seals-dropped");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+        set_seal_hashes(&live, &["a", "b", "c"]);
+        Connection::open(&staged)
+            .unwrap()
+            .execute_batch("DROP TABLE invoice_seals;")
+            .unwrap();
+
+        let outcome = restore_sections(&live, &staged, sections(false, true, false)).unwrap();
+
+        assert_eq!(outcome.dropped_live_seals, 3);
+        assert_eq!(seal_sequence(&live), None);
+    }
+
+    #[test]
+    fn no_seal_is_dropped_when_the_invoice_section_is_not_restored() {
+        let dir = TempDir::new("restore-seals-not-dropped");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        create_db(&staged, "backup");
+        set_seal_hashes(&live, &["a", "b"]);
+
+        let outcome = restore_sections(&live, &staged, sections(true, false, false)).unwrap();
+
+        assert_eq!(outcome.dropped_live_seals, 0);
+        assert_eq!(restore_details(&live)["dropped_live_seals"], 0);
+        assert_eq!(seal_sequence(&live), Some(2));
+    }
+
+    #[test]
+    fn the_seal_sequence_follows_the_restored_chain_not_the_live_one() {
+        let (live, _, _dir) =
+            restore_invoices_with_seals("restore-seal-sequence", &["a", "b", "c"], &["a"]);
+
+        assert_eq!(seal_sequence(&live), Some(1));
+    }
+
+    #[test]
+    fn a_failed_restore_keeps_the_triggers_and_logs_nothing() {
+        let dir = TempDir::new("restore-triggers-rollback");
+        let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+        create_db(&live, "live");
+        open_current_db(&staged)
+            .execute_batch("CREATE TABLE customers (id INTEGER PRIMARY KEY, tag TEXT);")
+            .unwrap();
+        add_audit_and_lock_triggers(&live);
+        let triggers_before = trigger_sql(&live);
+
+        let result = restore_sections(&live, &staged, sections(true, true, false));
+
+        assert!(result.is_err());
+        assert_eq!(trigger_sql(&live), triggers_before);
+        assert!(audit_rows(&live).is_empty());
+        assert_eq!(tag_of(&live, "invoice_seals"), "live");
+    }
+
+    #[test]
+    fn partial_restore_reports_whether_the_seals_came_from_the_backup() {
+        let dirs = AppDirs::new("partial-outcome");
+        let live = dirs.config.join("zettel.db");
+        create_db(&live, "live");
+        let pending = dirs.stage(partial(sections(false, true, false)), Some(live));
+        create_db(&pending.join(DB_ENTRY), "backup");
+
+        let outcome = apply_partial_restore(&dirs.data, &dirs.config, None).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&outcome).unwrap(),
+            serde_json::json!({ "sealsFromBackup": true, "droppedLiveSeals": 1 })
+        );
+    }
+
     /// Customers and invoices with the real foreign key between them.
     fn create_linked_db(path: &Path, customer_ids: &[i64], invoice_customer_id: i64) {
         let conn = open_current_db(path);
+        conn.execute_batch(AUDIT_LOG_DDL).unwrap();
         conn.execute_batch(
             "PRAGMA foreign_keys=OFF;
              CREATE TABLE customers (id INTEGER PRIMARY KEY, tag TEXT);
@@ -1304,10 +1821,12 @@ mod tests {
             .filter(|t| *t != "invoices")
             .chain(SETTINGS_TABLES)
         {
-            conn.execute_batch(&format!(
-                "CREATE TABLE {table} (id INTEGER PRIMARY KEY, tag TEXT);"
-            ))
-            .unwrap();
+            let ddl = if table == INVOICE_SEALS_TABLE {
+                SEALS_DDL.to_string()
+            } else {
+                format!("CREATE TABLE {table} (id INTEGER PRIMARY KEY, tag TEXT);")
+            };
+            conn.execute_batch(&ddl).unwrap();
         }
         for id in customer_ids {
             conn.execute("INSERT INTO customers (id, tag) VALUES (?1, 'c')", [id])

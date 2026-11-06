@@ -26,6 +26,7 @@ import {
 import { recomputeInvoiceStatus } from "./invoice-payments";
 import { drawNextNumber } from "./numbering";
 import { getCustomer, loadSettings } from "./queries";
+import { appendSeal } from "./seals";
 import { parseSnapshot } from "./snapshot-json";
 import { buildCustomerSnapshot } from "./snapshots";
 import type {
@@ -510,8 +511,18 @@ export async function issueInvoice(
   );
   if (claim.rowsAffected !== 1) return numberIssuedConcurrently(id);
   const number = isDraftNumber(invoice.number) ? await assignFinalNumber(invoice) : invoice.number;
+  await sealIssuedInvoice(id);
   await recomputeCorrectedInvoice(invoice);
   return number;
+}
+
+/** The invoice is already issued; a failed seal must not undo that, the startup backfill seals it later. */
+async function sealIssuedInvoice(id: number): Promise<void> {
+  try {
+    await appendSeal(id, "issue");
+  } catch (error) {
+    console.error(`Versiegeln der Rechnung ${id} fehlgeschlagen, wird beim nächsten Start nachgeholt`, error);
+  }
 }
 
 /** An issued credit note changes what its original still owes, so the original's status is derived again. */
@@ -630,6 +641,9 @@ export async function reopenDraft(id: number): Promise<void> {
       "Nur versendete Rechnungen ohne Zahlungen und ohne Stornorechnung können wieder bearbeitet werden.",
     );
   }
+  // Seal first: should the status change then fail, an issued invoice behind a
+  // reopen seal only counts as unsealed and is sealed again at the next start.
+  await appendSeal(id, "reopen");
   await execute(
     "UPDATE invoices SET status = 'draft', sent_at = NULL, paid_at = NULL, updated_at = unixepoch() WHERE id = ? AND status = ?",
     [id, invoice.status],

@@ -119,6 +119,15 @@ CREATE TABLE invoice_payments (
     id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER, paid_at INTEGER,
     amount_cent INTEGER, source TEXT
 );
+CREATE TABLE invoice_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER, position INTEGER, description TEXT,
+    quantity REAL, unit TEXT, unit_price INTEGER, vat_rate REAL, line_total INTEGER,
+    long_description TEXT, line_period_start INTEGER, line_period_end INTEGER
+);
+CREATE TABLE invoice_seals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, kind TEXT NOT NULL,
+    sealed_at INTEGER NOT NULL, content_hash TEXT NOT NULL, prev_hash TEXT NOT NULL UNIQUE, hash TEXT NOT NULL UNIQUE
+);
 """
 
 PAID_AT = 1_800_000_000

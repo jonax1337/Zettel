@@ -21,6 +21,9 @@ export const WIPEABLE_TABLE_LABELS: Record<WipeableTable, string> = {
   tax_prepayments: "Steuer-Vorauszahlungen",
 };
 
+// audit_log and invoice_seals are deliberately absent: both are append-only
+// (lock triggers abort deletes), and a deleted issued invoice is exactly what
+// the integrity check must still report.
 // Each list is ordered children before parent, otherwise FK constraints fail.
 // invoice_payments has no FK to invoices, so it must be cleared explicitly.
 const INVOICE_TABLES = ["reminders", "invoice_payments", "invoice_items", "invoices"];

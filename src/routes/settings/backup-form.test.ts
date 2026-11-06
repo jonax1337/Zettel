@@ -3,6 +3,7 @@ import {
   backupPasswordProblem,
   defaultBackupFilename,
   isPasswordRequiredError,
+  restoreSealWarning,
 } from "./backup-form";
 
 describe("defaultBackupFilename", () => {
@@ -37,5 +38,28 @@ describe("isPasswordRequiredError", () => {
   });
   it("ignores other failures", () => {
     expect(isPasswordRequiredError("disk full")).toBe(false);
+  });
+});
+
+describe("restoreSealWarning", () => {
+  it("stays silent when the invoices were not restored or the chain came along", () => {
+    expect(restoreSealWarning({ sealsFromBackup: null, droppedLiveSeals: 0 })).toBeNull();
+    expect(restoreSealWarning({ sealsFromBackup: true, droppedLiveSeals: 0 })).toBeNull();
+  });
+
+  it("explains a backup from before the seals without claiming the invoices are gone", () => {
+    const warning = restoreSealWarning({ sealsFromBackup: false, droppedLiveSeals: 9 });
+    expect(warning?.title).toBe("Rechnungen ohne Siegel wiederhergestellt");
+    expect(warning?.description).toContain("neu versiegelt");
+    expect(warning?.description).not.toContain("nicht mehr vorhanden");
+  });
+
+  it("counts the seals a newer chain lost, singular and plural", () => {
+    expect(restoreSealWarning({ sealsFromBackup: true, droppedLiveSeals: 1 })?.description).toMatch(
+      /^1 Rechnungssiegel .* wurde verworfen/,
+    );
+    expect(restoreSealWarning({ sealsFromBackup: true, droppedLiveSeals: 3 })?.description).toMatch(
+      /^3 Rechnungssiegel .* wurden verworfen/,
+    );
   });
 });
