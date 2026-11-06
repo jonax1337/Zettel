@@ -40,7 +40,7 @@ use crate::tenants::{self, active_documents_root_for};
 /// `CURRENT_DB_SCHEMA_VERSION` in `src/lib/utils/schema-version.ts` and the
 /// highest migration version in `lib.rs` (a test in `lib.rs` checks the
 /// latter).
-pub(crate) const CURRENT_SCHEMA: u32 = 30;
+pub(crate) const CURRENT_SCHEMA: u32 = 31;
 
 const MANIFEST_NAME: &str = "manifest.json";
 const DB_ENTRY: &str = "zettel.db";
@@ -1331,7 +1331,7 @@ mod tests {
     fn restore_sections_runs_on_the_real_schema() {
         let all_migrations = crate::build_migrations().len();
         // Schema 29 is the last one before the seals existed.
-        let pre_seal_migrations = all_migrations - 1;
+        let pre_seal_migrations = 29;
         let combos = [
             sections(true, false, false),
             sections(false, true, false),

@@ -2,6 +2,7 @@ import {
   BarChart3,
   Download,
   FileInput,
+  FileSpreadsheet,
   FileSignature,
   FileText,
   FileWarning,
@@ -51,6 +52,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Auswertung",
     items: [
       { href: "/reports/ustva", label: "UStVA", icon: BarChart3 },
+      { href: "/reports/euer", label: "Anlage EÜR", icon: FileSpreadsheet },
       { href: "/reports/taxes", label: "Steuer-Rücklage", icon: Wallet },
       { href: "/export", label: "DATEV-Export", icon: Download },
       { href: "/validate", label: "E-Rechnung validieren", icon: ShieldCheck },

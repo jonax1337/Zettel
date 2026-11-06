@@ -23,6 +23,7 @@
   import RemindersList from "./routes/RemindersList.svelte";
   import ReminderEdit from "./routes/ReminderEdit.svelte";
   import UstvaReport from "./routes/UstvaReport.svelte";
+  import EuerReport from "./routes/EuerReport.svelte";
   import TaxReport from "./routes/TaxReport.svelte";
   import Validate from "./routes/Validate.svelte";
   import Settings from "./routes/Settings.svelte";
@@ -96,6 +97,7 @@
     "/reminders/:id": editorRoute(ReminderEdit, "edit"),
     "/bank-import": BankImport,
     "/reports/ustva": UstvaReport,
+    "/reports/euer": EuerReport,
     "/reports/taxes": TaxReport,
     "/validate": Validate,
     "/settings": Settings,

@@ -223,6 +223,8 @@ export const expenseCategories = sqliteTable("expense_categories", {
   name: text("name").notNull(),
   datevAccountSkr03: text("datev_account_skr03"),
   datevAccountSkr04: text("datev_account_skr04"),
+  /** Kennzahl der Anlage EÜR; NULL = Kz 183 (übrige Betriebsausgaben). */
+  euerKz: text("euer_kz"),
   builtin: integer("builtin", { mode: "boolean" }).notNull().default(false),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
