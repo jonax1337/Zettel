@@ -123,3 +123,14 @@ export function settledByCreditNoteSql(alias: string): string {
 export function notSettledByCreditNoteSql(alias: string): string {
   return `NOT ${settledByCreditNoteSql(alias)}`;
 }
+
+/**
+ * SQL for an issued invoice whose issued credit notes (same currency) cover its whole
+ * total, for the invoice aliased `alias`. Nothing of it is owed or deliverable any more,
+ * so what was billed on it may be billed again. A partial credit note does not qualify.
+ */
+export function fullyReversedSql(alias: string): string {
+  const credited = creditedCentSql(alias);
+  return `(${alias}.is_credit_note = 0 AND ${alias}.status NOT IN ('draft','cancelled')
+     AND ${credited} > 0 AND ${credited} >= ABS(${alias}.total))`;
+}

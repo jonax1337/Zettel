@@ -1,4 +1,5 @@
-import { execute } from "./client";
+import { execute, select } from "./client";
+import { fullyReversedSql } from "./invoice-lifecycle";
 import { createInvoice, deleteInvoice, type InvoiceFormInput } from "./invoices";
 import { loadSettings } from "./queries";
 import { getTimeEntriesByIds, type TimeEntryListRow } from "./time-entries";
@@ -88,4 +89,53 @@ export async function billTimeEntries(entryIds: number[], options: TimeBillingOp
     throw error;
   }
   return invoiceId;
+}
+
+const NOT_FULLY_REVERSED = "Die Rechnung ist nicht vollständig storniert.";
+const NO_BILLED_TIME = "Keine abgerechneten Zeiten an dieser Rechnung.";
+
+/** The entries billed on the invoice bound to the `?`, provided it is fully reversed by credit notes. */
+const RELEASABLE_ENTRIES = `invoice_id IN (SELECT i.id FROM invoices i WHERE i.id = ? AND ${fullyReversedSql("i")})`;
+
+export async function countReleasableTimeEntries(invoiceId: number): Promise<number> {
+  const [{ count }] = await select<{ count: number }>(
+    `SELECT COUNT(*) AS count FROM time_entries WHERE ${RELEASABLE_ENTRIES}`,
+    [invoiceId],
+  );
+  return count;
+}
+
+/**
+ * Frees the time entries of an invoice that credit notes reverse in full, so they can be
+ * billed again. A partial credit note keeps them locked: the rest of the invoice still stands.
+ * Returns the number of entries freed.
+ *
+ * `audit_log` is written by triggers, but `time_entries` is not audited by them, so one row
+ * per entry is appended here in the shape of a trigger's update row (parent: the invoice).
+ * The log row goes first: a failure then leaves a log entry for an unchanged entry rather
+ * than a freed entry nobody logged.
+ */
+export async function releaseTimeEntriesOfReversedInvoice(invoiceId: number): Promise<number> {
+  const logged = await execute(
+    `INSERT INTO audit_log (table_name, row_id, parent_id, action, old_values, new_values)
+     SELECT 'time_entries', id, invoice_id, 'update',
+            json_object('invoice_id', invoice_id), json_object('invoice_id', NULL)
+     FROM time_entries WHERE ${RELEASABLE_ENTRIES} ORDER BY id`,
+    [invoiceId],
+  );
+  if (logged.rowsAffected === 0) await throwWhyNotReleasable(invoiceId);
+
+  const freed = await execute(
+    `UPDATE time_entries SET invoice_id = NULL, updated_at = unixepoch() WHERE ${RELEASABLE_ENTRIES}`,
+    [invoiceId],
+  );
+  return freed.rowsAffected;
+}
+
+async function throwWhyNotReleasable(invoiceId: number): Promise<never> {
+  const [{ count }] = await select<{ count: number }>(
+    "SELECT COUNT(*) AS count FROM time_entries WHERE invoice_id = ?",
+    [invoiceId],
+  );
+  throw new Error(count === 0 ? NO_BILLED_TIME : NOT_FULLY_REVERSED);
 }

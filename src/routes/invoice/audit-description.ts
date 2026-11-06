@@ -89,6 +89,10 @@ const REMINDER_COLUMNS: Record<string, ColumnSpec> = {
   interest_cents: money("Zinsen"),
 };
 
+const TIME_ENTRY_COLUMNS: Record<string, ColumnSpec> = {
+  invoice_id: event("von der Rechnung gelöst"),
+};
+
 type TableSpec = {
   columns: Record<string, ColumnSpec>;
   /** Appended after the verb, e.g. "Position hinzugefügt: Beratung". */
@@ -150,6 +154,13 @@ const TABLES: Record<string, TableSpec> = {
     inserted: "Mahnung angelegt",
     updated: "Mahnung geändert",
     deleted: "Mahnung gelöscht",
+  },
+  time_entries: {
+    columns: TIME_ENTRY_COLUMNS,
+    subject: () => "",
+    inserted: "Zeiteintrag angelegt",
+    updated: "Zeiteintrag geändert",
+    deleted: "Zeiteintrag gelöscht",
   },
 };
 

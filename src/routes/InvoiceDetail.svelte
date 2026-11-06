@@ -15,6 +15,7 @@
   import { creditedCentOf, isSettledByCreditNote, openBalanceCent } from "$lib/db/invoice-lifecycle";
   import { listPayments } from "$lib/db/invoice-payments";
   import { listRemindersForInvoice } from "$lib/db/reminders";
+  import { countReleasableTimeEntries, releaseTimeEntriesOfReversedInvoice } from "$lib/db/time-billing";
   import type { Invoice, InvoiceItem, InvoicePayment, Reminder } from "$lib/db/schema";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate, formatDateTime, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
@@ -82,6 +83,7 @@
   const openCent = $derived(invoice ? Math.max(0, openBalanceCent({ ...invoice, creditedCent })) : 0);
   let payments = $state<InvoicePayment[]>([]);
   let reminders = $state<Reminder[]>([]);
+  let releasableTimeCount = $state(0);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let loadToken = 0;
@@ -103,6 +105,7 @@
   let confirmCancelOpen = $state(false);
   let confirmReopenOpen = $state(false);
   let confirmCreditNoteOpen = $state(false);
+  let confirmReleaseTimeOpen = $state(false);
   let findingsDialogOpen = $state(false);
   let sendDialogOpen = $state(false);
   let issueForPdfDialogOpen = $state(false);
@@ -172,12 +175,13 @@
         error = "Rechnung nicht gefunden.";
         return;
       }
-      const [versions, related, loadedPayments, loadedReminders, loadedEmail] = await Promise.all([
+      const [versions, related, loadedPayments, loadedReminders, loadedEmail, loadedReleasableTime] = await Promise.all([
         fetchPdfVersions(res.invoice.pdfPath),
         fetchRelatedInvoices(res.invoice),
         fetchPayments(res.invoice),
         fetchReminders(res.invoice),
         fetchCustomerEmail(res.invoice),
+        fetchReleasableTimeCount(res.invoice),
       ]);
       if (token !== loadToken) return;
       invoice = res.invoice;
@@ -189,6 +193,7 @@
       creditNote = related.creditNote;
       payments = loadedPayments;
       reminders = loadedReminders;
+      releasableTimeCount = loadedReleasableTime;
       void maybeAutoRevalidate();
     } catch (e) {
       if (token === loadToken) {
@@ -224,6 +229,15 @@
     } catch (e) {
       toast.error("Mahnungen konnten nicht geladen werden", String(e));
       return [];
+    }
+  }
+
+  async function fetchReleasableTimeCount(inv: Invoice): Promise<number> {
+    try {
+      return await countReleasableTimeEntries(inv.id);
+    } catch (e) {
+      toast.error("Abgerechnete Zeiten konnten nicht geprüft werden", String(e));
+      return 0;
     }
   }
 
@@ -294,6 +308,15 @@
         toast.error("Stornorechnung fehlgeschlagen", String(e));
       }
     });
+  }
+
+  function performReleaseTime() {
+    if (!invoice) return;
+    const { id } = invoice;
+    const count = releasableTimeCount;
+    return actions.run(`${count === 1 ? "1 Zeiteintrag" : `${count} Zeiteinträge`} wieder freigegeben`, () =>
+      releaseTimeEntriesOfReversedInvoice(id),
+    );
   }
 
   function rememberValidation(invoiceId: number, report: ValidationReport) {
@@ -608,9 +631,11 @@
         {canCreateCreditNote}
         {canReopenDraft}
         {canExportXrechnung}
+        canReleaseTime={releasableTimeCount > 0}
         busy={actions.busy}
         onRequestXrechnung={exportXrechnung}
         onRequestReopenDraft={() => (confirmReopenOpen = true)}
+        onRequestReleaseTime={() => (confirmReleaseTimeOpen = true)}
         onRequestCancel={() => (confirmCancelOpen = true)}
         onRequestCreditNote={() => (confirmCreditNoteOpen = true)}
         onRequestDelete={() => (confirmDeleteOpen = true)}
@@ -727,6 +752,14 @@
     confirmLabel="Erstellen"
     destructive
     onConfirm={performCreateCreditNote}
+  />
+
+  <ConfirmDialog
+    bind:open={confirmReleaseTimeOpen}
+    title="Zeiten wieder freigeben?"
+    description={`${displayInvoiceNumber(invoice)} ist vollständig storniert. ${releasableTimeCount === 1 ? "1 abgerechneter Zeiteintrag wird" : `${releasableTimeCount} abgerechnete Zeiteinträge werden`} wieder offen und lässt sich erneut abrechnen. Die Freigabe wird im Änderungsverlauf protokolliert.`}
+    confirmLabel="Freigeben"
+    onConfirm={performReleaseTime}
   />
 
   <DateConfirmDialog

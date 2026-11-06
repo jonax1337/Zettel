@@ -159,6 +159,14 @@ describe("describeAuditEntry", () => {
     ).toBe(`Mahnung geändert: Gebühr ${eur(0)} → ${eur(500)}`);
   });
 
+  it("describes a freed time entry", () => {
+    expect(
+      describeEur(
+        entry({ tableName: "time_entries", action: "update", oldValues: { invoice_id: 7 }, newValues: { invoice_id: null } }),
+      ),
+    ).toBe("Zeiteintrag geändert: von der Rechnung gelöst");
+  });
+
   it("describes a partial restore and unknown tables", () => {
     expect(describeEur(entry({ action: "restore", tableName: "backup", rowId: 0 }))).toBe(
       "Teilwiederherstellung aus Backup",
