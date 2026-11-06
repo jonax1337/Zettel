@@ -169,7 +169,9 @@ def test_credit_note_passes_kosit(payloads, refunded_share, tmp_path):
     "08-xrechnung-standard-19.json",
     "09-xrechnung-storno.json",
     "10-xrechnung-reverse-charge.json",
-], ids=["standard-19", "storno", "reverse-charge"])
+    "11-xrechnung-skonto.json",
+    "12-xrechnung-kleinunternehmer.json",
+], ids=["standard-19", "storno", "reverse-charge", "skonto", "kleinunternehmer"])
 def test_xrechnung_passes_kosit_with_the_xrechnung_cii_scenario(payloads, payload_name, tmp_path):
     xml_file = tmp_path / "xrechnung.xml"
     xml_file.write_text(render_xrechnung_xml(payloads(payload_name)), encoding="utf-8")

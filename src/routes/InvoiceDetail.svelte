@@ -160,8 +160,8 @@
     if (invoice?.id !== invoiceId) {
       loading = true;
       actions.clearPdfError();
-      xrechnungExport = null;
     }
+    xrechnungExport = null;
     error = null;
     try {
       const res = await getInvoice(invoiceId);
@@ -456,6 +456,14 @@
     });
   }
 
+  async function revealXrechnung(xmlPath: string) {
+    try {
+      await revealItemInDir(xmlPath);
+    } catch (e) {
+      toast.error("Ordner konnte nicht geöffnet werden", String(e));
+    }
+  }
+
   function announcePdfCreated(pdfPath: string, report: ValidationReport | null | undefined) {
     const openAction = { label: "Öffnen", onClick: () => openPath(pdfPath) };
     if (report && !report.valid) {
@@ -625,7 +633,7 @@
       label="XRechnung"
       path={xmlPath}
       openLabel="Ordner öffnen"
-      onOpen={() => actions.usePdfFile(xmlPath, revealItemInDir)}
+      onOpen={() => revealXrechnung(xmlPath)}
     />
   {:else if xrechnungExport?.status === "incomplete"}
     <NoticeCard tone="warning" title="XRechnung nicht möglich: Pflichtangaben fehlen">
@@ -634,6 +642,10 @@
           <li>{field}</li>
         {/each}
       </ul>
+      <p class="mt-2 text-xs text-muted-foreground">
+        Leitweg-ID und E-Mail des Kunden werden aus den aktuellen Kundendaten gelesen; die Anschrift stammt
+        aus der ausgestellten Rechnung.
+      </p>
       <div class="mt-3 flex gap-2">
         <Button href={COMPANY_SETTINGS_ROUTE} size="sm" variant="outline">Firmendaten</Button>
         <Button href={`/customers/${invoice.customerId}`} size="sm" variant="outline">Kunde bearbeiten</Button>

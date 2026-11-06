@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import fixtureJson from "../../../sidecar/tests/fixtures/invoice-parity.json?raw";
+import type { CustomerSnapshot } from "$lib/db/schema";
 import { computeEurTotalCent } from "./currency";
 import { formatInvoiceNumber } from "./invoice-number";
 import { defaultPaymentTermsText } from "./payment-terms";
 import { computeTotals, type TotalsItem } from "./totals";
+import { withLiveCustomerFallbacks } from "../xrechnung/export-data";
 import { missingXrechnungFields, type XrechnungSource } from "../xrechnung/preflight";
 
 type Fixture = {
@@ -22,6 +24,14 @@ type Fixture = {
     company: Record<string, string>;
     customer: Record<string, string>;
   };
+  xrechnungFallback: {
+    name: string;
+    invoiceBuyerReference: string | null;
+    snapshotEmail: string | null;
+    liveLeitwegId: string | null;
+    liveEmail: string | null;
+    expected: { buyerReference: string | null; email: string | null };
+  }[];
   xrechnungMissing: {
     name: string;
     change: { buyerReference?: string | null; company?: Record<string, string | null>; customer?: Record<string, string | null> };
@@ -52,6 +62,18 @@ describe("shared invoice parity fixture (app side)", () => {
   it.each(fixture.paymentTerms)("payment terms for $days days", ({ days, expected }) => {
     expect(defaultPaymentTermsText(days)).toBe(expected);
   });
+
+  it.each(fixture.xrechnungFallback)(
+    "XRechnung live-customer fallback: $name",
+    ({ invoiceBuyerReference, snapshotEmail, liveLeitwegId, liveEmail, expected }) => {
+      const snapshot = { name: "A", email: snapshotEmail } as CustomerSnapshot;
+      const live = { leitwegId: liveLeitwegId, email: liveEmail };
+
+      const result = withLiveCustomerFallbacks(invoiceBuyerReference, snapshot, live);
+
+      expect({ buyerReference: result.buyerReference, email: result.customer.email }).toEqual(expected);
+    },
+  );
 
   it.each(fixture.xrechnungMissing)("XRechnung pre-export check: $name", ({ change, expected }) => {
     const { xrechnungComplete: base } = fixture;

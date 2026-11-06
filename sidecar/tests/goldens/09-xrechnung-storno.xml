@@ -95,14 +95,6 @@
     </ram:ApplicableHeaderTradeAgreement>
 
     <ram:ApplicableHeaderTradeDelivery>
-      <ram:ShipToTradeParty>
-        <ram:PostalTradeAddress>
-          <ram:PostcodeCode>53113</ram:PostcodeCode>
-          <ram:LineOne>Amtsplatz 1</ram:LineOne>
-          <ram:CityName>Bonn</ram:CityName>
-          <ram:CountryID>DE</ram:CountryID>
-        </ram:PostalTradeAddress>
-      </ram:ShipToTradeParty>
       <ram:ActualDeliverySupplyChainEvent>
         <ram:OccurrenceDateTime>
           <udt:DateTimeString format="102">20250516</udt:DateTimeString>

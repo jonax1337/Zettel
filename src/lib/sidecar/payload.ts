@@ -30,15 +30,15 @@ export function parseCustomerSnapshot(json: string): CustomerSnapshot {
 export function companyContactPayload(company: Settings) {
   return {
     companyName: company.companyName,
-    ownerName: company.ownerName,
+    ownerName: company.ownerName.trim(),
     street: company.street,
     postalCode: company.postalCode,
     city: company.city,
     country: company.country,
     taxNumber: company.taxNumber,
     vatId: company.vatId,
-    email: company.email,
-    phone: company.phone,
+    email: company.email.trim(),
+    phone: company.phone?.trim() ?? null,
     website: company.website,
     logoPath: company.logoPath,
   };
@@ -67,7 +67,7 @@ export function customerPayload(customer: CustomerSnapshot) {
     postalCode: customer.postalCode,
     city: customer.city,
     country: customer.country,
-    email: customer.email,
+    email: customer.email?.trim() ?? null,
     vatId: customer.vatId,
   };
 }

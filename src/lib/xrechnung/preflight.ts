@@ -47,7 +47,7 @@ function isEmail(value: string | null): boolean {
  */
 export function missingXrechnungFields({ invoice, company, customer }: XrechnungSource): string[] {
   const missing: string[] = [];
-  if (isBlank(invoice.buyerReference)) missing.push("Leitweg-ID / Käuferreferenz der Rechnung");
+  if (isBlank(invoice.buyerReference)) missing.push("Leitweg-ID / Käuferreferenz");
   if (isBlank(company.companyName)) missing.push("Firmenname des Verkäufers");
   if (!hasAddress(company)) missing.push("Anschrift des Verkäufers");
   if (isBlank(company.ownerName)) missing.push("Ansprechpartner des Verkäufers (Inhaber:in)");

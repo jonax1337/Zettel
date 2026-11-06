@@ -80,6 +80,8 @@ class TestXRechnungGoldens:
         "08-xrechnung-standard-19.json",
         "09-xrechnung-storno.json",
         "10-xrechnung-reverse-charge.json",
+        "11-xrechnung-skonto.json",
+        "12-xrechnung-kleinunternehmer.json",
     ])
     def test_xml_matches_golden(self, payloads, payload_name, request):
         _assert_matches_golden(render_xrechnung_xml(payloads(payload_name)), payload_name, request)
@@ -254,10 +256,23 @@ class TestXRechnungSemantics:
         assert _xpath_text(xml, ship_to + "ram:CityName") == "Amsterdam"
         assert _xpath_text(xml, ship_to + "ram:PostcodeCode") == "1015 BG"
 
-    def test_skonto_becomes_a_closed_description_line(self, payloads):
-        payload = payloads("08-xrechnung-standard-19.json")
-        payload["invoice"].update(skontoPercent=2, skontoDays=10, skontoAmountCent=2856)
-        xml = render_xrechnung_xml(payload)
+    def test_no_deliver_to_party_unless_intra_eu(self, payloads):
+        xml = render_xrechnung_xml(payloads("08-xrechnung-standard-19.json"))
+        assert "ShipToTradeParty" not in xml
+
+    def test_zugferd_keeps_the_deliver_to_country(self, payloads):
+        xml = render_zugferd_xml(payloads("08-xrechnung-standard-19.json"))
+        ship_to = "rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:PostalTradeAddress/"
+        assert _xpath_text(xml, ship_to + "ram:CountryID") == "DE"
+
+    def test_kleinunternehmer_uses_the_tax_number_as_seller_id_and_category_e(self, payloads):
+        xml = render_xrechnung_xml(payloads("12-xrechnung-kleinunternehmer.json"))
+        assert _xpath_text(xml, AGREEMENT + "ram:SellerTradeParty/ram:ID") == "12/345/67890"
+        assert "<ram:CategoryCode>E</ram:CategoryCode>" in xml
+        assert "SpecifiedTaxRegistration" in xml and 'schemeID="VA"' not in xml
+
+    def test_skonto_line_follows_the_payment_terms_text(self, payloads):
+        xml = render_xrechnung_xml(payloads("11-xrechnung-skonto.json"))
         assert _xpath_text(xml, SETTLEMENT + "ram:SpecifiedTradePaymentTerms/ram:Description") == (
             "Zahlbar innerhalb von 14 Tagen ohne Abzug.\n#SKONTO#TAGE=10#PROZENT=2.00#\n"
         )

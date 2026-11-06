@@ -145,11 +145,48 @@ class TestBuyerReferenceDefault:
         assert create_draft(cli, con)["buyer_reference"] is None
 
 
+@pytest.mark.parametrize("case", FIXTURE["xrechnungFallback"], ids=lambda c: c["name"])
+def test_xrechnung_live_customer_fallbacks(cli, case):
+    live = {"leitweg_id": case["liveLeitwegId"], "email": case["liveEmail"]}
+    buyer_reference, customer = cli.with_live_customer_fallbacks(
+        case["invoiceBuyerReference"], {"email": case["snapshotEmail"], "name": "A"}, live
+    )
+    assert {"buyerReference": buyer_reference, "email": customer["email"]} == case["expected"]
+
+
+def test_xrechnung_fallbacks_without_a_live_customer(cli):
+    snapshot = {"email": None}
+    assert cli.with_live_customer_fallbacks(None, snapshot, None) == (None, {"email": None})
+    assert snapshot == {"email": None}
+
+
+def test_payload_trims_what_the_pre_check_accepted(cli):
+    company = {
+        "company_name": "A", "owner_name": " Jonas Laux ", "street": "S", "postal_code": "1", "city": "C",
+        "country": "DE", "tax_number": None, "vat_id": "DE1", "email": " a@b.de ", "phone": " +49 30 123 ",
+        "website": None, "bank_name": None, "bank_iban": "DE00", "bank_bic": None, "is_kleinunternehmer": 0,
+        "kleinunternehmer_note": None, "logo_path": None, "zugferd_profile": None, "pdf_theme": None,
+    }
+    inv = {
+        key: None for key in (
+            "number", "issue_date", "delivery_date", "due_date", "subtotal", "vat_amount", "total",
+            "reverse_charge_type", "supply_kind", "notes", "payment_terms", "currency", "exchange_rate",
+            "eur_total_cent", "service_period_start", "service_period_end", "skonto_percent", "skonto_days",
+            "amount_paid_cent", "pdf_language", "buyer_reference",
+        )
+    } | {"is_kleinunternehmer": 0, "is_reverse_charge": 0, "is_credit_note": 0, "total": 0}
+    payload = cli.build_pdf_payload(inv, [], {"name": "K", "email": " k@x.de "}, company, "out.xml")
+    assert (payload["company"]["ownerName"], payload["company"]["email"], payload["company"]["phone"]) == (
+        "Jonas Laux", "a@b.de", "+49 30 123",
+    )
+    assert payload["customer"]["email"] == "k@x.de"
+
+
 class TestXrechnungExport:
     @staticmethod
-    def stub_invoice(cli, monkeypatch, number, buyer_reference="04011000-1234512345-35"):
+    def stub_invoice(cli, monkeypatch, number, buyer_reference="04011000-1234512345-35", snapshot=None):
         monkeypatch.setattr(cli, "load_invoice_full", lambda con, invoice_id: (
-            {"number": number, "buyer_reference": buyer_reference}, [], {},
+            {"number": number, "buyer_reference": buyer_reference, "customer_id": 1}, [], snapshot or {},
         ))
 
     def test_a_draft_is_refused(self, cli, con, monkeypatch):
@@ -164,7 +201,7 @@ class TestXrechnungExport:
         with pytest.raises(SystemExit) as exit_info:
             cli.export_xrechnung_for(con, 1)
         message = str(exit_info.value)
-        assert "  - Leitweg-ID / Käuferreferenz der Rechnung" in message
+        assert "  - Leitweg-ID / Käuferreferenz" in message
         assert "  - Anschrift des Verkäufers" in message
 
     def test_writes_the_xml_next_to_the_pdf(self, cli, con, monkeypatch, tmp_path):
@@ -185,6 +222,25 @@ class TestXrechnungExport:
 
         assert (number, path) == ("RE-2026-0001", str(tmp_path / "RE-2026-0001.xml"))
         assert calls == [("generate_xrechnung", {"outputPath": path})]
+
+    def test_an_issued_invoice_takes_leitweg_id_and_email_from_the_live_customer(self, cli, con, monkeypatch, tmp_path):
+        con.execute("INSERT INTO settings (id) VALUES (1)")
+        con.execute("INSERT INTO customers (id, leitweg_id, email) VALUES (1, '04011000-1234512345-35', 'amt@bfb.de')")
+        self.stub_invoice(cli, monkeypatch, "RE-2026-0001", buyer_reference=None, snapshot={"email": None})
+        checked = []
+        monkeypatch.setattr(cli, "missing_xrechnung_fields", lambda *args: checked.append(args) or [])
+        monkeypatch.setattr(cli, "pdf_output_dir", lambda: tmp_path)
+        sent = []
+        monkeypatch.setattr(
+            cli, "build_pdf_payload",
+            lambda inv, items, cust, company, output_path: sent.append((inv["buyer_reference"], cust["email"])) or {},
+        )
+        monkeypatch.setattr(cli, "call_sidecar", lambda command, payload: {"success": True, "xmlPath": "x.xml"})
+
+        cli.export_xrechnung_for(con, 1)
+
+        assert sent == [("04011000-1234512345-35", "amt@bfb.de")]
+        assert checked[0][0] == "04011000-1234512345-35"
 
 
 class TestPdfLanguageDefault:

@@ -2,12 +2,20 @@ export function normalizeBuyerReference(value: string | null | undefined): strin
   return value?.trim() || null;
 }
 
+export type FollowedLeitweg = { customerId: number | null; leitwegId: string };
+
 /**
  * The invoice form's field tracks the selected customer's Leitweg-ID until the user
- * edits it: a value that still equals the previously followed default is replaced.
+ * edits it. Only a change of customer re-follows, and only a value that still equals
+ * the previously followed default is replaced; opening a stored invoice keeps its value.
  */
-export function followCustomerLeitweg(current: string, previousFollowed: string, nextFollowed: string): string {
-  return current === previousFollowed ? nextFollowed : current;
+export function followCustomerLeitweg(
+  current: string,
+  followed: FollowedLeitweg,
+  next: FollowedLeitweg,
+): { value: string; followed: FollowedLeitweg } {
+  if (next.customerId === followed.customerId) return { value: current, followed };
+  return { value: current === followed.leitwegId ? next.leitwegId : current, followed: next };
 }
 
 /**

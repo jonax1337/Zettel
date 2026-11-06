@@ -6,7 +6,7 @@ import {
   recordGeneratedPdf,
   type ValidationOutcome,
 } from "$lib/db/invoices";
-import { loadSettings } from "$lib/db/queries";
+import { getCustomer, loadSettings } from "$lib/db/queries";
 import type { CustomerSnapshot, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
 import { computeSkonto } from "$lib/utils/skonto";
 import { validatePdf, type ValidationReport } from "$lib/validator";
@@ -22,6 +22,7 @@ import {
   skontoPayload,
 } from "./payload";
 import { renderDocumentPdf } from "./render-document";
+import { withLiveCustomerFallbacks } from "$lib/xrechnung/export-data";
 import { missingXrechnungFields } from "$lib/xrechnung/preflight";
 import { companyIncompleteResponse } from "./company-guard";
 import type { SidecarError, SidecarResponse, SidecarSuccess, XrechnungSuccess } from "./types";
@@ -172,13 +173,18 @@ export async function exportInvoiceXrechnung(invoiceId: number): Promise<Xrechnu
   if (isDraftNumber(invoice.number)) {
     throw new Error("Entwürfe können nicht als XRechnung exportiert werden. Bitte die Rechnung erst ausstellen.");
   }
-  const customer = parseCustomerSnapshot(invoice.customerSnapshot);
-  const missing = missingXrechnungFields({ invoice, company, customer });
+  const { buyerReference, customer } = withLiveCustomerFallbacks(
+    invoice.buyerReference,
+    parseCustomerSnapshot(invoice.customerSnapshot),
+    await getCustomer(invoice.customerId),
+  );
+  const exported = { ...invoice, buyerReference };
+  const missing = missingXrechnungFields({ invoice: exported, company, customer });
   if (missing.length > 0) return { status: "incomplete", missing };
 
   const outputPath = await documentOutputPath("Rechnungen", invoice.number, "xml");
   const payload = buildPayload({
-    invoice,
+    invoice: exported,
     items,
     customer,
     company,

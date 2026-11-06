@@ -15,7 +15,11 @@
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { defaultPaymentTermsText } from "$lib/utils/payment-terms";
   import { computeTotals } from "$lib/utils/totals";
-  import { followCustomerLeitweg, normalizeBuyerReference } from "$lib/xrechnung/buyer-reference";
+  import {
+    followCustomerLeitweg,
+    normalizeBuyerReference,
+    type FollowedLeitweg,
+  } from "$lib/xrechnung/buyer-reference";
   import { Button, Card, CardContent, DatePicker, Input, Label, Select, Textarea, toast } from "$lib/ui";
   import { AlertTriangle } from "$lib/brand-icons";
   import BackLink from "./parts/entity/BackLink.svelte";
@@ -86,8 +90,8 @@
   let skonto = $state<SkontoForm>(defaultSkontoForm());
   let pdfLanguage = $state<"de" | "en">("de");
   let buyerReference = $state("");
-  // Last Leitweg-ID taken from the selected customer; a different buyer reference was entered by the user.
-  let followedLeitwegId = "";
+  // The customer whose Leitweg-ID the field currently follows; a different buyer reference was entered by the user.
+  let followedLeitweg: FollowedLeitweg = { customerId: null, leitwegId: "" };
 
   // A stored invoice keeps the Kleinunternehmer status it was created with, whatever the settings say now.
   let storedKleinunternehmer = $state<boolean | null>(null);
@@ -126,10 +130,12 @@
   });
 
   $effect(() => {
-    const nextLeitwegId = reference.selectedCustomer?.leitwegId ?? "";
+    const customer = reference.selectedCustomer;
+    const next = { customerId: customer?.id ?? null, leitwegId: customer?.leitwegId ?? "" };
     untrack(() => {
-      buyerReference = followCustomerLeitweg(buyerReference, followedLeitwegId, nextLeitwegId);
-      followedLeitwegId = nextLeitwegId;
+      const followed = followCustomerLeitweg(buyerReference, followedLeitweg, next);
+      buyerReference = followed.value;
+      followedLeitweg = followed.followed;
     });
   });
 
@@ -181,6 +187,7 @@
     skonto = skontoFormFromStored(invoice.skontoPercent, invoice.skontoDays);
     pdfLanguage = invoice.pdfLanguage;
     buyerReference = invoice.buyerReference ?? "";
+    followedLeitweg = { customerId: invoice.customerId, leitwegId: buyerReference };
     items = storedItems.map(lineItemFromStored);
   }
 

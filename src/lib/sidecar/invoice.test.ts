@@ -28,7 +28,7 @@ const storedInvoice = vi.hoisted(() => ({
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/path", () => ({ join: async (...parts: string[]) => parts.join("/") }));
-vi.mock("$lib/db/queries", () => ({ loadSettings }));
+vi.mock("$lib/db/queries", () => ({ loadSettings, getCustomer }));
 vi.mock("$lib/db/invoices", () => ({
   getInvoice,
   isDraftNumber,
@@ -37,6 +37,8 @@ vi.mock("$lib/db/invoices", () => ({
 }));
 const completeCompany = vi.hoisted(() => ({
   companyName: "Muster GmbH",
+  ownerName: "",
+  email: "",
   street: "Hauptstr. 1",
   postalCode: "10115",
   city: "Berlin",
@@ -44,6 +46,7 @@ const completeCompany = vi.hoisted(() => ({
   vatId: null,
 }));
 const loadSettings = vi.hoisted(() => vi.fn(async (): Promise<Record<string, unknown>> => completeCompany));
+const getCustomer = vi.hoisted(() => vi.fn(async (_id: number): Promise<unknown> => null));
 const isDraftNumber = vi.hoisted(() => vi.fn((_number: string) => false));
 const getInvoice = vi.hoisted(() => vi.fn(async () => ({ invoice: storedInvoice, items: [] })));
 vi.mock("$lib/validator", () => ({ validatePdf: vi.fn() }));
@@ -104,6 +107,7 @@ describe("exportInvoiceXrechnung", () => {
     invoke.mockReset();
     invoke.mockImplementation(invokeDefault);
     isDraftNumber.mockReturnValue(false);
+    getCustomer.mockResolvedValue(null);
     loadSettings.mockResolvedValue(xrechnungCompany);
     getInvoice.mockResolvedValue({ invoice: xrechnungInvoice, items: [] });
   });
@@ -113,7 +117,7 @@ describe("exportInvoiceXrechnung", () => {
 
     const res = await exportInvoiceXrechnung(1);
 
-    expect(res).toEqual({ status: "incomplete", missing: ["Leitweg-ID / Käuferreferenz der Rechnung"] });
+    expect(res).toEqual({ status: "incomplete", missing: ["Leitweg-ID / Käuferreferenz"] });
     expect(invoke).not.toHaveBeenCalledWith("generate_xrechnung", expect.anything());
   });
 
@@ -132,6 +136,39 @@ describe("exportInvoiceXrechnung", () => {
         company: { ownerName: "Jonas Laux", phone: "+49 30 1234567" },
         customer: { email: "eingangsrechnung@bfb.example.de" },
       },
+    });
+  });
+
+  it("reads a Leitweg-ID and e-mail the customer gained after issuing from the live customer", async () => {
+    getInvoice.mockResolvedValue({
+      invoice: {
+        ...xrechnungInvoice,
+        buyerReference: null,
+        customerSnapshot: JSON.stringify({ ...authority, email: null }),
+      },
+      items: [],
+    });
+    getCustomer.mockResolvedValue({ leitwegId: "04011000-1234512345-35", email: "amt@bfb.example.de" });
+
+    const res = await exportInvoiceXrechnung(1);
+
+    expect(res.status).toBe("exported");
+    const [, args] = invoke.mock.calls.find(([command]) => command === "generate_xrechnung")!;
+    expect(args).toMatchObject({
+      payload: {
+        invoice: { buyerReference: "04011000-1234512345-35" },
+        customer: { email: "amt@bfb.example.de" },
+      },
+    });
+  });
+
+  it("still lists the Leitweg-ID when neither the invoice nor the customer has one", async () => {
+    getInvoice.mockResolvedValue({ invoice: { ...xrechnungInvoice, buyerReference: null }, items: [] });
+    getCustomer.mockResolvedValue({ leitwegId: null, email: "amt@bfb.example.de" });
+
+    expect(await exportInvoiceXrechnung(1)).toEqual({
+      status: "incomplete",
+      missing: ["Leitweg-ID / Käuferreferenz"],
     });
   });
 

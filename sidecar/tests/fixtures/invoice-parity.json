@@ -101,8 +101,8 @@
   },
   "xrechnungMissing": [
     { "name": "complete data", "change": {}, "expected": [] },
-    { "name": "no buyer reference", "change": { "buyerReference": null }, "expected": ["Leitweg-ID / Käuferreferenz der Rechnung"] },
-    { "name": "blank buyer reference", "change": { "buyerReference": "   " }, "expected": ["Leitweg-ID / Käuferreferenz der Rechnung"] },
+    { "name": "no buyer reference", "change": { "buyerReference": null }, "expected": ["Leitweg-ID / Käuferreferenz"] },
+    { "name": "blank buyer reference", "change": { "buyerReference": "   " }, "expected": ["Leitweg-ID / Käuferreferenz"] },
     { "name": "seller name", "change": { "company": { "companyName": " " } }, "expected": ["Firmenname des Verkäufers"] },
     { "name": "seller city", "change": { "company": { "city": "" } }, "expected": ["Anschrift des Verkäufers"] },
     { "name": "seller contact person", "change": { "company": { "ownerName": "" } }, "expected": ["Ansprechpartner des Verkäufers (Inhaber:in)"] },
@@ -117,14 +117,30 @@
     { "name": "customer post code", "change": { "customer": { "postalCode": "" } }, "expected": ["Anschrift des Kunden"] },
     { "name": "customer email", "change": { "customer": { "email": null } }, "expected": ["E-Mail-Adresse des Kunden"] },
     {
+      "name": "padded phone, email and owner name are accepted (the payload trims them)",
+      "change": {
+        "company": { "phone": "  +49 30 1234567 ", "email": " rechnung@laux.digital ", "ownerName": " Jonas Laux " },
+        "customer": { "email": " eingangsrechnung@bfb.example.de " }
+      },
+      "expected": []
+    },
+    {
       "name": "several at once, in invoice, seller, customer order",
       "change": { "buyerReference": null, "company": { "phone": null, "bankIban": "" }, "customer": { "email": null } },
       "expected": [
-        "Leitweg-ID / Käuferreferenz der Rechnung",
+        "Leitweg-ID / Käuferreferenz",
         "Telefonnummer des Verkäufers",
         "Zahlungsweg (IBAN des Verkäufers)",
         "E-Mail-Adresse des Kunden"
       ]
     }
+  ],
+  "xrechnungFallback": [
+    { "name": "invoice and snapshot are complete", "invoiceBuyerReference": "A-1", "snapshotEmail": "a@b.de", "liveLeitwegId": "B-2", "liveEmail": "c@d.de", "expected": { "buyerReference": "A-1", "email": "a@b.de" } },
+    { "name": "leitweg-id added to the customer after issuing", "invoiceBuyerReference": null, "snapshotEmail": "a@b.de", "liveLeitwegId": " B-2 ", "liveEmail": null, "expected": { "buyerReference": "B-2", "email": "a@b.de" } },
+    { "name": "blank invoice reference falls back too", "invoiceBuyerReference": "  ", "snapshotEmail": "a@b.de", "liveLeitwegId": "B-2", "liveEmail": null, "expected": { "buyerReference": "B-2", "email": "a@b.de" } },
+    { "name": "email added to the customer after issuing", "invoiceBuyerReference": "A-1", "snapshotEmail": null, "liveLeitwegId": null, "liveEmail": "c@d.de", "expected": { "buyerReference": "A-1", "email": "c@d.de" } },
+    { "name": "blank snapshot email falls back too", "invoiceBuyerReference": "A-1", "snapshotEmail": " ", "liveLeitwegId": null, "liveEmail": "c@d.de", "expected": { "buyerReference": "A-1", "email": "c@d.de" } },
+    { "name": "nothing to fall back to", "invoiceBuyerReference": null, "snapshotEmail": null, "liveLeitwegId": null, "liveEmail": null, "expected": { "buyerReference": null, "email": null } }
   ]
 }

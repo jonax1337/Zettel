@@ -34,15 +34,41 @@ describe("resolveBuyerReference", () => {
 });
 
 describe("followCustomerLeitweg", () => {
-  it("replaces a value that still equals the previously followed Leitweg-ID", () => {
-    expect(followCustomerLeitweg("A", "A", "B")).toBe("B");
-  });
+  const none = { customerId: null, leitwegId: "" };
+  const amt = { customerId: 1, leitwegId: "04011000-1234512345-35" };
+  const other = { customerId: 2, leitwegId: "991-0815-12" };
 
   it("fills an empty field when the first customer is selected", () => {
-    expect(followCustomerLeitweg("", "", "B")).toBe("B");
+    expect(followCustomerLeitweg("", none, amt)).toEqual({ value: amt.leitwegId, followed: amt });
   });
 
-  it("keeps a value the user entered", () => {
-    expect(followCustomerLeitweg("mine", "A", "B")).toBe("mine");
+  it("re-follows when the customer changes and the value is still the followed default", () => {
+    expect(followCustomerLeitweg(amt.leitwegId, amt, other)).toEqual({ value: other.leitwegId, followed: other });
+  });
+
+  it("keeps a value the user entered when the customer changes", () => {
+    expect(followCustomerLeitweg("mine", amt, other)).toEqual({ value: "mine", followed: other });
+  });
+
+  it("leaves the value alone while the customer stays the same", () => {
+    expect(followCustomerLeitweg("mine", amt, amt)).toEqual({ value: "mine", followed: amt });
+    expect(followCustomerLeitweg("", amt, amt)).toEqual({ value: "", followed: amt });
+  });
+
+  describe("opening a stored invoice", () => {
+    it("keeps an empty stored reference although the customer has a Leitweg-ID now", () => {
+      const stored = { customerId: 1, leitwegId: "" };
+      expect(followCustomerLeitweg("", stored, amt)).toEqual({ value: "", followed: stored });
+    });
+
+    it("keeps the stored reference", () => {
+      const stored = { customerId: 1, leitwegId: "OLD-1" };
+      expect(followCustomerLeitweg("OLD-1", stored, amt).value).toBe("OLD-1");
+    });
+
+    it("follows a different customer chosen in the form", () => {
+      const stored = { customerId: 1, leitwegId: "OLD-1" };
+      expect(followCustomerLeitweg("OLD-1", stored, other).value).toBe(other.leitwegId);
+    });
   });
 });

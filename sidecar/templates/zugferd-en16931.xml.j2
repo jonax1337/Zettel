@@ -180,7 +180,8 @@
          buyer country here is always safe — EN16931 treats it as "ship-to" =
          buyer if not stated separately. Schema order: ShipToTradeParty must
          precede ActualDeliverySupplyChainEvent. #}
-      {% if invoice.reverseChargeType == 'intra_eu' or customer.country %}
+      {# XRechnung: a deliver-to address (BG-13) is only asserted where BR-IC-12 demands it. #}
+      {% if invoice.reverseChargeType == 'intra_eu' or (customer.country and not xrechnung) %}
       <ram:ShipToTradeParty>
         <ram:PostalTradeAddress>
           {# BR-DE-10/11: XRechnung requires city and post code with any deliver-to address. #}

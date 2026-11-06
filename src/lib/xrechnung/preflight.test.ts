@@ -39,7 +39,7 @@ describe("missingXrechnungFields", () => {
 
   it.each([null, "", "   "])("asks for the Leitweg-ID when the buyer reference is %j (BR-DE-15)", (value) => {
     expect(missingWith((s) => (s.invoice.buyerReference = value))).toEqual([
-      "Leitweg-ID / Käuferreferenz der Rechnung",
+      "Leitweg-ID / Käuferreferenz",
     ]);
   });
 
@@ -110,7 +110,7 @@ describe("missingXrechnungFields", () => {
     source.customer.email = null;
 
     expect(missingXrechnungFields(source)).toEqual([
-      "Leitweg-ID / Käuferreferenz der Rechnung",
+      "Leitweg-ID / Käuferreferenz",
       "Telefonnummer des Verkäufers",
       "Zahlungsweg (IBAN des Verkäufers)",
       "E-Mail-Adresse des Kunden",

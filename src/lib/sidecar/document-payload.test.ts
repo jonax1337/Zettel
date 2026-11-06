@@ -15,7 +15,7 @@ import type { Invoice, Offer, Reminder, Settings } from "$lib/db/schema";
 import { buildOfferPayload } from "./offer";
 import { buildReminderPayload } from "./reminder";
 
-const COMPANY = { companyName: "Firma", pdfTheme: "classic" } as Settings;
+const COMPANY = { companyName: "Firma", ownerName: "", email: "", pdfTheme: "classic" } as Settings;
 const CUSTOMER = { name: "Kunde" } as never;
 
 describe("buildOfferPayload", () => {

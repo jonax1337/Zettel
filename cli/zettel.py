@@ -382,6 +382,11 @@ def skonto_of(inv: dict) -> dict | None:
     }
 
 
+def trimmed(value):
+    """Spiegel von .trim() in payload.ts: was die Vorprüfung akzeptiert hat, landet unverändert im XML."""
+    return value.strip() if isinstance(value, str) else value
+
+
 def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dict, output_path: str) -> dict:
     skonto = skonto_of(inv)
     return {
@@ -431,15 +436,15 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
         ],
         "company": {
             "companyName": company["company_name"],
-            "ownerName": company["owner_name"],
+            "ownerName": trimmed(company["owner_name"]),
             "street": company["street"],
             "postalCode": company["postal_code"],
             "city": company["city"],
             "country": company["country"],
             "taxNumber": company["tax_number"],
             "vatId": company["vat_id"],
-            "email": company["email"],
-            "phone": company["phone"],
+            "email": trimmed(company["email"]),
+            "phone": trimmed(company["phone"]),
             "website": company["website"],
             "bankName": company["bank_name"],
             "bankIban": company["bank_iban"],
@@ -455,7 +460,7 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
             "postalCode": customer.get("postalCode") or customer.get("postal_code"),
             "city": customer.get("city"),
             "country": customer.get("country"),
-            "email": customer.get("email"),
+            "email": trimmed(customer.get("email")),
             "vatId": customer.get("vatId") or customer.get("vat_id"),
         },
         "outputPath": output_path,
@@ -480,12 +485,24 @@ def _is_email(value) -> bool:
     return bool(XRECHNUNG_EMAIL_PATTERN.fullmatch((value or "").strip()))
 
 
+def with_live_customer_fallbacks(buyer_reference, snapshot: dict, live) -> tuple[str | None, dict]:
+    """Spiegel von withLiveCustomerFallbacks() in src/lib/xrechnung/export-data.ts: eine ausgestellte
+    Rechnung bleibt unverändert, fehlende Leitweg-ID und Kunden-E-Mail kommen vom aktuellen Kunden."""
+    live_leitweg = live["leitweg_id"] if live else None
+    live_email = live["email"] if live else None
+    own = (buyer_reference or "").strip() or (live_leitweg or "").strip() or None
+    customer = dict(snapshot)
+    if _blank(customer.get("email")):
+        customer["email"] = live_email or customer.get("email")
+    return own, customer
+
+
 def missing_xrechnung_fields(buyer_reference: str | None, company: dict, customer: dict) -> list[str]:
     """Spiegel von missingXrechnungFields() in src/lib/xrechnung/preflight.ts: deutsche Labels
     der Pflichtangaben (BR-DE-1 bis BR-DE-16, elektronische Adressen); leer = exportierbar."""
     missing = []
     if _blank(buyer_reference):
-        missing.append("Leitweg-ID / Käuferreferenz der Rechnung")
+        missing.append("Leitweg-ID / Käuferreferenz")
     if _blank(company["company_name"]):
         missing.append("Firmenname des Verkäufers")
     if not _has_address(company["street"], company["postal_code"], company["city"]):
@@ -794,7 +811,10 @@ def export_xrechnung_for(con, invoice_id: int) -> tuple[str, str]:
     if is_draft_number(inv["number"]):
         sys.exit("Entwürfe können nicht als XRechnung exportiert werden. Bitte die Rechnung erst ausstellen (invoice:issue).")
     settings = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
-    missing = missing_xrechnung_fields(inv["buyer_reference"], settings, cust)
+    live = con.execute("SELECT leitweg_id, email FROM customers WHERE id = ?", (inv["customer_id"],)).fetchone()
+    buyer_reference, cust = with_live_customer_fallbacks(inv["buyer_reference"], cust, live)
+    inv = {**inv, "buyer_reference": buyer_reference}
+    missing = missing_xrechnung_fields(buyer_reference, settings, cust)
     if missing:
         sys.exit("Für die XRechnung fehlen Angaben:\n" + "\n".join(f"  - {label}" for label in missing))
     out_dir = pdf_output_dir()
