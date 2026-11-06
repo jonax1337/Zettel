@@ -20,6 +20,7 @@
   import { formatDate, formatDateTime, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { generateInvoicePdf, listPdfVersions, type PdfVersion } from "$lib/sidecar/invoice";
   import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
+  import { resolveCustomerEmail, sendDocumentByMail } from "$lib/mail/send";
   import { validatePdf, type ValidationReport } from "$lib/validator";
   import { Badge, Button, ConfirmDialog, toast } from "$lib/ui";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
@@ -27,6 +28,7 @@
   import BackLink from "./parts/entity/BackLink.svelte";
   import { createDocumentActions, type PdfPreparation } from "./parts/entity/document-actions.svelte";
   import DocumentLoadMessage from "./parts/entity/DocumentLoadMessage.svelte";
+  import MailSendButton from "./parts/entity/MailSendButton.svelte";
   import PdfLocation from "./parts/entity/PdfLocation.svelte";
   import { parseCustomerSnapshot, UNREADABLE_SNAPSHOT_MESSAGE } from "./invoice/customer-snapshot";
   import CustomerSnapshotCard from "./invoice/CustomerSnapshotCard.svelte";
@@ -78,6 +80,9 @@
   const actions = createDocumentActions({ reload: load });
 
   let lastPdfPath = $state<string | null>(null);
+  let customerEmail = $state<string | null>(null);
+  // The mail program keeps the hand-off call open until its message window is closed.
+  let mailing = $state(false);
   let pdfVersions = $state<PdfVersion[]>([]);
   // Findings only exist in memory: the DB keeps status and count, not the report.
   let validationResult = $state<{ invoiceId: number; report: ValidationReport } | null>(null);
@@ -155,16 +160,18 @@
         error = "Rechnung nicht gefunden.";
         return;
       }
-      const [versions, related, loadedPayments, loadedReminders] = await Promise.all([
+      const [versions, related, loadedPayments, loadedReminders, loadedEmail] = await Promise.all([
         fetchPdfVersions(res.invoice.pdfPath),
         fetchRelatedInvoices(res.invoice),
         fetchPayments(res.invoice),
         fetchReminders(res.invoice),
+        fetchCustomerEmail(res.invoice),
       ]);
       if (token !== loadToken) return;
       invoice = res.invoice;
       items = res.items;
       lastPdfPath = res.invoice.pdfPath;
+      customerEmail = loadedEmail;
       pdfVersions = versions;
       originalInvoice = related.original;
       creditNote = related.creditNote;
@@ -205,6 +212,16 @@
     } catch (e) {
       toast.error("Mahnungen konnten nicht geladen werden", String(e));
       return [];
+    }
+  }
+
+  async function fetchCustomerEmail(inv: Invoice): Promise<string | null> {
+    const snapshotEmail = parseCustomerSnapshot(inv.customerSnapshot)?.email ?? null;
+    try {
+      return await resolveCustomerEmail(inv.customerId, snapshotEmail);
+    } catch (e) {
+      toast.error("Kunden-E-Mail konnte nicht geladen werden", String(e));
+      return snapshotEmail;
     }
   }
 
@@ -338,14 +355,27 @@
     }
   }
 
-  function requestPdf() {
+  /** What the PDF is for: just to have it, or to attach it to an e-mail right away. */
+  type PdfPurpose = "pdf" | "mail";
+  // Read when the issue dialog is confirmed; every opening of the dialog sets it again.
+  let issuePurpose: PdfPurpose = "pdf";
+
+  function requestPdf(purpose: PdfPurpose = "pdf") {
     if (!invoice || actions.busy) return;
     if (invoice.status === "draft") {
+      issuePurpose = purpose;
       dialogDate = toIsoDate(nowUnix());
       issueForPdfDialogOpen = true;
       return;
     }
-    void generatePdf();
+    void generatePdf(purpose);
+  }
+
+  /** A draft always goes through issuing first, which also (re)creates the PDF. */
+  function requestMail() {
+    if (!invoice || actions.busy || mailing) return;
+    if (lastPdfPath && invoice.status !== "draft") void sendMail(lastPdfPath);
+    else requestPdf("mail");
   }
 
   async function confirmIssueAndGeneratePdf() {
@@ -354,10 +384,10 @@
     const sentAt = fromIsoDate(dialogDate);
     issueForPdfDialogOpen = false;
     if (!(await ensureCompanyDataComplete())) return;
-    await generatePdf({ run: () => markSent(id, sentAt), failureTitle: "Festschreiben fehlgeschlagen" });
+    await generatePdf(issuePurpose, { run: () => markSent(id, sentAt), failureTitle: "Festschreiben fehlgeschlagen" });
   }
 
-  async function generatePdf(issueFirst?: PdfPreparation) {
+  async function generatePdf(purpose: PdfPurpose, issueFirst?: PdfPreparation) {
     if (!invoice) return;
     const { id } = invoice;
     await actions.generatePdf(
@@ -366,10 +396,45 @@
         lastPdfPath = pdfPath;
         if (kositReport) rememberValidation(id, kositReport);
         await load();
-        announcePdfCreated(pdfPath, kositReport);
+        if (purpose === "pdf") {
+          announcePdfCreated(pdfPath, kositReport);
+          return;
+        }
+        announceFindingsBeforeMail(kositReport);
+        // Not awaited: the mail program holds the call open and must not keep the page busy.
+        void sendMail(pdfPath);
       },
       issueFirst,
     );
+  }
+
+  function announceFindingsBeforeMail(report: ValidationReport | null | undefined) {
+    if (report && !report.valid) {
+      toast.warning(`${report.findings.length} KoSIT-Findings`, "Versand erst nach Korrektur empfohlen.");
+    }
+  }
+
+  async function sendMail(pdfPath: string) {
+    if (!invoice || !customerEmail || mailing) return;
+    const sent = invoice;
+    mailing = true;
+    try {
+      await sendDocumentByMail(
+        "invoice",
+        {
+          number: displayInvoiceNumber(sent),
+          totalCent: sent.total,
+          currency: sent.currency,
+          dueDate: sent.dueDate,
+          customer: customer?.name ?? "",
+        },
+        { to: customerEmail, attachmentPath: pdfPath },
+      );
+    } catch (e) {
+      toast.error("E-Mail konnte nicht vorbereitet werden", String(e));
+    } finally {
+      mailing = false;
+    }
   }
 
   function announcePdfCreated(pdfPath: string, report: ValidationReport | null | undefined) {
@@ -489,11 +554,13 @@
         busy={actions.busy}
         generating={actions.generating}
         {revalidating}
-        onGenerate={requestPdf}
+        onGenerate={() => requestPdf()}
         onOpen={() => actions.usePdfFile(lastPdfPath, openPath)}
         onReveal={() => actions.usePdfFile(lastPdfPath, revealItemInDir)}
         {onRevalidate}
       />
+
+      <MailSendButton email={customerEmail} busy={actions.busy} sending={mailing} onSend={requestMail} />
 
       {#if invoice.status === "draft"}
         <Button disabled={actions.busy} onclick={openSendDialog}>

@@ -8,6 +8,7 @@ mod backup;
 mod crypto;
 mod exchange;
 mod fs_export;
+mod mail;
 mod paths;
 mod process;
 mod sandbox;
@@ -162,6 +163,7 @@ pub fn run() {
             tenants::relocate_active_tenant,
             tenants::remove_tenant,
             exchange::fetch_ecb_exchange_rate,
+            mail::compose_mail,
             updates::check_for_update,
         ])
         .run(tauri::generate_context!())

@@ -65,6 +65,12 @@ type SettingsRow = {
   default_pdf_language: string | null;
   vat_accounting: string | null;
   tax_reserve_expenses_gross: number | null;
+  mail_invoice_subject: string | null;
+  mail_invoice_body: string | null;
+  mail_offer_subject: string | null;
+  mail_offer_body: string | null;
+  mail_reminder_subject: string | null;
+  mail_reminder_body: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -159,6 +165,12 @@ function mapSettings(r: SettingsRow): Settings {
     defaultPdfLanguage: (r.default_pdf_language ?? d.defaultPdfLanguage) as Settings["defaultPdfLanguage"],
     vatAccounting: (r.vat_accounting ?? d.vatAccounting) as Settings["vatAccounting"],
     taxReserveExpensesGross: r.tax_reserve_expenses_gross === 1,
+    mailInvoiceSubject: r.mail_invoice_subject,
+    mailInvoiceBody: r.mail_invoice_body,
+    mailOfferSubject: r.mail_offer_subject,
+    mailOfferBody: r.mail_offer_body,
+    mailReminderSubject: r.mail_reminder_subject,
+    mailReminderBody: r.mail_reminder_body,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -173,6 +185,11 @@ export async function loadSettings(): Promise<Settings> {
     return loadSettings();
   }
   return mapSettings(rows[0]);
+}
+
+/** A blank mail template means "use the built-in default" and is stored as NULL. */
+function blankToNull(text: string | null | undefined): string | null {
+  return text?.trim() ? text : null;
 }
 
 /** Column/value pairs kept side by side so a new setting cannot shift the bindings. */
@@ -232,6 +249,12 @@ function settingsColumnValues(s: Partial<Settings>): Array<[column: string, valu
     ["default_pdf_language", s.defaultPdfLanguage ?? d.defaultPdfLanguage],
     ["vat_accounting", s.vatAccounting ?? d.vatAccounting],
     ["tax_reserve_expenses_gross", toSqlBool(s.taxReserveExpensesGross)],
+    ["mail_invoice_subject", blankToNull(s.mailInvoiceSubject)],
+    ["mail_invoice_body", blankToNull(s.mailInvoiceBody)],
+    ["mail_offer_subject", blankToNull(s.mailOfferSubject)],
+    ["mail_offer_body", blankToNull(s.mailOfferBody)],
+    ["mail_reminder_subject", blankToNull(s.mailReminderSubject)],
+    ["mail_reminder_body", blankToNull(s.mailReminderBody)],
   ];
 }
 

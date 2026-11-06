@@ -13,7 +13,7 @@
   } from "$lib/db/reminders";
   import { DEFAULT_CURRENCY } from "$lib/db/doc-queries";
   import { getInvoice, loadCreditedCent } from "$lib/db/invoices";
-  import type { Reminder, ReminderInvoiceSnapshot, ReminderLevel } from "$lib/db/schema";
+  import type { Invoice, Reminder, ReminderInvoiceSnapshot, ReminderLevel } from "$lib/db/schema";
   import { parseSnapshot } from "$lib/db/snapshot-json";
   import { fromIsoDate, toIsoDate, formatDate, nowUnix } from "$lib/utils/date";
   import { formatMoney } from "$lib/utils/currency";
@@ -21,6 +21,7 @@
   import { generateReminderPdf } from "$lib/sidecar/reminder";
   import { COMPANY_INCOMPLETE_CODE } from "$lib/sidecar/company-guard";
   import { ensureCompanyDataComplete, notifyCompanyIncomplete } from "$lib/utils/company-guard";
+  import { resolveCustomerEmail, sendDocumentByMail } from "$lib/mail/send";
   import {
     Button,
     ConfirmDialog,
@@ -32,11 +33,13 @@
   } from "$lib/ui";
   import { FileText, Send, Trash2 } from "$lib/brand-icons";
   import { openPath } from "@tauri-apps/plugin-opener";
+  import { parseCustomerSnapshot } from "./invoice/customer-snapshot";
   import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
   import { sendDateWarning } from "./invoice/date-warnings";
   import BackLink from "./parts/entity/BackLink.svelte";
   import { parseId } from "./parts/entity/edit-target";
   import { centsToPriceText } from "./parts/entity/format";
+  import MailSendButton from "./parts/entity/MailSendButton.svelte";
   import PdfLocation from "./parts/entity/PdfLocation.svelte";
   import SectionCard from "./parts/reminder/SectionCard.svelte";
   import {
@@ -51,8 +54,11 @@
   let loading = $state(true);
   let saving = $state(false);
   let generating = $state(false);
+  // The mail program keeps the hand-off call open until its message window is closed.
+  let mailing = $state(false);
   let error = $state<string | null>(null);
   let confirmDeleteOpen = $state(false);
+  let confirmMarkSentAfterMailOpen = $state(false);
   let sendDialogOpen = $state(false);
   let sendDate = $state(toIsoDate(nowUnix()));
 
@@ -60,6 +66,7 @@
   let invoiceId = $state<number | null>(null);
   let invoiceNumber = $state("");
   let customerName = $state("");
+  let customerEmail = $state<string | null>(null);
 
   let level = $state<ReminderLevel>(1);
   let issueIso = $state("");
@@ -108,6 +115,7 @@
     level = requestedLevel;
     invoiceNumber = source.invoice.number;
     customerName = customerNameFromSnapshot(source.invoice.customerSnapshot);
+    customerEmail = await invoiceCustomerEmail(source.invoice);
     originalCents = remindableAmountCents({
       ...source.invoice,
       creditedCent: await loadCreditedCent(sourceInvoiceId),
@@ -131,7 +139,9 @@
     invoiceNumber = snapshot.invoiceNumber ?? UNKNOWN_NAME;
     customerName = snapshot.customerName ?? UNKNOWN_NAME;
     originalCents = reminder.originalTotalCents;
-    currency = (await getInvoice(reminder.invoiceId))?.invoice.currency ?? DEFAULT_CURRENCY;
+    const invoice = (await getInvoice(reminder.invoiceId))?.invoice;
+    currency = invoice?.currency ?? DEFAULT_CURRENCY;
+    customerEmail = invoice ? await invoiceCustomerEmail(invoice) : null;
     issueIso = toIsoDate(reminder.issueDate);
     dueIso = toIsoDate(reminder.dueDate);
     feeStr = centsToPriceText(reminder.feeCents);
@@ -140,6 +150,11 @@
     notes = reminder.notes ?? "";
     status = reminder.status;
     pdfPath = reminder.pdfPath;
+  }
+
+  function invoiceCustomerEmail(invoice: Invoice): Promise<string | null> {
+    const snapshotEmail = parseCustomerSnapshot(invoice.customerSnapshot)?.email ?? null;
+    return resolveCustomerEmail(invoice.customerId, snapshotEmail);
   }
 
   function formFields(): ReminderFields {
@@ -192,26 +207,80 @@
     }
   }
 
-  async function generatePdf() {
-    const savedId = readonly ? reminderId : await save();
-    if (savedId === null) return;
+  /** Renders the PDF of a saved reminder and returns its path; null after a reported failure. */
+  async function renderPdf(savedId: number): Promise<string | null> {
     generating = true;
     try {
       const res = await generateReminderPdf(savedId);
-      if (!res.success) {
-        if (res.error.code === COMPANY_INCOMPLETE_CODE) notifyCompanyIncomplete(res.error.message);
-        else toast.error("PDF konnte nicht erstellt werden", res.error.message);
-      } else {
+      if (res.success) {
         pdfPath = res.pdfPath;
-        toast.success("PDF erstellt");
-        await openPdf(res.pdfPath);
+        return res.pdfPath;
       }
+      if (res.error.code === COMPANY_INCOMPLETE_CODE) notifyCompanyIncomplete(res.error.message);
+      else toast.error("PDF konnte nicht erstellt werden", res.error.message);
     } catch (e) {
       toast.error("PDF konnte nicht erstellt werden", String(e));
     } finally {
       generating = false;
     }
+    return null;
+  }
+
+  async function generatePdf() {
+    const savedId = readonly ? reminderId : await save();
+    if (savedId === null) return;
+    const path = await renderPdf(savedId);
+    if (path) {
+      toast.success("PDF erstellt");
+      await openPdf(path);
+    }
     showSavedReminder(savedId);
+  }
+
+  /** A draft gets a fresh PDF, since the form may have changed since the last one. */
+  async function sendMail() {
+    if (!customerEmail || mailing) return;
+    const savedId = readonly ? reminderId : await save();
+    if (savedId === null) return;
+    const path = readonly && pdfPath ? pdfPath : await renderPdf(savedId);
+    if (path && (await handOffMail(path)) === "handed-off" && status === "draft") {
+      // The route swap waits for the answer: it would discard this dialog.
+      confirmMarkSentAfterMailOpen = true;
+      return;
+    }
+    showSavedReminder(savedId);
+  }
+
+  async function handOffMail(attachmentPath: string) {
+    if (!customerEmail) return null;
+    mailing = true;
+    try {
+      return await sendDocumentByMail(
+        "reminder",
+        {
+          number: invoiceNumber,
+          totalCent: totalDueCents,
+          currency,
+          dueDate: fromIsoDate(dueIso),
+          customer: customerName,
+        },
+        { to: customerEmail, attachmentPath },
+      );
+    } catch (e) {
+      toast.error("E-Mail konnte nicht vorbereitet werden", String(e));
+      return null;
+    } finally {
+      mailing = false;
+    }
+  }
+
+  async function markSentAfterMail() {
+    sendDate = toIsoDate(nowUnix());
+    await confirmSend();
+  }
+
+  function declineMarkSentAfterMail() {
+    if (reminderId !== null) showSavedReminder(reminderId);
   }
 
   function openSendDialog() {
@@ -271,12 +340,19 @@
           <FileText class="size-4" />
           PDF neu erzeugen
         </Button>
+        <MailSendButton email={customerEmail} busy={generating} sending={mailing} onSend={sendMail} />
       </div>
     {:else}
       <div class="flex gap-2">
         <Button variant="outline" onclick={saveAndStay} disabled={saving}>
           Speichern
         </Button>
+        <MailSendButton
+          email={customerEmail}
+          busy={generating || saving}
+          sending={mailing}
+          onSend={sendMail}
+        />
         <Button onclick={generatePdf} disabled={generating || saving}>
           <FileText class="size-4" />
           PDF erzeugen
@@ -366,6 +442,15 @@
   confirmLabel="Als versendet markieren"
   warning={sendWarning}
   onConfirm={confirmSend}
+/>
+
+<ConfirmDialog
+  bind:open={confirmMarkSentAfterMailOpen}
+  title="Als versendet markieren?"
+  description="Die Mahnung wurde an Ihr Mail-Programm übergeben. Danach ist sie schreibgeschützt und kann nicht mehr bearbeitet oder gelöscht werden."
+  confirmLabel="Als versendet markieren"
+  onConfirm={markSentAfterMail}
+  onCancel={declineMarkSentAfterMail}
 />
 
 <ConfirmDialog
