@@ -129,3 +129,47 @@ describe("composeMailText", () => {
     );
   });
 });
+
+describe("composeMailText for a credit note", () => {
+  const CREDIT_NOTE: MailContext = {
+    ...CONTEXT,
+    number: "RE-2026-0008",
+    totalCent: -123_456,
+    correctsInvoiceNumber: "RE-2026-0007",
+  };
+
+  it("announces the correction instead of asking for payment", () => {
+    const { subject, body } = composeMailText("creditNote", NO_CUSTOM_TEMPLATES, CREDIT_NOTE);
+
+    expect(subject).toBe("Stornorechnung RE-2026-0008");
+    expect(body).toContain("Stornorechnung RE-2026-0008 zur Rechnung RE-2026-0007 über -1.234,56 €.");
+    expect(body).toContain("gutgeschrieben bzw. erstattet");
+    expect(body).not.toMatch(/überweisen|fällig|bis zum/);
+    expect(body.endsWith("Mit freundlichen Grüßen\nMuster Design")).toBe(true);
+  });
+
+  it("leaves out the original invoice when it is unknown", () => {
+    const { body } = composeMailText("creditNote", NO_CUSTOM_TEMPLATES, {
+      ...CREDIT_NOTE,
+      correctsInvoiceNumber: null,
+    });
+
+    expect(body).toContain("Stornorechnung RE-2026-0008 über");
+    expect(body).not.toContain("zur Rechnung");
+  });
+
+  it("ignores a custom invoice template", () => {
+    const settings = { ...NO_CUSTOM_TEMPLATES, mailInvoiceSubject: "Rechnung {nummer}" };
+
+    expect(composeMailText("creditNote", settings, CREDIT_NOTE).subject).toBe("Stornorechnung RE-2026-0008");
+  });
+
+  it("does not expand placeholders inside the original invoice number", () => {
+    const { body } = composeMailText("creditNote", NO_CUSTOM_TEMPLATES, {
+      ...CREDIT_NOTE,
+      correctsInvoiceNumber: "{firma}",
+    });
+
+    expect(body).toContain("zur Rechnung {firma}");
+  });
+});

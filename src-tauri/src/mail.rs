@@ -4,8 +4,10 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use tauri::{AppHandle, WebviewWindow};
 
 use crate::process::run_blocking;
+use crate::tenants;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -37,15 +39,36 @@ impl MailOutcome {
 
 /// Async so a slow mail client cannot block the main thread.
 #[tauri::command]
-pub async fn compose_mail(request: MailRequest) -> Result<MailOutcome, String> {
-    let attachment = validate(&request)?;
-    run_blocking(move || Ok(platform::compose(&request, &attachment))).await
+pub async fn compose_mail(
+    app: AppHandle,
+    window: WebviewWindow,
+    request: MailRequest,
+) -> Result<MailOutcome, String> {
+    let documents_root = tenants::active_documents_root_for(&app)?;
+    let attachment = validate(&request, &documents_root)?;
+    let owner = owner_window(&window);
+    run_blocking(move || Ok(platform::compose(&request, &attachment, owner))).await
+}
+
+/// Native handle of the calling window, so the mail program's window is owned
+/// by Zettel. 0 (no owner) where there is no such handle.
+fn owner_window(window: &WebviewWindow) -> usize {
+    #[cfg(windows)]
+    {
+        window.hwnd().map_or(0, |hwnd| hwnd.0 as usize)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        0
+    }
 }
 
 /// Returns the attachment as a normalized path. Rejects input the platform
-/// tools could misread: a relative or missing attachment, a non-PDF file, a
-/// recipient that smuggles in a line break or an option flag.
-fn validate(request: &MailRequest) -> Result<PathBuf, String> {
+/// tools could misread: a relative or missing attachment, a non-PDF file, one
+/// outside the documents root (this command is not covered by the opener
+/// scope), a recipient that smuggles in a line break or an option flag.
+fn validate(request: &MailRequest, documents_root: &Path) -> Result<PathBuf, String> {
     let recipient = request.to.trim();
     if recipient.chars().any(char::is_control) || recipient.starts_with('-') {
         return Err("Ungültige Empfängeradresse.".to_string());
@@ -67,6 +90,13 @@ fn validate(request: &MailRequest) -> Result<PathBuf, String> {
     if !path.is_file() {
         return Err(format!("Anhang nicht gefunden: {}", path.display()));
     }
+    let inside_root = match (path.canonicalize(), documents_root.canonicalize()) {
+        (Ok(file), Ok(root)) => file.starts_with(root),
+        _ => false,
+    };
+    if !inside_root {
+        return Err("Der Anhang liegt nicht im Dokumente-Ordner von Zettel.".to_string());
+    }
     // The frontend may join with `/`; mail clients expect the native separator.
     Ok(path.components().collect::<PathBuf>())
 }
@@ -77,6 +107,7 @@ mod platform {
     use std::ffi::c_void;
     use std::path::Path;
     use std::ptr::{null, null_mut};
+    use std::sync::OnceLock;
 
     const MAPI_LOGON_UI: u32 = 0x0000_0001;
     const MAPI_DIALOG: u32 = 0x0000_0008;
@@ -135,45 +166,40 @@ mod platform {
     extern "system" {
         fn LoadLibraryExW(name: *const u16, file: *mut c_void, flags: u32) -> *mut c_void;
         fn GetProcAddress(module: *mut c_void, name: *const u8) -> *mut c_void;
-        fn FreeLibrary(module: *mut c_void) -> i32;
     }
 
-    /// `MAPI32.dll` from System32, unloaded again on drop.
-    struct Mapi(*mut c_void);
+    /// Resolved once and kept for the life of the process: the library is never
+    /// unloaded, because mail providers may leave threads running in it after a
+    /// call returns. A failed lookup is not cached, so a client installed
+    /// meanwhile is found on the next try.
+    static SEND_MAIL: OnceLock<MapiSendMailW> = OnceLock::new();
 
-    impl Mapi {
-        fn load() -> Option<Self> {
-            let name = to_wide("MAPI32.dll");
-            // SAFETY: `name` is a nul-terminated UTF-16 string that outlives the call.
-            let module =
-                unsafe { LoadLibraryExW(name.as_ptr(), null_mut(), LOAD_LIBRARY_SEARCH_SYSTEM32) };
-            (!module.is_null()).then_some(Self(module))
+    fn send_mail_function() -> Result<MapiSendMailW, &'static str> {
+        if let Some(function) = SEND_MAIL.get() {
+            return Ok(*function);
         }
-
-        fn send_mail(&self) -> Option<MapiSendMailW> {
-            // SAFETY: `self.0` is a loaded module and the name is nul-terminated.
-            let symbol = unsafe { GetProcAddress(self.0, c"MAPISendMailW".as_ptr().cast()) };
-            // SAFETY: MAPISendMailW has exactly the signature of `MapiSendMailW`.
-            (!symbol.is_null())
-                .then(|| unsafe { std::mem::transmute::<*mut c_void, MapiSendMailW>(symbol) })
+        let name = to_wide("MAPI32.dll");
+        // SAFETY: `name` is a nul-terminated UTF-16 string that outlives the call.
+        let module =
+            unsafe { LoadLibraryExW(name.as_ptr(), null_mut(), LOAD_LIBRARY_SEARCH_SYSTEM32) };
+        if module.is_null() {
+            return Err("MAPI32.dll konnte nicht geladen werden.");
         }
+        // SAFETY: `module` is a loaded module and the name is nul-terminated.
+        let symbol = unsafe { GetProcAddress(module, c"MAPISendMailW".as_ptr().cast()) };
+        if symbol.is_null() {
+            return Err("Das installierte Mail-Programm unterstützt Simple MAPI nicht.");
+        }
+        // SAFETY: MAPISendMailW has exactly the signature of `MapiSendMailW`.
+        let function = unsafe { std::mem::transmute::<*mut c_void, MapiSendMailW>(symbol) };
+        Ok(*SEND_MAIL.get_or_init(|| function))
     }
 
-    impl Drop for Mapi {
-        fn drop(&mut self) {
-            // SAFETY: `self.0` came from LoadLibraryExW and is released once.
-            unsafe { FreeLibrary(self.0) };
-        }
-    }
-
-    pub fn compose(request: &MailRequest, attachment: &Path) -> MailOutcome {
-        let Some(mapi) = Mapi::load() else {
-            return MailOutcome::unavailable("MAPI32.dll konnte nicht geladen werden.");
-        };
-        let Some(send_mail) = mapi.send_mail() else {
-            return MailOutcome::unavailable(
-                "Das installierte Mail-Programm unterstützt Simple MAPI nicht.",
-            );
+    /// `owner` is the HWND of the calling window (0 for none).
+    pub fn compose(request: &MailRequest, attachment: &Path, owner: usize) -> MailOutcome {
+        let send_mail = match send_mail_function() {
+            Ok(function) => function,
+            Err(message) => return MailOutcome::unavailable(message),
         };
 
         let recipient = request.to.trim();
@@ -224,7 +250,7 @@ mod platform {
 
         // SAFETY: every pointer in `message` points into a local that lives until
         // the call returns, and the structs match the layout in mapi.h.
-        let code = unsafe { send_mail(0, 0, &message, MAPI_DIALOG | MAPI_LOGON_UI, 0) };
+        let code = unsafe { send_mail(0, owner, &message, MAPI_DIALOG | MAPI_LOGON_UI, 0) };
         outcome_for(code)
     }
 
@@ -236,16 +262,22 @@ mod platform {
         }
     }
 
+    /// Reasons for the MAPI_E_* codes in mapi.h.
     fn describe_error(code: u32) -> String {
         let reason = match code {
             2 => "allgemeiner Fehler (häufig: kein klassisches Mail-Programm als Standard)",
             3 => "Anmeldung beim Mail-Programm fehlgeschlagen",
+            4 => "Datenträger voll",
             5 => "zu wenig Speicher",
+            6 => "Zugriff verweigert",
+            9 => "zu viele Anhänge",
+            10 => "zu viele Empfänger",
             11 => "Anhang nicht gefunden",
             12 => "Anhang konnte nicht geöffnet werden",
             13 => "Anhang konnte nicht geschrieben werden",
-            15 => "unbekannter Empfänger",
-            21 => "ungültiger Empfänger",
+            14 => "unbekannter Empfänger",
+            15 => "ungültiger Empfängertyp",
+            21 => "mehrdeutiger Empfänger",
             _ => "unbekannter Fehler",
         };
         format!("Simple MAPI meldet Fehlercode {code}: {reason}.")
@@ -271,6 +303,26 @@ mod platform {
         }
 
         #[test]
+        fn recipient_errors_use_the_codes_from_mapi_h() {
+            let reason = |code| match outcome_for(code) {
+                MailOutcome::Unavailable { message } => message,
+                other => panic!("code {code} must be a failure, got {other:?}"),
+            };
+
+            assert!(reason(14).contains("unbekannter Empfänger"));
+            assert!(reason(15).contains("ungültiger Empfängertyp"));
+            assert!(reason(21).contains("mehrdeutiger Empfänger"));
+        }
+
+        #[cfg(target_pointer_width = "64")]
+        #[test]
+        fn mapi_structs_have_the_sizes_the_api_expects_on_x64() {
+            assert_eq!(std::mem::size_of::<MapiMessageW>(), 96);
+            assert_eq!(std::mem::size_of::<MapiRecipDescW>(), 40);
+            assert_eq!(std::mem::size_of::<MapiFileDescW>(), 40);
+        }
+
+        #[test]
         fn an_unknown_code_still_produces_a_message() {
             let MailOutcome::Unavailable { message } = outcome_for(999) else {
                 panic!("unknown codes must be failures");
@@ -293,7 +345,7 @@ mod platform {
                 attachment_path: pdf.to_string_lossy().into_owned(),
             };
 
-            let outcome = compose(&request, &pdf);
+            let outcome = compose(&request, &pdf, 0);
 
             println!("MAPI outcome: {outcome:?}");
         }
@@ -314,7 +366,7 @@ mod platform {
     /// open, so waiting longer than this would only hold the worker thread.
     const LAUNCHER_TIMEOUT: Duration = Duration::from_secs(60);
 
-    pub fn compose(request: &MailRequest, attachment: &Path) -> MailOutcome {
+    pub fn compose(request: &MailRequest, attachment: &Path, _owner: usize) -> MailOutcome {
         let attachment = attachment.to_string_lossy();
         let (program, args) = launcher(request, &attachment);
 
@@ -508,9 +560,59 @@ mod tests {
         let dir = TempDir::new("mail-valid");
         let pdf = temp_pdf(&dir);
 
-        let attachment = validate(&request("kunde@example.com", pdf.to_str().unwrap())).unwrap();
+        let attachment = validate(
+            &request("kunde@example.com", pdf.to_str().unwrap()),
+            dir.path(),
+        )
+        .unwrap();
 
         assert_eq!(attachment, pdf);
+    }
+
+    #[test]
+    fn a_file_in_a_subfolder_of_the_documents_root_is_allowed() {
+        let dir = TempDir::new("mail-subfolder");
+        let folder = dir.path().join("Rechnungen");
+        std::fs::create_dir_all(&folder).unwrap();
+        let pdf = folder.join("RE-1.pdf");
+        std::fs::write(&pdf, b"%PDF-1.4").unwrap();
+
+        assert!(validate(&request("", pdf.to_str().unwrap()), dir.path()).is_ok());
+    }
+
+    #[test]
+    fn a_pdf_outside_the_documents_root_is_rejected() {
+        let root = TempDir::new("mail-root");
+        let elsewhere = TempDir::new("mail-elsewhere");
+        let pdf = temp_pdf(&elsewhere);
+
+        let error = validate(&request("", pdf.to_str().unwrap()), root.path()).unwrap_err();
+
+        assert!(error.contains("Dokumente-Ordner"));
+    }
+
+    #[test]
+    fn dot_dot_segments_cannot_leave_the_documents_root() {
+        let root = TempDir::new("mail-traversal-root");
+        let elsewhere = TempDir::new("mail-traversal-outside");
+        let pdf = temp_pdf(&elsewhere);
+        let traversal = root
+            .path()
+            .join("..")
+            .join(elsewhere.path().file_name().unwrap())
+            .join("Rechnung.pdf");
+
+        assert!(validate(&request("", traversal.to_str().unwrap()), root.path()).is_err());
+        assert!(pdf.is_file());
+    }
+
+    #[test]
+    fn a_root_that_cannot_be_resolved_allows_nothing() {
+        let dir = TempDir::new("mail-no-root");
+        let pdf = temp_pdf(&dir);
+        let missing_root = dir.path().join("fehlt");
+
+        assert!(validate(&request("", pdf.to_str().unwrap()), &missing_root).is_err());
     }
 
     #[test]
@@ -519,14 +621,16 @@ mod tests {
         let pdf = temp_pdf(&dir);
         let mixed = format!("{}/Rechnung.pdf", dir.path().display());
 
-        let attachment = validate(&request("", &mixed)).unwrap();
+        let attachment = validate(&request("", &mixed), dir.path()).unwrap();
 
         assert_eq!(attachment, pdf);
     }
 
     #[test]
     fn a_relative_attachment_is_rejected() {
-        assert!(validate(&request("", "Rechnung.pdf")).is_err());
+        let dir = TempDir::new("mail-relative");
+
+        assert!(validate(&request("", "Rechnung.pdf"), dir.path()).is_err());
     }
 
     #[test]
@@ -534,7 +638,7 @@ mod tests {
         let dir = TempDir::new("mail-missing");
         let missing = dir.path().join("fehlt.pdf");
 
-        let error = validate(&request("", missing.to_str().unwrap())).unwrap_err();
+        let error = validate(&request("", missing.to_str().unwrap()), dir.path()).unwrap_err();
 
         assert!(error.contains("nicht gefunden"));
     }
@@ -545,7 +649,7 @@ mod tests {
         let text = dir.path().join("geheim.txt");
         std::fs::write(&text, b"x").unwrap();
 
-        assert!(validate(&request("", text.to_str().unwrap())).is_err());
+        assert!(validate(&request("", text.to_str().unwrap()), dir.path()).is_err());
     }
 
     #[test]
@@ -554,8 +658,8 @@ mod tests {
         let pdf = temp_pdf(&dir);
         let path = pdf.to_str().unwrap();
 
-        assert!(validate(&request("--attach", path)).is_err());
-        assert!(validate(&request("a@b.de\r\nBcc: x@y.de", path)).is_err());
+        assert!(validate(&request("--attach", path), dir.path()).is_err());
+        assert!(validate(&request("a@b.de\r\nBcc: x@y.de", path), dir.path()).is_err());
     }
 
     #[test]

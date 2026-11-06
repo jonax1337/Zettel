@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { push, replace } from "svelte-spa-router";
   import {
     buildReminderDraft,
@@ -56,6 +57,8 @@
   let generating = $state(false);
   // The mail program keeps the hand-off call open until its message window is closed.
   let mailing = $state(false);
+  let mounted = true;
+  onDestroy(() => (mounted = false));
   let error = $state<string | null>(null);
   let confirmDeleteOpen = $state(false);
   let confirmMarkSentAfterMailOpen = $state(false);
@@ -191,7 +194,8 @@
 
   /** A freshly created reminder gets its own route, so a reload cannot create a duplicate draft. */
   function showSavedReminder(savedId: number) {
-    if (mode === "new") replace(`/reminders/${savedId}`);
+    // After a long await (the mail window) the user may have left; do not pull them back.
+    if (mounted && mode === "new") replace(`/reminders/${savedId}`);
   }
 
   async function saveAndStay() {
@@ -243,7 +247,9 @@
     const savedId = readonly ? reminderId : await save();
     if (savedId === null) return;
     const path = readonly && pdfPath ? pdfPath : await renderPdf(savedId);
-    if (path && (await handOffMail(path)) === "handed-off" && status === "draft") {
+    const handoff = path ? await handOffMail(path) : null;
+    if (!mounted) return;
+    if (handoff === "handed-off" && status === "draft") {
       // The route swap waits for the answer: it would discard this dialog.
       confirmMarkSentAfterMailOpen = true;
       return;
@@ -277,9 +283,12 @@
   async function markSentAfterMail() {
     sendDate = toIsoDate(nowUnix());
     await confirmSend();
+    // A failed confirmSend skips its own route swap, and nothing else would do it now.
+    if (status !== "sent") leaveNewRoute();
   }
 
-  function declineMarkSentAfterMail() {
+  /** Any close of the question without marking: the reminder is saved, so the URL must say so. */
+  function leaveNewRoute() {
     if (reminderId !== null) showSavedReminder(reminderId);
   }
 
@@ -450,7 +459,7 @@
   description="Die Mahnung wurde an Ihr Mail-Programm übergeben. Danach ist sie schreibgeschützt und kann nicht mehr bearbeitet oder gelöscht werden."
   confirmLabel="Als versendet markieren"
   onConfirm={markSentAfterMail}
-  onCancel={declineMarkSentAfterMail}
+  onCancel={leaveNewRoute}
 />
 
 <ConfirmDialog

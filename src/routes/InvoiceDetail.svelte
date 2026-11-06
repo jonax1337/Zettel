@@ -215,14 +215,8 @@
     }
   }
 
-  async function fetchCustomerEmail(inv: Invoice): Promise<string | null> {
-    const snapshotEmail = parseCustomerSnapshot(inv.customerSnapshot)?.email ?? null;
-    try {
-      return await resolveCustomerEmail(inv.customerId, snapshotEmail);
-    } catch (e) {
-      toast.error("Kunden-E-Mail konnte nicht geladen werden", String(e));
-      return snapshotEmail;
-    }
+  function fetchCustomerEmail(inv: Invoice): Promise<string | null> {
+    return resolveCustomerEmail(inv.customerId, parseCustomerSnapshot(inv.customerSnapshot)?.email ?? null);
   }
 
   async function fetchPdfVersions(pdfPath: string | null): Promise<PdfVersion[]> {
@@ -420,9 +414,10 @@
     mailing = true;
     try {
       await sendDocumentByMail(
-        "invoice",
+        sent.isCreditNote ? "creditNote" : "invoice",
         {
           number: displayInvoiceNumber(sent),
+          correctsInvoiceNumber: originalInvoice?.number ?? null,
           totalCent: sent.total,
           currency: sent.currency,
           dueDate: sent.dueDate,

@@ -4,10 +4,15 @@ import { formatDate } from "$lib/utils/date";
 
 export type MailDocumentType = "invoice" | "offer" | "reminder";
 
+/** The document types with a template of their own in the settings, plus the fixed credit note text. */
+export type MailKind = MailDocumentType | "creditNote";
+
 export type MailTemplate = { subject: string; body: string };
 
 export type MailContext = {
   number: string;
+  /** Number of the invoice a credit note corrects; only the credit note text uses it. */
+  correctsInvoiceNumber?: string | null;
   totalCent: number;
   currency: string;
   /** Due date of an invoice or reminder, end of validity of an offer; unix seconds. */
@@ -90,12 +95,34 @@ export function mailTemplateFor(type: MailDocumentType, settings: MailSettings):
   };
 }
 
+/**
+ * A credit note asks for no payment, so it has its own built-in text instead of
+ * the invoice template; it is not editable in the settings.
+ */
+function creditNoteText(ctx: MailContext): MailTemplate {
+  const corrects = ctx.correctsInvoiceNumber
+    ? ` zur Rechnung ${ctx.correctsInvoiceNumber}`
+    : "";
+  return {
+    subject: fillMailPlaceholders("Stornorechnung {nummer}", ctx),
+    body: [
+      "Guten Tag,",
+      "",
+      `${fillMailPlaceholders("anbei erhalten Sie die Stornorechnung {nummer}", ctx)}${corrects}${fillMailPlaceholders(" über {betrag}.", ctx)}`,
+      "Die ursprüngliche Rechnung wird damit korrigiert. Der Betrag wird Ihnen gutgeschrieben bzw. erstattet, eine Zahlung ist nicht erforderlich.",
+      "",
+      fillMailPlaceholders(CLOSING, ctx),
+    ].join("\n"),
+  };
+}
+
 export function composeMailText(
-  type: MailDocumentType,
+  kind: MailKind,
   settings: MailSettings,
   ctx: MailContext,
 ): MailTemplate {
-  const template = mailTemplateFor(type, settings);
+  if (kind === "creditNote") return creditNoteText(ctx);
+  const template = mailTemplateFor(kind, settings);
   return {
     subject: fillMailPlaceholders(template.subject, ctx),
     body: fillMailPlaceholders(template.body, ctx),

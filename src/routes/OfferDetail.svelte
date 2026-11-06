@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { link, push } from "svelte-spa-router";
   import BackLink from "./parts/entity/BackLink.svelte";
   import { createDocumentActions } from "./parts/entity/document-actions.svelte";
@@ -61,6 +62,8 @@
   let customerEmail = $state<string | null>(null);
   // The mail program keeps the hand-off call open until its message window is closed.
   let mailing = $state(false);
+  let mounted = true;
+  onDestroy(() => (mounted = false));
   let confirmMarkSentAfterMailOpen = $state(false);
   let confirmDeleteOpen = $state(false);
   let confirmAcceptOpen = $state(false);
@@ -137,14 +140,11 @@
     }
   }
 
-  async function fetchCustomerEmail(source: Offer): Promise<string | null> {
-    const snapshotEmail = parseCustomerSnapshot(source.customerSnapshot)?.email ?? null;
-    try {
-      return await resolveCustomerEmail(source.customerId, snapshotEmail);
-    } catch (e) {
-      toast.error("Kunden-E-Mail konnte nicht geladen werden", String(e));
-      return snapshotEmail;
-    }
+  function fetchCustomerEmail(source: Offer): Promise<string | null> {
+    return resolveCustomerEmail(
+      source.customerId,
+      parseCustomerSnapshot(source.customerSnapshot)?.email ?? null,
+    );
   }
 
   function openSendDialog() {
@@ -211,7 +211,11 @@
         },
         { to: customerEmail, attachmentPath: pdfPath },
       );
-      if (result === "handed-off" && sent.status === "draft") confirmMarkSentAfterMailOpen = true;
+      // The call returns only when the mail window closes; by then the user may have moved on.
+      const stillOnThisOffer = mounted && offer?.id === sent.id;
+      if (result === "handed-off" && sent.status === "draft" && stillOnThisOffer) {
+        confirmMarkSentAfterMailOpen = true;
+      }
     } catch (e) {
       toast.error("E-Mail konnte nicht vorbereitet werden", String(e));
     } finally {
