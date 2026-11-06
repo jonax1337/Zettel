@@ -14,7 +14,7 @@ import type {
   RecurringInvoiceItem,
 } from "./schema";
 import { addDaysUnix, nowUnix } from "$lib/utils/date";
-import { roundQuantity } from "$lib/utils/totals";
+import { assertQuantities, roundQuantity } from "$lib/utils/totals";
 
 const DUE_SOON_DAYS = 7;
 const TEMPLATE_CURRENCY = DEFAULT_CURRENCY;
@@ -246,6 +246,7 @@ async function writeRecurringItems(
 }
 
 export async function createRecurring(input: RecurringFormInput): Promise<number> {
+  assertQuantities(input.items);
   const id = await insert(
     `INSERT INTO recurring_invoices
       (name, customer_id, interval, start_date, next_due_date, payment_terms_days,
@@ -274,6 +275,7 @@ export async function updateRecurring(
   id: number,
   input: RecurringFormInput,
 ): Promise<void> {
+  assertQuantities(input.items);
   await execute(
     `UPDATE recurring_invoices SET
       name = ?, customer_id = ?, interval = ?, start_date = ?,

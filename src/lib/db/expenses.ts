@@ -10,7 +10,7 @@ import type {
 import { parseSnapshot } from "./snapshot-json";
 import { buildVendorSnapshot } from "./snapshots";
 import { nowUnix } from "$lib/utils/date";
-import { computeTotals as computeTotalsPure, type Totals } from "$lib/utils/totals";
+import { assertQuantities, computeTotals as computeTotalsPure, type Totals } from "$lib/utils/totals";
 
 type ExpenseRow = {
   id: number;
@@ -201,6 +201,7 @@ export async function createExpense(
   input: ExpenseFormInput,
   opts: CreateExpenseOptions = {},
 ): Promise<number> {
+  assertQuantities(input.items);
   const snapshot = await buildVendorSnapshot(input.vendorId);
   const isReverseCharge = input.reverseChargeType !== "none";
   const totals = computeTotals(input.items, { isReverseCharge });
@@ -235,6 +236,7 @@ export async function createExpense(
 }
 
 export async function updateExpense(id: number, input: ExpenseFormInput): Promise<void> {
+  assertQuantities(input.items);
   const existing = await getExpense(id);
   if (!existing) throw new Error(`Eingangsrechnung ${id} nicht gefunden.`);
   if (existing.expense.status === "paid" || existing.expense.status === "cancelled") {

@@ -270,7 +270,7 @@ describe("credit notes", () => {
     await expect(createCreditNoteFromInvoice(7)).rejects.toThrow("Stornorechnung");
   });
 
-  it("takes the frozen EUR total of the original, not a fresh conversion of the credit note's own total", async () => {
+  it("derives the EUR total of a partial refund from the credit note's own total", async () => {
     const halfRefund = { ...itemRow, quantity: 1, line_total: 5_000 };
     db.select.mockImplementation(
       creditNoteSql(invoiceRow({ currency: "USD", exchange_rate: "1,08", eur_total_cent: 9_259 }), [halfRefund]),
@@ -279,7 +279,18 @@ describe("credit notes", () => {
     await createCreditNoteFromInvoice(7);
 
     const [sql, binds] = db.insert.mock.calls[0];
-    expect(boundInsertColumns(sql, binds)).toMatchObject({ total: -5_000, eur_total_cent: -9_259 });
+    expect(boundInsertColumns(sql, binds)).toMatchObject({ total: -5_000, eur_total_cent: -4_630 });
+  });
+
+  it("takes the frozen EUR total of the original for a full refund", async () => {
+    db.select.mockImplementation(
+      creditNoteSql(invoiceRow({ currency: "USD", exchange_rate: "1,08", eur_total_cent: 9_259 })),
+    );
+
+    await createCreditNoteFromInvoice(7);
+
+    const [sql, binds] = db.insert.mock.calls[0];
+    expect(boundInsertColumns(sql, binds)).toMatchObject({ total: -10_000, eur_total_cent: -9_259 });
   });
 
   it("keeps the Kleinunternehmer treatment of the original although the setting changed since", async () => {

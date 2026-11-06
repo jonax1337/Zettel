@@ -46,6 +46,11 @@ export function roundQuantity(quantity: number): number {
   return scaleQuantity(quantity) / QUANTITY_SCALE;
 }
 
+/** Refuses a document before anything is written; the line writers would only fail after the header is stored. */
+export function assertQuantities(items: readonly { quantity: number }[]): void {
+  for (const item of items) roundQuantity(item.quantity);
+}
+
 /**
  * quantity x unit price in whole cents, computed exactly: the float product is
  * not (0.47 x 8550 is 4018.4999999999995, the exact 4018.5 must round to 4019).

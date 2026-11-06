@@ -22,7 +22,7 @@ import type {
 } from "./schema";
 import { computeEurTotalCent } from "$lib/utils/currency";
 import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
-import { computeTotals } from "$lib/utils/totals";
+import { assertQuantities, computeTotals } from "$lib/utils/totals";
 
 const EXPIRING_SOON_DAYS = 7;
 const OPEN_STATUSES_SQL = "('draft','sent')";
@@ -208,6 +208,7 @@ function writeItems(offerId: number, items: OfferItemInput[]): Promise<void> {
 }
 
 export async function createOffer(input: OfferFormInput): Promise<number> {
+  assertQuantities(input.items);
   const settings = await loadSettings();
   const snapshot = await buildCustomerSnapshot(input.customerId);
   const isReverseCharge = input.reverseChargeType !== "none";
@@ -256,6 +257,7 @@ export async function updateOffer(
   id: number,
   input: OfferFormInput,
 ): Promise<void> {
+  assertQuantities(input.items);
   const existing = await getOffer(id);
   if (!existing) throw new Error(`Offer ${id} not found`);
   if (existing.offer.status !== "draft") {

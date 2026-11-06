@@ -39,7 +39,7 @@ import type {
 import { computeEurTotalCent } from "$lib/utils/currency";
 import { nowUnix, toUnix } from "$lib/utils/date";
 import { displayInvoiceNumber, draftPlaceholder, isDraftNumber } from "$lib/utils/invoice-number";
-import { computeTotals, type Totals } from "$lib/utils/totals";
+import { assertQuantities, computeTotals, type Totals } from "$lib/utils/totals";
 import { normalizeBuyerReference, resolveBuyerReference } from "$lib/xrechnung/buyer-reference";
 
 export { displayInvoiceNumber, isDraftNumber };
@@ -214,8 +214,8 @@ export function orKeep<T>(incoming: T | undefined, current: T): T {
 
 /**
  * Foreign-currency invoices need a frozen EUR total for KPIs, UStVA and DATEV.
- * Callers that do not pass one (offer conversion, recurring, credit notes) get
- * it derived from the invoice's own total and exchange rate.
+ * Callers that do not pass one (offer conversion, recurring) get it derived from
+ * the invoice's own total and exchange rate. Credit notes use `creditNoteEurTotal`.
  */
 function eurTotalFor(input: InvoiceFormInput, unsignedTotal: number): number | null {
   if (input.eurTotalCent !== undefined) return input.eurTotalCent;
@@ -224,16 +224,34 @@ function eurTotalFor(input: InvoiceFormInput, unsignedTotal: number): number | n
   return computeEurTotalCent(currency, unsignedTotal, input.exchangeRate);
 }
 
-/** A credit note is denominated in its original's currency, whatever the caller passes. */
-async function withCorrectedCurrency(input: InvoiceFormInput): Promise<InvoiceFormInput> {
-  if (!input.isCreditNote || input.correctsInvoiceId == null) return input;
-  const original = await findInvoice(input.correctsInvoiceId);
-  if (!original) throw new Error(`Rechnung ${input.correctsInvoiceId} nicht gefunden.`);
-  return { ...input, currency: original.currency, exchangeRate: original.exchangeRate };
+async function loadOriginal(correctsInvoiceId: number): Promise<Invoice> {
+  const original = await findInvoice(correctsInvoiceId);
+  if (!original) throw new Error(`Rechnung ${correctsInvoiceId} nicht gefunden.`);
+  return original;
+}
+
+/**
+ * The EUR total of a credit note, whatever the caller passes: a refund of the full
+ * amount is exactly the negative of the original's frozen EUR total, a partial one
+ * is converted at the original's rate. Unsigned; the caller applies the sign.
+ */
+function creditNoteEurTotal(original: Invoice, unsignedTotal: number): number | null {
+  if (original.eurTotalCent != null && unsignedTotal === Math.abs(original.total)) {
+    return Math.abs(original.eurTotalCent);
+  }
+  return computeEurTotalCent(original.currency, unsignedTotal, original.exchangeRate);
 }
 
 export async function createInvoice(formInput: InvoiceFormInput): Promise<number> {
-  const input = await withCorrectedCurrency(formInput);
+  assertQuantities(formInput.items);
+  // A credit note is denominated in its original's currency, whatever the caller passes.
+  const original =
+    formInput.isCreditNote && formInput.correctsInvoiceId != null
+      ? await loadOriginal(formInput.correctsInvoiceId)
+      : null;
+  const input = original
+    ? { ...formInput, currency: original.currency, exchangeRate: original.exchangeRate }
+    : formInput;
   const settings = await loadSettings();
   const snapshot = await buildCustomerSnapshot(input.customerId);
   const customer = input.buyerReference === undefined ? await getCustomer(input.customerId) : null;
@@ -274,7 +292,12 @@ export async function createInvoice(formInput: InvoiceFormInput): Promise<number
       input.correctsInvoiceId ?? null,
       input.currency ?? DEFAULT_CURRENCY,
       input.exchangeRate ?? null,
-      signedOrNull(eurTotalFor(input, Math.abs(totals.total)), sign),
+      signedOrNull(
+        original
+          ? creditNoteEurTotal(original, Math.abs(totals.total))
+          : eurTotalFor(input, Math.abs(totals.total)),
+        sign,
+      ),
       input.notesInternal ?? null,
       input.followUpDate ?? null,
       input.servicePeriodStart ?? null,
@@ -293,11 +316,16 @@ export async function updateInvoice(
   id: number,
   input: InvoiceFormInput,
 ): Promise<void> {
+  assertQuantities(input.items);
   const current = await findInvoice(id);
   if (!current) throw new Error(`Invoice ${id} not found`);
   if (current.status !== "draft") {
     throw new Error("Nur Entwürfe können bearbeitet werden.");
   }
+  const original =
+    current.isCreditNote && current.correctsInvoiceId != null
+      ? await loadOriginal(current.correctsInvoiceId)
+      : null;
   const sign = creditNoteSign(current.isCreditNote);
   const currency = current.isCreditNote ? current.currency : input.currency ?? current.currency;
   const exchangeRate = current.isCreditNote ? current.exchangeRate : orKeep(input.exchangeRate, current.exchangeRate);
@@ -306,6 +334,11 @@ export async function updateInvoice(
     reverseChargeType: input.reverseChargeType,
     isCreditNote: current.isCreditNote,
   });
+  const eurTotalCent = original
+    ? signedOrNull(creditNoteEurTotal(original, Math.abs(totals.total)), sign)
+    : input.eurTotalCent === undefined
+      ? current.eurTotalCent
+      : signedOrNull(input.eurTotalCent, sign);
   // Drafts follow the customer's master data until they are issued.
   const customerSnapshot = JSON.stringify(await buildCustomerSnapshot(input.customerId));
 
@@ -339,9 +372,7 @@ export async function updateInvoice(
       input.paymentTerms,
       currency,
       exchangeRate,
-      input.eurTotalCent === undefined
-        ? current.eurTotalCent
-        : signedOrNull(input.eurTotalCent, sign),
+      eurTotalCent,
       orKeep(input.notesInternal, current.notesInternal),
       orKeep(input.followUpDate, current.followUpDate),
       input.servicePeriodStart ?? null,
@@ -426,10 +457,10 @@ export async function findCreditNoteFor(invoiceId: number): Promise<Invoice | nu
  * Items are mirrored verbatim, including the stored line totals: the credit note is
  * exactly the negative of the original, also where the original was issued under an
  * older rounding. The user can edit quantities in the draft to model partial refunds
- * (an edited position is computed again). The foreign-currency terms of the original carry over, because
- * the mirrored unit prices are denominated in that currency, and so does its frozen
- * EUR total (derived again only where the original has none). The Kleinunternehmer
- * treatment is the original's, not today's setting.
+ * (an edited position is computed again). The foreign-currency terms of the original
+ * carry over, because the mirrored unit prices are denominated in that currency; the
+ * EUR total is decided when the credit note is stored (see `creditNoteEurTotal`). The
+ * Kleinunternehmer treatment is the original's, not today's setting.
  */
 export function creditNoteInputFor(
   invoice: Invoice,
@@ -451,7 +482,6 @@ export function creditNoteInputFor(
     servicePeriodEnd: invoice.servicePeriodEnd,
     currency: invoice.currency,
     exchangeRate: invoice.exchangeRate,
-    eurTotalCent: invoice.eurTotalCent ?? undefined,
     isKleinunternehmer: invoice.isKleinunternehmer,
     buyerReference: invoice.buyerReference,
     items: items.map((it) => ({

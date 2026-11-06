@@ -7,7 +7,7 @@ vi.mock("./client", async (importOriginal) => ({
   ...(await import("./sqlite-test-db")).sqliteClient(sqlite),
 }));
 
-import { createExpense } from "./expenses";
+import { createExpense, updateExpense, type ExpenseFormInput } from "./expenses";
 import {
   createCreditNoteFromInvoice,
   createInvoice,
@@ -18,7 +18,7 @@ import {
 } from "./invoices";
 import { keepsStoredAmounts } from "./invoice-lifecycle";
 import { createOffer, getOffer, updateOffer, type OfferFormInput } from "./offers";
-import { createRecurring, updateRecurring } from "./recurring";
+import { createRecurring, updateRecurring, type RecurringFormInput } from "./recurring";
 import { computeEurTotalCent } from "$lib/utils/currency";
 import { computeTotals } from "$lib/utils/totals";
 import { lineItemsFromStored, toLineItemInputs, toTotalsItem, type LineItemForm } from "../../routes/invoice/line-items";
@@ -164,6 +164,18 @@ describe("a credit note of an invoice issued before the exact rounding", () => {
     expect(saved.invoice.total).toBe(negated(OLD_TOTALS.total));
   });
 
+  it("keeps a frozen EUR total that differs from a fresh conversion when the draft is saved from the editor without changes", async () => {
+    const originalId = await issuedInvoiceFromBeforeExactRounding("USD");
+    const FROZEN_EUR_TOTAL = 4_470;
+    database().prepare("UPDATE invoices SET eur_total_cent = ? WHERE id = ?").run(FROZEN_EUR_TOTAL, originalId);
+    expect(computeEurTotalCent("USD", OLD_TOTALS.total, USD_RATE)).not.toBe(FROZEN_EUR_TOTAL);
+    const creditNoteId = await createCreditNoteFromInvoice(originalId);
+
+    await saveLikeTheInvoiceEditor(creditNoteId);
+
+    expect((await getInvoice(creditNoteId))!.invoice.eurTotalCent).toBe(negated(FROZEN_EUR_TOTAL));
+  });
+
   it("keeps the amounts when the draft is saved from the editor without changes", async () => {
     const creditNoteId = await createCreditNoteFromInvoice(await issuedInvoiceFromBeforeExactRounding());
 
@@ -186,6 +198,20 @@ describe("a credit note of an invoice issued before the exact rounding", () => {
     const saved = (await getInvoice(creditNoteId))!;
     expect(saved.items.map((i) => i.lineTotal)).toEqual([4_275, 61]);
     expect(saved.invoice.subtotal).toBe(negated(4_336));
+  });
+});
+
+describe("a partial credit note of a foreign-currency invoice", () => {
+  it("takes its EUR total from its own total at the rate of the original, not from the frozen EUR total", async () => {
+    const originalId = await issuedInvoiceFromBeforeExactRounding("USD");
+    database().prepare("UPDATE invoices SET eur_total_cent = ? WHERE id = ?").run(4_470, originalId);
+    const creditNoteId = await createCreditNoteFromInvoice(originalId);
+
+    await saveLikeTheInvoiceEditor(creditNoteId, (rows) => (rows[0].quantity = 0.5));
+
+    const { invoice } = (await getInvoice(creditNoteId))!;
+    expect(invoice.total).toBe(negated(5_160));
+    expect(invoice.eurTotalCent).toBe(negated(computeEurTotalCent("USD", 5_160, USD_RATE)!));
   });
 });
 
@@ -267,57 +293,120 @@ describe("a draft offer from before the exact rounding", () => {
 });
 
 describe("a cleared quantity field", () => {
+  const MISSING_QUANTITY = "Menge fehlt oder ist ungültig.";
   const cleared = { ...POSITIONS[0], quantity: null as unknown as number };
 
-  it("is refused on a new invoice instead of being stored as 0", async () => {
-    await expect(createInvoice(invoiceInput({ items: [cleared] }))).rejects.toThrow("Menge fehlt oder ist ungültig.");
+  const offerInput = (items: OfferFormInput["items"], notes: string | null = null): OfferFormInput => ({
+    customerId: 1,
+    issueDate: day(5),
+    validUntil: day(30),
+    notes,
+    introText: null,
+    reverseChargeType: "none",
+    supplyKind: "services",
+    items,
+  });
+  const recurringInput = (items: RecurringFormInput["items"], notes: string | null = null): RecurringFormInput => ({
+    name: "Wartung",
+    customerId: 1,
+    interval: "monthly",
+    startDate: day(1),
+    paymentTermsDays: 14,
+    reverseChargeType: "none",
+    supplyKind: "services",
+    notes,
+    paymentTerms: null,
+    active: true,
+    items,
+  });
+  const expenseInput = (items: ExpenseFormInput["items"], notes: string | null = null): ExpenseFormInput => ({
+    number: "R-1",
+    vendorId: 1,
+    issueDate: day(5),
+    dueDate: null,
+    notes,
+    reverseChargeType: "none",
+    pdfPath: null,
+    items,
+  });
+  const expenseItem = { ...POSITIONS[0], category: null, datevAccount: null };
 
-    expect(rows("SELECT * FROM invoice_items")).toEqual([]);
+  const rowCount = (table: string) => rows<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table}`)[0].n;
+
+  it("is refused on a new invoice instead of being stored as 0, and leaves no invoice behind", async () => {
+    await expect(createInvoice(invoiceInput({ items: [cleared] }))).rejects.toThrow(MISSING_QUANTITY);
+
+    expect(rowCount("invoices")).toBe(0);
+    expect(rowCount("invoice_items")).toBe(0);
   });
 
-  it("is refused when an invoice is updated, and the stored positions stay", async () => {
+  it("is refused when an invoice is updated, and the stored header and positions stay", async () => {
     const id = await createInvoice(invoiceInput());
+    const before = (await getInvoice(id))!.invoice;
 
-    await expect(updateInvoice(id, invoiceInput({ items: [cleared] }))).rejects.toThrow("Menge fehlt oder ist ungültig.");
+    await expect(updateInvoice(id, invoiceInput({ items: [cleared], notes: "geändert" }))).rejects.toThrow(MISSING_QUANTITY);
 
-    expect((await getInvoice(id))!.items.map((i) => i.description)).toEqual(["Beratung", "Support"]);
+    const after = (await getInvoice(id))!;
+    expect(after.invoice).toEqual(before);
+    expect(after.items.map((i) => i.description)).toEqual(["Beratung", "Support"]);
   });
 
-  it("is refused on an offer", async () => {
-    await expect(
-      createOffer({
-        customerId: 1,
-        issueDate: day(5),
-        validUntil: day(30),
-        notes: null,
-        introText: null,
-        reverseChargeType: "none",
-        supplyKind: "services",
-        items: [cleared],
-      }),
-    ).rejects.toThrow("Menge fehlt oder ist ungültig.");
+  it("is refused on a new offer, and leaves no offer behind", async () => {
+    await expect(createOffer(offerInput([cleared]))).rejects.toThrow(MISSING_QUANTITY);
+
+    expect(rowCount("offers")).toBe(0);
+    expect(rowCount("offer_items")).toBe(0);
   });
 
-  it("is refused on a recurring template, and the stored positions stay", async () => {
-    const template = {
-      name: "Wartung",
-      customerId: 1,
-      interval: "monthly" as const,
-      startDate: day(1),
-      paymentTermsDays: 14,
-      reverseChargeType: "none" as const,
-      supplyKind: "services" as const,
-      notes: null,
-      paymentTerms: null,
-      active: true,
-    };
-    const id = await createRecurring({ ...template, items: [POSITIONS[0]] });
+  it("is refused when an offer is updated, and the stored header and positions stay", async () => {
+    const id = await createOffer(offerInput(POSITIONS));
+    const before = (await getOffer(id))!.offer;
 
-    await expect(updateRecurring(id, { ...template, items: [cleared] })).rejects.toThrow("Menge fehlt oder ist ungültig.");
+    await expect(updateOffer(id, offerInput([cleared], "geändert"))).rejects.toThrow(MISSING_QUANTITY);
 
+    const after = (await getOffer(id))!;
+    expect(after.offer).toEqual(before);
+    expect(after.items.map((i) => i.description)).toEqual(["Beratung", "Support"]);
+  });
+
+  it("is refused on a new recurring template, and leaves no template behind", async () => {
+    await expect(createRecurring(recurringInput([cleared]))).rejects.toThrow(MISSING_QUANTITY);
+
+    expect(rowCount("recurring_invoices")).toBe(0);
+    expect(rowCount("recurring_invoice_items")).toBe(0);
+  });
+
+  it("is refused when a recurring template is updated, and the stored header and positions stay", async () => {
+    const id = await createRecurring(recurringInput([POSITIONS[0]]));
+    const headerBefore = rows("SELECT * FROM recurring_invoices WHERE id = ?", id);
+
+    await expect(updateRecurring(id, recurringInput([cleared], "geändert"))).rejects.toThrow(MISSING_QUANTITY);
+
+    expect(rows("SELECT * FROM recurring_invoices WHERE id = ?", id)).toEqual(headerBefore);
     expect(rows<{ description: string }>("SELECT description FROM recurring_invoice_items")).toEqual([
       { description: "Beratung" },
     ]);
+  });
+
+  it("is refused on a new expense, and leaves no expense behind", async () => {
+    await expect(createExpense(expenseInput([{ ...expenseItem, quantity: null as unknown as number }]))).rejects.toThrow(
+      MISSING_QUANTITY,
+    );
+
+    expect(rowCount("expenses")).toBe(0);
+    expect(rowCount("expense_items")).toBe(0);
+  });
+
+  it("is refused when an expense is updated, and the stored header and positions stay", async () => {
+    const id = await createExpense(expenseInput([expenseItem]));
+    const headerBefore = rows("SELECT * FROM expenses WHERE id = ?", id);
+
+    await expect(
+      updateExpense(id, expenseInput([{ ...expenseItem, quantity: null as unknown as number }], "geändert")),
+    ).rejects.toThrow(MISSING_QUANTITY);
+
+    expect(rows("SELECT * FROM expenses WHERE id = ?", id)).toEqual(headerBefore);
+    expect(rows<{ description: string }>("SELECT description FROM expense_items")).toEqual([{ description: "Beratung" }]);
   });
 });
 
