@@ -6,6 +6,7 @@
   import { Toaster, Titlebar, CommandPalette, ConfirmDialog, toast } from "$lib/ui";
   import { isSandboxActive } from "$lib/db/client";
   import { loadSettings } from "$lib/db/queries";
+  import { sealPendingInvoices } from "$lib/db/seals";
   import { maybeRunAutoBackup } from "$lib/utils/auto-backup";
   import { isMac } from "$lib/utils/platform";
   import { leavePage, pendingNavigation, stayOnPage } from "$lib/utils/unsaved-guard.svelte";
@@ -32,9 +33,26 @@
     }
   }
 
+  async function sealUnsealedInvoices() {
+    try {
+      const sealed = await sealPendingInvoices();
+      if (sealed > 0) {
+        toast.show(
+          sealed === 1
+            ? "1 ausgestellte Rechnung wurde nachträglich versiegelt."
+            : `${sealed} ausgestellte Rechnungen wurden nachträglich versiegelt.`,
+        );
+      }
+    } catch (e) {
+      console.error("Sealing issued invoices failed", e);
+      toast.error("Rechnungen konnten nicht versiegelt werden", String(e));
+    }
+  }
+
   onMount(async () => {
     sandbox = await isSandboxActive();
     openOnboardingOnFreshInstall();
+    sealUnsealedInvoices();
     // Sandbox data is disposable, so it is never backed up.
     if (!sandbox) {
       maybeRunAutoBackup()

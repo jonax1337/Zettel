@@ -117,7 +117,9 @@
       <CardDescription>
         Irreversible Aktionen. Vor jeder Ausführung wird automatisch ein unverschlüsseltes
         Backup <code>pre-wipe-…zip</code> in den Backup-Ordner der aktiven Datenbank geschrieben
-        (z. B. <code>Dokumente/Zettel/Backups/</code>).
+        (z. B. <code>Dokumente/Zettel/Backups/</code>). Das Änderungsprotokoll und die
+        Rechnungssiegel werden nie gelöscht: Ausgestellte Rechnungen bleiben im Protokoll
+        erhalten, die Integritätsprüfung meldet sie nach dem Löschen als gelöscht.
       </CardDescription>
     </CardHeader>
     <CardContent class="space-y-6">

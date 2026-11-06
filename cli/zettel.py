@@ -7,6 +7,7 @@ Repliziert die App-Geschäftslogik aus src/lib/db/invoices.ts exakt:
   - Lazy Invoice-Numbering: echte Nummer erst bei issue/markSent/PDF
   - computeTotals: Per-Line-Rundung (Finanzamt-Konvention), Cent-Integer
   - markPaid protokolliert Restbetrag als invoice_payments-Eintrag
+  - issue hängt ein Siegel an die Hash-Kette über ausgestellte Rechnungen (invoice_seals)
   - PDF-Generierung über den Sidecar (JSON-RPC über stdin/stdout)
 
 DB-Auswahl folgt derselben Quelle der Wahrheit wie die App:
@@ -24,6 +25,7 @@ verwenden (SQLite single-writer). Lesende Befehle sind unproblematisch.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -605,6 +607,99 @@ def load_invoice_full(con, invoice_id: int) -> tuple[dict, list[dict], dict]:
     return dict(inv), items, cust
 
 
+# Spiegel von src/lib/db/seals.ts: Hash-Kette über ausgestellte Rechnungen (GoBD).
+# Das Format ist durch sidecar/tests/fixtures/invoice-seal.json festgelegt.
+GENESIS_HASH = "0" * 64
+SEAL_DOCUMENT_TAG = "zettel-invoice-seal"
+SEAL_FORMAT_VERSION = 1
+SEAL_APPEND_ATTEMPTS = 3
+SEALED_INVOICE_COLUMNS = (
+    "number", "customer_id", "customer_snapshot", "issue_date", "delivery_date", "due_date",
+    "subtotal", "vat_amount", "total", "is_kleinunternehmer", "is_reverse_charge",
+    "reverse_charge_type", "supply_kind", "notes", "payment_terms", "is_credit_note",
+    "corrects_invoice_id", "currency", "exchange_rate", "eur_total_cent", "service_period_start",
+    "service_period_end", "skonto_percent", "skonto_days", "pdf_language", "buyer_reference",
+)
+SEALED_ITEM_COLUMNS = (
+    "position", "description", "quantity", "unit", "unit_price", "vat_rate", "line_total",
+    "long_description", "line_period_start", "line_period_end",
+)
+
+
+def sha256_hex(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def seal_value(value):
+    """Ein REAL mit ganzzahligem Wert (1.0) wird wie in JS als Ganzzahl serialisiert."""
+    return int(value) if isinstance(value, float) and value.is_integer() else value
+
+
+def canonical_seal_document(invoice: dict, items: list[dict]) -> str:
+    document = [
+        SEAL_DOCUMENT_TAG,
+        SEAL_FORMAT_VERSION,
+        [seal_value(invoice[column]) for column in SEALED_INVOICE_COLUMNS],
+        [[seal_value(item[column]) for column in SEALED_ITEM_COLUMNS] for item in items],
+    ]
+    return json.dumps(document, ensure_ascii=False, separators=(",", ":"))
+
+
+def seal_content_hash(invoice: dict, items: list[dict]) -> str:
+    return sha256_hex(canonical_seal_document(invoice, items))
+
+
+def seal_chain_hash(prev_hash: str, invoice_id: int, kind: str, sealed_at: int, content_hash: str) -> str:
+    return sha256_hex(f"{prev_hash}|{invoice_id}|{kind}|{sealed_at}|{content_hash}")
+
+
+def append_seal_once(con, invoice_id: int, kind: str) -> None:
+    invoice = {c: v for c, v in zip(SEALED_INVOICE_COLUMNS, con.execute(
+        f"SELECT {', '.join(SEALED_INVOICE_COLUMNS)} FROM invoices WHERE id = ?", (invoice_id,)
+    ).fetchone())}
+    items = [
+        dict(zip(SEALED_ITEM_COLUMNS, row))
+        for row in con.execute(
+            f"SELECT {', '.join(SEALED_ITEM_COLUMNS)} FROM invoice_items WHERE invoice_id = ? ORDER BY position, id",
+            (invoice_id,),
+        )
+    ]
+    content_hash = seal_content_hash(invoice, items)
+    last = con.execute("SELECT hash FROM invoice_seals ORDER BY id DESC LIMIT 1").fetchone()
+    prev_hash = last[0] if last else GENESIS_HASH
+    sealed_at = now_unix()
+    con.execute(
+        "INSERT INTO invoice_seals (invoice_id, kind, sealed_at, content_hash, prev_hash, hash) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (invoice_id, kind, sealed_at, content_hash, prev_hash,
+         seal_chain_hash(prev_hash, invoice_id, kind, sealed_at, content_hash)),
+    )
+
+
+def append_seal(con, invoice_id: int, kind: str) -> None:
+    """Versiegelt den aktuellen Inhalt. Ein parallel angehängtes Siegel lässt prev_hash kollidieren: Kette neu lesen."""
+    for attempt in range(1, SEAL_APPEND_ATTEMPTS + 1):
+        try:
+            append_seal_once(con, invoice_id, kind)
+            return
+        except sqlite3.IntegrityError:
+            if attempt == SEAL_APPEND_ATTEMPTS:
+                raise
+
+
+def seal_issued_invoice(con, invoice_id: int) -> None:
+    """Die Rechnung ist bereits ausgestellt; ein fehlgeschlagenes Siegel macht das nicht rückgängig,
+    die App holt es beim nächsten Start nach."""
+    try:
+        append_seal(con, invoice_id, "issue")
+    except sqlite3.Error as error:
+        print(
+            f"Warnung: Rechnung {invoice_id} konnte nicht versiegelt werden ({error}); "
+            "die App holt das beim nächsten Start nach.",
+            file=sys.stderr,
+        )
+
+
 def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
     """Spiegel von issueInvoice(): Entwurf beanspruchen (Kundendaten einfrieren), dann echte Nummer ziehen."""
     inv = fetch_invoice(con, invoice_id)
@@ -637,6 +732,7 @@ def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
             datetime.fromtimestamp(inv["issue_date"] or ts),
         )
         con.execute("UPDATE invoices SET number = ? WHERE id = ?", (final_number, invoice_id))
+    seal_issued_invoice(con, invoice_id)
     con.commit()
     return final_number
 

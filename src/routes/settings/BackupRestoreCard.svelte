@@ -26,6 +26,8 @@
   } from "./backup-form";
 
   type RestoreOutcome = "done" | "needsPassword" | "failed";
+  /** `sealsFromBackup` is null when the invoice section was not restored. */
+  type PartialRestoreOutcome = { sealsFromBackup: boolean | null };
 
   const BACKUP_FILE_FILTER = [{ name: "Zettel Backup", extensions: ["zip"] }];
   const SAFETY_BACKUP_PREFIX = "pre-restore";
@@ -127,6 +129,7 @@
   async function onConfirmPartialRestore() {
     if (!pendingRestoreZip) return;
     let safetyBackup = "";
+    let sealsFromBackup: boolean | null = null;
     const outcome = await attemptRestore(async () => {
       // Staging first: it rejects a wrong or missing password before any
       // safety backup gets written.
@@ -137,13 +140,21 @@
         await invoke<void>("discard_pending_restore");
         throw new Error(`Sicherheits-Backup fehlgeschlagen, nichts wurde verändert: ${e}`);
       }
-      await invoke<void>("apply_pending_partial_restore");
+      ({ sealsFromBackup } = await invoke<PartialRestoreOutcome>("apply_pending_partial_restore"));
     });
     if (outcome === "done") {
       toast.success(
         "Wiederherstellung abgeschlossen",
         `Die ausgewählten Bereiche wurden eingespielt. Der vorherige Stand liegt in ${safetyBackup}.`,
       );
+      if (sealsFromBackup === false) {
+        toast.show("Rechnungen ohne Siegel wiederhergestellt", {
+          description:
+            "Die Sicherung enthält noch keine Rechnungssiegel (ältere Version). Die wiederhergestellten Rechnungen werden beim nächsten Start neu versiegelt – bitte danach die Integritätsprüfung unter Einstellungen → Daten ausführen.",
+          variant: "warning",
+          duration: PERSISTENT_TOAST,
+        });
+      }
     }
   }
 

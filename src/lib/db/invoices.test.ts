@@ -10,6 +10,7 @@ vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./client")>()),
   ...db,
 }));
+vi.mock("./seals", () => ({ appendSeal: vi.fn() }));
 vi.mock("./queries", () => ({
   SETTINGS_DEFAULTS: { invoiceNumberFormat: "RE-{YYYY}-{NNNN}" },
   loadSettings: vi.fn(async () => ({ isKleinunternehmer: false, defaultPdfLanguage: "de" })),
@@ -47,6 +48,7 @@ import {
   type InvoiceFormInput,
 } from "./invoices";
 import type { InvoiceRow } from "./invoice-rows";
+import { appendSeal } from "./seals";
 import { mapInvoice, mapItem, type InvoiceItemRow } from "./invoice-rows";
 
 function invoiceRow(overrides: Partial<InvoiceRow> = {}): InvoiceRow {
@@ -511,6 +513,27 @@ describe("issueInvoice", () => {
     expect(assign[1]).toEqual(["RE-0012", 7]);
   });
 
+  it("seals the invoice once it has its final number", async () => {
+    db.select
+      .mockResolvedValueOnce([draftRow])
+      .mockResolvedValueOnce([{ counter: 12, format: "RE-{NNNN}" }]);
+
+    await issueInvoice(7);
+
+    expect(appendSeal).toHaveBeenCalledExactlyOnceWith(7, "issue");
+    expect(vi.mocked(appendSeal).mock.invocationCallOrder[0]).toBeGreaterThan(
+      db.execute.mock.invocationCallOrder[db.execute.mock.calls.findIndex(([sql]) => String(sql).includes("SET number = ?"))],
+    );
+  });
+
+  it("stays issued when sealing fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(appendSeal).mockRejectedValueOnce(new Error("disk full"));
+    db.select.mockResolvedValueOnce([invoiceRow({ status: "draft", number: "RE-2026-0009" })]);
+
+    expect(await issueInvoice(7)).toBe("RE-2026-0009");
+  });
+
   it("freezes the customer's current master data when issuing", async () => {
     db.select
       .mockResolvedValueOnce([invoiceRow({ status: "draft", number: "RE-2026-0009", customer_snapshot: "{}" })]);
@@ -711,6 +734,7 @@ describe("reopenDraft", () => {
     expect(sql).toContain("SET status = 'draft'");
     expect(sql).not.toContain("number");
     expect(binds).toEqual([7, "sent"]);
+    expect(appendSeal).toHaveBeenCalledExactlyOnceWith(7, "reopen");
   });
 
   it.each([
