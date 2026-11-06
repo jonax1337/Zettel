@@ -132,6 +132,25 @@ describe("composeEuerReport income", () => {
 
     expect(amount(r, "112")).toBe(10_000);
     expect(amount(r, "140")).toBe(1_900);
+    expect(r.warnings).toEqual(["1 Rechnung mit Überzahlung – der überschüssige Betrag ist nicht enthalten: RE-2026-0001"]);
+  });
+
+  it("leaves the lines empty for an invoice that was settled before the year and overpaid within it", () => {
+    const overpaid = invoice({ payments: [payment(at(2025, 11, 1), GROSS_19_PERCENT), payment(at(2026, 2, 1), 500)] });
+    const r = report(2026, { invoices: [overpaid] });
+
+    for (const kz of ["112", "140", "159"]) expect(amount(r, kz)).toBeNull();
+    expect(r.warnings).toEqual(["1 Rechnung mit Überzahlung – der überschüssige Betrag ist nicht enthalten: RE-2026-0001"]);
+  });
+
+  it("does not warn when the payments add up to exactly the invoice", () => {
+    const thirds = invoice({
+      total: 10_000,
+      groups: [{ rate: 0, net: 10_000 }],
+      payments: [payment(at(2026, 1, 1), 3_333), payment(at(2026, 2, 1), 3_333), payment(at(2026, 3, 1), 3_334)],
+    });
+
+    expect(report(2026, { invoices: [thirds] }).warnings).toEqual([]);
   });
 
   it("books the refund of a credit note as negative income", () => {
@@ -177,6 +196,21 @@ describe("composeEuerReport income", () => {
     expect(report(2026, { invoices: [usd] }).warnings).toEqual([
       "1 Rechnung in Fremdwährung ohne EUR-Wert – Beträge prüfen: RE-2026-0042",
     ]);
+  });
+
+  it("ignores a foreign-currency invoice with a frozen EUR total of zero and names it in a warning", () => {
+    const broken = invoice({
+      number: "RE-2026-0099",
+      currency: "USD",
+      eurTotalCent: 0,
+      payments: [payment(at(2026, 3, 1), 5_000, 4_500)],
+    });
+    const fine = invoice({ number: "RE-2026-0100", payments: [payment(at(2026, 3, 2), GROSS_19_PERCENT)] });
+    const r = report(2026, { invoices: [broken, fine] });
+
+    expect(amount(r, "112")).toBe(NET_19_PERCENT);
+    expect(r.surplusCent).toBe(GROSS_19_PERCENT);
+    expect(r.warnings).toEqual(["1 Rechnung in Fremdwährung mit EUR-Wert 0 – nicht berücksichtigt: RE-2026-0099"]);
   });
 
   it("sorts mixed VAT rates into taxable and tax-free income", () => {
@@ -239,6 +273,21 @@ describe("composeEuerReport expenses", () => {
     expect(amount(r, "199")).toBe(17_850);
   });
 
+  it.each(["", "999", "130/131/136", "199"])("books an item with the unknown Kz '%s' on Kz 183", (euerKz) => {
+    const r = report(2026, { expenses: [expense({ total: 5_000, items: [{ lineTotal: 5_000, euerKz }] })] });
+
+    expect(amount(r, "183")).toBe(5_000);
+    expect(amount(r, "199")).toBe(5_000);
+  });
+
+  it("books an item with an unknown Kz of a Kleinunternehmer expense gross on Kz 183", () => {
+    const gross = expense({ total: 5_950, vatAmount: 950, items: [{ lineTotal: 5_000, euerKz: "999" }] });
+    const r = report(2026, { expenses: [gross], isKleinunternehmer: true });
+
+    expect(amount(r, "183")).toBe(5_950);
+    expect(amount(r, "199")).toBe(5_950);
+  });
+
   it("books items without a mapping on Kz 183", () => {
     const r = report(2026, { expenses: [expense({ total: 5_000, items: [unmapped] })] });
 
@@ -283,9 +332,18 @@ describe("composeEuerReport sums and empty lines", () => {
   });
 
   it("keeps a real zero amount as zero", () => {
-    const free = invoice({ total: 0, groups: [{ rate: 19, net: 0 }], payments: [payment(at(2026, 3, 1), 0)] });
+    const paid = invoice({ payments: [payment(at(2026, 3, 1), GROSS_19_PERCENT)] });
+    const refunded = invoice({
+      number: "RE-2026-0002",
+      isCreditNote: true,
+      total: -GROSS_19_PERCENT,
+      payments: [payment(at(2026, 4, 1), GROSS_19_PERCENT)],
+    });
+    const r = report(2026, { invoices: [paid, refunded] });
 
-    expect(amount(report(2026, { invoices: [free] }), "112")).toBe(0);
+    expect(amount(r, "112")).toBe(0);
+    expect(amount(r, "140")).toBe(0);
+    expect(amount(r, "159")).toBe(0);
   });
 
   it("sums the filled income and expense lines and reports the surplus", () => {

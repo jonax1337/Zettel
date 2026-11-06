@@ -10,6 +10,7 @@
  */
 import { CSV_LINE_BREAK, escapeCsvField, UTF8_BOM } from "$lib/utils/csv";
 import {
+  EUER_CATEGORY_LINES,
   EUER_KZ,
   EUER_LINE_NUMBERS,
   EUER_LINES,
@@ -19,6 +20,9 @@ import {
 import { apportion, isForeignCurrency, recognisedEurNet, type RateNet } from "./ustva-cash";
 
 const CENTS_PER_EURO = 100;
+// Float sums of payment shares can overshoot 1 by rounding noise; real overpayments are far above this.
+const OVERPAYMENT_TOLERANCE = 1e-9;
+const CATEGORY_KZ = new Set(EUER_CATEGORY_LINES.map((line) => line.kz));
 
 export type EuerPayment = {
   paidAt: number;
@@ -89,11 +93,12 @@ function sumOf(values: number[]): number {
   return values.reduce((a, b) => a + b, 0);
 }
 
-/** Share of the invoice that the payments up to `cutoff` settle, 0..1. */
-function settledRatio(invoice: EuerInvoice, cutoff: number): number {
-  const gross = Math.abs(invoice.total);
-  if (gross === 0) return 0;
-  const eurGross = eurGrossOf(invoice);
+function shareOf(part: number, whole: number): number {
+  return whole === 0 ? 0 : part / whole;
+}
+
+/** Share of the invoice that the payments up to `cutoff` cover; above 1 when overpaid. */
+function paidShare(invoice: EuerInvoice, cutoff: number): number {
   let paidInvoiceCurrency = 0;
   let paidEur = 0;
   for (const payment of invoice.payments) {
@@ -101,7 +106,12 @@ function settledRatio(invoice: EuerInvoice, cutoff: number): number {
     if (payment.eurAmountCent === null) paidInvoiceCurrency += payment.amountCent;
     else paidEur += payment.eurAmountCent;
   }
-  return Math.min(1, paidInvoiceCurrency / gross + paidEur / eurGross);
+  return shareOf(paidInvoiceCurrency, Math.abs(invoice.total)) + shareOf(paidEur, eurGrossOf(invoice));
+}
+
+/** Share of the invoice that the payments up to `cutoff` settle, 0..1. */
+function settledRatio(invoice: EuerInvoice, cutoff: number): number {
+  return Math.min(1, paidShare(invoice, cutoff));
 }
 
 /** The frozen EUR gross total of a foreign-currency invoice; null for invoices that are already in EUR. */
@@ -114,9 +124,8 @@ function eurGrossOf(invoice: EuerInvoice): number {
   return frozenEurGross(invoice) ?? Math.abs(invoice.total);
 }
 
-/** Cumulative EUR net per VAT group and EUR gross that the payments up to `cutoff` settle. */
-function recognised(invoice: EuerInvoice, cutoff: number): { net: number[]; gross: number } {
-  const ratio = settledRatio(invoice, cutoff);
+/** Cumulative EUR net per VAT group and EUR gross of the share `ratio` (0..1) of the invoice that is settled. */
+function recognised(invoice: EuerInvoice, ratio: number): { net: number[]; gross: number } {
   return {
     net: recognisedEurNet(invoice.groups, Math.abs(invoice.total), frozenEurGross(invoice), ratio),
     gross: Math.round(eurGrossOf(invoice) * ratio),
@@ -126,8 +135,12 @@ function recognised(invoice: EuerInvoice, cutoff: number): { net: number[]; gros
 function addInvoiceIncome(amounts: Amounts, invoice: EuerInvoice, from: number, to: number): void {
   // An invoice without a payment in the year is no income of it, however much it was paid before.
   if (!invoice.payments.some((p) => p.paidAt >= from && p.paidAt <= to)) return;
-  const before = recognised(invoice, from - 1);
-  const through = recognised(invoice, to);
+  const ratioBefore = settledRatio(invoice, from - 1);
+  const ratioThrough = settledRatio(invoice, to);
+  // Fully settled earlier: a further payment is an overpayment, not income of the year.
+  if (ratioThrough === ratioBefore) return;
+  const before = recognised(invoice, ratioBefore);
+  const through = recognised(invoice, ratioThrough);
   const sign = invoice.isCreditNote ? -1 : 1;
   const net = through.net.map((n, i) => (n - before.net[i]) * sign);
   const gross = (through.gross - before.gross) * sign;
@@ -149,8 +162,12 @@ function addInvoiceIncome(amounts: Amounts, invoice: EuerInvoice, from: number, 
   if (taxFree.length > 0) addTo(amounts, EUER_KZ.incomeTaxFree, sumOf(taxFree));
 }
 
+/** Items without a category Kz, or with one the form does not know, count as "Übrige Betriebsausgaben". */
+function kzOf(item: EuerExpenseItem): string {
+  return item.euerKz !== null && CATEGORY_KZ.has(item.euerKz) ? item.euerKz : EUER_KZ.expenseOther;
+}
+
 function addExpense(amounts: Amounts, expense: EuerExpense, isKleinunternehmer: boolean): void {
-  const kzOf = (item: EuerExpenseItem) => item.euerKz ?? EUER_KZ.expenseOther;
   const bookGross = isKleinunternehmer && !expense.isReverseCharge;
 
   if (bookGross) {
@@ -167,27 +184,43 @@ function addExpense(amounts: Amounts, expense: EuerExpense, isKleinunternehmer: 
   if (deductsInputVat && expense.vatAmount !== 0) addTo(amounts, EUER_KZ.expenseInputVat, expense.vatAmount);
 }
 
-function foreignCurrencyWarnings(invoices: EuerInvoice[], expenses: EuerExpense[]): string[] {
-  const warnings: string[] = [];
-  const invoicesWithoutEur = invoices.filter(
-    (i) => i.currency !== null && i.currency !== "EUR" && i.eurTotalCent === null,
-  );
-  if (invoicesWithoutEur.length > 0) {
-    const noun = invoicesWithoutEur.length === 1 ? "Rechnung" : "Rechnungen";
-    warnings.push(
-      `${invoicesWithoutEur.length} ${noun} in Fremdwährung ohne EUR-Wert – Beträge prüfen: ` +
-        invoicesWithoutEur.map((i) => i.number).join(", "),
-    );
-  }
-  const foreignExpenses = expenses.filter((e) => e.currency !== "EUR");
-  if (foreignExpenses.length > 0) {
-    const noun = foreignExpenses.length === 1 ? "Ausgabe" : "Ausgaben";
-    warnings.push(
-      `${foreignExpenses.length} ${noun} in Fremdwährung ohne EUR-Kurs – Beträge prüfen: ` +
-        foreignExpenses.map((e) => e.number).join(", "),
-    );
-  }
-  return warnings;
+function warningAbout(
+  documents: { number: string }[],
+  nouns: { one: string; many: string },
+  message: string,
+): string[] {
+  if (documents.length === 0) return [];
+  const noun = documents.length === 1 ? nouns.one : nouns.many;
+  return [`${documents.length} ${noun} ${message}: ${documents.map((d) => d.number).join(", ")}`];
+}
+
+const INVOICE_NOUNS = { one: "Rechnung", many: "Rechnungen" };
+const EXPENSE_NOUNS = { one: "Ausgabe", many: "Ausgaben" };
+
+function reportWarnings(input: EuerInput): string[] {
+  const { invoices, expenses, to } = input;
+  return [
+    ...warningAbout(
+      invoices.filter((i) => i.currency !== null && i.currency !== "EUR" && i.eurTotalCent === null),
+      INVOICE_NOUNS,
+      "in Fremdwährung ohne EUR-Wert – Beträge prüfen",
+    ),
+    ...warningAbout(
+      invoices.filter((i) => frozenEurGross(i) === 0),
+      INVOICE_NOUNS,
+      "in Fremdwährung mit EUR-Wert 0 – nicht berücksichtigt",
+    ),
+    ...warningAbout(
+      expenses.filter((e) => e.currency !== "EUR"),
+      EXPENSE_NOUNS,
+      "in Fremdwährung ohne EUR-Kurs – Beträge prüfen",
+    ),
+    ...warningAbout(
+      invoices.filter((i) => paidShare(i, to) > 1 + OVERPAYMENT_TOLERANCE),
+      INVOICE_NOUNS,
+      "mit Überzahlung – der überschüssige Betrag ist nicht enthalten",
+    ),
+  ];
 }
 
 function sumLines(amounts: Amounts, kind: EuerLineKind): number | null {
@@ -236,7 +269,7 @@ export function composeEuerReport(input: EuerInput): EuerReport {
       ...(def.hint ? { hint: def.hint } : {}),
     })),
     surplusCent: (incomeSum ?? 0) - (expenseSum ?? 0),
-    warnings: foreignCurrencyWarnings(input.invoices, input.expenses),
+    warnings: reportWarnings(input),
   };
 }
 

@@ -8,7 +8,7 @@
   const formYear = formYearFor(new Date().getFullYear()).year;
   const kzItems = EUER_CATEGORY_LINES.map((line) => ({
     value: line.kz,
-    label: `Zeile ${EUER_LINE_NUMBERS[formYear][line.kz]} · ${line.label}`,
+    label: `Kz ${line.kz} · Zeile ${EUER_LINE_NUMBERS[formYear][line.kz]} · ${line.label}`,
   }));
 
   let categories = $state<ExpenseCategory[]>([]);

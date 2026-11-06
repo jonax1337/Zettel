@@ -97,7 +97,8 @@
     </p>
     <p class="text-muted-foreground">
       Ob Ausgaben brutto (Kleinunternehmer) oder netto mit Vorsteuer gebucht werden, richtet sich nach
-      der aktuellen Einstellung „Kleinunternehmer“, nicht nach dem Rechnungsdatum.
+      der aktuellen Einstellung „Kleinunternehmer“, nicht nach dem Rechnungsdatum. Stornorechnungen
+      mindern die Einnahmen erst, wenn die Erstattung als Zahlung auf der Stornorechnung erfasst ist.
     </p>
   </div>
 </div>
@@ -179,10 +180,11 @@
     </CardContent>
   </Card>
 
-  <div class="mt-6">
+  <div class="mt-6 flex flex-wrap items-center gap-3">
     <Button onclick={() => onSaveCsv(current)} disabled={saving}>
       <Download class="size-4" />
       {saving ? "Speichere…" : "CSV exportieren"}
     </Button>
+    <p class="text-sm text-muted-foreground">Der Export ist nur als CSV verfügbar, ein PDF gibt es nicht.</p>
   </div>
 {/if}
