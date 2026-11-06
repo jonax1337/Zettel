@@ -84,6 +84,30 @@ describe("describeAuditEntry", () => {
     expect(text).toBe("Rechnung geändert: PDF erzeugt, Kundendaten eingefroren");
   });
 
+  it("leaves out a date that was re-saved at another time of the same day", () => {
+    const morning = Math.floor(new Date(2026, 10, 4, 0).getTime() / 1000);
+    const noon = Math.floor(new Date(2026, 10, 4, 12).getTime() / 1000);
+    const text = describeEur(
+      entry({ action: "update", oldValues: { issue_date: noon, total: 100 }, newValues: { issue_date: morning, total: 200 } }),
+    );
+    expect(text).toBe(`Rechnung geändert: Gesamt ${eur(100)} → ${eur(200)}`);
+  });
+
+  it("shows a draft placeholder number the way the app does", () => {
+    const text = describeEur(
+      entry({ action: "update", oldValues: { number: "DRAFT-ea8ecc5416144206" }, newValues: { number: "RE-2026-0007" } }),
+    );
+    expect(text).not.toContain("DRAFT-");
+    expect(text).toContain("RE-2026-0007");
+  });
+
+  it("names the validation status in German", () => {
+    const text = describeEur(
+      entry({ action: "update", oldValues: { last_validation_status: null }, newValues: { last_validation_status: "unavailable" } }),
+    );
+    expect(text).toBe("Rechnung geändert: Validierungsstatus – → nicht geprüft");
+  });
+
   it("falls back to the raw column name for unknown columns", () => {
     const text = describeEur(
       entry({ action: "update", oldValues: { mystery_column: "a" }, newValues: { mystery_column: "b" } }),

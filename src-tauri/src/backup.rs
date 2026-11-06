@@ -71,12 +71,11 @@ const CUSTOMER_TABLES: [&str; 1] = ["customers"];
 /// Offers point at the invoice they were converted into, payments and
 /// reminders (without a declared FK) at the invoice they belong to. The seals
 /// of the hash chain travel with the invoices they seal.
-const INVOICE_TABLES: [&str; 10] = [
+const INVOICE_TABLES: [&str; 9] = [
     "offer_items",
     "offers",
     "invoice_payments",
     "invoice_seals",
-    "invoice_attachments",
     "reminders",
     "invoice_items",
     "invoices",
@@ -1308,6 +1307,67 @@ mod tests {
         .unwrap();
     }
 
+    /// DB built by the first `count` real migrations. The stub tables of
+    /// `create_db` mirror `INVOICE_TABLES`, so only these catch a restorable
+    /// table the real schema no longer has.
+    fn migrated_db(path: &Path, count: usize) -> Connection {
+        let conn = Connection::open(path).unwrap();
+        for migration in crate::build_migrations().into_iter().take(count) {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn
+    }
+
+    fn seed_issued_invoice(conn: &Connection, number: &str) {
+        conn.execute_batch(&format!(
+            "INSERT INTO customers (id, customer_number, name) VALUES (1, 'K-0001', 'Acme');
+             INSERT INTO invoices (number, customer_id, issue_date, due_date, status)
+               VALUES ('{number}', 1, 1, 2, 'sent');"
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn restore_sections_runs_on_the_real_schema() {
+        let all_migrations = crate::build_migrations().len();
+        // Schema 29 is the last one before the seals existed.
+        let pre_seal_migrations = all_migrations - 1;
+        let combos = [
+            sections(true, false, false),
+            sections(false, true, false),
+            sections(false, false, true),
+            sections(true, true, false),
+        ];
+        for (i, wanted) in combos.into_iter().enumerate() {
+            for backup_migrations in [all_migrations, pre_seal_migrations] {
+                let dir = TempDir::new(&format!("restore-real-{i}-{backup_migrations}"));
+                let (live, staged) = (dir.path().join("live.db"), dir.path().join("staged.db"));
+                seed_issued_invoice(&migrated_db(&live, all_migrations), "RE-LIVE");
+                seed_issued_invoice(&migrated_db(&staged, backup_migrations), "RE-BACKUP");
+                let triggers_before = trigger_sql(&live);
+
+                let outcome = restore_sections(&live, &staged, wanted)
+                    .unwrap_or_else(|e| panic!("{wanted:?} from {backup_migrations}: {e}"));
+
+                let number: String = Connection::open(&live)
+                    .unwrap()
+                    .query_row("SELECT number FROM invoices", [], |row| row.get(0))
+                    .unwrap();
+                let expected = if wanted.invoices {
+                    "RE-BACKUP"
+                } else {
+                    "RE-LIVE"
+                };
+                assert_eq!(number, expected, "{wanted:?}");
+                assert_eq!(trigger_sql(&live), triggers_before, "{wanted:?}");
+                let seals_expected = wanted
+                    .invoices
+                    .then_some(backup_migrations == all_migrations);
+                assert_eq!(outcome.seals_from_backup, seals_expected, "{wanted:?}");
+            }
+        }
+    }
+
     /// Replaces the seals of `path` by one per hash, in this order.
     fn set_seal_hashes(path: &Path, hashes: &[&str]) {
         let conn = Connection::open(path).unwrap();
@@ -1447,7 +1507,7 @@ mod tests {
 
         restore_sections(&live, &staged, sections(false, true, false)).unwrap();
 
-        for table in ["invoice_payments", "reminders", "invoice_attachments"] {
+        for table in ["invoice_payments", "reminders"] {
             assert_eq!(tag_of(&live, table), "backup", "{table}");
         }
     }

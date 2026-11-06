@@ -2,9 +2,16 @@
 import type { AuditEntry, AuditValues } from "$lib/db/audit";
 import { formatMoney } from "$lib/utils/currency";
 import { formatDate } from "$lib/utils/date";
+import { displayInvoiceNumber } from "$lib/utils/invoice-number";
 import { INVOICE_STATUS_LABEL } from "./status";
 
-type ValueKind = "text" | "money" | "eur" | "date" | "status" | "event";
+type ValueKind = "text" | "money" | "eur" | "date" | "status" | "number" | "validation" | "event";
+
+const VALIDATION_LABEL: Record<string, string> = {
+  valid: "gültig",
+  invalid: "ungültig",
+  unavailable: "nicht geprüft",
+};
 
 /** `event` columns read as a phrase on their own; their old and new value are not shown. */
 type ColumnSpec = { label: string; kind: ValueKind };
@@ -16,7 +23,7 @@ const date = (label: string): ColumnSpec => ({ label, kind: "date" });
 const event = (label: string): ColumnSpec => ({ label, kind: "event" });
 
 const INVOICE_COLUMNS: Record<string, ColumnSpec> = {
-  number: text("Nummer"),
+  number: { label: "Nummer", kind: "number" },
   customer_id: text("Kunde"),
   customer_snapshot: event("Kundendaten eingefroren"),
   issue_date: date("Rechnungsdatum"),
@@ -47,7 +54,7 @@ const INVOICE_COLUMNS: Record<string, ColumnSpec> = {
   is_reverse_charge: text("Reverse-Charge"),
   reverse_charge_type: text("Reverse-Charge-Art"),
   is_kleinunternehmer: text("Kleinunternehmer"),
-  last_validation_status: text("Validierungsstatus"),
+  last_validation_status: { label: "Validierungsstatus", kind: "validation" },
   last_validated_at: date("Validiert am"),
   last_validation_findings_count: text("Validierungsbefunde"),
 };
@@ -105,6 +112,10 @@ function formatValue(spec: ColumnSpec, value: unknown, currency: string): string
       return formatDate(Number(value));
     case "status":
       return INVOICE_STATUS_LABEL[value as keyof typeof INVOICE_STATUS_LABEL] ?? String(value);
+    case "number":
+      return displayInvoiceNumber({ number: String(value), status: "draft" });
+    case "validation":
+      return VALIDATION_LABEL[String(value)] ?? String(value);
     default:
       return String(value);
   }
@@ -148,8 +159,12 @@ function describeChanges(table: TableSpec, entry: AuditEntry, currency: string):
     .map(([column, newValue]) => {
       const spec = table.columns[column] ?? text(column);
       if (spec.kind === "event") return spec.label;
-      return `${spec.label} ${formatValue(spec, oldValues[column], currency)} → ${formatValue(spec, newValue, currency)}`;
+      const before = formatValue(spec, oldValues[column], currency);
+      const after = formatValue(spec, newValue, currency);
+      // A date re-saved at another time of day reads the same; showing "4.11. → 4.11." only confuses.
+      return before === after ? null : `${spec.label} ${before} → ${after}`;
     })
+    .filter((change) => change !== null)
     .join(", ");
 }
 

@@ -18,37 +18,16 @@
     PERSISTENT_TOAST,
   } from "$lib/ui";
   import { Download, Upload } from "$lib/brand-icons";
-  import { pluralize } from "../parts/entity/format";
   import {
     BACKUP_PASSWORD_MIN_LENGTH,
     backupPasswordProblem,
     defaultBackupFilename,
     isPasswordRequiredError,
+    restoreSealWarning,
+    type PartialRestoreOutcome,
   } from "./backup-form";
 
   type RestoreOutcome = "done" | "needsPassword" | "failed";
-  /** `sealsFromBackup` is null when the invoice section was not restored; `droppedLiveSeals` is then 0. */
-  type PartialRestoreOutcome = { sealsFromBackup: boolean | null; droppedLiveSeals: number };
-
-  const NO_SEALS_IN_BACKUP_TEXT =
-    "Die Sicherung enthält noch keine Rechnungssiegel (ältere Version). Die wiederhergestellten Rechnungen werden beim nächsten Start neu versiegelt – bitte danach die Integritätsprüfung unter Einstellungen → Daten ausführen.";
-
-  function droppedSealsText(count: number): string {
-    return `${count} ${pluralize(count, "Rechnungssiegel", "Rechnungssiegel")} aus der Zeit nach dieser Sicherung ${pluralize(count, "wurde", "wurden")} verworfen – die zugehörigen Rechnungen ${pluralize(count, "ist", "sind")} nicht mehr vorhanden. Der Vorgang ist im Änderungsprotokoll vermerkt.`;
-  }
-
-  /** One warning for everything the restore did to the seals, so two toasts never contradict each other. */
-  function sealWarning({ sealsFromBackup, droppedLiveSeals }: PartialRestoreOutcome): { title: string; description: string } | null {
-    const texts = [
-      droppedLiveSeals > 0 ? droppedSealsText(droppedLiveSeals) : null,
-      sealsFromBackup === false ? NO_SEALS_IN_BACKUP_TEXT : null,
-    ].filter((text) => text !== null);
-    if (texts.length === 0) return null;
-    return {
-      title: droppedLiveSeals > 0 ? "Rechnungssiegel verworfen" : "Rechnungen ohne Siegel wiederhergestellt",
-      description: texts.join(" "),
-    };
-  }
 
   const BACKUP_FILE_FILTER = [{ name: "Zettel Backup", extensions: ["zip"] }];
   const SAFETY_BACKUP_PREFIX = "pre-restore";
@@ -168,7 +147,7 @@
         "Wiederherstellung abgeschlossen",
         `Die ausgewählten Bereiche wurden eingespielt. Der vorherige Stand liegt in ${safetyBackup}.`,
       );
-      const warning = restored && sealWarning(restored);
+      const warning = restored && restoreSealWarning(restored);
       if (warning) {
         toast.show(warning.title, {
           description: warning.description,

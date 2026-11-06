@@ -16,6 +16,7 @@
   let entries = $state<AuditEntry[]>([]);
   let seal = $state<InvoiceSealStatus | null>(null);
   let error = $state<string | null>(null);
+  let loading = $state(false);
   let loadToken = 0;
 
   // `invoice` is replaced on every reload of the page, which re-runs this.
@@ -24,6 +25,7 @@
     const shouldLoadEntries = open;
     const token = ++loadToken;
     void invoice;
+    loading = shouldLoadEntries;
     Promise.all([checkInvoiceSeal(invoiceId), shouldLoadEntries ? listInvoiceHistory(invoiceId) : null])
       .then(([status, history]) => {
         if (token !== loadToken) return;
@@ -33,6 +35,9 @@
       })
       .catch((e) => {
         if (token === loadToken) error = String(e);
+      })
+      .finally(() => {
+        if (token === loadToken) loading = false;
       });
   });
 </script>
@@ -68,7 +73,9 @@
     {/if}
 
     {#if open}
-      {#if entries.length === 0 && !error}
+      {#if loading && entries.length === 0}
+        <p class="text-sm text-muted-foreground">Änderungsverlauf wird geladen …</p>
+      {:else if entries.length === 0 && !error}
         <p class="text-sm text-muted-foreground">Keine Änderungen protokolliert.</p>
       {:else}
         <ul class="divide-y">
