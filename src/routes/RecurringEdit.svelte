@@ -28,7 +28,7 @@
   import BackLink from "./parts/entity/BackLink.svelte";
   import { fetchEditTarget, parseId } from "./parts/entity/edit-target";
   import { RECURRING_INTERVAL_ITEMS } from "./parts/entity/recurring";
-  import { vatRateForNewItem } from "./parts/entity/vat";
+  import { vatRateForNewItem } from "$lib/utils/vat";
   import ReverseChargeField from "./invoice/ReverseChargeField.svelte";
   import { createDocumentFormData } from "./invoice/document-form.svelte";
   import { reverseChargeError } from "./invoice/form-validation";

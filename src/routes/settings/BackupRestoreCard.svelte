@@ -24,6 +24,7 @@
     defaultBackupFilename,
     isPasswordRequiredError,
     restoreSealWarning,
+    restoreTimeEntryWarning,
     type PartialRestoreOutcome,
   } from "./backup-form";
 
@@ -147,8 +148,9 @@
         "Wiederherstellung abgeschlossen",
         `Die ausgewählten Bereiche wurden eingespielt. Der vorherige Stand liegt in ${safetyBackup}.`,
       );
-      const warning = restored && restoreSealWarning(restored);
-      if (warning) {
+      const warnings = restored ? [restoreSealWarning(restored), restoreTimeEntryWarning(restored)] : [];
+      for (const warning of warnings) {
+        if (!warning) continue;
         toast.show(warning.title, {
           description: warning.description,
           variant: "warning",
@@ -248,7 +250,7 @@
           </label>
           <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
             <Checkbox bind:checked={restoreSections.invoices} />
-            Rechnungen + PDFs <span class="text-muted-foreground">(inkl. Zahlungen, Mahnungen, Anhänge, Angebote, wiederkehrende Rechnungen)</span>
+            Rechnungen + PDFs <span class="text-muted-foreground">(inkl. Zahlungen, Mahnungen, Anhänge, Angebote, wiederkehrende Rechnungen, Zeiterfassung)</span>
           </label>
           <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
             <Checkbox bind:checked={restoreSections.settings} />

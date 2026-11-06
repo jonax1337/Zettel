@@ -26,20 +26,21 @@ describe("deletionBlockedMessage", () => {
 });
 
 describe("assertCustomerDeletable", () => {
-  it("counts invoices, offers and recurring templates of the customer", async () => {
-    select.mockResolvedValueOnce([{ c0: 0, c1: 0, c2: 2 }]);
+  it("counts invoices, offers, recurring templates and projects of the customer", async () => {
+    select.mockResolvedValueOnce([{ c0: 0, c1: 0, c2: 2, c3: 1 }]);
 
-    await expect(assertCustomerDeletable(7)).rejects.toThrow("2 wiederkehrende Rechnungen");
+    await expect(assertCustomerDeletable(7)).rejects.toThrow("2 wiederkehrende Rechnungen, 1 Projekt");
 
     const [sql, binds] = select.mock.calls[0];
     expect(sql).toContain("FROM invoices WHERE customer_id = ?");
     expect(sql).toContain("FROM offers WHERE customer_id = ?");
     expect(sql).toContain("FROM recurring_invoices WHERE customer_id = ?");
-    expect(binds).toEqual([7, 7, 7]);
+    expect(sql).toContain("FROM projects WHERE customer_id = ?");
+    expect(binds).toEqual([7, 7, 7, 7]);
   });
 
   it("passes for an unused customer", async () => {
-    select.mockResolvedValueOnce([{ c0: 0, c1: 0, c2: 0 }]);
+    select.mockResolvedValueOnce([{ c0: 0, c1: 0, c2: 0, c3: 0 }]);
 
     await expect(assertCustomerDeletable(7)).resolves.toBeUndefined();
   });

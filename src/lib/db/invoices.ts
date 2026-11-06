@@ -405,6 +405,8 @@ export async function deleteInvoice(id: number): Promise<void> {
   }
   // invoice_payments has no FK to invoices, so they would be left behind.
   await execute("DELETE FROM invoice_payments WHERE invoice_id = ?", [id]);
+  // Billed time entries become open again; explicit, because the FK action only applies with foreign keys on.
+  await execute("UPDATE time_entries SET invoice_id = NULL, updated_at = unixepoch() WHERE invoice_id = ?", [id]);
   await execute("DELETE FROM invoices WHERE id = ?", [id]);
 }
 
@@ -614,10 +616,13 @@ export async function cancelInvoice(id: number): Promise<void> {
       "Nur Entwürfe ohne Rechnungsnummer können verworfen werden. Ausgestellte Rechnungen bitte per Stornorechnung stornieren.",
     );
   }
-  await execute(
+  const cancelled = await execute(
     "UPDATE invoices SET status = 'cancelled', updated_at = unixepoch() WHERE id = ? AND status = 'draft'",
     [id],
   );
+  if (cancelled.rowsAffected === 1) {
+    await execute("UPDATE time_entries SET invoice_id = NULL, updated_at = unixepoch() WHERE invoice_id = ?", [id]);
+  }
 }
 
 async function countPayments(invoiceId: number): Promise<number> {

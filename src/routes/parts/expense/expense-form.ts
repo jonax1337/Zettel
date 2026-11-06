@@ -10,7 +10,7 @@ import { nowUnix, toIsoDate } from "$lib/utils/date";
 import { computeLineTotal } from "$lib/utils/totals";
 import { DEFAULT_UNIT } from "$lib/utils/units";
 import { centsToPriceText } from "../entity/format";
-import { STANDARD_VAT_RATE } from "../entity/vat";
+import { STANDARD_VAT_RATE } from "$lib/utils/vat";
 
 type ReverseChargeType = Expense["reverseChargeType"];
 

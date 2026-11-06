@@ -30,14 +30,15 @@ const INVOICE_TABLES = ["reminders", "invoice_payments", "invoice_items", "invoi
 const OFFER_TABLES = ["offer_items", "offers"];
 const EXPENSE_TABLES = ["expense_items", "expenses"];
 const RECURRING_TABLES = ["recurring_invoice_items", "recurring_invoices"];
+const TIME_TABLES = ["time_entries", "projects"];
 
-// Customers own invoices, offers and recurring templates, so those go with them.
+// Customers own invoices, offers, recurring templates and projects, so those go with them.
 const TABLES_TO_CLEAR: Record<WipeableTable, string[]> = {
   invoices: INVOICE_TABLES,
   offers: OFFER_TABLES,
   expenses: EXPENSE_TABLES,
   reminders: ["reminders"],
-  customers: [...INVOICE_TABLES, ...OFFER_TABLES, ...RECURRING_TABLES, "customers"],
+  customers: [...INVOICE_TABLES, ...OFFER_TABLES, ...RECURRING_TABLES, ...TIME_TABLES, "customers"],
   vendors: [...EXPENSE_TABLES, "vendors"],
   recurring_invoices: RECURRING_TABLES,
   tax_prepayments: ["tax_prepayments"],
@@ -48,12 +49,17 @@ const ALL_BUSINESS_TABLES = [
   ...OFFER_TABLES,
   ...EXPENSE_TABLES,
   ...RECURRING_TABLES,
+  ...TIME_TABLES,
   "tax_prepayments",
   "customers",
   "vendors",
 ];
 
 async function deleteAllRows(tables: string[]): Promise<void> {
+  // Time entries survive a wipe of the invoices they were billed on, open again.
+  if (tables.includes("invoices")) {
+    await execute("UPDATE time_entries SET invoice_id = NULL WHERE invoice_id IS NOT NULL");
+  }
   for (const table of tables) await execute(`DELETE FROM ${table}`);
 }
 

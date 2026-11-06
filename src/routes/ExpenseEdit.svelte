@@ -40,7 +40,7 @@
   import BackLink from "./parts/entity/BackLink.svelte";
   import { fetchEditTarget, parseId } from "./parts/entity/edit-target";
   import { centsToPriceText } from "./parts/entity/format";
-  import { vatRateForNewItem } from "./parts/entity/vat";
+  import { vatRateForNewItem } from "$lib/utils/vat";
   import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
   import { paidDateWarning } from "./invoice/date-warnings";
   import ExpenseItemsTable from "./parts/expense/ExpenseItemsTable.svelte";

@@ -669,7 +669,7 @@ describe("markPaid", () => {
 });
 
 describe("deleteInvoice", () => {
-  it("removes the payments of the deleted invoice, which have no FK cascade", async () => {
+  it("removes the payments of the deleted invoice, which have no FK cascade, and frees its time entries", async () => {
     db.select.mockResolvedValue([invoiceRow({ status: "cancelled", number: "DRAFT-abc" })]);
 
     await deleteInvoice(7);
@@ -677,6 +677,7 @@ describe("deleteInvoice", () => {
     const statements = db.execute.mock.calls.map(([sql]) => String(sql));
     expect(statements).toEqual([
       "DELETE FROM invoice_payments WHERE invoice_id = ?",
+      "UPDATE time_entries SET invoice_id = NULL, updated_at = unixepoch() WHERE invoice_id = ?",
       "DELETE FROM invoices WHERE id = ?",
     ]);
   });
@@ -743,6 +744,7 @@ describe("reopenDraft", () => {
     ["with a draft credit note", invoiceRow({ status: "sent" }), 0, creditNoteFor7("draft")],
     ["that is paid", invoiceRow({ status: "paid" }), 0, null],
     ["that is cancelled and numbered", invoiceRow({ status: "cancelled" }), 0, null],
+    ["that is a discarded draft", invoiceRow({ status: "cancelled", number: "DRAFT-a1b2c3d4" }), 0, null],
   ])("refuses an invoice %s", async (_label, invoice, payments, creditNote) => {
     reopenSituation(invoice, payments, creditNote);
 

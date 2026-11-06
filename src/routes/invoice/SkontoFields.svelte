@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { Checkbox, Input, Label } from "$lib/ui";
-  import type { SkontoForm } from "./skonto-form";
+  import type { SkontoForm } from "$lib/utils/skonto-form";
 
   type Props = {
     skonto: SkontoForm;

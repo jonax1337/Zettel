@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Clock,
   Download,
   FileInput,
   FileSpreadsheet,
@@ -41,6 +42,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/invoices", label: "Rechnungen", icon: FileText },
       { href: "/reminders", label: "Mahnungen", icon: FileWarning },
       { href: "/recurring", label: "Wiederkehrende Rechnungen", icon: Repeat },
+      { href: "/time", label: "Zeiterfassung", icon: Clock },
       { href: "/bank-import", label: "Bank-Import", icon: Landmark },
     ],
   },
@@ -75,6 +77,7 @@ export const SETTINGS_PAGES = [
 export const CREATE_ACTIONS = [
   { href: "/invoices/new", label: "Neue Rechnung", keywords: "rechnung erstellen anlegen" },
   { href: "/offers/new", label: "Neues Angebot", keywords: "angebot erstellen anlegen" },
+  { href: "/time?new=1", label: "Zeit erfassen", keywords: "zeiterfassung stunden zeit buchen projekt" },
   { href: "/customers/new", label: "Neuer Kunde", keywords: "kunde anlegen erstellen" },
   { href: "/expenses/new", label: "Neue Ausgabe", keywords: "eingangsrechnung beleg ausgabe erfassen" },
   { href: "/vendors/new", label: "Neuer Lieferant", keywords: "lieferant anlegen erstellen" },

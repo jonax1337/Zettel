@@ -70,6 +70,7 @@ class TestZugferdGoldens:
         "05-reverse-charge.json",
         "06-basic.json",
         "07-extended.json",
+        "13-hourly-service-periods.json",
     ])
     def test_xml_matches_golden(self, payloads, payload_name, request):
         _assert_matches_golden(render_zugferd_xml(payloads(payload_name)), payload_name, request)
@@ -85,6 +86,48 @@ class TestXRechnungGoldens:
     ])
     def test_xml_matches_golden(self, payloads, payload_name, request):
         _assert_matches_golden(render_xrechnung_xml(payloads(payload_name)), payload_name, request)
+
+
+class TestHourlyTimeBilling:
+    """Positions created by the time tracking: hours as 'Std' with the work days as line period."""
+
+    @staticmethod
+    def _lines(xml: str) -> list[ET.Element]:
+        return _xpath_all(xml, ".//ram:IncludedSupplyChainTradeLineItem")
+
+    def test_hours_are_billed_as_unit_hur_with_two_decimals(self, payloads):
+        xml = render_zugferd_xml(payloads("13-hourly-service-periods.json"))
+
+        quantities = [
+            line.find(".//ram:BilledQuantity", NS) for line in self._lines(xml)
+        ]
+
+        assert [(q.get("unitCode"), q.text) for q in quantities] == [("HUR", "1.5"), ("HUR", "0.25")]
+
+    def test_every_position_carries_its_work_days_as_billing_period(self, payloads):
+        xml = render_zugferd_xml(payloads("13-hourly-service-periods.json"))
+
+        periods = []
+        for line in self._lines(xml):
+            period = line.find(".//ram:BillingSpecifiedPeriod", NS)
+            periods.append((
+                period.find("./ram:StartDateTime/udt:DateTimeString", NS).text,
+                period.find("./ram:EndDateTime/udt:DateTimeString", NS).text,
+            ))
+
+        assert periods == [("20260505", "20260507"), ("20260506", "20260506")]
+
+    def test_the_invoice_period_spans_all_work_days(self, payloads):
+        xml = render_zugferd_xml(payloads("13-hourly-service-periods.json"))
+
+        assert _xpath_text(
+            xml,
+            ".//ram:ApplicableHeaderTradeSettlement/ram:BillingSpecifiedPeriod/ram:StartDateTime/udt:DateTimeString",
+        ) == "20260505"
+        assert _xpath_text(
+            xml,
+            ".//ram:ApplicableHeaderTradeSettlement/ram:BillingSpecifiedPeriod/ram:EndDateTime/udt:DateTimeString",
+        ) == "20260507"
 
 
 class TestZugferdSemantics:

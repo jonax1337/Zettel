@@ -74,6 +74,7 @@ fn build_migrations() -> Vec<Migration> {
         (29, "v0.24_mail_xrechnung", "0028_v0.24_mail_xrechnung"),
         (30, "v0.24_gobd_audit", "0029_v0.24_gobd_audit"),
         (31, "v0.24_euer_mapping", "0030_v0.24_euer_mapping"),
+        (32, "v0.24_time_tracking", "0031_v0.24_time_tracking"),
     ]
 }
 
