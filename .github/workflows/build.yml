@@ -84,7 +84,7 @@ jobs:
           - os: windows-latest
             rust-target: x86_64-pc-windows-msvc
             artifact-name: zettel-windows-x86_64
-          - os: macos-14
+          - os: macos-15
             rust-target: aarch64-apple-darwin
             artifact-name: zettel-macos-arm64
           # macOS Intel (macos-13) bewusst deaktiviert: GitHub-Actions-Free-Tier
