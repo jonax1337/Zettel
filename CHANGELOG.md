@@ -29,6 +29,7 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 - **ZUGFeRD-Import** von Eingangsrechnungen übernimmt Positionssummen statt gerundeter Einzelpreise (richtige Vorsteuer).
 - **Steuern:** Skonto-, Gewerbesteuer- und UStVA-Rundung korrigiert (UStVA-Bemessungsgrundlagen in vollen Euro), ESt-Tarif 2024 rückwirkend angepasst (Grundfreibetrag 11.784 €), DATEV-Export behält das Vorzeichen negativer Buchungsgruppen und lehnt Zeiträume über zwei Wirtschaftsjahre ab.
 - **DATEV-Erlöskonten bei Reverse Charge** nach Typ und Art des Umsatzes: SKR03 8125/8336/8120/8338, SKR04 4125/4336/4120/4338 (ig. Lieferung / EU-Leistung / Ausfuhr / Drittland-Leistung) (#134).
+- **DATEV-Export mit SKR04 nutzte für kategorisierte Ausgaben SKR03-Konten** (seit v0.22.0): Das Ausgabenformular speicherte beim Wählen einer Kategorie deren SKR03-Konto in der Position. Das Formular speichert nur noch ein selbst eingetragenes Konto; bestehende Ausgaben werden beim Export korrigiert (#156).
 - **Skonto** wird kaufmännisch gerundet statt abgerundet (#136).
 - **EPC-QR-Code** fordert nach Teilzahlungen nur den offenen Betrag.
 - **Teil-Stornos** rechnen betragsgenau: offen ist Rechnungsbetrag − Zahlungen − Stornorechnungen. Ein verbleibender Rest bleibt mahnbar, im Bank-Abgleich und in den offenen Posten (#131).

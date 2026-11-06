@@ -131,7 +131,7 @@
       if (documents.invoices.length + documents.expenses.length === 0) {
         toast.error(
           "Keine Belege im Zeitraum",
-          "Rechnungen müssen 'Versendet' oder 'Bezahlt' sein. Eingangsrechnungen 'Offen' oder 'Bezahlt'.",
+          "Rechnungen müssen 'Versendet', 'Teilbezahlt' oder 'Bezahlt' sein. Eingangsrechnungen 'Offen' oder 'Bezahlt'.",
         );
         return;
       }
@@ -217,7 +217,7 @@
       <div class="grid grid-cols-1 gap-2 rounded-md border border-border bg-muted/20 p-3">
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
           <Checkbox bind:checked={includeInvoices} />
-          Rechnungen (Erlöse — Status „Versendet" oder „Bezahlt")
+          Rechnungen (Erlöse — Status „Versendet", „Teilbezahlt" oder „Bezahlt")
         </label>
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
           <Checkbox bind:checked={includeExpenses} />

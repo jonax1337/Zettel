@@ -1,13 +1,12 @@
 <script lang="ts">
   import { computeLineTotal } from "$lib/utils/totals";
-  import { accountForSkr } from "$lib/db/expense-categories";
   import type { ExpenseCategory } from "$lib/db/schema";
   import { centsToEur } from "$lib/utils/money";
   import { Button, Card, Input, Select } from "$lib/ui";
   import { Package, Plus, Trash2 } from "$lib/brand-icons";
   import { commitPriceText } from "../entity/format";
   import { VAT_RATE_ITEMS } from "../entity/vat";
-  import type { ExpenseItemRow } from "./expense-form";
+  import { applyCategory, type ExpenseItemRow } from "./expense-form";
 
   type Props = {
     items: ExpenseItemRow[];
@@ -37,18 +36,6 @@
     { value: FREE_TEXT_CATEGORY, label: "— frei eintragen —" },
     ...curatedCategories.map((c) => ({ value: String(c.id), label: c.name })),
   ]);
-
-  function pickCategory(item: ExpenseItemRow, value: string) {
-    const category = curatedCategories.find((c) => String(c.id) === value);
-    if (!category) {
-      item.categoryId = null;
-      return;
-    }
-    item.categoryId = category.id;
-    item.category = category.name;
-    // The DATEV export resolves the account per category and SKR again; this is only a hint in the form.
-    item.datevAccount ||= accountForSkr(category, "SKR03");
-  }
 
   function removeItem(idx: number) {
     items = items.filter((_, i) => i !== idx);
@@ -97,7 +84,7 @@
                 <Select
                   items={categoryItems}
                   value={item.categoryId ? String(item.categoryId) : FREE_TEXT_CATEGORY}
-                  onValueChange={(v) => pickCategory(item, v)}
+                  onValueChange={(v) => applyCategory(item, curatedCategories.find((c) => String(c.id) === v))}
                   disabled={!editable}
                   class="px-2 @3xl:px-3"
                 />

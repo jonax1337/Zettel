@@ -57,6 +57,26 @@ describe("resolveItemAccounts", () => {
     expect(item.datevAccount).toBe("4999");
   });
 
+  it("replaces the SKR03 account that older versions stored as a hint when exporting SKR04", () => {
+    const [item] = resolveItemAccounts([{ categoryId: 1, datevAccount: "4930" }], categories, "SKR04");
+    expect(item.datevAccount).toBe("6805");
+  });
+
+  it("keeps the stored SKR03 account of the category when exporting SKR03", () => {
+    const [item] = resolveItemAccounts([{ categoryId: 1, datevAccount: "4930" }], categories, "SKR03");
+    expect(item.datevAccount).toBe("4930");
+  });
+
+  it("keeps an SKR03 account that belongs to another category when exporting SKR04", () => {
+    const [item] = resolveItemAccounts([{ categoryId: 1, datevAccount: "4910" }], categories, "SKR04");
+    expect(item.datevAccount).toBe("4910");
+  });
+
+  it("keeps a stale-looking account on an item without a category", () => {
+    const [item] = resolveItemAccounts([{ categoryId: null, datevAccount: "4930" }], categories, "SKR04");
+    expect(item.datevAccount).toBe("4930");
+  });
+
   it("leaves items without a category or with an unknown category alone", () => {
     const items = [
       { categoryId: null, datevAccount: null },
