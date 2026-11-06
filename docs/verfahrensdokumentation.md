@@ -66,7 +66,7 @@ Rechnungsformat: [PDF/A-3 mit eingebettetem ZUGFeRD/Factur-X-XML / XRechnung (CI
 
 - Zettel ist eine **lokale Desktop-Anwendung** (Windows / macOS / Linux). Es gibt keinen Server und keine Cloud; die Daten verlassen den Rechner nur durch Aktionen, die du auslöst (E-Mail-Versand, Backup in einen Cloud-Ordner, Export).
 - Daten liegen in einer **SQLite-Datenbank** im Anwendungsdatenordner (Windows: `%APPDATA%\digital.laux.zettel\`, macOS: `~/Library/Application Support/digital.laux.zettel/`, Linux: `~/.local/share/digital.laux.zettel/`).
-- Belege (PDF) liegen im Dokumentenordner: `<Dokumente>/Zettel/{Rechnungen,Angebote,Mahnungen,Eingangsrechnungen,Backups}/`. [Abweichender Speicherort, falls geändert: ___]
+- Belege (PDF) liegen im Dokumentenordner `<Dokumente-Root>/{Rechnungen,Angebote,Mahnungen,Eingangsrechnungen,Backups}/`. Der Root ist `<Dokumente>/Zettel` (Standard), `<Dokumente>/Zettel-Sandbox` (Sandbox) bzw. `<Dokumente>/Zettel/Mandanten/<Mandanten-ID>` (eigener Mandant); `<Dokumente>` ist der Ordner „Dokumente“ des Betriebssystems (unter Windows folgt er einer Umleitung nach OneDrive). [Tatsächlicher Pfad auf dem eingesetzten Rechner: ___]
 - Eingesetzter Rechner: [Gerät, Betriebssystem, Speicherort der Daten, Festplattenverschlüsselung ja/nein].
 
 ### 3.2 Belegformate
@@ -74,7 +74,7 @@ Rechnungsformat: [PDF/A-3 mit eingebettetem ZUGFeRD/Factur-X-XML / XRechnung (CI
 - Ausgangsrechnungen: PDF/A-3 mit eingebettetem maschinenlesbarem XML (ZUGFeRD/Factur-X, Profil EN 16931) oder XRechnung 3.0 (CII). Das PDF ist das archivierte Original.
 - Beträge werden als ganze Cent gespeichert (keine Rundungsfehler durch Fließkommazahlen).
 - Die Rechnungsnummern sind fortlaufend und lückenlos; Entwürfe verbrauchen keine Nummer.
-- Zettel kann erzeugte E-Rechnungen mit dem KoSIT-Validator prüfen (Menü „Validieren“).
+- Zettel kann erzeugte E-Rechnungen mit dem KoSIT-Validator prüfen (Sidebar „E-Rechnung validieren“ bzw. „Validieren“ im Rechnungsdetail).
 
 ### 3.3 Unveränderbarkeit ausgestellter Rechnungen
 
@@ -106,7 +106,8 @@ Rechnungsformat: [PDF/A-3 mit eingebettetem ZUGFeRD/Factur-X-XML / XRechnung (CI
 
 ### 3.7 Schnittstellen und Exporte
 
-- Export: DATEV-Buchungsstapel (CSV), CSV-Listen, XRechnung-XML, Backup-ZIP.
+- Export: DATEV-Buchungsstapel (CSV), UStVA- und Anlage-EÜR-Auswertung (CSV), Änderungsprotokoll (CSV), XRechnung-XML, Backup-ZIP.
+- Versand per E-Mail: Zettel übergibt PDF und Empfänger an das lokale Mail-Programm (kein SMTP, keine Kopie der Nachricht in Zettel). Die versendete E-Mail archivierst du im Mail-Programm (Aufbewahrung siehe 4.2).
 - Maschinelle Auswertbarkeit für Betriebsprüfungen (Datenzugriff Z1–Z3): [Vorgehen, z. B. Export als CSV/DATEV und Herausgabe der PDF-Belege auf Datenträger].
 
 ## 4. Betriebsdokumentation
@@ -115,18 +116,20 @@ Rechnungsformat: [PDF/A-3 mit eingebettetem ZUGFeRD/Factur-X-XML / XRechnung (CI
 
 - Zettel erstellt auf Wunsch ein **Backup** (ZIP mit Datenbank-Snapshot, allen Beleg-PDFs und Manifest). [Automatisch alle ___ Tage / manuell jeweils ___.]
 - Backups können mit einem Passwort **verschlüsselt** werden (AES-256-GCM, Schlüsselableitung Argon2id). Es wird kein Passwort gespeichert; **ohne Passwort ist ein verschlüsseltes Backup unbrauchbar**. Passwort ablegen: [Passwortmanager / Tresor].
-- Speicherorte: lokal `<Dokumente>/Zettel/Backups/` und zusätzlich [externe Festplatte / verschlüsselter Cloud-Ordner / NAS]. Mindestens eine Kopie liegt außerhalb des Rechners.
+- Speicherorte: lokal `<Dokumente-Root>/Backups/` (siehe 3.1) und zusätzlich [externe Festplatte / verschlüsselter Cloud-Ordner / NAS]. Mindestens eine Kopie liegt außerhalb des Rechners.
 - Prüfung: [vierteljährlich] ein Backup testweise wiederherstellen (am besten im Sandbox-Modus von Zettel) und die Integritätsprüfung durchführen.
 
 ### 4.2 Aufbewahrung
 
-Nach derzeitigem Stand (bitte mit der Steuerberatung abgleichen):
+*Keine Rechtsberatung — Fristen im Einzelfall mit Steuerberater abstimmen.*
 
 | Unterlagen | Frist |
 |---|---|
-| Buchungsbelege, z. B. Rechnungen (ein- und ausgehend) | 8 Jahre |
-| Bücher, Aufzeichnungen, Jahresabschlüsse, Verfahrensdokumentation | 10 Jahre |
-| Empfangene und abgesandte Handels- und Geschäftsbriefe (z. B. Angebote, Mahnungen) | 6 Jahre |
+| Buchungsbelege, z. B. Ausgangs- und Eingangsrechnungen | 8 Jahre¹ |
+| Bücher, Aufzeichnungen, Jahresabschlüsse, Inventare, Verfahrensdokumentation | 10 Jahre |
+| Empfangene und abgesandte Handels- und Geschäftsbriefe (z. B. Angebote, Mahnungen, versendete E-Mails) | 6 Jahre |
+
+¹ § 147 Abs. 3 AO in der Fassung des Bürokratieentlastungsgesetzes IV; gilt für Unterlagen, deren Aufbewahrungsfrist am 1.1.2025 noch nicht abgelaufen war.
 
 - Die Frist beginnt mit Ende des Kalenderjahres, in dem der Beleg entstanden ist.
 - Die Verfahrensdokumentation wird so lange aufbewahrt wie die Unterlagen, auf die sie sich bezieht, auch in älteren Fassungen.
