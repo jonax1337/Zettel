@@ -9,10 +9,14 @@ function safeFilename(s: string): string {
   return s.replace(/[\\/:*?"<>|]+/g, "_");
 }
 
-/** PDFs go below the active DB's documents root, the folder backups collect from. */
-export async function documentOutputPath(folder: DocumentFolder, number: string): Promise<string> {
+/** Documents go below the active DB's documents root, the folder backups collect from. */
+export async function documentOutputPath(
+  folder: DocumentFolder,
+  number: string,
+  extension: "pdf" | "xml" = "pdf",
+): Promise<string> {
   const root = await invoke<string>("get_documents_root");
-  return join(root, folder, `${safeFilename(number)}.pdf`);
+  return join(root, folder, `${safeFilename(number)}.${extension}`);
 }
 
 export function parseCustomerSnapshot(json: string): CustomerSnapshot {
@@ -63,6 +67,7 @@ export function customerPayload(customer: CustomerSnapshot) {
     postalCode: customer.postalCode,
     city: customer.city,
     country: customer.country,
+    email: customer.email,
     vatId: customer.vatId,
   };
 }

@@ -185,6 +185,11 @@ pub async fn generate_reminder(app: AppHandle, payload: Value) -> Result<Value, 
 }
 
 #[tauri::command]
+pub async fn generate_xrechnung(app: AppHandle, payload: Value) -> Result<Value, String> {
+    call_off_runtime(app, "generate_xrechnung", Some(payload)).await
+}
+
+#[tauri::command]
 pub async fn ping_sidecar(app: AppHandle) -> Result<Value, String> {
     call_off_runtime(app, "ping", None).await
 }

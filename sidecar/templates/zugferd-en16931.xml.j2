@@ -1,6 +1,8 @@
-{#- Factur-X EN 16931 (Comfort) profile XML.
-    Mirrors the layout used by ferd-net.de reference samples; rendered values
-    must remain stringified for cents (".XX") and ISO dates (YYYYMMDD).
+{#- Factur-X EN 16931 (Comfort) profile XML, also the base of the XRechnung CII
+    export (`xrechnung` switches on the BR-DE additions: seller contact and
+    electronic addresses). Mirrors the layout used by ferd-net.de reference
+    samples; rendered values must remain stringified for cents (".XX") and ISO
+    dates (YYYYMMDD).
 -#}
 <?xml version="1.0" encoding="UTF-8"?>
 <rsm:CrossIndustryInvoice
@@ -11,6 +13,11 @@
   xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100">
 
   <rsm:ExchangedDocumentContext>
+    {% if xrechnung %}
+    <ram:BusinessProcessSpecifiedDocumentContextParameter>
+      <ram:ID>{{ xrechnung_business_process }}</ram:ID>
+    </ram:BusinessProcessSpecifiedDocumentContextParameter>
+    {% endif %}
     <ram:GuidelineSpecifiedDocumentContextParameter>
       <ram:ID>{{ guideline_urn }}</ram:ID>
     </ram:GuidelineSpecifiedDocumentContextParameter>
@@ -64,7 +71,8 @@
         </ram:NetPriceProductTradePrice>
       </ram:SpecifiedLineTradeAgreement>
       <ram:SpecifiedLineTradeDelivery>
-        <ram:BilledQuantity unitCode="{{ it.unit | unece_unit }}">{{ it.quantity | qty_xml }}</ram:BilledQuantity>
+        {# PEPPOL-EN16931-R120 (XRechnung): the negative credit-note line total must equal quantity * price. #}
+        <ram:BilledQuantity unitCode="{{ it.unit | unece_unit }}">{{ (it.quantity * -1 if xrechnung and invoice.isCreditNote else it.quantity) | qty_xml }}</ram:BilledQuantity>
       </ram:SpecifiedLineTradeDelivery>
       <ram:SpecifiedLineTradeSettlement>
         <ram:ApplicableTradeTax>
@@ -101,6 +109,9 @@
     {% endfor %}
 
     <ram:ApplicableHeaderTradeAgreement>
+      {% if invoice.buyerReference %}
+      <ram:BuyerReference>{{ invoice.buyerReference }}</ram:BuyerReference>
+      {% endif %}
       <ram:SellerTradeParty>
         {# BR-CO-26: at least one of BT-29 (ID), BT-30 (legal reg), BT-31 (VAT)
            must be present. Kleinunternehmer typically have only a Steuernummer
@@ -109,12 +120,28 @@
         <ram:ID>{{ company.taxNumber }}</ram:ID>
         {% endif %}
         <ram:Name>{{ company.companyName }}</ram:Name>
+        {% if xrechnung %}
+        <ram:DefinedTradeContact>
+          <ram:PersonName>{{ company.ownerName }}</ram:PersonName>
+          <ram:TelephoneUniversalCommunication>
+            <ram:CompleteNumber>{{ company.phone }}</ram:CompleteNumber>
+          </ram:TelephoneUniversalCommunication>
+          <ram:EmailURIUniversalCommunication>
+            <ram:URIID>{{ company.email }}</ram:URIID>
+          </ram:EmailURIUniversalCommunication>
+        </ram:DefinedTradeContact>
+        {% endif %}
         <ram:PostalTradeAddress>
           <ram:PostcodeCode>{{ company.postalCode }}</ram:PostcodeCode>
           <ram:LineOne>{{ company.street }}</ram:LineOne>
           <ram:CityName>{{ company.city }}</ram:CityName>
           <ram:CountryID>{{ company.country or "DE" }}</ram:CountryID>
         </ram:PostalTradeAddress>
+        {% if xrechnung %}
+        <ram:URIUniversalCommunication>
+          <ram:URIID schemeID="EM">{{ company.email }}</ram:URIID>
+        </ram:URIUniversalCommunication>
+        {% endif %}
         {% if company.vatId %}
         <ram:SpecifiedTaxRegistration>
           <ram:ID schemeID="VA">{{ company.vatId }}</ram:ID>
@@ -134,6 +161,11 @@
           <ram:CityName>{{ customer.city }}</ram:CityName>
           <ram:CountryID>{{ customer.country or "DE" }}</ram:CountryID>
         </ram:PostalTradeAddress>
+        {% if xrechnung and customer.email %}
+        <ram:URIUniversalCommunication>
+          <ram:URIID schemeID="EM">{{ customer.email }}</ram:URIID>
+        </ram:URIUniversalCommunication>
+        {% endif %}
         {% if customer.vatId %}
         <ram:SpecifiedTaxRegistration>
           <ram:ID schemeID="VA">{{ customer.vatId }}</ram:ID>
@@ -151,6 +183,12 @@
       {% if invoice.reverseChargeType == 'intra_eu' or customer.country %}
       <ram:ShipToTradeParty>
         <ram:PostalTradeAddress>
+          {# BR-DE-10/11: XRechnung requires city and post code with any deliver-to address. #}
+          {% if xrechnung %}
+          <ram:PostcodeCode>{{ customer.postalCode }}</ram:PostcodeCode>
+          <ram:LineOne>{{ customer.street }}</ram:LineOne>
+          <ram:CityName>{{ customer.city }}</ram:CityName>
+          {% endif %}
           <ram:CountryID>{{ customer.country or "DE" }}</ram:CountryID>
         </ram:PostalTradeAddress>
       </ram:ShipToTradeParty>
@@ -221,16 +259,18 @@
       {% endif %}
 
       {% if not invoice.isCreditNote and (invoice.paymentTerms or invoice.dueDate or invoice.skontoPercent) %}
+      {% set skonto_terms = invoice.skontoPercent and invoice.skontoDays and invoice.skontoAmountCent %}
       <ram:SpecifiedTradePaymentTerms>
-        {% if invoice.paymentTerms %}
-        <ram:Description>{{ invoice.paymentTerms }}</ram:Description>
+        {# XRechnung (CII-SR-408, BR-DE-18) carries the discount as a "#SKONTO#" line, closed by a line break, in the description instead of structured terms. #}
+        {% if invoice.paymentTerms or (xrechnung and skonto_terms) %}
+        <ram:Description>{{ invoice.paymentTerms }}{% if xrechnung and skonto_terms %}{{ "\n" if invoice.paymentTerms }}#SKONTO#TAGE={{ invoice.skontoDays }}#PROZENT={{ "%.2f" | format(invoice.skontoPercent) }}#{{ "\n" }}{% endif %}</ram:Description>
         {% endif %}
         {% if invoice.dueDate %}
         <ram:DueDateDateTime>
           <udt:DateTimeString format="102">{{ invoice.dueDate | date_xml }}</udt:DateTimeString>
         </ram:DueDateDateTime>
         {% endif %}
-        {% if invoice.skontoPercent and invoice.skontoDays and invoice.skontoAmountCent %}
+        {% if skonto_terms and not xrechnung %}
         <ram:ApplicableTradePaymentDiscountTerms>
           <ram:BasisPeriodMeasure unitCode="DAY">{{ invoice.skontoDays }}</ram:BasisPeriodMeasure>
           <ram:CalculationPercent>{{ "%.2f" | format(invoice.skontoPercent) }}</ram:CalculationPercent>

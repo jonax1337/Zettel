@@ -11,6 +11,11 @@ export type SidecarSuccess = {
   kositReport?: ValidationReport | null;
 };
 
+export type XrechnungSuccess = {
+  success: true;
+  xmlPath: string;
+};
+
 export type SidecarError = {
   success: false;
   error: SidecarErrorInfo;

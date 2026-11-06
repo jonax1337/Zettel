@@ -16,7 +16,12 @@ from xml.etree import ElementTree as ET
 import pytest
 
 from invoice.vat import vat_groups
-from invoice.zugferd import render_zugferd_xml, _PROFILE_URNS
+from invoice.zugferd import (
+    XRECHNUNG_GUIDELINE_URN,
+    _PROFILE_URNS,
+    render_xrechnung_xml,
+    render_zugferd_xml,
+)
 
 GOLDEN_DIR = Path(__file__).parent / "goldens"
 GOLDEN_DIR.mkdir(exist_ok=True)
@@ -43,6 +48,19 @@ def _xpath_all(xml: str, path: str) -> list[ET.Element]:
     return root.findall(path, NS)
 
 
+def _assert_matches_golden(xml: str, payload_name: str, request) -> None:
+    golden = GOLDEN_DIR / payload_name.replace(".json", ".xml")
+    if request.config.getoption("--record", default=False) or not golden.exists():
+        golden.write_text(xml, encoding="utf-8")
+        pytest.skip(f"recorded golden: {golden.name}")
+
+    expected = golden.read_text(encoding="utf-8")
+    assert _normalize(xml) == _normalize(expected), (
+        f"XML drift in {payload_name}. "
+        f"If intentional, re-record with: pytest --record"
+    )
+
+
 class TestZugferdGoldens:
     @pytest.mark.parametrize("payload_name", [
         "01-standard-19.json",
@@ -54,19 +72,17 @@ class TestZugferdGoldens:
         "07-extended.json",
     ])
     def test_xml_matches_golden(self, payloads, payload_name, request):
-        payload = payloads(payload_name)
-        xml = render_zugferd_xml(payload)
+        _assert_matches_golden(render_zugferd_xml(payloads(payload_name)), payload_name, request)
 
-        golden = GOLDEN_DIR / payload_name.replace(".json", ".xml")
-        if request.config.getoption("--record", default=False) or not golden.exists():
-            golden.write_text(xml, encoding="utf-8")
-            pytest.skip(f"recorded golden: {golden.name}")
 
-        expected = golden.read_text(encoding="utf-8")
-        assert _normalize(xml) == _normalize(expected), (
-            f"XML drift in {payload_name}. "
-            f"If intentional, re-record with: pytest --record"
-        )
+class TestXRechnungGoldens:
+    @pytest.mark.parametrize("payload_name", [
+        "08-xrechnung-standard-19.json",
+        "09-xrechnung-storno.json",
+        "10-xrechnung-reverse-charge.json",
+    ])
+    def test_xml_matches_golden(self, payloads, payload_name, request):
+        _assert_matches_golden(render_xrechnung_xml(payloads(payload_name)), payload_name, request)
 
 
 class TestZugferdSemantics:
@@ -168,3 +184,95 @@ class TestVatGrouping:
     def test_credit_note_tax_mirrors_the_invoice_tax(self):
         groups = vat_groups([{"lineTotal": 150, "vatRate": 19}], is_klein=False, sign=-1)
         assert (groups[0]["basis"], groups[0]["tax"]) == (-150, -29)
+
+
+def _local_names(elements: list[ET.Element]) -> list[str]:
+    return [el.tag.rsplit("}", 1)[1] for el in elements]
+
+
+AGREEMENT = "rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/"
+SETTLEMENT = "rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/"
+FIRST_LINE = "rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/"
+
+
+class TestBuyerReference:
+    def test_zugferd_emits_buyer_reference_before_seller(self, payloads):
+        payload = payloads("01-standard-19.json")
+        payload["invoice"]["buyerReference"] = "04011000-1234512345-35"
+        xml = render_zugferd_xml(payload)
+        assert _local_names(_xpath_all(xml, AGREEMENT + "*"))[:2] == ["BuyerReference", "SellerTradeParty"]
+        assert _xpath_text(xml, AGREEMENT + "ram:BuyerReference") == "04011000-1234512345-35"
+
+    def test_zugferd_omits_buyer_reference_without_value(self, payloads):
+        assert "BuyerReference" not in render_zugferd_xml(payloads("01-standard-19.json"))
+
+
+class TestXRechnungSemantics:
+    def test_guideline_and_business_process(self, payloads):
+        xml = render_xrechnung_xml(payloads("08-xrechnung-standard-19.json"))
+        context = "rsm:ExchangedDocumentContext/"
+        assert _xpath_text(xml, context + "ram:GuidelineSpecifiedDocumentContextParameter/ram:ID") == XRECHNUNG_GUIDELINE_URN
+        assert _xpath_text(xml, context + "ram:BusinessProcessSpecifiedDocumentContextParameter/ram:ID")
+
+    def test_seller_contact_precedes_address_and_carries_person_phone_email(self, payloads):
+        xml = render_xrechnung_xml(payloads("08-xrechnung-standard-19.json"))
+        seller = AGREEMENT + "ram:SellerTradeParty/"
+        children = _local_names(_xpath_all(xml, seller + "*"))
+        assert children.index("DefinedTradeContact") < children.index("PostalTradeAddress")
+        contact = seller + "ram:DefinedTradeContact/"
+        assert _xpath_text(xml, contact + "ram:PersonName") == "Jonas Laux"
+        assert _xpath_text(xml, contact + "ram:TelephoneUniversalCommunication/ram:CompleteNumber") == "+49 30 1234567"
+        assert _xpath_text(xml, contact + "ram:EmailURIUniversalCommunication/ram:URIID") == "rechnung@laux.digital"
+
+    def test_electronic_addresses_for_both_parties(self, payloads):
+        xml = render_xrechnung_xml(payloads("08-xrechnung-standard-19.json"))
+        assert _xpath_text(xml, AGREEMENT + "ram:SellerTradeParty/ram:URIUniversalCommunication/ram:URIID") == "rechnung@laux.digital"
+        assert _xpath_text(xml, AGREEMENT + "ram:BuyerTradeParty/ram:URIUniversalCommunication/ram:URIID") == "eingangsrechnung@bfb.example.de"
+
+    def test_buyer_reference_is_the_leitweg_id(self, payloads):
+        xml = render_xrechnung_xml(payloads("08-xrechnung-standard-19.json"))
+        assert _xpath_text(xml, AGREEMENT + "ram:BuyerReference") == "04011000-1234512345-35"
+
+    def test_storno_is_credit_note_with_negative_quantity_and_totals(self, payloads):
+        xml = render_xrechnung_xml(payloads("09-xrechnung-storno.json"))
+        assert _xpath_text(xml, "rsm:ExchangedDocument/ram:TypeCode") == "381"
+        assert _xpath_text(xml, FIRST_LINE + "ram:SpecifiedLineTradeDelivery/ram:BilledQuantity") == "-10"
+        line_total = FIRST_LINE + "ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount"
+        assert _xpath_text(xml, line_total) == "-1200.00"
+        grand_total = SETTLEMENT + "ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:GrandTotalAmount"
+        assert _xpath_text(xml, grand_total) == "-1428.00"
+        assert _xpath_text(xml, SETTLEMENT + "ram:InvoiceReferencedDocument/ram:IssuerAssignedID") == "RE-2026-XR-01"
+
+    def test_zugferd_credit_note_keeps_positive_quantity(self, payloads):
+        xml = render_zugferd_xml(payloads("09-xrechnung-storno.json"))
+        assert _xpath_text(xml, FIRST_LINE + "ram:SpecifiedLineTradeDelivery/ram:BilledQuantity") == "10"
+
+    def test_reverse_charge_uses_category_k_and_deliver_to_address(self, payloads):
+        xml = render_xrechnung_xml(payloads("10-xrechnung-reverse-charge.json"))
+        assert "<ram:CategoryCode>K</ram:CategoryCode>" in xml
+        ship_to = "rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:PostalTradeAddress/"
+        assert _xpath_text(xml, ship_to + "ram:CityName") == "Amsterdam"
+        assert _xpath_text(xml, ship_to + "ram:PostcodeCode") == "1015 BG"
+
+    def test_skonto_becomes_a_closed_description_line(self, payloads):
+        payload = payloads("08-xrechnung-standard-19.json")
+        payload["invoice"].update(skontoPercent=2, skontoDays=10, skontoAmountCent=2856)
+        xml = render_xrechnung_xml(payload)
+        assert _xpath_text(xml, SETTLEMENT + "ram:SpecifiedTradePaymentTerms/ram:Description") == (
+            "Zahlbar innerhalb von 14 Tagen ohne Abzug.\n#SKONTO#TAGE=10#PROZENT=2.00#\n"
+        )
+        assert "ApplicableTradePaymentDiscountTerms" not in xml
+
+    def test_zugferd_keeps_structured_skonto_terms(self, payloads):
+        payload = payloads("08-xrechnung-standard-19.json")
+        payload["invoice"].update(skontoPercent=2, skontoDays=10, skontoAmountCent=2856)
+        assert "ApplicableTradePaymentDiscountTerms" in render_zugferd_xml(payload)
+
+    def test_zugferd_has_no_xrechnung_additions(self, payloads):
+        xml = render_zugferd_xml(payloads("01-standard-19.json"))
+        for xrechnung_only in (
+            "DefinedTradeContact",
+            "BusinessProcessSpecifiedDocumentContextParameter",
+            "URIUniversalCommunication",
+        ):
+            assert xrechnung_only not in xml

@@ -4,6 +4,7 @@ import { computeEurTotalCent } from "./currency";
 import { formatInvoiceNumber } from "./invoice-number";
 import { defaultPaymentTermsText } from "./payment-terms";
 import { computeTotals, type TotalsItem } from "./totals";
+import { missingXrechnungFields, type XrechnungSource } from "../xrechnung/preflight";
 
 type Fixture = {
   totals: {
@@ -16,6 +17,16 @@ type Fixture = {
   invoiceNumbers: { pattern: string; counter: number; date: string; expected: string }[];
   eurTotals: { currency: string; totalCent: number; exchangeRate: string | null; expected: number | null }[];
   paymentTerms: { days: number; expected: string }[];
+  xrechnungComplete: {
+    buyerReference: string;
+    company: Record<string, string>;
+    customer: Record<string, string>;
+  };
+  xrechnungMissing: {
+    name: string;
+    change: { buyerReference?: string | null; company?: Record<string, string | null>; customer?: Record<string, string | null> };
+    expected: string[];
+  }[];
 };
 
 // The CLI (cli/zettel.py) asserts the same file in sidecar/tests/test_cli_parity.py.
@@ -40,5 +51,15 @@ describe("shared invoice parity fixture (app side)", () => {
 
   it.each(fixture.paymentTerms)("payment terms for $days days", ({ days, expected }) => {
     expect(defaultPaymentTermsText(days)).toBe(expected);
+  });
+
+  it.each(fixture.xrechnungMissing)("XRechnung pre-export check: $name", ({ change, expected }) => {
+    const { xrechnungComplete: base } = fixture;
+    const source = {
+      invoice: { buyerReference: "buyerReference" in change ? change.buyerReference : base.buyerReference },
+      company: { ...base.company, ...change.company },
+      customer: { name: "Bundesamt", ...base.customer, ...change.customer },
+    } as XrechnungSource;
+    expect(missingXrechnungFields(source)).toEqual(expected);
   });
 });

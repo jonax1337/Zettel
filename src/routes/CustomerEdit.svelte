@@ -5,7 +5,7 @@
     updateCustomer,
     type CustomerInput,
   } from "$lib/db/queries";
-  import { Button, DatePicker, Label } from "$lib/ui";
+  import { Button, Checkbox, DatePicker, Input, Label } from "$lib/ui";
   import { fromIsoDate, toIsoDate } from "$lib/utils/date";
   import { INVALID_COUNTRY_MESSAGE, normalizeCountryCode } from "./parts/entity/country";
   import { createEntityForm } from "./parts/entity/entity-form.svelte";
@@ -24,6 +24,8 @@
 
   let form = $state<CustomerInput>(emptyPartyFields());
   let followUpIso = $state<string>("");
+  let receivesXrechnung = $state(false);
+  let leitwegId = $state("");
 
   const entity = createEntityForm({
     mode: () => mode,
@@ -32,12 +34,14 @@
     onLoaded: (customer) => {
       form = partyFieldsFrom(customer);
       followUpIso = customer.followUpDate ? toIsoDate(customer.followUpDate) : "";
+      receivesXrechnung = customer.receivesXrechnung;
+      leitwegId = customer.leitwegId ?? "";
     },
     create: () => createCustomer(form),
     update: (id) => updateCustomer(id, form),
     createdMessage: "Kunde angelegt",
     listRoute: LIST_ROUTE,
-    unsavedState: () => [form, followUpIso],
+    unsavedState: () => [form, followUpIso, receivesXrechnung, leitwegId],
   });
 
   $effect(() => {
@@ -51,6 +55,8 @@
     if (!country) return entity.reject("Land ungültig", INVALID_COUNTRY_MESSAGE);
     form.country = country;
     form.followUpDate = followUpIso ? fromIsoDate(followUpIso) : null;
+    form.receivesXrechnung = receivesXrechnung;
+    form.leitwegId = leitwegId.trim() || null;
     return entity.save(submitter?.dataset.next === "invoice" ? newInvoiceRoute : undefined);
   }
 </script>
@@ -71,6 +77,22 @@
     </Button>
   {/snippet}
   <PartyAddressFields bind:form requireAddress />
+
+  <section class="flex flex-col gap-4">
+    <label class="flex items-center gap-2 text-sm cursor-pointer">
+      <Checkbox bind:checked={receivesXrechnung} />
+      <span>Empfängt XRechnung (öffentlicher Auftraggeber)</span>
+    </label>
+    {#if receivesXrechnung || leitwegId}
+      <div class="flex flex-col gap-1.5">
+        <Label>Leitweg-ID</Label>
+        <Input bind:value={leitwegId} placeholder="z. B. 04011000-1234512345-35" />
+        <p class="text-xs text-muted-foreground">
+          Wird als Käuferreferenz in neue Rechnungen übernommen und ist für XRechnungen Pflicht.
+        </p>
+      </div>
+    {/if}
+  </section>
 
   <section class="grid grid-cols-2 gap-4">
     <div class="col-span-2">

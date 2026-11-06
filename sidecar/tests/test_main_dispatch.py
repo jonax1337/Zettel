@@ -5,6 +5,7 @@ The host (Rust) branches on `error.code`, so every code stays pinned here.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -39,9 +40,20 @@ def test_extract_commands_report_missing_file(command, tmp_path):
     assert _error_code(main.handle(request)) == "PDF_NOT_FOUND"
 
 
-@pytest.mark.parametrize("command", ["generate_invoice", "generate_offer", "generate_reminder"])
+@pytest.mark.parametrize("command", ["generate_invoice", "generate_offer", "generate_reminder", "generate_xrechnung"])
 def test_generate_commands_report_missing_payload_field(command):
     assert _error_code(main.handle({"command": command, "payload": {}})) == "MISSING_FIELD"
+
+
+def test_generate_xrechnung_writes_the_xml_file(tmp_path):
+    payload_file = Path(__file__).parent.parent / "test-payloads" / "08-xrechnung-standard-19.json"
+    payload = json.loads(payload_file.read_text(encoding="utf-8"))["payload"]
+    target = tmp_path / "Rechnungen" / "RE-2026-XR-01.xml"
+    payload["outputPath"] = str(target)
+    response = main.handle({"command": "generate_xrechnung", "payload": payload})
+    assert response["success"] is True
+    assert Path(response["xmlPath"]) == target.resolve()
+    assert "xrechnung_3.0" in target.read_text(encoding="utf-8")
 
 
 def test_bank_statement_requires_path():

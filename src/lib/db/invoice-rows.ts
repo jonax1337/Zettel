@@ -41,6 +41,7 @@ export type InvoiceRow = {
   skonto_days: number | null;
   amount_paid_cent: number | null;
   pdf_language: string | null;
+  buyer_reference: string | null;
 };
 
 export type InvoiceItemRow = {
@@ -99,6 +100,7 @@ export function mapInvoice(r: InvoiceRow): Invoice {
     skontoDays: r.skonto_days,
     amountPaidCent: r.amount_paid_cent ?? 0,
     pdfLanguage: (r.pdf_language ?? DEFAULT_PDF_LANGUAGE) as Invoice["pdfLanguage"],
+    buyerReference: r.buyer_reference,
   };
 }
 

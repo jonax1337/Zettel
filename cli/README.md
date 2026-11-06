@@ -24,6 +24,7 @@ python cli/zettel.py invoice:create --customer "ITGG Berlin e.V." \
     [--issue-date 2026-08-27] [--issue] [--pdf]
 python cli/zettel.py invoice:issue <id>              # Nummer ziehen (lazy)
 python cli/zettel.py invoice:pdf <id>                # PDF via Sidecar
+python cli/zettel.py invoice:xrechnung <id>          # XRechnung (CII) als .xml neben dem PDF
 python cli/zettel.py invoice:paid <id>               # bezahlt + Payment-Eintrag
 python cli/zettel.py stats                           # Umsatz / offene Posten
 ```
@@ -33,6 +34,13 @@ Skonto-Voreinstellung aus den Settings; `--pdf-language`, `--skonto-percent`/`--
 überschreiben sie, `--no-skonto` schaltet Skonto ab. Fremdwährung:
 `--currency USD --exchange-rate 1.0832` (1 EUR = X USD, Pflicht außer bei EUR; der
 EUR-Gegenwert wird wie in der App eingefroren).
+
+`invoice:xrechnung` schreibt `<Rechnungsnummer>.xml` in denselben Ordner wie das PDF und
+prüft vorher dieselben Pflichtangaben wie die App (Leitweg-ID, Verkäufer-Kontakt mit Telefon und
+E-Mail, Adressen, IBAN, USt-IdNr. oder Steuernummer, E-Mail des Kunden). Fehlt etwas, bricht der Befehl
+mit der Liste der fehlenden Angaben ab, statt eine ungültige Datei zu schreiben. Entwürfe werden
+abgelehnt (erst `invoice:issue`). `invoice:create` übernimmt die Leitweg-ID des Kunden als
+Käuferreferenz der neuen Rechnung.
 
 Positions-Format: `Beschreibung|Menge|Einheit|Einzelpreis-Euro[|MwSt%][|Langtext]`,
 mehrere Positionen mit `;`.

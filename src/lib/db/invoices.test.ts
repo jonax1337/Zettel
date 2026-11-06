@@ -24,6 +24,7 @@ vi.mock("./queries", () => ({
     country: "DE",
     email: null,
     vatId: null,
+    leitwegId: "04011000-1234512345-35",
   })),
 }));
 
@@ -88,6 +89,7 @@ function invoiceRow(overrides: Partial<InvoiceRow> = {}): InvoiceRow {
     skonto_days: null,
     amount_paid_cent: 0,
     pdf_language: "de",
+    buyer_reference: null,
     ...overrides,
   };
 }
@@ -322,6 +324,58 @@ describe("createInvoice", () => {
   });
 });
 
+describe("buyer reference", () => {
+  const items = [mapItem(itemRow)];
+
+  function insertedBuyerReference(): unknown {
+    const [sql, binds] = db.insert.mock.calls[0];
+    return boundInsertColumns(sql, binds).buyer_reference;
+  }
+
+  it("is read from the stored row", () => {
+    expect(mapInvoice(invoiceRow({ buyer_reference: "04011000-1234512345-35" })).buyerReference).toBe(
+      "04011000-1234512345-35",
+    );
+    expect(mapInvoice(invoiceRow()).buyerReference).toBeNull();
+  });
+
+  it("is copied from the customer's Leitweg-ID when the caller sends none", async () => {
+    await createInvoice(formInput);
+
+    expect(insertedBuyerReference()).toBe("04011000-1234512345-35");
+  });
+
+  it("keeps a value the caller sends, trimmed, over the customer's", async () => {
+    await createInvoice({ ...formInput, buyerReference: "  991-0815-12  " });
+
+    expect(insertedBuyerReference()).toBe("991-0815-12");
+  });
+
+  it("stays empty when the caller clears it, whatever the customer has", async () => {
+    await createInvoice({ ...formInput, buyerReference: "" });
+
+    expect(insertedBuyerReference()).toBeNull();
+  });
+
+  it("is carried from the original into the credit note input", () => {
+    const original = mapInvoice(invoiceRow({ buyer_reference: "991-0815-12" }));
+
+    expect(creditNoteInputFor(original, items, 1_800_000_000).buyerReference).toBe("991-0815-12");
+  });
+
+  it("is not replaced by the customer's current Leitweg-ID in a stored credit note", async () => {
+    db.select.mockImplementation(async (sql: string) => {
+      if (sql.includes("FROM invoice_items")) return [itemRow];
+      if (sql.includes("corrects_invoice_id")) return [];
+      return [invoiceRow({ buyer_reference: null })];
+    });
+
+    await createCreditNoteFromInvoice(7);
+
+    expect(insertedBuyerReference()).toBeNull();
+  });
+});
+
 describe("supply kind", () => {
   it("is read from the stored row", () => {
     expect(mapInvoice(invoiceRow({ supply_kind: "services" })).supplyKind).toBe("services");
@@ -362,6 +416,21 @@ describe("updateInvoice", () => {
     const call = db.execute.mock.calls.find(([sql]) => String(sql).startsWith("UPDATE invoices"))!;
     return boundAssignments(call[0], call[1]);
   }
+
+  it("keeps the stored buyer reference the form does not send and replaces it when it does", async () => {
+    db.select.mockResolvedValue([invoiceRow({ status: "draft", buyer_reference: "991-0815-12" })]);
+
+    await updateInvoice(7, formInput);
+    expect(updateBinds()).toMatchObject({ buyer_reference: "991-0815-12" });
+
+    db.execute.mockClear();
+    await updateInvoice(7, { ...formInput, buyerReference: " 04011000-1234512345-35 " });
+    expect(updateBinds()).toMatchObject({ buyer_reference: "04011000-1234512345-35" });
+
+    db.execute.mockClear();
+    await updateInvoice(7, { ...formInput, buyerReference: null });
+    expect(updateBinds()).toMatchObject({ buyer_reference: null });
+  });
 
   it("clears the exchange rate when the invoice is switched back to EUR", async () => {
     await updateInvoice(7, { ...formInput, currency: "EUR", exchangeRate: null, eurTotalCent: 10_000 });

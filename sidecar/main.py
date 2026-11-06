@@ -69,6 +69,7 @@ _add_gtk_dll_path()
 
 from invoice.pdf import render_invoice_pdf, render_offer_pdf, render_reminder_pdf  # noqa: E402
 from invoice.extract import extract_from_pdf, extract_xml_only  # noqa: E402
+from invoice.zugferd import write_xrechnung_xml  # noqa: E402
 from invoice.text_extract import extract_text_heuristic  # noqa: E402
 from bank.camt import detect_format, parse_camt053  # noqa: E402
 from bank.mt940 import parse_mt940  # noqa: E402
@@ -115,6 +116,14 @@ def _generate_pdf(render: Callable[[dict], Path]) -> Callable[[dict], dict]:
         }
 
     return handler
+
+
+def _generate_xrechnung(payload: dict) -> dict:
+    try:
+        output_path = write_xrechnung_xml(payload)
+    except KeyError as e:
+        raise _RequestError("MISSING_FIELD", f"Missing required payload field: {e}") from e
+    return {"success": True, "xmlPath": str(output_path)}
 
 
 def _extract_zugferd(payload: dict) -> dict:
@@ -165,6 +174,7 @@ _COMMANDS = {
     "generate_reminder": _Command(
         _generate_pdf(render_reminder_pdf), "RENDER_FAILED", "TEMPLATE_NOT_FOUND"
     ),
+    "generate_xrechnung": _Command(_generate_xrechnung, "RENDER_FAILED", "TEMPLATE_NOT_FOUND"),
     "extract_zugferd": _Command(_extract_zugferd, "EXTRACT_FAILED", "PDF_NOT_FOUND"),
     "extract_xml_only": _Command(_extract_xml_only, "EXTRACT_FAILED", "PDF_NOT_FOUND"),
     "extract_text_pdf": _Command(_extract_text_pdf, "EXTRACT_FAILED", "PDF_NOT_FOUND"),

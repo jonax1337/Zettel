@@ -16,13 +16,15 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
-from invoice.zugferd import render_zugferd_xml
+from invoice.zugferd import render_xrechnung_xml, render_zugferd_xml
 
 TOOLS_DIR = Path(__file__).resolve().parents[2] / "tools"
 VALIDATOR_DIR = TOOLS_DIR / "kosit-validator"
 VALIDATOR_JAR = VALIDATOR_DIR / "validator.jar"
 SCENARIOS = VALIDATOR_DIR / "scenarios.xml"
 NS_REP = "{http://www.xoev.de/de/validator/varl/1}"
+NS_SCENARIO = "{http://www.xoev.de/de/validator/framework/1/scenarios}"
+XRECHNUNG_CII_SCENARIO = "EN16931 XRechnung (CII)"
 
 
 def _java() -> str | None:
@@ -81,6 +83,12 @@ def _is_valid(report_path: Path) -> tuple[bool, list[str]]:
                 if child.tag.endswith("text") and child.text:
                     msgs.append(child.text.strip())
     return valid, msgs
+
+
+def _matched_scenario(report_path: Path) -> str:
+    matched = ET.parse(report_path).getroot().find(f"{NS_REP}scenarioMatched/{NS_SCENARIO}scenario/{NS_SCENARIO}name")
+    assert matched is not None, "report names no matched scenario"
+    return " ".join((matched.text or "").split())
 
 
 # NOTE: KoSIT XRechnung scenarios only validate against EN16931 / XRechnung URNs.
@@ -155,3 +163,44 @@ def test_credit_note_passes_kosit(payloads, refunded_share, tmp_path):
         f"credit note ({refunded_share:.0%} refunded) REJECTED by KoSIT:\n"
         + "\n".join(f"  - {m}" for m in msgs[:10])
     )
+
+
+@pytest.mark.parametrize("payload_name", [
+    "08-xrechnung-standard-19.json",
+    "09-xrechnung-storno.json",
+    "10-xrechnung-reverse-charge.json",
+], ids=["standard-19", "storno", "reverse-charge"])
+def test_xrechnung_passes_kosit_with_the_xrechnung_cii_scenario(payloads, payload_name, tmp_path):
+    xml_file = tmp_path / "xrechnung.xml"
+    xml_file.write_text(render_xrechnung_xml(payloads(payload_name)), encoding="utf-8")
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    report = _run_validator(xml_file, out_dir)
+    valid, msgs = _is_valid(report)
+    assert valid, (
+        f"{payload_name} REJECTED by KoSIT:\n"
+        + "\n".join(f"  - {m}" for m in msgs[:10])
+    )
+    assert _matched_scenario(report) == XRECHNUNG_CII_SCENARIO
+
+
+def test_plain_zugferd_xml_does_not_match_the_xrechnung_scenario(payloads, tmp_path):
+    xml_file = tmp_path / "invoice.xml"
+    xml_file.write_text(render_zugferd_xml(payloads("01-standard-19.json")), encoding="utf-8")
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    assert _matched_scenario(_run_validator(xml_file, out_dir)) != XRECHNUNG_CII_SCENARIO
+
+
+def test_zugferd_xml_with_buyer_reference_passes_kosit(payloads, tmp_path):
+    payload = payloads("01-standard-19.json")
+    payload["invoice"]["buyerReference"] = "04011000-1234512345-35"
+    xml_file = tmp_path / "invoice.xml"
+    xml_file.write_text(render_zugferd_xml(payload), encoding="utf-8")
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    valid, msgs = _is_valid(_run_validator(xml_file, out_dir))
+    assert valid, "ZUGFeRD with BT-10 REJECTED by KoSIT:\n" + "\n".join(f"  - {m}" for m in msgs[:10])

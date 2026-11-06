@@ -21,7 +21,7 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 
 ### Rust (`src-tauri/src/`)
 - `lib.rs` — Plugin-Init, Migrations-Registry, Command-Registrierung. `apply_pending_restore_blocking()` läuft **vor** dem SQL-Plugin-Init, damit ein staged Restore die DB ersetzt, bevor sie geöffnet wird.
-- `sidecar.rs` — spawnt Python-Sidecar (`std::process::Command`, JSON über stdin/stdout). Dev: Script direkt; Release: PyInstaller-Binary aus Tauri-Resources. Tauri-Commands: `generate_invoice`, `generate_offer`, `generate_reminder`, `extract_zugferd`, `extract_text_pdf`, `ping_sidecar`.
+- `sidecar.rs` — spawnt Python-Sidecar (`std::process::Command`, JSON über stdin/stdout). Dev: Script direkt; Release: PyInstaller-Binary aus Tauri-Resources. Tauri-Commands: `generate_invoice`, `generate_offer`, `generate_reminder`, `generate_xrechnung`, `extract_zugferd`, `extract_text_pdf`, `ping_sidecar`.
 - `backup.rs` — ZIP-Snapshot (`VACUUM INTO` + PDFs + `manifest.json`). Staged Restore: extrahiert nach `<appdata>/pending_restore/`, Marker-File, dann `apply_pending_partial_restore` (`ATTACH DATABASE` + selektiver `INSERT`). Die Ziel-DB (aktiver Tenant bzw. Sandbox) wird beim Stagen in `restore_mode.json` festgehalten; ein fehlgeschlagener Teil-Restore räumt `pending_restore/` wieder ab. App-Identifier ist hardcoded `digital.laux.zettel` (Pre-Builder hat keinen AppHandle). `CURRENT_SCHEMA` muss mit `user_version` der neuesten Migration matchen — sonst `Schema neuer als App-Version` beim Restore.
 - `crypto.rs` — AES-256-GCM + Argon2id für Backup-Verschlüsselung. Magic-Header `ZETTEL-ENC-1`. Kein gespeichertes Master-Passwort.
 - `fs_export.rs` — `save_text_file` (CSV ohne `plugin-fs`), `import_expense_pdf` (kollisionssichere Ablage `<Dokumente-Root>/Eingangsrechnungen/<vendor>/`).
@@ -78,6 +78,11 @@ Eine neue Migration `000N_<name>.sql` heißt **immer drei Stellen gleichzeitig a
 - **Storno-XML** (CII Credit Note): `InvoiceReferencedDocument` muss in `ApplicableHeaderTradeSettlement` (NICHT in `…Agreement`). Beträge end-to-end negativ.
 - **Reverse-Charge:** intra-EU = `CategoryCode K` + ExemptionReason „VAT exempt for EEA intra-community supply…"; Drittland = `CategoryCode G` + „Export outside EU". Buyer-USt-IdNr. in `<ram:SpecifiedTaxRegistration schemeID="VA">`.
 - **Leistungszeitraum (v0.12):** Header-Period `service_period_start/end` (BG-14, BT-73/74) gewinnt gegen `delivery_date` (BT-72), wenn beide gesetzt; XOR App-seitig erzwungen. Line-Period (BG-26, BT-134/135) optional pro Position; Einzeltag = `start = end`. Lange Positions-Beschreibung in `*_items.long_description` (BT-154) zusätzlich zu `name` (BT-153).
+
+## XRechnung (v0.24)
+- `render_xrechnung_xml` nutzt **dasselbe** Template `zugferd-en16931.xml.j2` mit `xrechnung`-Schalter; Ausgabe ist eine eigenständige `.xml` neben dem PDF (`generate_xrechnung`, nur im Sidecar-Handler `write_xrechnung_xml`).
+- XRechnung-Unterschiede zum Factur-X-XML: `BusinessProcess`-ID (BT-23, Peppol-Prozess) vor der Guideline, `DefinedTradeContact` (Name/Telefon/E-Mail, BR-DE-2/5/6/7) **zwischen** `Name` und `PostalTradeAddress`, `URIUniversalCommunication` (BT-34/BT-49) **nach** der Adresse, volle Lieferadresse (BR-DE-10/11), Skonto als `#SKONTO#TAGE=n#PROZENT=n.nn#`-Zeile mit abschließendem Zeilenumbruch in `Description` statt `ApplicableTradePaymentDiscountTerms` (CII-SR-408, BR-DE-18), Stornozeilen mit negativer Menge (PEPPOL-R120).
+- Pflichtangaben prüft vorab `src/lib/xrechnung/preflight.ts` (CLI-Spiegel: `missing_xrechnung_fields`, geteilte Cases in `sidecar/tests/fixtures/invoice-parity.json`). Käuferreferenz (BT-10, Leitweg-ID) wird beim Anlegen vom Kunden kopiert (`resolveBuyerReference`), Stornos erben die der Originalrechnung.
 
 ## Cross-platform build
 - CI: `.github/workflows/build.yml` Matrix windows-latest / macos-14 (arm64) / macos-13 (x86_64) / ubuntu-22.04. Jeder Runner installiert Python+GTK+Tauri-Deps, baut `python sidecar/build.py`, dann `pnpm tauri:build`.

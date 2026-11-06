@@ -22,8 +22,9 @@ import {
   skontoPayload,
 } from "./payload";
 import { renderDocumentPdf } from "./render-document";
+import { missingXrechnungFields } from "$lib/xrechnung/preflight";
 import { companyIncompleteResponse } from "./company-guard";
-import type { SidecarSuccess, SidecarResponse } from "./types";
+import type { SidecarError, SidecarResponse, SidecarSuccess, XrechnungSuccess } from "./types";
 
 export type { SidecarResponse } from "./types";
 
@@ -71,6 +72,7 @@ function buildPayload(opts: {
       ...skontoPayload(skonto),
       amountPaidCent: invoice.amountPaidCent ?? 0,
       pdfLanguage: invoice.pdfLanguage ?? "de",
+      buyerReference: invoice.buyerReference,
     },
     items: itemsPayload(items),
     company: {
@@ -152,6 +154,40 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
     (response) => validateAndRecord(response, invoiceId),
     invoice.pdfPath,
   );
+}
+
+export type XrechnungExport =
+  | { status: "exported"; xmlPath: string }
+  | { status: "incomplete"; missing: string[] };
+
+/**
+ * Writes the invoice as standalone XRechnung XML next to its PDF. Returns the list of
+ * missing mandatory fields instead of a file the KoSIT validator would reject.
+ */
+export async function exportInvoiceXrechnung(invoiceId: number): Promise<XrechnungExport> {
+  const company = await loadSettings();
+  const data = await getInvoice(invoiceId);
+  if (!data) throw new Error(`Invoice ${invoiceId} not found`);
+  const { invoice, items } = data;
+  if (isDraftNumber(invoice.number)) {
+    throw new Error("Entwürfe können nicht als XRechnung exportiert werden. Bitte die Rechnung erst ausstellen.");
+  }
+  const customer = parseCustomerSnapshot(invoice.customerSnapshot);
+  const missing = missingXrechnungFields({ invoice, company, customer });
+  if (missing.length > 0) return { status: "incomplete", missing };
+
+  const outputPath = await documentOutputPath("Rechnungen", invoice.number, "xml");
+  const payload = buildPayload({
+    invoice,
+    items,
+    customer,
+    company,
+    outputPath,
+    correctsInvoice: await findCorrectedInvoice(invoice),
+  });
+  const response = await invoke<XrechnungSuccess | SidecarError>("generate_xrechnung", { payload });
+  if (!response.success) throw new Error(`${response.error.code}: ${response.error.message}`);
+  return { status: "exported", xmlPath: response.xmlPath };
 }
 
 export type PdfVersion = {
