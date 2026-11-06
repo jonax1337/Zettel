@@ -1,6 +1,6 @@
 import { containsPattern, execute, select } from "./client";
 import { periodForYear } from "$lib/dashboard/period";
-import { computeLineTotal, type TotalsItem } from "$lib/utils/totals";
+import { computeLineTotal, roundQuantity, type TotalsItem } from "$lib/utils/totals";
 
 /** Shown wherever a customer or vendor name is missing. */
 export const MISSING_NAME = "—";
@@ -97,7 +97,7 @@ export async function writeLineItems<T extends LineItemInput>(
         parentId,
         index + 1,
         item.description,
-        item.quantity,
+        roundQuantity(item.quantity),
         item.unit,
         item.unitPrice,
         item.vatRate,

@@ -19,6 +19,7 @@
     lineItemFromCatalog,
     moveLineItem,
     newLineItem,
+    toTotalsItem,
     type LineItemForm,
   } from "./line-items";
   import { commitPriceText } from "../parts/entity/format";
@@ -234,7 +235,7 @@
               </td>
             {/if}
             <td class="px-1.5 @3xl:px-3 py-2 text-right font-mono text-xs whitespace-nowrap align-top pt-3">
-              {formatMoney(computeLineTotal(it), currency)}
+              {formatMoney(computeLineTotal(toTotalsItem(it)), currency)}
             </td>
             <td class="px-1.5 @3xl:px-2 py-1.5 text-right align-top pt-1.5">
               <div class="inline-flex items-center gap-0.5">

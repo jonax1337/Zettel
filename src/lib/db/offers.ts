@@ -126,6 +126,7 @@ type OfferItemInput = {
   longDescription?: string | null;
   linePeriodStart?: number | null;
   linePeriodEnd?: number | null;
+  fixedLineTotal?: number;
 };
 
 export type OfferFormInput = {

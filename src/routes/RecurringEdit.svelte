@@ -117,7 +117,8 @@
       invoice.dueDate,
       loadedSettings.defaultPaymentTermsDays,
     );
-    if (source.items.length > 0) items = source.items.map(lineItemFromStored);
+    // A template computes its amounts anew for every invoice it creates.
+    if (source.items.length > 0) items = source.items.map((it) => lineItemFromStored({ ...it, lineTotal: undefined }));
     startDateIso = "";
   }
 

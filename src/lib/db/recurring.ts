@@ -14,6 +14,7 @@ import type {
   RecurringInvoiceItem,
 } from "./schema";
 import { addDaysUnix, nowUnix } from "$lib/utils/date";
+import { roundQuantity } from "$lib/utils/totals";
 
 const DUE_SOON_DAYS = 7;
 const TEMPLATE_CURRENCY = DEFAULT_CURRENCY;
@@ -230,7 +231,7 @@ async function writeRecurringItems(
         recurringId,
         i + 1,
         it.description,
-        it.quantity,
+        roundQuantity(it.quantity),
         it.unit,
         it.unitPrice,
         it.vatRate,

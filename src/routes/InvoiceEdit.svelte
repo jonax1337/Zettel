@@ -43,6 +43,7 @@
     lineItemFromStored,
     newLineItem,
     toLineItemInputs,
+    toTotalsItem,
     type LineItemForm,
   } from "./invoice/line-items";
   import { restoreVatRates, zeroVatRatesRemembering, type VatRateSnapshot } from "./invoice/reverse-charge";
@@ -111,7 +112,7 @@
   const reverseChargeSender = $derived(settings ? { isKleinunternehmer, vatId: settings.vatId } : null);
 
   const totals = $derived(
-    settings ? computeTotals(items, { isKleinunternehmer, isReverseCharge }) : { subtotal: 0, vatAmount: 0, total: 0 },
+    settings ? computeTotals(items.map(toTotalsItem), { isKleinunternehmer, isReverseCharge }) : { subtotal: 0, vatAmount: 0, total: 0 },
   );
 
   // Reverse charge forces 0 % VAT; the rates come back when it is switched off again.

@@ -41,6 +41,7 @@
     lineItemFromStored,
     newLineItem,
     toLineItemInputs,
+    toTotalsItem,
     zeroVatRates,
     type LineItemForm,
   } from "./invoice/line-items";
@@ -97,7 +98,7 @@
 
   const totals = $derived(
     settings
-      ? computeTotals(items, { isKleinunternehmer: settings.isKleinunternehmer, isReverseCharge })
+      ? computeTotals(items.map(toTotalsItem), { isKleinunternehmer: settings.isKleinunternehmer, isReverseCharge })
       : { subtotal: 0, vatAmount: 0, total: 0 },
   );
 

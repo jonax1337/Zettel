@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { computeLineTotal, computeTotals } from "./totals";
+import { computeLineTotal, computeTotals, roundQuantity } from "./totals";
+
+describe("roundQuantity", () => {
+  it("keeps four decimals, the precision of the XML and of the exact line total", () => {
+    expect(roundQuantity(0.12345)).toBe(0.1235);
+    expect(roundQuantity(1.00004)).toBe(1);
+    expect(roundQuantity(0.00025)).toBe(0.0003);
+    expect(roundQuantity(2.5)).toBe(2.5);
+    expect(roundQuantity(-1.5)).toBe(-1.5);
+  });
+  it("leaves non-numbers alone", () => {
+    expect(roundQuantity(Number.NaN)).toBeNaN();
+  });
+});
 
 describe("computeLineTotal", () => {
   it("multiplies quantity × unitPrice (cent integer)", () => {
@@ -11,6 +24,37 @@ describe("computeLineTotal", () => {
     expect(computeLineTotal({ quantity: 0.5, unitPrice: 5000, vatRate: 19 })).toBe(2500);
     // 1.5h × 999 cents = 1498.5 → 1499 (Math.round half-up for positives)
     expect(computeLineTotal({ quantity: 1.5, unitPrice: 999, vatRate: 19 })).toBe(1499);
+  });
+  it("rounds exact half cents up where the float product falls just below", () => {
+    // 0.47 * 8550 is 4018.4999999999995 in floating point; the exact product is 4018.5.
+    expect(computeLineTotal({ quantity: 0.47, unitPrice: 8550, vatRate: 19 })).toBe(4019);
+    // 4.1 * 15 is 61.49999999999999; the exact product is 61.5.
+    expect(computeLineTotal({ quantity: 4.1, unitPrice: 15, vatRate: 19 })).toBe(62);
+  });
+  it("rounds negative half cents towards positive infinity like Math.round", () => {
+    expect(computeLineTotal({ quantity: 1.5, unitPrice: -333, vatRate: 19 })).toBe(-499);
+    expect(computeLineTotal({ quantity: -0.47, unitPrice: 8550, vatRate: 19 })).toBe(-4018);
+  });
+  it("keeps four quantity decimals exact", () => {
+    expect(computeLineTotal({ quantity: 1.2345, unitPrice: 10000, vatRate: 19 })).toBe(12345);
+    expect(computeLineTotal({ quantity: 0.0001, unitPrice: 5000, vatRate: 19 })).toBe(1);
+  });
+  it("stays exact beyond the 2^53 range of a float product", () => {
+    // Float: 12345.6789 * 98765432101 rounds to ...699; the exact result is ...698.
+    expect(computeLineTotal({ quantity: 12345.6789, unitPrice: 98765432101, vatRate: 19 })).toBe(1219326311138698);
+  });
+  it("does not throw on half-typed editor input", () => {
+    expect(computeLineTotal({ quantity: Number.NaN, unitPrice: 500, vatRate: 19 })).toBeNaN();
+    expect(computeLineTotal({ quantity: 2, unitPrice: 0.5, vatRate: 19 })).toBe(1);
+  });
+  it("returns a fixed line total as it is instead of recomputing the product", () => {
+    // Issued with the former float rounding: 0,47 x 85,50 EUR was stored as 40,18 EUR.
+    expect(computeLineTotal({ quantity: 0.47, unitPrice: 8550, vatRate: 19, fixedLineTotal: 4018 })).toBe(4018);
+    expect(computeLineTotal({ quantity: 1, unitPrice: 100, vatRate: 19, fixedLineTotal: 0 })).toBe(0);
+  });
+  it("computes a row that merely carries a lineTotal (stored or extracted rows)", () => {
+    const row = { quantity: 0.47, unitPrice: 8550, vatRate: 19, lineTotal: 4018 };
+    expect(computeLineTotal(row)).toBe(4019);
   });
   it("handles zero", () => {
     expect(computeLineTotal({ quantity: 0, unitPrice: 12345, vatRate: 19 })).toBe(0);

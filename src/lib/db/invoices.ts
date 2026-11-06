@@ -46,7 +46,7 @@ export { displayInvoiceNumber, isDraftNumber };
 
 // --- Input types ---
 
-/** No id/invoiceId/lineTotal: those are derived. */
+/** No id/invoiceId: those are derived. `fixedLineTotal` is only set to keep a stored amount (see TotalsItem). */
 type InvoiceItemInput = {
   description: string;
   quantity: number;
@@ -56,6 +56,7 @@ type InvoiceItemInput = {
   longDescription?: string | null;
   linePeriodStart?: number | null;
   linePeriodEnd?: number | null;
+  fixedLineTotal?: number;
 };
 
 export type ReverseChargeType = "none" | "intra_eu" | "third_country";
@@ -422,8 +423,10 @@ export async function findCreditNoteFor(invoiceId: number): Promise<Invoice | nu
 }
 
 /**
- * Items are mirrored verbatim; the user can edit quantities in the draft to model
- * partial refunds. The foreign-currency terms of the original carry over, because
+ * Items are mirrored verbatim, including the stored line totals: the credit note is
+ * exactly the negative of the original, also where the original was issued under an
+ * older rounding. The user can edit quantities in the draft to model partial refunds
+ * (an edited position is computed again). The foreign-currency terms of the original carry over, because
  * the mirrored unit prices are denominated in that currency; the EUR total is
  * derived from the credit note's own total. The Kleinunternehmer treatment is the
  * original's, not today's setting.
@@ -459,6 +462,7 @@ export function creditNoteInputFor(
       longDescription: it.longDescription,
       linePeriodStart: it.linePeriodStart,
       linePeriodEnd: it.linePeriodEnd,
+      fixedLineTotal: it.lineTotal,
     })),
   };
 }
