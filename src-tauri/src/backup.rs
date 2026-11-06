@@ -40,7 +40,7 @@ use crate::tenants::{self, active_documents_root_for};
 /// `CURRENT_DB_SCHEMA_VERSION` in `src/lib/utils/schema-version.ts` and the
 /// highest migration version in `lib.rs` (a test in `lib.rs` checks the
 /// latter).
-pub(crate) const CURRENT_SCHEMA: u32 = 29;
+pub(crate) const CURRENT_SCHEMA: u32 = 30;
 
 const MANIFEST_NAME: &str = "manifest.json";
 const DB_ENTRY: &str = "zettel.db";
