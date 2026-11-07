@@ -3,13 +3,16 @@
     Document-specific parts (meta rows, totals extras, notices) stay in the
     templates themselves. -#}
 
-{# Letterhead: logo or company name above the address window (DIN 5008 form B). #}
+{# Letterhead top right: the logo, or the company name where there is none. #}
 {% macro masthead(company) %}
   <header class="masthead">
     <div class="brand">
-      {% if company.logoDataUri %}<img class="brand-logo" src="{{ company.logoDataUri }}" alt="" />{% endif %}
+      {% if company.logoDataUri %}
+      <img class="brand-logo" src="{{ company.logoDataUri }}" alt="" />
+      {% else %}
       <div class="brand-name">{{ company.companyName }}</div>
       {% if company.ownerName %}<div class="brand-owner">{{ company.ownerName }}</div>{% endif %}
+      {% endif %}
     </div>
   </header>
 {% endmacro %}

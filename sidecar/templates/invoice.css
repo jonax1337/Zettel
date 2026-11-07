@@ -1,45 +1,37 @@
 /* ============================================================
    Zettel — Rechnungs-Template
-   Three themes via CSS variables, switched by body.theme-*:
-   classic (default), modern, minimal.
+   One sober business layout in the style of German invoicing tools
+   (DIN 5008 form B, logo top right, information block beside the
+   address, gray table head, totals flush right). The themes, switched
+   by body.theme-*, only vary color and rules: classic (default),
+   modern, minimal. Mirrors templates/document.typ.
    ============================================================ */
 
 :root {
   --font-family: "Helvetica", "Arial", sans-serif;
   --font-mono: "Courier New", monospace;
   --font-size-base: 10pt;
-  --line-height: 1.45;
+  --line-height: 1.3;
 
-  --color-text: #1f2933;
-  --color-muted: #66707b;
-  --color-faint: #8a929c;
-  --color-rule: #1f2933;
-  --color-rule-soft: #e6e9ec;
-  --color-rule-row: #eaedf0;
-  --color-bg-soft: #f7f8f9;
-  --color-accent: #1f2933;
-  --color-accent-soft: #66707b;
+  --color-text: #222222;
+  --color-muted: #6b6b6b;
+  --color-faint: #9a9a9a;
+  --color-accent: #222222;
+  --color-brand: #222222;
 
-  --subject-size: 12pt;
-  --subject-weight: 700;
-  --subject-color: var(--color-text);
+  --head-bg: #efefef;
+  --head-color: #222222;
+  --head-rule: none;
+  --row-rule: 0.3pt solid #e2e2e2;
+  --last-row-rule: 0.6pt solid #222222;
+  /* A filled table head needs room at both ends; a ruled one aligns with
+     the text edge. Totals keep the same right edge so the amounts line up. */
+  --table-edge: 2mm;
 
-  --brand-name-size: 13pt;
-  --brand-name-weight: 700;
-  --brand-name-tracking: 0.2pt;
-
-  --masthead-rule: 0.6pt solid var(--color-rule);
-  --grand-rule: 0.6pt solid var(--color-rule);
-  --thead-rule: 0.6pt solid var(--color-rule);
-  --tbody-last-rule: 0.4pt solid var(--color-rule);
-
-  --meta-bg: var(--color-bg-soft);
-  --meta-border: 0.3pt solid var(--color-rule-soft);
-  --meta-radius: 1.5mm;
-
-  --callout-bg: var(--color-bg-soft);
-  --callout-border: 1mm solid var(--color-accent-soft);
-  --callout-radius: 0 1.5mm 1.5mm 0;
+  --grand-rule: 0.6pt solid #222222;
+  --footer-rule: 0.4pt solid #cfcfcf;
+  --soft-bg: #f5f5f5;
+  --callout-bar: 0.8mm solid #9a9a9a;
 }
 
 /* ----- Theme: classic (default) ----- */
@@ -47,59 +39,44 @@ body.theme-classic {
   /* uses :root defaults */
 }
 
-/* ----- Theme: modern — colored accent, bolder typography ----- */
+/* ----- Theme: modern — petrol accent ----- */
 body.theme-modern {
-  --font-family: "Helvetica", "Arial", sans-serif;
-  --color-accent: #0f4c75;
-  --color-accent-soft: #3282b8;
-  --color-rule: #0f4c75;
-  --color-bg-soft: #eef4f8;
-  --color-rule-soft: #cfe0eb;
+  --color-text: #1f2933;
+  --color-muted: #5f6b78;
+  --color-faint: #8d97a3;
+  --color-accent: #0b5d6b;
+  --color-brand: #0b5d6b;
 
-  --subject-color: var(--color-accent);
+  --head-bg: #e2eef0;
+  --head-color: #0b5d6b;
+  --row-rule: 0.3pt solid #dbe7ea;
+  --last-row-rule: 0.8pt solid #0b5d6b;
 
-  --brand-name-size: 14pt;
-  --brand-name-tracking: 0pt;
-
-  --masthead-rule: 1.2pt solid var(--color-accent);
-  --grand-rule: 1.2pt solid var(--color-accent);
-  --thead-rule: 1pt solid var(--color-accent);
-  --tbody-last-rule: 0.6pt solid var(--color-accent);
-
-  --meta-radius: 2.5mm;
-  --callout-radius: 1.5mm;
+  --grand-rule: 0.8pt solid #0b5d6b;
+  --footer-rule: 0.8pt solid #0b5d6b;
+  --soft-bg: #eef6f7;
+  --callout-bar: 0.8mm solid #0b5d6b;
 }
 
-/* ----- Theme: minimal — no boxes, hairline rules ----- */
+/* ----- Theme: minimal — no fills, rules only ----- */
 body.theme-minimal {
   --color-text: #111111;
-  --color-muted: #888888;
-  --color-faint: #aaaaaa;
-  --color-rule: #111111;
-  --color-rule-soft: #eeeeee;
-  --color-rule-row: #f3f3f3;
-  --color-bg-soft: transparent;
+  --color-muted: #7a7a7a;
+  --color-faint: #a8a8a8;
   --color-accent: #111111;
-  --color-accent-soft: #888888;
+  --color-brand: #111111;
 
-  --subject-size: 11pt;
-  --subject-weight: 600;
+  --head-bg: transparent;
+  --head-color: #7a7a7a;
+  --head-rule: 0.4pt solid #111111;
+  --row-rule: none;
+  --last-row-rule: 0.4pt solid #111111;
+  --table-edge: 0mm;
 
-  --brand-name-weight: 500;
-  --brand-name-tracking: 0pt;
-
-  --masthead-rule: 0.3pt solid var(--color-rule);
-  --grand-rule: 0.3pt solid var(--color-rule);
-  --thead-rule: 0.3pt solid var(--color-rule);
-  --tbody-last-rule: 0.3pt solid var(--color-rule);
-
-  --meta-bg: transparent;
-  --meta-border: 0pt solid transparent;
-  --meta-radius: 0;
-
-  --callout-bg: transparent;
-  --callout-border: 0.3pt solid var(--color-rule-soft);
-  --callout-radius: 0;
+  --grand-rule: 0.4pt solid #111111;
+  --footer-rule: 0.3pt solid #dddddd;
+  --soft-bg: transparent;
+  --callout-bar: 0.3pt solid #111111;
 }
 
 /* DIN 5008 form B on A4: text between 25 mm and 190 mm. Page one leaves
@@ -139,6 +116,7 @@ body {
   color: var(--color-text);
   line-height: var(--line-height);
   margin: 0;
+  font-variant-numeric: tabular-nums;
   -webkit-print-color-adjust: exact;
 }
 
@@ -153,38 +131,33 @@ body {
   height: 98.5mm;
 }
 
+/* Logo, or the company name where there is none, top right. */
 .masthead {
   position: absolute;
-  top: 10mm;
+  top: 12mm;
   left: 25mm;
   width: 165mm;
-  height: 31mm;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  border-bottom: var(--masthead-rule);
-  padding-bottom: 2.5mm;
+  text-align: right;
 }
 
 .brand .brand-logo {
-  display: block;
-  max-height: 18mm;
-  max-width: 60mm;
-  margin-bottom: 2mm;
+  display: inline-block;
+  height: 18mm;
+  max-width: 70mm;
   object-fit: contain;
 }
 
 .brand .brand-name {
-  font-size: var(--brand-name-size);
-  font-weight: var(--brand-name-weight);
-  letter-spacing: var(--brand-name-tracking);
+  font-size: 16pt;
+  font-weight: 700;
   line-height: 1.2;
+  color: var(--color-brand);
 }
 
 .brand .brand-owner {
   font-size: 9pt;
   color: var(--color-muted);
-  margin-top: 0.5mm;
+  margin-top: 1mm;
 }
 
 /* Address field: 85 x 45 mm, 17.7 mm extra zone above the 27.3 mm address zone. */
@@ -200,10 +173,8 @@ body {
 }
 
 .addressee-extra {
+  position: relative;
   height: 17.7mm;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
 }
 
 .addressee-zone {
@@ -211,41 +182,35 @@ body {
   padding-top: 1mm;
 }
 
+/* Sits on the bottom edge of the extra zone, directly above the address. */
 .addressee .sender-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   font-size: 7pt;
   line-height: 1.25;
-  color: var(--color-faint);
-  border-bottom: 0.3pt solid var(--color-rule-soft);
-  padding-bottom: 0.6mm;
+  color: var(--color-muted);
+  border-bottom: 0.3pt solid var(--color-faint);
+  padding-bottom: 0.8mm;
 }
 
-.addressee .addressee-name {
-  font-weight: 600;
-}
-
-/* Information block: the text spans 125 to 200 mm from 50 mm down; the box
-   behind it reaches 3 mm (padding) beyond. */
+/* Information block: level with the sender line, 125 to 190 mm (the norm
+   allows up to 200 mm; this ends it flush with the text area). */
 .meta {
   position: absolute;
-  top: 47.5mm;
-  left: 122mm;
-  width: 81mm;
+  top: 59mm;
+  left: 125mm;
+  width: 65mm;
   font-size: 9pt;
-  background: var(--meta-bg);
-  border: var(--meta-border);
-  border-radius: var(--meta-radius);
-  padding: 2.5mm 3mm;
+  line-height: 1.25;
 }
 
 .meta-row {
   display: flex;
   justify-content: space-between;
   gap: 4mm;
-  padding: 0.8mm 0;
-}
-
-.meta-row + .meta-row {
-  border-top: 0.2pt solid var(--color-rule-soft);
+  padding: 0.9mm 0;
 }
 
 .meta-label {
@@ -253,21 +218,20 @@ body {
 }
 
 .meta-value {
-  font-weight: 500;
   text-align: right;
 }
 
-/* Fold marks at 105 and 210 mm (5 mm), punch mark at 148.5 mm (7 mm). */
+/* Fold marks at 105 and 210 mm, punch mark at 148.5 mm. */
 .sheet-mark {
   position: absolute;
-  left: 0;
-  width: 5mm;
+  left: 3mm;
+  width: 4mm;
   height: 0;
-  border-top: 0.3pt solid #8a8a8a;
+  border-top: 0.3pt solid #b9b9b9;
 }
 
 .fold-mark-upper { top: 105mm; }
-.punch-mark { top: 148.5mm; width: 7mm; }
+.punch-mark { top: 148.5mm; width: 6mm; }
 .fold-mark-lower { top: 210mm; }
 
 /* ----- Running header of the following pages ----- */
@@ -278,16 +242,16 @@ body {
   justify-content: space-between;
   font-size: 8pt;
   color: var(--color-muted);
-  border-bottom: 0.3pt solid var(--color-rule-soft);
+  border-bottom: var(--footer-rule);
   padding-bottom: 1.5mm;
 }
 
 /* ----- Subject line ----- */
 
 .subject {
-  font-size: var(--subject-size);
-  font-weight: var(--subject-weight);
-  color: var(--subject-color);
+  font-size: 14pt;
+  font-weight: 700;
+  color: var(--color-accent);
   margin-bottom: 6mm;
 }
 
@@ -305,30 +269,34 @@ table.items {
 
 table.items thead th {
   text-align: left;
-  font-weight: 600;
-  font-size: 8.5pt;
-  text-transform: uppercase;
-  letter-spacing: 0.4pt;
-  color: var(--color-muted);
-  padding: 2.2mm 1.8mm;
-  border-bottom: var(--thead-rule);
+  font-weight: 700;
+  font-size: 9pt;
+  color: var(--head-color);
+  background: var(--head-bg);
+  padding: 2mm 2.5mm;
+  border-bottom: var(--head-rule);
   white-space: nowrap;
 }
 
 table.items th:first-child,
 table.items td:first-child {
-  padding-left: 0;
+  padding-left: var(--table-edge);
 }
 
 table.items th:last-child,
 table.items td:last-child {
-  padding-right: 0;
+  padding-right: var(--table-edge);
 }
 
 th.num,
-td.num {
+td.num,
+table.items thead th.num,
+table.items thead th.col-pos,
+table.items thead th.col-qty,
+table.items thead th.col-price,
+table.items thead th.col-vat,
+table.items thead th.col-total {
   text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
 table.items tbody tr {
@@ -336,36 +304,36 @@ table.items tbody tr {
 }
 
 table.items tbody td {
-  padding: 2.2mm 1.8mm;
-  border-bottom: 0.2pt solid var(--color-rule-row);
+  padding: 2mm 2.5mm;
+  border-bottom: var(--row-rule);
   vertical-align: top;
   font-size: 10pt;
 }
 
 table.items tbody tr:last-child td {
-  border-bottom: var(--tbody-last-rule);
+  border-bottom: var(--last-row-rule);
 }
 
 .col-pos    { width: 8mm;  text-align: right; color: var(--color-faint); }
 .col-desc   { }
 .col-desc .item-name { }
 .col-desc .item-detail {
-  margin-top: 0.6mm;
+  margin-top: 1mm;
   font-size: 0.88em;
-  color: var(--color-faint);
+  color: var(--color-muted);
   white-space: pre-wrap;
 }
 .col-desc .item-period {
-  margin-top: 0.6mm;
+  margin-top: 1mm;
   font-size: 0.85em;
-  color: var(--color-faint);
+  color: var(--color-muted);
   font-style: italic;
 }
-.col-qty    { width: 14mm; text-align: right; font-variant-numeric: tabular-nums; }
+.col-qty    { width: 14mm; text-align: right; }
 .col-unit   { width: 15mm; }
-.col-price  { width: 22mm; text-align: right; font-variant-numeric: tabular-nums; }
-.col-vat    { width: 14mm; text-align: right; font-variant-numeric: tabular-nums; }
-.col-total  { width: 25mm; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
+.col-price  { width: 22mm; text-align: right; }
+.col-vat    { width: 14mm; text-align: right; }
+.col-total  { width: 25mm; text-align: right; font-weight: 700; }
 
 /* ----- Totals ----- */
 
@@ -373,35 +341,27 @@ table.items tbody tr:last-child td {
 section.totals {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 6mm;
+  margin-bottom: 8mm;
 }
 
 table.totals,
 table.totals-table {
-  width: 80mm;
+  width: 85mm;
   border-collapse: collapse;
 }
 
-table.totals-table td {
-  padding: 1.5mm 0;
-}
-
+table.totals th,
 table.totals-table td:first-child {
-  color: var(--color-muted);
-  padding-right: 4mm;
-}
-
-table.totals th {
   text-align: left;
   font-weight: 400;
   color: var(--color-muted);
-  padding: 1.1mm 4mm 1.1mm 0;
+  padding: 0.5mm 4mm 0.5mm 0;
 }
 
-table.totals td {
+table.totals td,
+table.totals-table td:last-child {
   text-align: right;
-  padding: 1.1mm 0;
-  font-variant-numeric: tabular-nums;
+  padding: 0.5mm var(--table-edge) 0.5mm 0;
 }
 
 table.totals tr.grand th,
@@ -409,13 +369,10 @@ table.totals tr.grand td,
 table.totals-table tr.grand td {
   border-top: var(--grand-rule);
   font-weight: 700;
-  font-size: 12pt;
+  font-size: 11pt;
   color: var(--color-accent);
-  padding-top: 2.5mm;
-}
-
-table.totals-table tr.grand td:first-child {
-  color: var(--color-accent);
+  padding-top: 2.2mm;
+  padding-bottom: 2.2mm;
 }
 
 /* ----- Reminder body ----- */
@@ -425,12 +382,10 @@ table.totals-table tr.grand td:first-child {
 }
 
 .reference h3 {
-  margin: 6mm 0 1.5mm 0;
-  font-size: 8.5pt;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.4pt;
-  color: var(--color-muted);
+  margin: 6mm 0 3mm 0;
+  font-size: 11pt;
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .payment p {
@@ -440,19 +395,17 @@ table.totals-table tr.grand td:first-child {
 .payment .bank {
   margin: 0 0 3mm 0;
   padding: 3mm 4mm;
-  background: var(--callout-bg);
-  border-left: var(--callout-border);
-  border-radius: var(--callout-radius);
+  background: var(--soft-bg);
+  border-left: var(--callout-bar);
 }
 
 /* ----- Callout (Kleinunternehmer-Hinweis) ----- */
 
 .callout {
-  margin: 5mm 0;
-  padding: 3.5mm 4.5mm;
-  background: var(--callout-bg);
-  border-left: var(--callout-border);
-  border-radius: var(--callout-radius);
+  margin: 6mm 0;
+  padding: 3mm 4mm;
+  background: var(--soft-bg);
+  border-left: var(--callout-bar);
   font-size: 9.5pt;
   color: var(--color-text);
 }
@@ -461,16 +414,14 @@ table.totals-table tr.grand td:first-child {
 
 .block {
   break-inside: avoid;
-  margin: 5mm 0;
+  margin: 6mm 0;
   font-size: 9.5pt;
 }
 
 .block-title {
-  font-size: 8.5pt;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.4pt;
-  color: var(--color-muted);
+  font-size: 9.5pt;
+  font-weight: 700;
+  color: var(--color-text);
   margin-bottom: 1.5mm;
 }
 
@@ -496,16 +447,16 @@ table.totals-table tr.grand td:first-child {
 }
 
 .payment-block .payment-qr {
-  flex: 0 0 auto;
+  flex: 0 0 32mm;
   text-align: center;
-  font-size: 7.5pt;
+  font-size: 7pt;
   color: var(--color-muted);
 }
 
 .payment-block .epc-qr {
   display: block;
-  width: 28mm;
-  height: 28mm;
+  width: 24mm;
+  height: 24mm;
   margin: 0 auto 1.5mm auto;
 }
 
@@ -517,8 +468,8 @@ table.totals-table tr.grand td:first-child {
 .skonto-line {
   margin-top: 1.5mm;
   padding: 1.5mm 2mm;
-  background: var(--color-bg-soft);
-  border-left: 0.5mm solid var(--color-accent-soft);
+  background: var(--soft-bg);
+  border-left: 0.5mm solid var(--color-accent);
   font-size: 9pt;
 }
 
@@ -559,14 +510,14 @@ html[lang="en"] .doc-footer::after {
   font-size: 7.5pt;
   line-height: 1.35;
   color: var(--color-muted);
-  border-top: 0.3pt solid var(--color-rule-soft);
+  border-top: var(--footer-rule);
   padding-top: 3mm;
 }
 
 .doc-footer {
   flex-wrap: wrap;
   display: flex;
-  gap: 6mm;
+  column-gap: 6mm;
   justify-content: space-between;
 }
 
@@ -580,11 +531,10 @@ html[lang="en"] .doc-footer::after {
 }
 
 .doc-footer .col-title {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text);
   margin-bottom: 1mm;
   font-size: 7.5pt;
-  letter-spacing: 0.2pt;
 }
 
 .doc-footer .iban {

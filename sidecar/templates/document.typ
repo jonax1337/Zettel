@@ -4,92 +4,69 @@
 // in `sys.inputs.data`. Every text and amount arrives final (translated,
 // formatted, decided); this file only decides how it looks. Colors and sizes
 // follow templates/invoice.css so both PDF engines share one look per theme.
+//
+// One sober business layout in the style of German invoicing tools (DIN 5008
+// form B, logo top right, information block beside the address, gray table
+// head, totals flush right). The themes only vary color and rules.
 
 #let d = json(bytes(sys.inputs.data))
 
+#let sans = ("Helvetica", "Arial", "Liberation Sans", "DejaVu Sans")
+#let mono = ("Courier New", "Liberation Mono", "DejaVu Sans Mono")
+
 #let classic = (
-  text: rgb("#1f2933"),
-  muted: rgb("#66707b"),
-  faint: rgb("#8a929c"),
-  rule: rgb("#1f2933"),
-  rule-soft: rgb("#e6e9ec"),
-  rule-row: rgb("#eaedf0"),
-  soft-fill: rgb("#f7f8f9"),
-  accent: rgb("#1f2933"),
-  accent-soft: rgb("#66707b"),
-  brand-size: 14pt,
-  brand-weight: "bold",
-  brand-tracking: 0.2pt,
-  brand-fill: rgb("#1f2933"),
-  brand-align: left,
-  subject-weight: "bold",
-  subject-fill: rgb("#1f2933"),
-  meta-fill: none,
-  meta-top-rule: 0.6pt + rgb("#1f2933"),
-  meta-bar: none,
-  meta-row-rule: 0.2pt + rgb("#e6e9ec"),
-  grand-rule: 0.6pt + rgb("#1f2933"),
-  thead-rule: 0.6pt + rgb("#1f2933"),
-  last-row-rule: 0.4pt + rgb("#1f2933"),
-  callout-fill: rgb("#f7f8f9"),
-  callout-bar: 1mm + rgb("#66707b"),
-  callout-radius: (right: 1.5mm),
+  text: rgb("#222222"),
+  muted: rgb("#6b6b6b"),
+  faint: rgb("#9a9a9a"),
+  accent: rgb("#222222"),
+  brand: rgb("#222222"),
+  head-fill: rgb("#efefef"),
+  head-text: rgb("#222222"),
+  head-rule: none,
+  row-rule: 0.3pt + rgb("#e2e2e2"),
+  last-row-rule: 0.6pt + rgb("#222222"),
+  grand-rule: 0.6pt + rgb("#222222"),
+  grand-text: rgb("#222222"),
+  footer-rule: 0.4pt + rgb("#cfcfcf"),
+  soft-fill: rgb("#f5f5f5"),
+  callout-bar: 0.8mm + rgb("#9a9a9a"),
 )
 
 #let themes = (
   classic: classic,
   modern: classic + (
-    accent: rgb("#0f4c75"),
-    accent-soft: rgb("#3282b8"),
-    rule: rgb("#0f4c75"),
-    soft-fill: rgb("#eef4f8"),
-    rule-soft: rgb("#cfe0eb"),
-    brand-size: 15pt,
-    brand-tracking: 0pt,
-    brand-fill: rgb("#0f4c75"),
-    brand-align: right,
-    subject-fill: rgb("#0f4c75"),
-    meta-fill: rgb("#eef4f8"),
-    meta-top-rule: none,
-    meta-bar: 1mm + rgb("#3282b8"),
-    meta-row-rule: 0.2pt + rgb("#cfe0eb"),
-    grand-rule: 1.2pt + rgb("#0f4c75"),
-    thead-rule: 1pt + rgb("#0f4c75"),
-    last-row-rule: 0.6pt + rgb("#0f4c75"),
-    callout-fill: rgb("#eef4f8"),
-    callout-bar: 1mm + rgb("#3282b8"),
-    callout-radius: 1.5mm,
+    text: rgb("#1f2933"),
+    muted: rgb("#5f6b78"),
+    faint: rgb("#8d97a3"),
+    accent: rgb("#0b5d6b"),
+    brand: rgb("#0b5d6b"),
+    head-fill: rgb("#e2eef0"),
+    head-text: rgb("#0b5d6b"),
+    row-rule: 0.3pt + rgb("#dbe7ea"),
+    last-row-rule: 0.8pt + rgb("#0b5d6b"),
+    grand-rule: 0.8pt + rgb("#0b5d6b"),
+    grand-text: rgb("#0b5d6b"),
+    footer-rule: 0.8pt + rgb("#0b5d6b"),
+    soft-fill: rgb("#eef6f7"),
+    callout-bar: 0.8mm + rgb("#0b5d6b"),
   ),
   minimal: classic + (
     text: rgb("#111111"),
-    muted: rgb("#888888"),
-    faint: rgb("#aaaaaa"),
-    rule: rgb("#111111"),
-    rule-soft: rgb("#eeeeee"),
-    rule-row: rgb("#f3f3f3"),
+    muted: rgb("#7a7a7a"),
+    faint: rgb("#a8a8a8"),
+    head-fill: none,
+    head-text: rgb("#7a7a7a"),
+    head-rule: 0.4pt + rgb("#111111"),
+    row-rule: none,
+    last-row-rule: 0.4pt + rgb("#111111"),
+    grand-rule: 0.4pt + rgb("#111111"),
+    footer-rule: 0.3pt + rgb("#dddddd"),
     soft-fill: none,
-    accent: rgb("#111111"),
-    accent-soft: rgb("#888888"),
-    brand-size: 13pt,
-    brand-weight: "medium",
-    brand-tracking: 0pt,
-    brand-fill: rgb("#111111"),
-    subject-weight: "semibold",
-    subject-fill: rgb("#111111"),
-    meta-top-rule: none,
-    meta-row-rule: 0.2pt + rgb("#eeeeee"),
-    grand-rule: 0.3pt + rgb("#111111"),
-    thead-rule: 0.3pt + rgb("#111111"),
-    last-row-rule: 0.3pt + rgb("#111111"),
-    callout-fill: none,
-    callout-bar: 0.3pt + rgb("#eeeeee"),
-    callout-radius: 0pt,
+    callout-bar: 0.3pt + rgb("#111111"),
   ),
 )
 
 #let th = themes.at(d.theme, default: classic)
-#let sans = ("Helvetica", "Arial", "Liberation Sans", "DejaVu Sans")
-#let mono = ("Courier New", "Liberation Mono", "DejaVu Sans Mono")
 #let page-count-color = rgb("#9a9a9a")
 
 // DIN 5008 form B, measured from the sheet edge. The text area starts at
@@ -101,15 +78,19 @@
 #let margin-bottom = 38mm
 #let footer-clearance = 8mm
 #let text-width = page-width - margin-left - margin-right
-#let letterhead-top = 10mm
+#let letterhead-top = 12mm
+#let logo-height = 18mm
 #let address-field = (x: 20mm, y: 45mm, width: 85mm, height: 45mm)
 #let address-note-height = 17.7mm
 #let address-indent = 5mm
-#let info-block = (x: 125mm, y: 50mm, width: 75mm)
+// Level with the sender line above the address. 65 mm (the norm allows 75)
+// ends the block flush with the text area.
+#let info-block = (x: 125mm, y: 59mm, width: 65mm)
 #let subject-top = 98.5mm
-#let fold-marks = ((y: 105mm, length: 5mm), (y: 148.5mm, length: 7mm), (y: 210mm, length: 5mm))
-#let fold-mark-x = 2mm
-#let fold-mark-stroke = 0.3pt + luma(150)
+#let subject-gap = 8mm
+#let fold-marks = ((y: 105mm, length: 4mm), (y: 148.5mm, length: 6mm), (y: 210mm, length: 4mm))
+#let fold-mark-x = 3mm
+#let fold-mark-stroke = 0.3pt + luma(185)
 
 #let at-sheet(x, y, width, body) = place(
   top + left, dx: x - margin-left, dy: y - margin-top, block(width: width, body),
@@ -117,23 +98,18 @@
 
 // ----- building blocks -----------------------------------------------------
 
-#let small-caps-title(body) = text(
-  size: 8.5pt, weight: "semibold", tracking: 0.4pt, fill: th.muted, upper(body),
-)
-
-#let block-title(body) = block(below: 1.5mm, small-caps-title(body))
+#let block-title(body) = block(below: 1.5mm, text(size: 9.5pt, weight: "bold", body))
 
 // Label/value tables: padding instead of a column gutter keeps row rules unbroken.
-#let label-inset(x, y) = (left: 0pt, right: if x == 0 { 4mm } else { 0pt }, y: 1.6mm)
+#let label-inset(x, y) = (left: 0pt, right: if x == 0 { 4mm } else { 0pt }, y: 1.3mm)
 
 #let callout(body) = block(
   width: 100%,
   above: 6mm,
   below: 6mm,
-  inset: (x: 4.5mm, y: 3.5mm),
-  fill: th.callout-fill,
+  inset: (x: 4mm, y: 3mm),
+  fill: th.soft-fill,
   stroke: (left: th.callout-bar),
-  radius: th.callout-radius,
   text(size: 9.5pt, body),
 )
 
@@ -147,7 +123,7 @@
 
 #let footer-column(column) = {
   if column.title != none {
-    block(below: 1mm, text(weight: "semibold", fill: th.text, tracking: 0.2pt, column.title))
+    block(below: 1mm, text(weight: "bold", fill: th.text, column.title))
   }
   column.lines.map(footer-line).join(linebreak())
 }
@@ -155,7 +131,7 @@
 #let page-footer() = align(bottom, pad(bottom: footer-clearance, {
   set text(size: 7.5pt, fill: th.muted)
   set par(leading: 0.45em)
-  block(width: 100%, stroke: (top: 0.3pt + th.rule-soft), inset: (top: 3mm), grid(
+  block(width: 100%, stroke: (top: th.footer-rule), inset: (top: 3mm), grid(
     // The bank column is wider: a 22-character IBAN in groups stays on one line.
     columns: d.footer.map(column => if column.wide { 1.4fr } else { 1fr }),
     column-gutter: 6mm,
@@ -165,19 +141,18 @@
   align(right, text(size: 8pt, fill: page-count-color, page-label()))
 }))
 
-#let letterhead() = {
-  let align-brand(body) = align(th.brand-align, body)
-  let parts = ()
-  if d.logo != none { parts.push(align-brand(image(d.logo, height: 16mm))) }
-  parts.push(align-brand(text(
-    size: th.brand-size, weight: th.brand-weight, tracking: th.brand-tracking, fill: th.brand-fill, d.company.name,
-  )))
-  if d.company.owner != none { parts.push(align-brand(text(size: 9pt, fill: th.muted, d.company.owner))) }
-  at-sheet(margin-left, letterhead-top, text-width, stack(spacing: 2.5mm, ..parts))
-}
+// Logo, or the company name where there is none, top right.
+#let letterhead() = at-sheet(margin-left, letterhead-top, text-width, align(right, {
+  if d.logo != none {
+    image(d.logo, height: logo-height)
+  } else {
+    text(size: 16pt, weight: "bold", fill: th.brand, d.company.name)
+    if d.company.owner != none { block(above: 1.5mm, text(size: 9pt, fill: th.muted, d.company.owner)) }
+  }
+}))
 
 #let address-window() = at-sheet(address-field.x, address-field.y, address-field.width, {
-  set par(leading: 0.4em)
+  set par(leading: 0.45em)
   block(
     width: 100%,
     height: address-note-height,
@@ -189,8 +164,8 @@
       text(size: 7pt, fill: th.muted, d.senderLine),
     )),
   )
-  block(width: 100%, inset: (left: address-indent), {
-    text(weight: "semibold", d.recipient.name)
+  block(width: 100%, inset: (left: address-indent, top: 1mm), {
+    d.recipient.name
     for line in d.recipient.lines {
       linebreak()
       line
@@ -198,27 +173,25 @@
   })
 })
 
-#let meta-box() = at-sheet(info-block.x, info-block.y, info-block.width, block(
-  width: 100%,
-  inset: if th.meta-fill == none { 0pt } else { (x: 3mm, y: 1.5mm) },
-  fill: th.meta-fill,
-  stroke: (top: th.meta-top-rule, left: th.meta-bar),
-  {
-    set text(size: 9pt)
-    table(
-      columns: (auto, 1fr),
-      inset: label-inset,
-      stroke: (x, y) => (top: if y > 0 { th.meta-row-rule } else { none }),
-      align: left,
-      ..d.meta.map(row => (text(fill: th.muted, row.label), text(weight: "medium", row.value))).flatten(),
-    )
-  },
-))
+#let meta-table() = {
+  set text(size: 9pt)
+  table(
+    columns: (auto, 1fr),
+    inset: label-inset,
+    stroke: none,
+    align: (left, right),
+    ..d.meta.map(row => (text(fill: th.muted, row.label), row.value)).flatten(),
+  )
+}
 
-#let subject-line() = block(
-  below: 6mm,
-  text(size: 11pt, weight: th.subject-weight, fill: th.subject-fill, d.title + " " + d.number),
-)
+#let meta-box() = at-sheet(info-block.x, info-block.y, info-block.width, meta-table())
+
+// The subject sits at the norm position unless a long information block reaches past it.
+#let subject-line() = context {
+  let meta-bottom = info-block.y + measure(block(width: info-block.width, meta-table())).height
+  v(calc.max(subject-top, meta-bottom + subject-gap) - margin-top)
+  block(below: 6mm, text(size: 14pt, weight: "bold", fill: th.accent, d.title + " " + d.number))
+}
 
 #let fold-mark-layer() = for mark in fold-marks {
   place(top + left, dx: fold-mark-x, dy: mark.y, line(length: mark.length, stroke: fold-mark-stroke))
@@ -230,7 +203,7 @@
     block(
       width: 100%,
       inset: (bottom: 1.5mm),
-      stroke: (bottom: 0.3pt + th.rule-soft),
+      stroke: (bottom: th.footer-rule),
       grid(columns: (1fr, auto), d.company.name, d.title + " " + d.number),
     )
   }
@@ -239,10 +212,10 @@
 #let description-cell(row) = {
   row.description
   if row.at("detail", default: none) != none {
-    block(above: 1mm, text(size: 0.88em, fill: th.faint, row.detail))
+    block(above: 1mm, text(size: 0.88em, fill: th.muted, row.detail))
   }
   if row.at("period", default: none) != none {
-    block(above: 1mm, text(size: 0.85em, fill: th.faint, style: "italic", row.period))
+    block(above: 1mm, text(size: 0.85em, fill: th.muted, style: "italic", row.period))
   }
 }
 
@@ -253,38 +226,44 @@
   } else if column.at("muted", default: false) {
     text(fill: th.faint, value)
   } else if column.at("strong", default: false) {
-    text(weight: "medium", value)
+    text(weight: "bold", value)
   } else {
     value
   }
 }
 
-#let row-rule(y, row-count) = {
-  if y == 0 { th.thead-rule } else if y == row-count { th.last-row-rule } else { 0.2pt + th.rule-row }
+#let row-stroke(y, row-count) = {
+  if y == 0 { (bottom: th.head-rule) } else if y == row-count { (bottom: th.last-row-rule) } else { (bottom: th.row-rule) }
 }
+
+// A filled table head needs room at both ends; a ruled one aligns with the text
+// edge. Totals keep the same right edge so the amounts line up.
+#let table-edge = if th.head-fill == none { 0pt } else { 2mm }
 
 #let items-table(spec) = {
   if spec.title != none {
     block(above: 6mm, below: 3mm, text(size: 11pt, weight: "bold", spec.title))
   }
   let columns = spec.columns
+  let edge = table-edge
   table(
     columns: columns.map(c => if c.key in ("description", "document") { 1fr } else { auto }),
     inset: (x, y) => (
-      left: if x == 0 { 0pt } else { 2.5mm },
-      right: if x == columns.len() - 1 { 0pt } else { 2.5mm },
-      y: 2.4mm,
+      left: if x == 0 { edge } else { 2.5mm },
+      right: if x == columns.len() - 1 { edge } else { 2.5mm },
+      y: if y == 0 { 2mm } else { 2.4mm },
     ),
-    stroke: (x, y) => (bottom: row-rule(y, spec.rows.len())),
+    fill: (x, y) => if y == 0 { th.head-fill },
+    stroke: (x, y) => row-stroke(y, spec.rows.len()),
     align: (x, y) => (if columns.at(x).align == "right" { right } else { left }) + top,
-    table.header(..columns.map(c => small-caps-title(c.label))),
+    table.header(..columns.map(c => text(size: 9pt, weight: "bold", fill: th.head-text, c.label))),
     ..spec.rows.map(row => columns.map(c => table-cell(c, row))).flatten(),
   )
 }
 
 #let total-cells(row) = {
   if row.kind == "grand" {
-    let grand(body) = text(size: 12pt, weight: "bold", fill: th.accent, body)
+    let grand(body) = text(size: 11pt, weight: "bold", fill: th.grand-text, body)
     (grand(row.label), grand(row.value))
   } else {
     let style = if row.kind == "paid" { "italic" } else { "normal" }
@@ -293,9 +272,13 @@
   }
 }
 
-#let totals() = align(right, block(width: 80mm, above: 6mm, below: 10mm, table(
+#let totals() = align(right, block(width: 85mm, above: 5mm, below: 10mm, table(
   columns: (1fr, auto),
-  inset: label-inset,
+  inset: (x, y) => (
+    label-inset(x, y)
+      + (right: if x == 1 { table-edge } else { 4mm })
+      + if d.totals.at(y).kind == "grand" { (y: 2.2mm) } else { (:) }
+  ),
   align: (left + horizon, right + horizon),
   stroke: (x, y) => (top: if d.totals.at(y).kind == "grand" { th.grand-rule } else { none }),
   ..d.totals.map(total-cells).flatten(),
@@ -311,7 +294,7 @@
         width: 100%,
         inset: (x: 2mm, y: 1.5mm),
         fill: th.soft-fill,
-        stroke: (left: 0.5mm + th.accent-soft),
+        stroke: (left: 0.5mm + th.accent),
         text(size: 9pt, payment.skonto),
       )
     }
@@ -320,11 +303,11 @@
     block(above: 6mm, text-part)
   } else {
     block(above: 6mm, grid(
-      columns: (1fr, 36mm),
+      columns: (1fr, 32mm),
       column-gutter: 8mm,
       text-part,
       align(center, {
-        image(bytes(payment.qr.svg), format: "svg", width: 28mm)
+        image(bytes(payment.qr.svg), format: "svg", width: 24mm)
         block(above: 1.5mm, text(size: 7pt, fill: th.muted, payment.qr.caption.join(linebreak())))
       }),
     ))
@@ -339,7 +322,8 @@
 // ----- document --------------------------------------------------------------
 
 #set document(title: d.title + " " + d.number, author: d.company.name)
-#set text(font: sans, size: 10pt, fill: th.text, lang: d.lang)
+// Tabular figures keep amounts aligned digit by digit.
+#set text(font: sans, size: 10pt, fill: th.text, lang: d.lang, number-width: "tabular")
 #set par(leading: 0.55em)
 #set page(
   paper: "a4",
@@ -354,7 +338,6 @@
 #letterhead()
 #address-window()
 #meta-box()
-#v(subject-top - margin-top)
 #subject-line()
 
 #for note in d.topCallouts { callout(note) }
