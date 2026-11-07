@@ -6,6 +6,8 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.23.0]
+
 ### Added
 - **Beta-Updates.** Einstellungen → „Beta-Updates" schaltet auf den Beta-Kanal: Release Candidates (`vX.Y.Z-rc.N`) werden vor dem stabilen Release angeboten und installiert. Ohne Häkchen kommen wie bisher nur stabile Versionen. Wer eine RC installiert hat, bleibt standardmäßig im Beta-Kanal.
 - **IBAN-Prüfung und -Gruppierung.** Einstellungen, Lieferanten und Onboarding nutzen das neue Feld `IbanInput`: Die IBAN wird beim Verlassen normalisiert (Großbuchstaben, keine Leerzeichen), außerhalb des Fokus in Vierergruppen angezeigt und bei ungültiger Prüfsumme markiert. Gespeichert wird immer die kompakte Form, auch für bestehende Einträge. Rechnungs- und Mahnungs-PDFs zeigen sie ebenfalls in Vierergruppen, ohne Leerzeichen im Text.
