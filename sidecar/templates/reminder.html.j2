@@ -8,6 +8,13 @@
 </head>
 <body class="theme-{{ settings.pdf_theme if settings and settings.pdf_theme else 'classic' }}">
 
+  {#- Running page footer: it must precede the content to appear from page one. #}
+  <footer class="page-footer">
+    <div>{{ company.companyName }}{% if company.ownerName %} · {{ company.ownerName }}{% endif %}</div>
+    {% if company.taxNumber %}<div>Steuernr.: {{ company.taxNumber }}</div>{% endif %}
+    {% if company.vatId %}<div>USt-IdNr.: {{ company.vatId }}</div>{% endif %}
+  </footer>
+
   {{ masthead(company, reminder.levelLabel, reminder.number) }}
 
   <section class="parties">
@@ -89,12 +96,6 @@
     {% endif %}
     <p>Sollte sich diese Mahnung mit Ihrer Zahlung überschneiden, betrachten Sie dieses Schreiben bitte als gegenstandslos.</p>
   </section>
-
-  <footer class="page-footer">
-    <div>{{ company.companyName }}{% if company.ownerName %} · {{ company.ownerName }}{% endif %}</div>
-    {% if company.taxNumber %}<div>Steuernr.: {{ company.taxNumber }}</div>{% endif %}
-    {% if company.vatId %}<div>USt-IdNr.: {{ company.vatId }}</div>{% endif %}
-  </footer>
 
 </body>
 </html>

@@ -8,6 +8,9 @@
 </head>
 <body class="theme-{{ settings.pdf_theme if settings and settings.pdf_theme else 'classic' }}">
 
+  {#- Running page footer: it must precede the content to appear from page one. #}
+  {{ footer(company, lang) }}
+
   {{ masthead(company, t('doctype_offer', lang), offer.number) }}
 
   <section class="parties">
@@ -62,8 +65,6 @@
   {% if offer.notes %}
     {{ notes_block(offer.notes, lang) }}
   {% endif %}
-
-  {{ footer(company, lang) }}
 
 </body>
 </html>

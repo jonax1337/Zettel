@@ -9,6 +9,9 @@
 </head>
 <body class="theme-{{ settings.pdf_theme if settings and settings.pdf_theme else 'classic' }}">
 
+  {#- Running page footer: it must precede the content to appear from page one. #}
+  {{ footer(company, lang, with_bank=true) }}
+
   {{ masthead(company, doctype, invoice.number) }}
 
   {% if invoice.isCreditNote and invoice.correctsInvoice %}
@@ -100,8 +103,6 @@
   {% if invoice.notes %}
     {{ notes_block(invoice.notes, lang) }}
   {% endif %}
-
-  {{ footer(company, lang, with_bank=true) }}
 
 </body>
 </html>

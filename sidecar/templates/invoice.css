@@ -109,12 +109,14 @@ body.theme-minimal {
 
 @page {
   size: A4;
-  margin: 20mm 18mm 28mm 18mm;
-  @bottom-right {
-    content: "Seite " counter(page) " von " counter(pages);
-    font-family: "Helvetica", "Arial", sans-serif;
-    font-size: 8pt;
-    color: #9a9a9a;
+  margin: 20mm 18mm 40mm 18mm;
+  /* Anchored to the bottom so a longer footer grows upwards into the margin
+     instead of pushing its last row, the page count, off the page. */
+  @bottom-center {
+    content: element(doc-footer);
+    width: 100%;
+    vertical-align: bottom;
+    padding-bottom: 8mm;
   }
 }
 
@@ -252,6 +254,10 @@ table.items thead th {
   color: var(--color-muted);
   padding: 2.5mm 2.5mm;
   border-bottom: var(--thead-rule);
+}
+
+table.items tbody tr {
+  break-inside: avoid;
 }
 
 table.items tbody td {
@@ -403,17 +409,42 @@ table.totals tr.grand td {
   font-style: italic;
 }
 
-/* ----- Footer (every page bottom) ----- */
+/* ----- Footer (every page bottom) -----
+   Running element: repeated in the bottom page margin instead of taking space
+   in the flow, where it used to spill onto a page of its own. Its last row
+   carries the page count, so the two never compete for the margin's width. */
+
+.doc-footer,
+.page-footer {
+  position: running(doc-footer);
+}
+
+.doc-footer::after,
+.page-footer::after {
+  content: "Seite " counter(page) " von " counter(pages);
+  display: block;
+  flex-basis: 100%;
+  text-align: right;
+  font-size: 8pt;
+  color: #9a9a9a;
+  margin-top: 2mm;
+}
+
+/* Mirrors `page_n_of_m` in invoice/i18n.py. */
+html[lang="en"] .doc-footer::after {
+  content: "Page " counter(page) " of " counter(pages);
+}
 
 .doc-footer {
+  flex-wrap: wrap;
   display: flex;
   gap: 6mm;
   justify-content: space-between;
   font-size: 7.5pt;
+  line-height: 1.35;
   color: var(--color-muted);
   border-top: 0.3pt solid var(--color-rule-soft);
   padding-top: 3mm;
-  margin-top: 14mm;
 }
 
 .doc-footer .col {

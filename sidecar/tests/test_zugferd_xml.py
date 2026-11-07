@@ -67,13 +67,12 @@ def _assert_matches_golden(xml: str, golden_name: str, request) -> None:
 
 
 class TestZugferdGoldens:
-    # The 05 fixture only carries isReverseCharge; the template keys on reverseChargeType.
     @pytest.mark.parametrize("golden_name,payload_name,reverse_charge_type", [
         ("01-standard-19", "01-standard-19.json", None),
         ("02-mixed-vat", "02-mixed-vat.json", None),
         ("03-five-positions", "03-five-positions.json", None),
         ("04-ku-with-vatid", "04-ku-with-vatid.json", None),
-        ("05-reverse-charge", "05-reverse-charge.json", "intra_eu"),
+        ("05-reverse-charge", "05-reverse-charge.json", None),
         ("05-reverse-charge-third-country", "05-reverse-charge.json", "third_country"),
         ("06-basic", "06-basic.json", None),
         ("07-extended", "07-extended.json", None),
