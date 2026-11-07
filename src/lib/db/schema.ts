@@ -71,6 +71,11 @@ export const settings = sqliteTable("settings", {
   })
     .notNull()
     .default("classic"),
+  pdfRenderer: text("pdf_renderer", {
+    enum: ["weasyprint", "typst"],
+  })
+    .notNull()
+    .default("weasyprint"),
   legalForm: text("legal_form", { enum: ["freelancer", "trade"] })
     .notNull()
     .default("freelancer"),

@@ -97,5 +97,8 @@ export function skontoPayload(skonto: SkontoResult | null) {
 }
 
 export function pdfSettingsPayload(company: Settings) {
-  return { pdf_theme: company.pdfTheme ?? "classic" };
+  return {
+    pdf_theme: company.pdfTheme ?? "classic",
+    pdf_renderer: company.pdfRenderer ?? "weasyprint",
+  };
 }

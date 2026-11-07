@@ -51,6 +51,20 @@ describe("buildOfferPayload", () => {
   });
 });
 
+describe("pdf settings payload", () => {
+  const offer = { number: "AN-1", currency: "EUR", skontoPercent: null, skontoDays: null } as unknown as Offer;
+  const settingsOf = (company: Settings) =>
+    buildOfferPayload({ offer, items: [], customer: CUSTOMER, company, outputPath: "o.pdf" }).settings;
+
+  it("defaults the renderer to weasyprint when the setting is missing", () => {
+    expect(settingsOf(COMPANY)).toEqual({ pdf_theme: "classic", pdf_renderer: "weasyprint" });
+  });
+
+  it("sends the chosen renderer", () => {
+    expect(settingsOf({ ...COMPANY, pdfRenderer: "typst" })).toMatchObject({ pdf_renderer: "typst" });
+  });
+});
+
 describe("buildReminderPayload", () => {
   const reminder = { number: "MA-1", level: "reminder", feeCents: 500 } as unknown as Reminder;
   const snapshot = {

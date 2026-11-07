@@ -166,6 +166,7 @@ def test_payload_trims_what_the_pre_check_accepted(cli):
         "country": "DE", "tax_number": None, "vat_id": "DE1", "email": " a@b.de ", "phone": " +49 30 123 ",
         "website": None, "bank_name": None, "bank_iban": "DE00", "bank_bic": None, "is_kleinunternehmer": 0,
         "kleinunternehmer_note": None, "logo_path": None, "zugferd_profile": None, "pdf_theme": None,
+        "pdf_renderer": None,
     }
     inv = {
         key: None for key in (

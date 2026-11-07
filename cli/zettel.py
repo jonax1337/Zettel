@@ -47,6 +47,7 @@ DEFAULT_PAYMENT_TERMS_DAYS = 14
 DEFAULT_UNIT = "Std"
 DEFAULT_PDF_PROFILE = "en16931"
 DEFAULT_PDF_THEME = "classic"
+DEFAULT_PDF_RENDERER = "weasyprint"
 DEFAULT_PDF_LANGUAGE = "de"
 PAYABLE_STATUSES = ("sent", "partial")
 DRAFT_PREFIX = "DRAFT-"
@@ -477,7 +478,10 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
         },
         "outputPath": output_path,
         "profile": company["zugferd_profile"] or DEFAULT_PDF_PROFILE,
-        "settings": {"pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME},
+        "settings": {
+            "pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME,
+            "pdf_renderer": company["pdf_renderer"] or DEFAULT_PDF_RENDERER,
+        },
     }
 
 
