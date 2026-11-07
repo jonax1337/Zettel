@@ -14,6 +14,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import pytest
+from facturx import xml_check_xsd
 
 from invoice.vat import vat_groups
 from invoice.zugferd import (
@@ -356,11 +357,6 @@ class TestXRechnungSemantics:
         )
         assert "ApplicableTradePaymentDiscountTerms" not in xml
 
-    def test_zugferd_keeps_structured_skonto_terms(self, payloads):
-        payload = payloads("08-xrechnung-standard-19.json")
-        payload["invoice"].update(skontoPercent=2, skontoDays=10, skontoAmountCent=2856)
-        assert "ApplicableTradePaymentDiscountTerms" in render_zugferd_xml(payload)
-
     def test_zugferd_has_no_xrechnung_additions(self, payloads):
         xml = render_zugferd_xml(payloads("01-standard-19.json"))
         for xrechnung_only in (
@@ -369,3 +365,44 @@ class TestXRechnungSemantics:
             "URIUniversalCommunication",
         ):
             assert xrechnung_only not in xml
+
+
+PAYLOAD_NAMES = sorted(p.name for p in (Path(__file__).parent.parent / "test-payloads").glob("*.json"))
+SKONTO = {"skontoPercent": 2, "skontoDays": 7, "skontoAmountCent": 583, "skontoDeadline": 1748044800}
+
+
+class TestProfileSchemas:
+    """Every profile must stay within its official Factur-X XSD: receivers that
+    check the schema reject the whole e-invoice for one foreign element."""
+
+    @pytest.mark.parametrize("with_skonto", [False, True], ids=["plain", "skonto"])
+    @pytest.mark.parametrize("profile", ["basic", "en16931", "extended"])
+    @pytest.mark.parametrize("name", PAYLOAD_NAMES)
+    def test_xml_is_valid_against_the_profile_xsd(self, payloads, name, profile, with_skonto):
+        payload = payloads(name)
+        payload["profile"] = profile
+        if with_skonto:
+            payload["invoice"].update(SKONTO)
+
+        xml_check_xsd(render_zugferd_xml(payload).encode("utf-8"), flavor="factur-x", level=profile)
+
+    @pytest.mark.parametrize("profile", ["basic", "en16931"])
+    def test_skonto_outside_extended_is_a_description_line(self, payloads, profile):
+        payload = payloads("01-standard-19.json")
+        payload["profile"] = profile
+        payload["invoice"].update(SKONTO)
+
+        xml = render_zugferd_xml(payload)
+
+        assert "ApplicableTradePaymentDiscountTerms" not in xml
+        assert "#SKONTO#TAGE=7#PROZENT=2.00#" in xml
+
+    def test_extended_carries_structured_skonto(self, payloads):
+        payload = payloads("01-standard-19.json")
+        payload["profile"] = "extended"
+        payload["invoice"].update(SKONTO)
+
+        xml = render_zugferd_xml(payload)
+
+        assert "<ram:CalculationPercent>2.00</ram:CalculationPercent>" in xml
+        assert "#SKONTO#" not in xml

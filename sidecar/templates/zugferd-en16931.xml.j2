@@ -61,7 +61,7 @@
       </ram:AssociatedDocumentLineDocument>
       <ram:SpecifiedTradeProduct>
         <ram:Name>{{ it.description }}</ram:Name>
-        {% if it.longDescription %}
+        {% if it.longDescription and not basic_profile %}
         <ram:Description>{{ it.longDescription }}</ram:Description>
         {% endif %}
       </ram:SpecifiedTradeProduct>
@@ -211,7 +211,7 @@
         <ram:PayeePartyCreditorFinancialAccount>
           <ram:IBANID>{{ company.bankIban | replace(" ", "") }}</ram:IBANID>
         </ram:PayeePartyCreditorFinancialAccount>
-        {% if company.bankBic %}
+        {% if company.bankBic and not basic_profile %}
         <ram:PayeeSpecifiedCreditorFinancialInstitution>
           <ram:BICID>{{ company.bankBic }}</ram:BICID>
         </ram:PayeeSpecifiedCreditorFinancialInstitution>
@@ -262,16 +262,17 @@
       {% if not invoice.isCreditNote and (invoice.paymentTerms or invoice.dueDate or invoice.skontoPercent) %}
       {% set skonto_terms = invoice.skontoPercent and invoice.skontoDays and invoice.skontoAmountCent %}
       <ram:SpecifiedTradePaymentTerms>
-        {# XRechnung (CII-SR-408, BR-DE-18) carries the discount as a "#SKONTO#" line, closed by a line break, in the description instead of structured terms. #}
-        {% if invoice.paymentTerms or (xrechnung and skonto_terms) %}
-        <ram:Description>{{ invoice.paymentTerms }}{% if xrechnung and skonto_terms %}{{ "\n" if invoice.paymentTerms }}#SKONTO#TAGE={{ invoice.skontoDays }}#PROZENT={{ "%.2f" | format(invoice.skontoPercent) }}#{{ "\n" }}{% endif %}</ram:Description>
+        {# Outside EXTENDED the discount is a "#SKONTO#" line, closed by a line break, in the description (XRechnung: CII-SR-408, BR-DE-18; BASIC and EN 16931 have no structured terms). #}
+        {% set skonto_as_text = skonto_terms and not structured_skonto %}
+        {% if invoice.paymentTerms or skonto_as_text %}
+        <ram:Description>{{ invoice.paymentTerms }}{% if skonto_as_text %}{{ "\n" if invoice.paymentTerms }}#SKONTO#TAGE={{ invoice.skontoDays }}#PROZENT={{ "%.2f" | format(invoice.skontoPercent) }}#{{ "\n" }}{% endif %}</ram:Description>
         {% endif %}
         {% if invoice.dueDate %}
         <ram:DueDateDateTime>
           <udt:DateTimeString format="102">{{ invoice.dueDate | date_xml }}</udt:DateTimeString>
         </ram:DueDateDateTime>
         {% endif %}
-        {% if skonto_terms and not xrechnung %}
+        {% if skonto_terms and structured_skonto %}
         <ram:ApplicableTradePaymentDiscountTerms>
           <ram:BasisPeriodMeasure unitCode="DAY">{{ invoice.skontoDays }}</ram:BasisPeriodMeasure>
           <ram:CalculationPercent>{{ "%.2f" | format(invoice.skontoPercent) }}</ram:CalculationPercent>

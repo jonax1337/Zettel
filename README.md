@@ -87,7 +87,7 @@ Zettel ist das, was dabei rausgekommen ist: ein kleines Desktop-Tool, das **loka
 - **PDF auf Deutsch oder Englisch** pro Rechnung wählbar (XML bleibt sprach-neutral nach Norm)
 - **Leistungszeiträume** (BG-14 / BG-26) auf Header- und Positions-Ebene, lange Positions-Beschreibungen (BT-154)
 - **Artikel-/Leistungs-Katalog** für wiederverwendbare Positionen (DE + EN-Beschreibungen)
-- **Skonto** (Frühzahler-Rabatt) strukturiert als `ApplicableTradePaymentDiscountTerms` im XML
+- **Skonto** (Frühzahler-Rabatt) im XML als `#SKONTO#`-Zeile der Zahlungsbedingungen (BASIC, EN 16931, XRechnung), im Profil EXTENDED strukturiert als `ApplicableTradePaymentDiscountTerms`
 - **EPC-QR-Code (Girocode)** automatisch auf EUR-Rechnungen mit IBAN — Empfänger scannt mit Banking-App
 - **Angebote** als eigener Dokumententyp mit One-Click-Konvertierung zur Rechnung
 

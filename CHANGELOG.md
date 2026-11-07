@@ -21,6 +21,9 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 - **PDF-Fußzeile auf jeder Seite.** Firmen-, Steuer- und Bankangaben stehen jetzt unten auf jeder Seite statt einmal am Dokumentende; eine kurze Rechnung landete dadurch mit der Fußzeile allein auf einer zweiten Seite. Positionen werden nicht mehr mitten in der Zeile auf die nächste Seite umbrochen, und englische PDFs zählen „Page 1 of 2“ statt „Seite 1 von 2“.
 
+- **ZUGFeRD-XML schema-gültig in jedem Profil.** Skonto stand als strukturierte `ApplicableTradePaymentDiscountTerms` im XML, die das Factur-X-Schema nur im Profil EXTENDED kennt; in BASIC und EN 16931 (Standard) steht es jetzt wie bei XRechnung als `#SKONTO#TAGE=…#PROZENT=…#`-Zeile in den Zahlungsbedingungen. Rechnungen im Profil BASIC enthielten außerdem BIC und lange Positionsbeschreibung, die BASIC nicht vorsieht; beide fehlen jetzt nur im XML (auf dem PDF bleiben sie). Ein Test prüft jede Test-Rechnung in allen drei Profilen gegen das offizielle Schema.
+- **CLI gegen eine noch nicht migrierte Datenbank** bricht nicht mehr an der neuen PDF-Engine-Einstellung ab, sondern nutzt WeasyPrint.
+
 ### Migration
 - **Migrationen `0028_v0.24_mail_xrechnung`, `0029_v0.24_gobd_audit`, `0030_v0.24_euer_mapping`, `0031_v0.24_time_tracking` und `0032_v0.24_pdf_renderer`**, Schema `user_version = 33`: Mail-Vorlagen und XRechnung-Felder (Leitweg-ID, Käuferreferenz), Änderungsprotokoll mit Triggern und Rechnungssiegel, Zuordnung der Ausgabenkategorien zur Anlage EÜR, Projekte und Zeiteinträge, Wahl der PDF-Engine (`settings.pdf_renderer`, Audit-Trigger der Einstellungen neu erzeugt).
 
