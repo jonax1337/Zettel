@@ -1,4 +1,4 @@
-import { execute, select } from "./client";
+import { select } from "./client";
 import { SETTINGS_DEFAULTS } from "./queries";
 import { formatInvoiceNumber } from "$lib/utils/invoice-number";
 
@@ -30,18 +30,17 @@ export type NumberSequence = keyof typeof SEQUENCES;
 /**
  * Bumps the sequence's counter in the settings row and formats the new number.
  * Year and month placeholders come from the document date (unix seconds), not from today.
- * Single-writer SQLite keeps this safe.
+ * Bump and read are one statement: as two, concurrent callers on different pool
+ * connections could both read the second bump and get the same number.
  */
 export async function drawNextNumber(
   sequence: NumberSequence,
   documentDate: number,
 ): Promise<string> {
   const { counter, format, defaultFormat } = SEQUENCES[sequence];
-  await execute(
-    `UPDATE settings SET ${counter} = ${counter} + 1, updated_at = unixepoch() WHERE id = 1`,
-  );
   const [row] = await select<{ counter: number | null; format: string | null }>(
-    `SELECT ${counter} AS counter, ${format} AS format FROM settings WHERE id = 1`,
+    `UPDATE settings SET ${counter} = ${counter} + 1, updated_at = unixepoch() WHERE id = 1
+     RETURNING ${counter} AS counter, ${format} AS format`,
   );
   return formatInvoiceNumber(
     row?.format ?? SETTINGS_DEFAULTS[defaultFormat],

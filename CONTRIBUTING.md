@@ -6,7 +6,7 @@ Danke fürs Interesse! Zettel ist ein kleines OSS-Projekt — Patches, Bug-Repor
 
 ### Voraussetzungen
 
-- **Node.js ≥ 20** + **pnpm**
+- **Node.js ≥ 22.12** + **pnpm**
 - **Rust stable** (`rustup default stable`)
 - **Tauri-System-Deps** für deine Plattform: <https://tauri.app/start/prerequisites/>
 - **Python 3.12** (für den PDF-Sidecar)
@@ -68,7 +68,7 @@ Eine neue Migration `000N_<name>.sql` braucht **vier** synchrone Änderungen —
 
 1. `PRAGMA user_version = <N+1>;` am Ende der neuen Migration.
 2. `CURRENT_SCHEMA` in `src-tauri/src/backup.rs` bumpen.
-3. `CURRENT_DB_SCHEMA_VERSION` in `src/routes/settings/{Advanced,Data}.svelte`.
+3. `CURRENT_DB_SCHEMA_VERSION` in `src/lib/utils/schema-version.ts`.
 4. `Migration { version, description, sql: include_str!(...) }` in `build_migrations()` in `lib.rs`.
 
 **Migrationen sind nach Shipping unveränderlich** — Inhalt ändern = neue Migration. `.gitattributes` pinnt LF für `*.sql`, weil `include_str!` byte-stabil über Plattformen sein muss.
@@ -78,6 +78,7 @@ Eine neue Migration `000N_<name>.sql` braucht **vier** synchrone Änderungen —
 - **Vitest:** `pnpm test` — pure TypeScript-Logik (`tax/`, `utils/money`, `utils/invoice-number`, `export/datev`).
 - **svelte-check:** `pnpm check` vor jedem PR.
 - **Sidecar:** `cd sidecar && pytest` — Smoke-Tests und Extraktions-Heuristiken.
+- **Rust:** in `src-tauri/`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --lib`.
 - **ZUGFeRD-Validierung:** Beim Ändern von `sidecar/templates/zugferd-en16931.xml.j2` immer mindestens eine erzeugte PDF gegen [erechnungs-validator.de](https://erechnungs-validator.de) oder den lokal gebundelten KoSIT-Validator prüfen und das Ergebnis im PR posten.
 
 ## Pull Requests
@@ -86,8 +87,26 @@ Eine neue Migration `000N_<name>.sql` braucht **vier** synchrone Änderungen —
 2. Kleine, fokussierte Commits — Conventional-Commits-Style.
 3. PR-Beschreibung: Was, Warum, ggf. Screenshots bei UI-Änderungen.
 4. Bei XML-/PDF-Änderungen: Validator-Ergebnis als Screenshot oder Text im PR posten.
-5. CI muss grün sein (siehe `.github/workflows/build.yml`).
+5. CI muss grün sein (Check „CI ok", siehe `.github/workflows/ci.yml`).
 6. Bei neuen Konventionen: [`CLAUDE.md`](./CLAUDE.md) entsprechend anpassen.
+
+## Releases (Maintainer)
+
+Versionen folgen SemVer und stehen in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` und `Cargo.lock` — nie von Hand ändern, sondern `pnpm version:set <version>`. CI prüft, dass alle vier übereinstimmen und zum Tag passen.
+
+**Release Candidate** (Beta-Kanal), vom Release-Branch:
+
+```bash
+git switch release/v0.23
+pnpm version:set 0.23.0-rc.1
+git commit -am "chore(release): v0.23.0-rc.1"
+git push
+git tag v0.23.0-rc.1 && git push origin v0.23.0-rc.1
+```
+
+Der Tag muss auf einem Commit in `release/vX.Y` liegen, sonst bricht der Build ab. CI baut einen **Draft** mit Pre-Release-Flag (Windows nur NSIS, weil MSI keine `-rc`-Versionen kann). Draft veröffentlichen → `update-feed.yml` aktualisiert den Beta-Feed, Nutzer mit „Beta-Updates" bekommen das Update. Stabile Nutzer sehen Pre-Releases nie.
+
+**Stabiles Release:** `release/vX.Y → main` mergen, auf `main` `pnpm version:set X.Y.0`, taggen `vX.Y.0`, Draft veröffentlichen. Details: [`docs/auto-update-setup.md`](./docs/auto-update-setup.md).
 
 ## Was wir aktuell suchen
 

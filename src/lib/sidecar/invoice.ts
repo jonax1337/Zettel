@@ -21,9 +21,11 @@ import {
   pdfSettingsPayload,
   skontoPayload,
 } from "./payload";
+import { renderDocumentPdf } from "./render-document";
+import { companyIncompleteResponse } from "./company-guard";
 import type { SidecarSuccess, SidecarResponse } from "./types";
 
-export type { SidecarError, SidecarResponse, SidecarSuccess } from "./types";
+export type { SidecarResponse } from "./types";
 
 type InvoiceWithItems = { invoice: Invoice; items: InvoiceItem[] };
 type CorrectedInvoice = { number: string; issueDate: number };
@@ -98,19 +100,6 @@ async function loadInvoiceForRendering(invoiceId: number): Promise<InvoiceWithIt
   return data;
 }
 
-/**
- * Keeps the previous PDF (if any) before the sidecar overwrites it, so every
- * generation stays available as a version (audit trail). A failed archive must
- * never block PDF generation.
- */
-async function archivePreviousPdf(outputPath: string): Promise<void> {
-  try {
-    await invoke("archive_pdf_version", { path: outputPath });
-  } catch (error) {
-    console.warn(`Could not archive previous PDF version of ${outputPath}:`, error);
-  }
-}
-
 async function findCorrectedInvoice(invoice: Invoice): Promise<CorrectedInvoice | null> {
   if (!invoice.isCreditNote || !invoice.correctsInvoiceId) return null;
   const original = await getInvoice(invoice.correctsInvoiceId);
@@ -141,11 +130,13 @@ async function validateAndRecord(response: SidecarSuccess, invoiceId: number): P
 }
 
 export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResponse> {
-  const { invoice, items } = await loadInvoiceForRendering(invoiceId);
+  // Checked before loadInvoiceForRendering, which issues a draft (draws a real invoice number).
   const company = await loadSettings();
+  const blocked = companyIncompleteResponse(company);
+  if (blocked) return blocked;
+  const { invoice, items } = await loadInvoiceForRendering(invoiceId);
   const customer = parseCustomerSnapshot(invoice.customerSnapshot);
   const outputPath = await documentOutputPath("Rechnungen", invoice.number);
-  await archivePreviousPdf(outputPath);
 
   const payload = buildPayload({
     invoice,
@@ -155,12 +146,12 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
     outputPath,
     correctsInvoice: await findCorrectedInvoice(invoice),
   });
-  const response = await invoke<SidecarResponse>("generate_invoice", { payload });
-
-  if (response.success) {
-    await validateAndRecord(response, invoiceId);
-  }
-  return response;
+  return renderDocumentPdf(
+    "generate_invoice",
+    payload,
+    (response) => validateAndRecord(response, invoiceId),
+    invoice.pdfPath,
+  );
 }
 
 export type PdfVersion = {
@@ -172,8 +163,4 @@ export type PdfVersion = {
 /** All preserved versions of an invoice PDF (current + archived), newest first. */
 export async function listPdfVersions(pdfPath: string): Promise<PdfVersion[]> {
   return invoke<PdfVersion[]>("list_pdf_versions", { path: pdfPath });
-}
-
-export async function pingSidecar(): Promise<SidecarResponse> {
-  return invoke<SidecarResponse>("ping_sidecar");
 }

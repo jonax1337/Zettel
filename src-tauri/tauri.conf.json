@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Zettel",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "identifier": "digital.laux.zettel",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -19,7 +19,8 @@
         "minWidth": 960,
         "minHeight": 600,
         "decorations": false,
-        "resizable": true
+        "resizable": true,
+        "visible": false
       }
     ],
     "security": {
@@ -44,6 +45,12 @@
     "windows": {
       "nsis": {
         "installerHooks": "installer-hooks.nsh"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libpango-1.0-0", "libpangoft2-1.0-0", "libharfbuzz0b", "libfontconfig1"],
+        "recommends": ["libharfbuzz-subset0"]
       }
     }
   },

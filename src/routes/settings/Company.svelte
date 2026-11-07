@@ -9,6 +9,7 @@
   import type { Settings } from "$lib/db/schema";
   import {
     Input,
+    IbanInput,
     Textarea,
     Label,
     Card,
@@ -262,7 +263,7 @@
             </div>
             <div class="flex flex-col gap-1.5">
               <Label>IBAN</Label>
-              <Input bind:value={s.bankIban} />
+              <IbanInput bind:value={s.bankIban} />
             </div>
             <div class="flex flex-col gap-1.5">
               <Label>BIC</Label>

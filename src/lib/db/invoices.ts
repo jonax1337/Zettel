@@ -1,11 +1,29 @@
-import { containsPattern, execute, insert, select, toSqlBool } from "./client";
+import { execute, insert, select, toSqlBool } from "./client";
 import {
+  buildDocumentFilter,
+  datedLineColumns,
+  DEFAULT_CURRENCY,
+  listYears,
   MISSING_NAME,
+  writeLineItems,
+} from "./doc-queries";
+import {
   mapInvoice,
   mapItem,
   type InvoiceItemRow,
   type InvoiceRow,
 } from "./invoice-rows";
+import {
+  canCancelInvoice,
+  canCreateCreditNote,
+  canDeleteInvoice,
+  canReopenInvoice,
+  creditedCentSql,
+  isSettledByCreditNote,
+  openBalanceCent,
+  SETTLED_BY_CREDIT_NOTE_ERROR,
+} from "./invoice-lifecycle";
+import { recomputeInvoiceStatus } from "./invoice-payments";
 import { drawNextNumber } from "./numbering";
 import { loadSettings } from "./queries";
 import { parseSnapshot } from "./snapshot-json";
@@ -17,18 +35,17 @@ import type {
   InvoiceStatus,
   PdfLanguage,
 } from "./schema";
+import { computeEurTotalCent } from "$lib/utils/currency";
 import { nowUnix, toUnix } from "$lib/utils/date";
 import { displayInvoiceNumber, draftPlaceholder, isDraftNumber } from "$lib/utils/invoice-number";
-import { computeLineTotal, computeTotals, type Totals } from "$lib/utils/totals";
+import { computeTotals, type Totals } from "$lib/utils/totals";
 
-// Pure math lives in lib/utils/totals.ts, re-exported for the callers of this module.
-export { computeLineTotal, computeTotals };
 export { displayInvoiceNumber, isDraftNumber };
 
 // --- Input types ---
 
 /** No id/invoiceId/lineTotal: those are derived. */
-export type InvoiceItemInput = {
+type InvoiceItemInput = {
   description: string;
   quantity: number;
   unit: string;
@@ -66,6 +83,8 @@ export type InvoiceFormInput = {
   skontoPercent?: number | null;
   skontoDays?: number | null;
   pdfLanguage?: PdfLanguage;
+  /** Defaults to the current setting; a credit note takes the flag of the invoice it corrects. */
+  isKleinunternehmer?: boolean;
 };
 
 // --- List / get ---
@@ -77,58 +96,56 @@ export type InvoiceFilter = {
   search?: string;
 };
 
-export type InvoiceListRow = Invoice & { customerName: string };
+/**
+ * `creditedCent`: what issued credit notes take off the invoice. `settledByCreditNote`:
+ * together with the payments they leave nothing open, so the invoice is no longer due.
+ */
+export type InvoiceListRow = Invoice & {
+  customerName: string;
+  creditedCent: number;
+  settledByCreditNote: boolean;
+};
 
-export function buildInvoiceFilter(filter: InvoiceFilter): {
-  where: string;
-  binds: unknown[];
-} {
-  const conditions: string[] = [];
-  const binds: unknown[] = [];
-
-  if (filter.status && filter.status !== "all") {
-    conditions.push("i.status = ?");
-    binds.push(filter.status);
-  }
-  if (filter.customerId && filter.customerId !== "all") {
-    conditions.push("i.customer_id = ?");
-    binds.push(filter.customerId);
-  }
-  if (filter.year && filter.year !== "all") {
-    conditions.push("i.issue_date >= ? AND i.issue_date < ?");
-    binds.push(
-      toUnix(new Date(filter.year, 0, 1)),
-      toUnix(new Date(filter.year + 1, 0, 1)),
-    );
-  }
-  const pattern = containsPattern(filter.search ?? "");
-  if (pattern !== null) {
-    conditions.push("(i.number LIKE ? OR c.name LIKE ?)");
-    binds.push(pattern, pattern);
-  }
-
-  return {
-    where: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "",
-    binds,
-  };
+export function buildInvoiceFilter(filter: InvoiceFilter) {
+  const { customerId, ...rest } = filter;
+  return buildDocumentFilter("i", "customer_id", ["i.number", "c.name"], {
+    ...rest,
+    partyId: customerId,
+  });
 }
 
 export async function listInvoices(
   filter: InvoiceFilter = {},
 ): Promise<InvoiceListRow[]> {
   const { where, binds } = buildInvoiceFilter(filter);
-  const rows = await select<InvoiceRow & { customer_name: string | null }>(
-    `SELECT i.*, c.name AS customer_name
+  const rows = await select<
+    InvoiceRow & { customer_name: string | null; credited_cent: number }
+  >(
+    `SELECT i.*, c.name AS customer_name,
+            ${creditedCentSql("i")} AS credited_cent
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
      ${where}
      ORDER BY i.issue_date DESC, i.id DESC`,
     binds,
   );
-  return rows.map((r) => ({
-    ...mapInvoice(r),
-    customerName: r.customer_name ?? MISSING_NAME,
-  }));
+  return rows.map((r) => {
+    const invoice = { ...mapInvoice(r), creditedCent: r.credited_cent };
+    return {
+      ...invoice,
+      customerName: r.customer_name ?? MISSING_NAME,
+      settledByCreditNote: isSettledByCreditNote(invoice),
+    };
+  });
+}
+
+/** Absolute sum of the issued credit notes correcting the invoice, in its currency. */
+export async function loadCreditedCent(invoiceId: number): Promise<number> {
+  const [row] = await select<{ credited_cent: number }>(
+    `SELECT ${creditedCentSql("i")} AS credited_cent FROM invoices i WHERE i.id = ?`,
+    [invoiceId],
+  );
+  return row?.credited_cent ?? 0;
 }
 
 async function findInvoice(id: number): Promise<Invoice | null> {
@@ -148,42 +165,12 @@ export async function getInvoice(
   return { invoice, items: itemRows.map(mapItem) };
 }
 
-/** Years in local time, matching how issue dates are entered and filtered. */
-export async function getInvoiceYears(): Promise<number[]> {
-  const rows = await select<{ y: number }>(
-    "SELECT DISTINCT CAST(strftime('%Y', issue_date, 'unixepoch', 'localtime') AS INTEGER) AS y FROM invoices ORDER BY y DESC",
-  );
-  return rows.map((r) => r.y).filter((y) => Number.isFinite(y));
-}
+export const getInvoiceYears = () => listYears("invoices");
 
 // --- Create / update ---
 
-async function writeItems(
-  invoiceId: number,
-  items: InvoiceItemInput[],
-): Promise<void> {
-  await execute("DELETE FROM invoice_items WHERE invoice_id = ?", [invoiceId]);
-  for (const [index, item] of items.entries()) {
-    await execute(
-      `INSERT INTO invoice_items
-        (invoice_id, position, description, quantity, unit, unit_price, vat_rate, line_total,
-         long_description, line_period_start, line_period_end)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        invoiceId,
-        index + 1,
-        item.description,
-        item.quantity,
-        item.unit,
-        item.unitPrice,
-        item.vatRate,
-        computeLineTotal(item),
-        item.longDescription ?? null,
-        item.linePeriodStart ?? null,
-        item.linePeriodEnd ?? null,
-      ],
-    );
-  }
+function writeItems(invoiceId: number, items: InvoiceItemInput[]): Promise<void> {
+  return writeLineItems("invoice_items", "invoice_id", invoiceId, items, datedLineColumns);
 }
 
 /** Credit notes (Stornorechnungen) store all amounts negated. */
@@ -215,17 +202,40 @@ function signedOrNull(amount: number | null | undefined, sign: 1 | -1): number |
   return amount != null ? amount * sign : null;
 }
 
-function orKeep<T>(incoming: T | undefined, current: T): T {
+/** For optional form fields: undefined keeps the stored value, null clears it. */
+export function orKeep<T>(incoming: T | undefined, current: T): T {
   return incoming === undefined ? current : incoming;
 }
 
-export async function createInvoice(input: InvoiceFormInput): Promise<number> {
+/**
+ * Foreign-currency invoices need a frozen EUR total for KPIs, UStVA and DATEV.
+ * Callers that do not pass one (offer conversion, recurring, credit notes) get
+ * it derived from the invoice's own total and exchange rate.
+ */
+function eurTotalFor(input: InvoiceFormInput, unsignedTotal: number): number | null {
+  if (input.eurTotalCent !== undefined) return input.eurTotalCent;
+  const currency = input.currency ?? DEFAULT_CURRENCY;
+  if (currency === DEFAULT_CURRENCY) return null;
+  return computeEurTotalCent(currency, unsignedTotal, input.exchangeRate);
+}
+
+/** A credit note is denominated in its original's currency, whatever the caller passes. */
+async function withCorrectedCurrency(input: InvoiceFormInput): Promise<InvoiceFormInput> {
+  if (!input.isCreditNote || input.correctsInvoiceId == null) return input;
+  const original = await findInvoice(input.correctsInvoiceId);
+  if (!original) throw new Error(`Rechnung ${input.correctsInvoiceId} nicht gefunden.`);
+  return { ...input, currency: original.currency, exchangeRate: original.exchangeRate };
+}
+
+export async function createInvoice(formInput: InvoiceFormInput): Promise<number> {
+  const input = await withCorrectedCurrency(formInput);
   const settings = await loadSettings();
   const snapshot = await buildCustomerSnapshot(input.customerId);
   const isCreditNote = !!input.isCreditNote;
+  const isKleinunternehmer = input.isKleinunternehmer ?? settings.isKleinunternehmer;
   const sign = creditNoteSign(isCreditNote);
   const totals = computeSignedTotals(input.items, {
-    isKleinunternehmer: settings.isKleinunternehmer,
+    isKleinunternehmer,
     reverseChargeType: input.reverseChargeType,
     isCreditNote,
   });
@@ -248,7 +258,7 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
       totals.subtotal,
       totals.vatAmount,
       totals.total,
-      toSqlBool(settings.isKleinunternehmer),
+      toSqlBool(isKleinunternehmer),
       toSqlBool(input.reverseChargeType !== "none"),
       input.reverseChargeType,
       input.supplyKind,
@@ -256,9 +266,9 @@ export async function createInvoice(input: InvoiceFormInput): Promise<number> {
       input.paymentTerms,
       toSqlBool(isCreditNote),
       input.correctsInvoiceId ?? null,
-      input.currency ?? "EUR",
+      input.currency ?? DEFAULT_CURRENCY,
       input.exchangeRate ?? null,
-      signedOrNull(input.eurTotalCent, sign),
+      signedOrNull(eurTotalFor(input, Math.abs(totals.total)), sign),
       input.notesInternal ?? null,
       input.followUpDate ?? null,
       input.servicePeriodStart ?? null,
@@ -282,15 +292,15 @@ export async function updateInvoice(
     throw new Error("Nur Entwürfe können bearbeitet werden.");
   }
   const sign = creditNoteSign(current.isCreditNote);
+  const currency = current.isCreditNote ? current.currency : input.currency ?? current.currency;
+  const exchangeRate = current.isCreditNote ? current.exchangeRate : orKeep(input.exchangeRate, current.exchangeRate);
   const totals = computeSignedTotals(input.items, {
     isKleinunternehmer: current.isKleinunternehmer,
     reverseChargeType: input.reverseChargeType,
     isCreditNote: current.isCreditNote,
   });
-  const customerSnapshot =
-    input.customerId === current.customerId
-      ? current.customerSnapshot
-      : JSON.stringify(await buildCustomerSnapshot(input.customerId));
+  // Drafts follow the customer's master data until they are issued.
+  const customerSnapshot = JSON.stringify(await buildCustomerSnapshot(input.customerId));
 
   await execute(
     `UPDATE invoices SET
@@ -320,8 +330,8 @@ export async function updateInvoice(
       input.supplyKind,
       input.notes,
       input.paymentTerms,
-      input.currency ?? current.currency,
-      orKeep(input.exchangeRate, current.exchangeRate),
+      currency,
+      exchangeRate,
       input.eurTotalCent === undefined
         ? current.eurTotalCent
         : signedOrNull(input.eurTotalCent, sign),
@@ -381,19 +391,22 @@ export async function recordGeneratedPdf(
 export async function deleteInvoice(id: number): Promise<void> {
   const invoice = await findInvoice(id);
   if (!invoice) return;
-  if (invoice.status !== "draft" && invoice.status !== "cancelled") {
-    throw new Error("Nur Entwürfe oder stornierte Rechnungen können gelöscht werden.");
+  if (!canDeleteInvoice(invoice)) {
+    throw new Error(
+      "Nur Entwürfe ohne Rechnungsnummer können gelöscht werden. Ausgestellte Rechnungen bitte per Stornorechnung korrigieren.",
+    );
   }
-  // invoice_payments has no FK to invoices, so a cancelled invoice would leave them behind.
+  // invoice_payments has no FK to invoices, so they would be left behind.
   await execute("DELETE FROM invoice_payments WHERE invoice_id = ?", [id]);
   await execute("DELETE FROM invoices WHERE id = ?", [id]);
 }
 
 // --- Credit notes ---
 
+/** The credit note correcting this invoice; a discarded (cancelled) draft does not count. */
 export async function findCreditNoteFor(invoiceId: number): Promise<Invoice | null> {
   const rows = await select<InvoiceRow>(
-    "SELECT * FROM invoices WHERE corrects_invoice_id = ? ORDER BY id ASC LIMIT 1",
+    "SELECT * FROM invoices WHERE corrects_invoice_id = ? AND status != 'cancelled' ORDER BY id ASC LIMIT 1",
     [invoiceId],
   );
   return rows.length ? mapInvoice(rows[0]) : null;
@@ -402,7 +415,9 @@ export async function findCreditNoteFor(invoiceId: number): Promise<Invoice | nu
 /**
  * Items are mirrored verbatim; the user can edit quantities in the draft to model
  * partial refunds. The foreign-currency terms of the original carry over, because
- * the mirrored unit prices are denominated in that currency.
+ * the mirrored unit prices are denominated in that currency; the EUR total is
+ * derived from the credit note's own total. The Kleinunternehmer treatment is the
+ * original's, not today's setting.
  */
 export function creditNoteInputFor(
   invoice: Invoice,
@@ -424,7 +439,7 @@ export function creditNoteInputFor(
     servicePeriodEnd: invoice.servicePeriodEnd,
     currency: invoice.currency,
     exchangeRate: invoice.exchangeRate,
-    eurTotalCent: invoice.eurTotalCent,
+    isKleinunternehmer: invoice.isKleinunternehmer,
     items: items.map((it) => ({
       description: it.description,
       quantity: it.quantity,
@@ -442,12 +457,12 @@ function assertCancellable(invoice: Invoice): void {
   if (invoice.isCreditNote) {
     throw new Error("Für eine Stornorechnung kann keine weitere Stornorechnung erstellt werden.");
   }
-  if (invoice.status !== "sent" && invoice.status !== "paid") {
-    throw new Error("Nur versendete oder bezahlte Rechnungen können storniert werden.");
+  if (!canCreateCreditNote(invoice)) {
+    throw new Error("Nur versendete, teilbezahlte oder bezahlte Rechnungen können storniert werden.");
   }
 }
 
-/** Creates a draft credit note (Stornorechnung) from a sent or paid invoice. */
+/** Creates a draft credit note (Stornorechnung) from a sent, partially paid or paid invoice. */
 export async function createCreditNoteFromInvoice(originalId: number): Promise<number> {
   const original = await getInvoice(originalId);
   if (!original) throw new Error(`Rechnung ${originalId} nicht gefunden.`);
@@ -468,6 +483,9 @@ export async function createCreditNoteFromInvoice(originalId: number): Promise<n
  *
  * sentAt defaults to now; pass the original send date (unix seconds) when
  * recording an old invoice after the fact.
+ *
+ * The draft → sent transition is claimed with a conditional UPDATE before a
+ * number is drawn, so a double click can neither issue twice nor burn a number.
  */
 export async function issueInvoice(
   id: number,
@@ -477,22 +495,63 @@ export async function issueInvoice(
   if (!invoice) throw new Error(`Rechnung ${id} nicht gefunden.`);
   if (invoice.status !== "draft") return invoice.number;
 
-  const number = isDraftNumber(invoice.number)
-    ? await drawNextNumber("invoice", invoice.issueDate)
-    : invoice.number;
-  await execute(
-    `UPDATE invoices SET number = ?, status = 'sent', sent_at = ?, updated_at = unixepoch()
+  const snapshot = JSON.stringify(await buildCustomerSnapshot(invoice.customerId));
+  const claim = await execute(
+    `UPDATE invoices SET status = 'sent', sent_at = ?, customer_snapshot = ?, updated_at = unixepoch()
      WHERE id = ? AND status = 'draft'`,
-    [number, sentAt ?? nowUnix(), id],
+    [sentAt ?? nowUnix(), snapshot, id],
   );
+  if (claim.rowsAffected !== 1) return numberIssuedConcurrently(id);
+  const number = isDraftNumber(invoice.number) ? await assignFinalNumber(invoice) : invoice.number;
+  await recomputeCorrectedInvoice(invoice);
   return number;
+}
+
+/** An issued credit note changes what its original still owes, so the original's status is derived again. */
+async function recomputeCorrectedInvoice(creditNote: Invoice): Promise<void> {
+  if (creditNote.isCreditNote && creditNote.correctsInvoiceId !== null) {
+    await recomputeInvoiceStatus(creditNote.correctsInvoiceId);
+  }
+}
+
+async function numberIssuedConcurrently(id: number): Promise<string> {
+  const current = await findInvoice(id);
+  if (!current || isDraftNumber(current.number)) {
+    throw new Error("Die Rechnung wird gerade ausgestellt. Bitte gleich noch einmal versuchen.");
+  }
+  return current.number;
+}
+
+/** Runs after the claim; on failure the invoice goes back to draft so it can be issued again. */
+async function assignFinalNumber(invoice: Invoice): Promise<string> {
+  try {
+    const number = await drawNextNumber("invoice", invoice.issueDate);
+    await execute("UPDATE invoices SET number = ? WHERE id = ?", [number, invoice.id]);
+    return number;
+  } catch (error) {
+    await execute(
+      "UPDATE invoices SET status = 'draft', sent_at = NULL, updated_at = unixepoch() WHERE id = ?",
+      [invoice.id],
+    );
+    throw error;
+  }
 }
 
 export { issueInvoice as markSent };
 
+async function sumPayments(invoiceId: number): Promise<number> {
+  const [row] = await select<{ paid_cent: number }>(
+    "SELECT COALESCE(SUM(amount_cent), 0) AS paid_cent FROM invoice_payments WHERE invoice_id = ?",
+    [invoiceId],
+  );
+  return row?.paid_cent ?? 0;
+}
+
 /**
- * Pays off the remaining balance. The remainder is logged as a payment so the
- * payment list stays consistent with a direct "fully paid" action.
+ * Pays off the remaining balance, i.e. what payments and issued credit notes
+ * leave open. The remainder is logged as a payment so the payment list stays
+ * consistent with a direct "fully paid" action; an overpayment stays visible in
+ * amount_paid_cent.
  */
 export async function markPaid(id: number, paidAt?: number): Promise<void> {
   const before = await findInvoice(id);
@@ -504,9 +563,16 @@ export async function markPaid(id: number, paidAt?: number): Promise<void> {
   if (!invoice) return;
   if (invoice.status !== "sent" && invoice.status !== "partial") return;
 
+  const paidBefore = await sumPayments(id);
+  const settlement = {
+    total: invoice.total,
+    amountPaidCent: paidBefore,
+    creditedCent: await loadCreditedCent(id),
+  };
+  if (isSettledByCreditNote(settlement)) throw new Error(SETTLED_BY_CREDIT_NOTE_ERROR);
+
   const paymentTimestamp = paidAt ?? nowUnix();
-  const total = Math.abs(invoice.total);
-  const remaining = total - invoice.amountPaidCent;
+  const remaining = openBalanceCent(settlement);
   if (remaining > 0) {
     await execute(
       `INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent, source)
@@ -517,22 +583,51 @@ export async function markPaid(id: number, paidAt?: number): Promise<void> {
   await execute(
     `UPDATE invoices SET status = 'paid', paid_at = ?, amount_paid_cent = ?, updated_at = unixepoch()
      WHERE id = ? AND status IN ('sent','partial')`,
-    [paymentTimestamp, total, id],
+    [paymentTimestamp, paidBefore + Math.max(remaining, 0), id],
   );
 }
 
+/** Discards an unnumbered draft. Issued invoices are corrected with a credit note instead. */
 export async function cancelInvoice(id: number): Promise<void> {
+  const invoice = await findInvoice(id);
+  if (!invoice) throw new Error(`Rechnung ${id} nicht gefunden.`);
+  if (!canCancelInvoice(invoice)) {
+    throw new Error(
+      "Nur Entwürfe ohne Rechnungsnummer können verworfen werden. Ausgestellte Rechnungen bitte per Stornorechnung stornieren.",
+    );
+  }
   await execute(
-    "UPDATE invoices SET status = 'cancelled', updated_at = unixepoch() WHERE id = ?",
+    "UPDATE invoices SET status = 'cancelled', updated_at = unixepoch() WHERE id = ? AND status = 'draft'",
     [id],
   );
 }
 
-export async function reopenDraft(id: number): Promise<void> {
-  await execute(
-    "UPDATE invoices SET status = 'draft', sent_at = NULL, paid_at = NULL, updated_at = unixepoch() WHERE id = ? AND status IN ('sent','cancelled')",
-    [id],
+async function countPayments(invoiceId: number): Promise<number> {
+  const [row] = await select<{ c: number }>(
+    "SELECT COUNT(*) AS c FROM invoice_payments WHERE invoice_id = ?",
+    [invoiceId],
   );
+  return row?.c ?? 0;
+}
+
+/** Sends an issued invoice back to draft; it keeps its number. */
+export async function reopenDraft(id: number): Promise<void> {
+  const invoice = await findInvoice(id);
+  if (!invoice) throw new Error(`Rechnung ${id} nicht gefunden.`);
+  const facts = {
+    paymentCount: await countPayments(id),
+    hasCreditNote: (await findCreditNoteFor(id)) !== null,
+  };
+  if (!canReopenInvoice(invoice, facts)) {
+    throw new Error(
+      "Nur versendete Rechnungen ohne Zahlungen und ohne Stornorechnung können wieder bearbeitet werden.",
+    );
+  }
+  await execute(
+    "UPDATE invoices SET status = 'draft', sent_at = NULL, paid_at = NULL, updated_at = unixepoch() WHERE id = ? AND status = ?",
+    [id, invoice.status],
+  );
+  await recomputeCorrectedInvoice(invoice);
 }
 
 // --- Export ---

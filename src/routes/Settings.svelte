@@ -1,6 +1,6 @@
 <script lang="ts">
   import { push } from "svelte-spa-router";
-  import { Card, CardContent, Button, toast } from "$lib/ui";
+  import { Card, CardContent, Button, Checkbox, Label, PageHeader, toast, PERSISTENT_TOAST } from "$lib/ui";
   import {
     Building2,
     FileText,
@@ -11,7 +11,7 @@
     RefreshCw,
   } from "$lib/brand-icons";
   import { version as appVersion } from "../../package.json";
-  import { checkForUpdate } from "$lib/updater";
+  import { checkForUpdate, getUpdateChannel, setUpdateChannel } from "$lib/updater";
   import { cn } from "$lib/utils";
 
   type Category = {
@@ -56,13 +56,25 @@
       href: "/settings/advanced",
       icon: AlertTriangle,
       title: "Erweitert",
-      description: "Gefahrenzone — Daten löschen und Counter zurücksetzen.",
-      items: ["Daten löschen", "Tabellen leeren", "Counter-Reset"],
+      description: "Gefahrenbereich — Daten löschen und Nummernzähler zurücksetzen.",
+      items: ["Daten löschen", "Tabellen leeren", "Zähler zurücksetzen"],
       danger: true,
     },
   ];
 
   let updateChecking = $state(false);
+  let betaUpdates = $state(getUpdateChannel() === "beta");
+
+  function onBetaUpdatesChange(enabled: boolean) {
+    try {
+      setUpdateChannel(enabled ? "beta" : "stable");
+    } catch (e) {
+      betaUpdates = !enabled;
+      toast.error("Einstellung nicht gespeichert", String(e));
+      return;
+    }
+    if (enabled) void onCheckUpdate();
+  }
 
   async function onCheckUpdate() {
     updateChecking = true;
@@ -75,7 +87,7 @@
             label: "Installieren",
             onClick: () => result.install(),
           },
-          { description: "Klick zum Herunterladen und Neustarten." },
+          { description: "Klick zum Herunterladen und Neustarten.", duration: PERSISTENT_TOAST },
         );
       } else {
         toast.success("Bereits aktuell.", `Installierte Version: v${appVersion}`);
@@ -88,17 +100,24 @@
   }
 </script>
 
-<header class="mb-6 flex items-end justify-between gap-4">
-  <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Einstellungen</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      {categories.length} Kategorien
-    </p>
-  </div>
+<PageHeader title="Einstellungen" subtitle="{categories.length} Kategorien">
+  {#snippet actions()}
   <div class="flex items-center gap-3 text-sm">
     <span class="text-muted-foreground">
       Version <code class="text-foreground">v{appVersion}</code>
     </span>
+    <div
+      class="flex items-center gap-2"
+      title="Release Candidates vor dem offiziellen Release erhalten. Beim Abschalten bleibt die installierte Version, bis eine neuere stabile Version erscheint."
+    >
+      <Checkbox
+        id="beta-updates"
+        bind:checked={betaUpdates}
+        onCheckedChange={onBetaUpdatesChange}
+        disabled={updateChecking}
+      />
+      <Label for="beta-updates" class="font-normal">Beta-Updates</Label>
+    </div>
     <Button
       type="button"
       variant="outline"
@@ -110,9 +129,10 @@
       {updateChecking ? "Prüfe…" : "Nach Updates suchen"}
     </Button>
   </div>
-</header>
+  {/snippet}
+</PageHeader>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
+<div class="grid grid-cols-1 sm:grid-cols-2 @4xl:grid-cols-3 gap-4 stagger">
   {#each categories as cat (cat.href)}
     {@const Icon = cat.icon}
     <Card

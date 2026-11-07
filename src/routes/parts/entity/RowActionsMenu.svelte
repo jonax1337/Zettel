@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import { DropdownMenu, DropdownItem, DropdownSeparator } from "$lib/ui";
-  import { MoreHorizontal, Pencil, Trash2 } from "$lib/brand-icons";
+  import { DropdownMenu, DropdownItem, DropdownSeparator, MoreActionsTrigger } from "$lib/ui";
+  import { Pencil, Trash2 } from "$lib/brand-icons";
 
   type Props = {
     onEdit: () => void;
@@ -14,13 +14,7 @@
 
 <DropdownMenu>
   {#snippet trigger()}
-    <button
-      type="button"
-      class="inline-flex items-center justify-center size-8 rounded-md hover:bg-muted transition-colors"
-      aria-label="Aktionen"
-    >
-      <MoreHorizontal class="size-4" />
-    </button>
+    <MoreActionsTrigger variant="ghost" label="Aktionen" />
   {/snippet}
   <DropdownItem onSelect={onEdit}>
     <Pencil />

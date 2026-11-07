@@ -20,7 +20,7 @@ export function dangerActionLabel(action: DangerAction): string {
     case "wipeAll":
       return "Alle Geschäftsdaten löschen";
     case "resetCounters":
-      return "Nummerierungs-Counter zurücksetzen";
+      return "Nummernzähler zurücksetzen";
     case "wipeTables":
       return `${tableCountLabel(action.tables.length)} leeren`;
   }
@@ -32,9 +32,9 @@ export function dangerActionDescription(
 ): string {
   switch (action.kind) {
     case "wipeAll":
-      return "Rechnungen, Angebote, Mahnungen, Ausgaben, Kunden, Lieferanten, wiederkehrende Rechnungen und Steuer-Vorauszahlungen werden gelöscht. Settings (Firma, Steuerprofil, Logo, Counter-Stand) bleiben.";
+      return "Rechnungen, Angebote, Mahnungen, Ausgaben, Kunden, Lieferanten, wiederkehrende Rechnungen und Steuer-Vorauszahlungen werden gelöscht. Einstellungen (Firma, Steuerprofil, Logo, Zählerstand) bleiben.";
     case "resetCounters":
-      return "Counter für Rechnungs-/Angebots-/Ausgaben-/Mahnungs-/Lieferanten-Nummern springen auf 0. Bestehende Datensätze bleiben unangetastet — passt nur zum Stand wenn du vorher die Tabellen geleert hast.";
+      return "Zähler für Rechnungs-/Angebots-/Ausgaben-/Mahnungs-/Lieferanten-Nummern springen auf 0. Bestehende Datensätze bleiben unangetastet — passt nur zum Stand wenn du vorher die Tabellen geleert hast.";
     case "wipeTables":
       return `Die folgenden Daten werden gelöscht: ${joinTableLabels(action.tables, tableLabels)}. Verknüpfte Datensätze (z. B. Positionen, abhängige Mahnungen) werden automatisch mitgelöscht.`;
   }

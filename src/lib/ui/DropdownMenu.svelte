@@ -10,6 +10,8 @@
     side?: "top" | "right" | "bottom" | "left";
     class?: string;
     triggerClass?: string;
+    /** Accessible name when the trigger shows only an icon. */
+    triggerLabel?: string;
   };
 
   let {
@@ -19,11 +21,12 @@
     side = "bottom",
     class: klass,
     triggerClass,
+    triggerLabel,
   }: Props = $props();
 </script>
 
 <Menu.Root>
-  <Menu.Trigger class={triggerClass}>
+  <Menu.Trigger class={triggerClass} aria-label={triggerLabel}>
     {@render trigger()}
   </Menu.Trigger>
   <Menu.Portal>

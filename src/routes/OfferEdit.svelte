@@ -1,36 +1,42 @@
 <script lang="ts">
+  import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
   import { push } from "svelte-spa-router";
-  import { listCustomers, loadSettings } from "$lib/db/queries";
   import {
-    computeTotals,
     createOffer,
     getOffer,
     updateOffer,
     type OfferFormInput,
   } from "$lib/db/offers";
-  import type { SupplyKind } from "$lib/db/invoices";
-  import type { Customer, Offer, OfferItem, Settings } from "$lib/db/schema";
+  import type { ReverseChargeType, SupplyKind } from "$lib/db/invoices";
+  import type { Offer, OfferItem, Settings } from "$lib/db/schema";
   import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
+  import { computeTotals } from "$lib/utils/totals";
   import {
     Button,
     Card,
     CardContent,
-    Checkbox,
     DatePicker,
     Label,
     Select,
     Textarea,
     toast,
   } from "$lib/ui";
-  import { CalendarRange } from "$lib/brand-icons";
   import BackLink from "./parts/entity/BackLink.svelte";
   import CurrencyFields from "./invoice/CurrencyFields.svelte";
   import LineItemsEditor from "./invoice/LineItemsEditor.svelte";
+  import PdfLanguageSelect from "./invoice/PdfLanguageSelect.svelte";
+  import ReverseChargeField from "./invoice/ReverseChargeField.svelte";
+  import ServicePeriodField from "./invoice/ServicePeriodField.svelte";
   import SkontoFields from "./invoice/SkontoFields.svelte";
-  import SupplyKindField from "./invoice/SupplyKindField.svelte";
+  import { createDocumentFormData } from "./invoice/document-form.svelte";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
   import { vatRateForNewItem } from "./parts/entity/vat";
-  import { exchangeRateError, linePeriodError, servicePeriodError } from "./invoice/form-validation";
+  import {
+    exchangeRateError,
+    linePeriodError,
+    reverseChargeError,
+    servicePeriodError,
+  } from "./invoice/form-validation";
   import {
     lineItemFromStored,
     newLineItem,
@@ -53,14 +59,6 @@
   };
   let { mode, params }: Props = $props();
 
-  const PDF_LANGUAGE_ITEMS: { value: "de" | "en"; label: string }[] = [
-    { value: "de", label: "Deutsch" },
-    { value: "en", label: "Englisch" },
-  ];
-
-  let customers = $state<Customer[]>([]);
-  let settings = $state<Settings | null>(null);
-  let referenceDataLoaded = $state(false);
   let id = $state<number | null>(null);
   let loaded = $state(false);
   const loading = $derived(mode === "edit" && !loaded);
@@ -75,9 +73,9 @@
   let validUntilIso = $state("");
   let notes = $state("");
   let introText = $state("");
-  let isReverseCharge = $state(false);
+  let reverseChargeType = $state<ReverseChargeType>("none");
   let supplyKind = $state<SupplyKind>(DEFAULT_SUPPLY_KIND);
-  let serviceMode = $state<"none" | "period">("none");
+  let serviceMode = $state<"single" | "period">("single");
   let servicePeriodStartIso = $state("");
   let servicePeriodEndIso = $state("");
   let items = $state<LineItemForm[]>([newLineItem()]);
@@ -86,27 +84,16 @@
   let skonto = $state<SkontoForm>(defaultSkontoForm());
   let pdfLanguage = $state<"de" | "en">("de");
 
-  const vatExempt = $derived(!!settings?.isKleinunternehmer || isReverseCharge);
-
-  const selectedCustomer = $derived(
-    customerIdStr ? (customers.find((c) => String(c.id) === customerIdStr) ?? null) : null,
-  );
-  const customerItems = $derived(
-    customers.map((c) => ({ value: String(c.id), label: `${c.customerNumber} · ${c.name}` })),
-  );
-
-  const canReverseCharge = $derived(
-    !!settings && !settings.isKleinunternehmer && !!settings.vatId && !!selectedCustomer?.vatId,
-  );
-
-  const reverseChargeBlockedReason = $derived.by(() => {
-    if (!settings) return "";
-    if (settings.isKleinunternehmer) return "Nicht verfügbar für Kleinunternehmer (§ 19 UStG).";
-    if (!settings.vatId) return "Eigene USt-IdNr. in den Einstellungen fehlt.";
-    if (!selectedCustomer) return "Erst Kunden auswählen.";
-    if (!selectedCustomer.vatId) return "Kunde hat keine USt-IdNr. hinterlegt.";
-    return "";
+  const isReverseCharge = $derived(reverseChargeType !== "none");
+  const reference = createDocumentFormData({
+    customerId: () => customerIdStr,
+    onLoaded: (loadedSettings) => {
+      if (mode === "new") applyNewOfferDefaults(loadedSettings);
+    },
+    onError: (message) => (error = message),
   });
+  const settings = $derived(reference.settings);
+  const vatExempt = $derived(!!settings?.isKleinunternehmer || isReverseCharge);
 
   const totals = $derived(
     settings
@@ -114,25 +101,8 @@
       : { subtotal: 0, vatAmount: 0, total: 0 },
   );
 
-  // Judged only once settings and customers are known; otherwise a stored
-  // reverse-charge flag would be reset before the data it depends on arrives.
-  $effect(() => {
-    if (referenceDataLoaded && !canReverseCharge && isReverseCharge) isReverseCharge = false;
-  });
-
   $effect(() => {
     if (isReverseCharge) zeroVatRates(items);
-  });
-
-  $effect(() => {
-    Promise.all([loadSettings(), listCustomers()])
-      .then(([loadedSettings, loadedCustomers]) => {
-        settings = loadedSettings;
-        customers = loadedCustomers;
-        referenceDataLoaded = true;
-        if (mode === "new") applyNewOfferDefaults(loadedSettings);
-      })
-      .catch((e) => (error = String(e)));
   });
 
   // While creating, validUntil follows the issue date by the default validity.
@@ -179,7 +149,7 @@
     validUntilIso = toIsoDate(offer.validUntil);
     notes = offer.notes ?? "";
     introText = offer.introText ?? "";
-    isReverseCharge = offer.isReverseCharge;
+    reverseChargeType = offer.reverseChargeType;
     supplyKind = offer.supplyKind;
     currency = offer.currency;
     exchangeRate = offer.exchangeRate ?? "";
@@ -193,18 +163,11 @@
     items = storedItems.map(lineItemFromStored);
   }
 
-  function reverseChargeError(): string | null {
-    if (!isReverseCharge) return null;
-    if (!settings?.vatId) return "Reverse-Charge: eigene USt-IdNr. fehlt.";
-    if (!selectedCustomer?.vatId) return "Reverse-Charge: Kunde hat keine USt-IdNr. hinterlegt.";
-    return null;
-  }
-
   function formError(): string | null {
     const hasBillableItem = items.some((it) => it.description.trim() !== "" && it.unitPrice > 0);
     if (!hasBillableItem) return "Mindestens eine Position mit Beschreibung und Preis erforderlich.";
     return (
-      reverseChargeError() ??
+      (settings ? reverseChargeError(reverseChargeType, settings, reference.selectedCustomer, items) : null) ??
       exchangeRateError(currency, exchangeRate) ??
       (serviceMode === "period" ? servicePeriodError(servicePeriodStartIso, servicePeriodEndIso) : null) ??
       linePeriodError(items)
@@ -219,7 +182,7 @@
       validUntil: fromIsoDate(validUntilIso),
       notes: notes.trim() || null,
       introText: introText.trim() || null,
-      isReverseCharge,
+      reverseChargeType,
       supplyKind,
       items: toLineItemInputs(items),
       currency,
@@ -259,7 +222,9 @@
     saving = true;
     error = null;
     try {
-      push(`/offers/${await persist(buildInput(customerId))}`);
+      const savedId = await persist(buildInput(customerId));
+      unsaved.markClean();
+      push(`/offers/${savedId}`);
     } catch (err) {
       error = String(err);
       toast.error("Speichern fehlgeschlagen", String(err));
@@ -271,6 +236,27 @@
   function onCancel() {
     push(mode === "edit" && id !== null ? `/offers/${id}` : "/offers");
   }
+
+  const unsaved = guardUnsavedChanges(
+    () => ({
+      customerIdStr,
+      issueDateIso,
+      validUntilIso,
+      notes,
+      introText,
+      reverseChargeType,
+      supplyKind,
+      serviceMode,
+      servicePeriodStartIso,
+      servicePeriodEndIso,
+      items,
+      currency,
+      exchangeRate,
+      skonto,
+      pdfLanguage,
+    }),
+    () => !loading && reference.loaded,
+  );
 </script>
 
 <header class="mb-6">
@@ -302,7 +288,7 @@
               <Label>Kunde <span class="text-destructive">*</span></Label>
               <Select
                 bind:value={customerIdStr}
-                items={customerItems}
+                items={reference.customerItems}
                 placeholder="— bitte wählen —"
                 disabled={readOnly}
               />
@@ -315,54 +301,21 @@
               <Label>Gültig bis</Label>
               <DatePicker bind:value={validUntilIso} required disabled={readOnly} />
             </div>
-            <div class="col-span-2 flex flex-col gap-1.5">
-              <div class="flex items-center justify-between">
-                <Label>Leistungszeitraum (optional)</Label>
-                <button
-                  type="button"
-                  class="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-                  onclick={() => (serviceMode = serviceMode === "period" ? "none" : "period")}
-                  disabled={readOnly}
-                >
-                  <CalendarRange class="size-3.5" />
-                  {serviceMode === "period" ? "Entfernen" : "Hinzufügen"}
-                </button>
-              </div>
-              {#if serviceMode === "period"}
-                <div class="grid grid-cols-2 gap-2">
-                  <DatePicker bind:value={servicePeriodStartIso} disabled={readOnly} />
-                  <DatePicker bind:value={servicePeriodEndIso} disabled={readOnly} />
-                </div>
-                <p class="text-xs text-muted-foreground">EN-16931 BG-14 — mehrwöchige Leistungen.</p>
-              {/if}
-            </div>
+            <ServicePeriodField
+              bind:mode={serviceMode}
+              bind:startIso={servicePeriodStartIso}
+              bind:endIso={servicePeriodEndIso}
+              optional
+              disabled={readOnly}
+            />
             <CurrencyFields bind:currency bind:exchangeRate totalCent={totals.total} disabled={readOnly} />
-            {#if settings && !settings.isKleinunternehmer}
-              <div class="col-span-2 flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
-                <Checkbox
-                  id="reverse-charge"
-                  bind:checked={isReverseCharge}
-                  disabled={!canReverseCharge || readOnly}
-                  class="mt-0.5"
-                />
-                <div class="flex-1 text-sm">
-                  <label for="reverse-charge" class="font-medium cursor-pointer">
-                    Reverse-Charge (intra-EU B2B)
-                  </label>
-                  <p class="text-xs text-muted-foreground mt-0.5">
-                    Innergemeinschaftlicher Umsatz an ein EU-Unternehmen. Setzt alle Positionen
-                    auf 0&nbsp;% USt und schreibt den Hinweis auf das Angebot. Verantwortung
-                    für das EU-B2B-Kriterium liegt beim Nutzer.
-                  </p>
-                  {#if !canReverseCharge && reverseChargeBlockedReason}
-                    <p class="text-xs text-warning mt-1">{reverseChargeBlockedReason}</p>
-                  {/if}
-                </div>
-              </div>
-              {#if isReverseCharge}
-                <SupplyKindField bind:value={supplyKind} disabled={readOnly} />
-              {/if}
-            {/if}
+            <ReverseChargeField
+              bind:type={reverseChargeType}
+              bind:supplyKind
+              sender={settings}
+              customer={reference.selectedCustomer}
+              disabled={readOnly}
+            />
             <div class="col-span-2 flex flex-col gap-1.5">
               <Label>Einleitungstext (optional)</Label>
               <Textarea
@@ -388,18 +341,10 @@
 
     <Card>
       <CardContent class="space-y-4">
-        <div class="flex flex-col gap-1.5 max-w-xs">
-          <Label>Sprache der PDF</Label>
-          <Select
-            items={PDF_LANGUAGE_ITEMS}
-            value={pdfLanguage}
-            onValueChange={(v) => (pdfLanguage = v)}
-            disabled={readOnly}
-          />
-        </div>
+        <PdfLanguageSelect bind:value={pdfLanguage} disabled={readOnly} />
 
         <div class="flex flex-col gap-1.5">
-          <Label>Notizen (intern)</Label>
+          <Label>Bemerkungen (erscheinen auf dem Angebot)</Label>
           <Textarea rows={3} bind:value={notes} disabled={readOnly} />
         </div>
 

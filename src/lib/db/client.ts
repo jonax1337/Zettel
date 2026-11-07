@@ -23,7 +23,7 @@ async function resolveDbUrl(): Promise<string> {
   }
 }
 
-export function getDb(): Promise<Database> {
+function getDb(): Promise<Database> {
   dbPromise ??= resolveDbUrl()
     .then((url) => Database.load(url))
     .catch((e) => {

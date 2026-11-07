@@ -8,8 +8,9 @@ Sicherheits-Fixes erhält ausschließlich die **neueste Release-Version** auf `m
 
 | Version | Sicherheits-Fixes |
 |---|---|
-| 0.13.x (latest) | ✅ |
-| < 0.13 | ❌ — bitte updaten |
+| Neueste stabile Version (GitHub „Latest") | ✅ |
+| Release Candidates (`-rc.N`, Beta-Kanal) | ✅ bis zum zugehörigen stabilen Release |
+| Ältere Versionen | ❌ — bitte updaten |
 
 ## Schwachstelle melden
 

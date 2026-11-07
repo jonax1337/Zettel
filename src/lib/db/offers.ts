@@ -1,6 +1,17 @@
 import { execute, insert, select } from "./client";
-import { createInvoice } from "./invoices";
-import type { InvoiceFormInput, SupplyKind } from "./invoices";
+import {
+  buildDocumentFilter,
+  DEFAULT_CURRENCY,
+  DEFAULT_PDF_LANGUAGE,
+  datedLineColumns,
+  listYears,
+  mapDatedLineItem,
+  MISSING_NAME,
+  writeLineItems,
+} from "./doc-queries";
+import { createInvoice, deleteInvoice, orKeep } from "./invoices";
+import type { InvoiceFormInput, ReverseChargeType, SupplyKind } from "./invoices";
+import { storedReverseChargeType } from "./reverse-charge-type";
 import { drawNextNumber } from "./numbering";
 import { loadSettings } from "./queries";
 import { buildCustomerSnapshot } from "./snapshots";
@@ -9,13 +20,10 @@ import type {
   OfferItem,
   OfferStatus,
 } from "./schema";
+import { computeEurTotalCent } from "$lib/utils/currency";
 import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
-import { computeLineTotal, computeTotals } from "$lib/utils/totals";
+import { computeTotals } from "$lib/utils/totals";
 
-export { computeLineTotal, computeTotals };
-
-const DEFAULT_CURRENCY = "EUR";
-const MISSING_CUSTOMER_NAME = "—";
 const EXPIRING_SOON_DAYS = 7;
 const OPEN_STATUSES_SQL = "('draft','sent')";
 const DELETABLE_STATUSES: readonly OfferStatus[] = ["draft", "rejected", "expired"];
@@ -35,6 +43,7 @@ type OfferRow = {
   total: number;
   is_kleinunternehmer: number;
   is_reverse_charge: number;
+  reverse_charge_type: string | null;
   supply_kind: string;
   notes: string | null;
   intro_text: string | null;
@@ -83,6 +92,7 @@ export function mapOffer(r: OfferRow): Offer {
     total: r.total,
     isKleinunternehmer: r.is_kleinunternehmer === 1,
     isReverseCharge: r.is_reverse_charge === 1,
+    reverseChargeType: storedReverseChargeType(r.reverse_charge_type, r.is_reverse_charge === 1),
     supplyKind: r.supply_kind as Offer["supplyKind"],
     notes: r.notes,
     introText: r.intro_text,
@@ -99,28 +109,15 @@ export function mapOffer(r: OfferRow): Offer {
     servicePeriodEnd: r.service_period_end,
     skontoPercent: r.skonto_percent,
     skontoDays: r.skonto_days,
-    pdfLanguage: (r.pdf_language ?? "de") as Offer["pdfLanguage"],
+    pdfLanguage: (r.pdf_language ?? DEFAULT_PDF_LANGUAGE) as Offer["pdfLanguage"],
   };
 }
 
 function mapItem(r: OfferItemRow): OfferItem {
-  return {
-    id: r.id,
-    offerId: r.offer_id,
-    position: r.position,
-    description: r.description,
-    quantity: r.quantity,
-    unit: r.unit,
-    unitPrice: r.unit_price,
-    vatRate: r.vat_rate,
-    lineTotal: r.line_total,
-    longDescription: r.long_description,
-    linePeriodStart: r.line_period_start,
-    linePeriodEnd: r.line_period_end,
-  };
+  return { id: r.id, offerId: r.offer_id, ...mapDatedLineItem(r) };
 }
 
-export type OfferItemInput = {
+type OfferItemInput = {
   description: string;
   quantity: number;
   unit: string;
@@ -137,7 +134,7 @@ export type OfferFormInput = {
   validUntil: number;
   notes: string | null;
   introText: string | null;
-  isReverseCharge: boolean;
+  reverseChargeType: ReverseChargeType;
   supplyKind: SupplyKind;
   items: OfferItemInput[];
   currency?: string;
@@ -160,31 +157,12 @@ export type OfferFilter = {
 
 export type OfferListRow = Offer & { customerName: string };
 
-function buildOfferFilter(filter: OfferFilter): { where: string; binds: unknown[] } {
-  const wheres: string[] = [];
-  const binds: unknown[] = [];
-
-  if (filter.status && filter.status !== "all") {
-    wheres.push(`o.status = ?`);
-    binds.push(filter.status);
-  }
-  if (filter.customerId && filter.customerId !== "all") {
-    wheres.push(`o.customer_id = ?`);
-    binds.push(filter.customerId);
-  }
-  if (filter.year && filter.year !== "all") {
-    const start = Math.floor(new Date(filter.year, 0, 1).getTime() / 1000);
-    const end = Math.floor(new Date(filter.year + 1, 0, 1).getTime() / 1000);
-    wheres.push(`o.issue_date >= ? AND o.issue_date < ?`);
-    binds.push(start, end);
-  }
-  if (filter.search && filter.search.trim() !== "") {
-    wheres.push(`(o.number LIKE ? OR c.name LIKE ?)`);
-    const q = `%${filter.search.trim()}%`;
-    binds.push(q, q);
-  }
-
-  return { where: wheres.length ? `WHERE ${wheres.join(" AND ")}` : "", binds };
+function buildOfferFilter(filter: OfferFilter) {
+  const { customerId, ...rest } = filter;
+  return buildDocumentFilter("o", "customer_id", ["o.number", "c.name"], {
+    ...rest,
+    partyId: customerId,
+  });
 }
 
 export async function listOffers(
@@ -201,7 +179,7 @@ export async function listOffers(
   );
   return rows.map((r) => ({
     ...mapOffer(r),
-    customerName: r.customer_name ?? MISSING_CUSTOMER_NAME,
+    customerName: r.customer_name ?? MISSING_NAME,
   }));
 }
 
@@ -220,61 +198,31 @@ export async function getOffer(
   return { offer: mapOffer(rows[0]), items: itemRows.map(mapItem) };
 }
 
-export async function getOfferYears(): Promise<number[]> {
-  const rows = await select<{ y: number }>(
-    "SELECT DISTINCT CAST(strftime('%Y', issue_date, 'unixepoch', 'localtime') AS INTEGER) AS y FROM offers ORDER BY y DESC",
-  );
-  return rows.map((r) => r.y).filter((y) => Number.isFinite(y));
-}
+export const getOfferYears = () => listYears("offers");
 
 // --- Mutations ---
 
-async function writeItems(
-  offerId: number,
-  items: OfferItemInput[],
-): Promise<void> {
-  await execute("DELETE FROM offer_items WHERE offer_id = ?", [offerId]);
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i];
-    const line = computeLineTotal(it);
-    await execute(
-      `INSERT INTO offer_items
-        (offer_id, position, description, quantity, unit, unit_price, vat_rate, line_total,
-         long_description, line_period_start, line_period_end)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        offerId,
-        i + 1,
-        it.description,
-        it.quantity,
-        it.unit,
-        it.unitPrice,
-        it.vatRate,
-        line,
-        it.longDescription ?? null,
-        it.linePeriodStart ?? null,
-        it.linePeriodEnd ?? null,
-      ],
-    );
-  }
+function writeItems(offerId: number, items: OfferItemInput[]): Promise<void> {
+  return writeLineItems("offer_items", "offer_id", offerId, items, datedLineColumns);
 }
 
 export async function createOffer(input: OfferFormInput): Promise<number> {
   const settings = await loadSettings();
   const snapshot = await buildCustomerSnapshot(input.customerId);
+  const isReverseCharge = input.reverseChargeType !== "none";
   const totals = computeTotals(input.items, {
     isKleinunternehmer: settings.isKleinunternehmer,
-    isReverseCharge: input.isReverseCharge,
+    isReverseCharge,
   });
   const number = await drawNextNumber("offer", input.issueDate);
 
   const id = await insert(
     `INSERT INTO offers
       (number, customer_id, customer_snapshot, issue_date, valid_until,
-       status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge, supply_kind,
-       notes, intro_text, currency, exchange_rate,
+       status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
+       reverse_charge_type, supply_kind, notes, intro_text, currency, exchange_rate,
        service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language)
-     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.customerId,
@@ -285,7 +233,8 @@ export async function createOffer(input: OfferFormInput): Promise<number> {
       totals.vatAmount,
       totals.total,
       settings.isKleinunternehmer ? 1 : 0,
-      input.isReverseCharge ? 1 : 0,
+      isReverseCharge ? 1 : 0,
+      input.reverseChargeType,
       input.supplyKind,
       input.notes,
       input.introText,
@@ -311,22 +260,20 @@ export async function updateOffer(
   if (existing.offer.status !== "draft") {
     throw new Error("Nur Entwürfe können bearbeitet werden.");
   }
+  const isReverseCharge = input.reverseChargeType !== "none";
   const totals = computeTotals(input.items, {
     isKleinunternehmer: existing.offer.isKleinunternehmer,
-    isReverseCharge: input.isReverseCharge,
+    isReverseCharge,
   });
-
-  let snapshotJson = existing.offer.customerSnapshot;
-  if (input.customerId !== existing.offer.customerId) {
-    snapshotJson = JSON.stringify(await buildCustomerSnapshot(input.customerId));
-  }
+  // Drafts follow the customer's master data until they are sent.
+  const snapshotJson = JSON.stringify(await buildCustomerSnapshot(input.customerId));
 
   await execute(
     `UPDATE offers SET
       customer_id = ?, customer_snapshot = ?,
       issue_date = ?, valid_until = ?,
       subtotal = ?, vat_amount = ?, total = ?,
-      is_reverse_charge = ?, supply_kind = ?,
+      is_reverse_charge = ?, reverse_charge_type = ?, supply_kind = ?,
       notes = ?, intro_text = ?,
       currency = ?, exchange_rate = ?,
       service_period_start = ?, service_period_end = ?,
@@ -342,12 +289,13 @@ export async function updateOffer(
       totals.subtotal,
       totals.vatAmount,
       totals.total,
-      input.isReverseCharge ? 1 : 0,
+      isReverseCharge ? 1 : 0,
+      input.reverseChargeType,
       input.supplyKind,
       input.notes,
       input.introText,
       input.currency ?? existing.offer.currency,
-      input.exchangeRate ?? existing.offer.exchangeRate,
+      orKeep(input.exchangeRate, existing.offer.exchangeRate),
       input.servicePeriodStart ?? null,
       input.servicePeriodEnd ?? null,
       input.skontoPercent ?? null,
@@ -370,10 +318,11 @@ export async function deleteOffer(id: number): Promise<void> {
 
 // --- Status transitions ---
 
-export async function markSent(id: number): Promise<void> {
+/** sentAt defaults to now; pass the original send date (unix seconds) when recording an offer after the fact. */
+export async function markSent(id: number, sentAt?: number): Promise<void> {
   await execute(
-    "UPDATE offers SET status = 'sent', sent_at = unixepoch(), updated_at = unixepoch() WHERE id = ? AND status = 'draft'",
-    [id],
+    "UPDATE offers SET status = 'sent', sent_at = COALESCE(?, unixepoch()), updated_at = unixepoch() WHERE id = ? AND status = 'draft'",
+    [sentAt ?? null, id],
   );
 }
 
@@ -393,7 +342,8 @@ export async function markRejected(id: number): Promise<void> {
 
 export async function reopenDraft(id: number): Promise<void> {
   await execute(
-    "UPDATE offers SET status = 'draft', sent_at = NULL, accepted_at = NULL, rejected_at = NULL, updated_at = unixepoch() WHERE id = ? AND status IN ('sent','rejected','expired')",
+    `UPDATE offers SET status = 'draft', sent_at = NULL, accepted_at = NULL, rejected_at = NULL, updated_at = unixepoch()
+     WHERE id = ? AND (status IN ('sent','rejected','expired') OR (status = 'accepted' AND converted_invoice_id IS NULL))`,
     [id],
   );
 }
@@ -433,7 +383,7 @@ function invoiceInputFromOffer(
     dueDate,
     notes: offer.notes,
     paymentTerms: null,
-    reverseChargeType: offer.isReverseCharge ? "intra_eu" : "none",
+    reverseChargeType: offer.reverseChargeType,
     supplyKind: offer.supplyKind,
     items: items.map((it) => ({
       description: it.description,
@@ -458,6 +408,10 @@ function invoiceInputFromOffer(
 /**
  * Creates a fresh draft invoice from this offer's data and links it back.
  * Returns the new invoice ID. The offer is marked as accepted.
+ *
+ * The link is a conditional UPDATE: when a concurrent conversion (double
+ * click) linked its invoice first, this call's draft is deleted again (it has
+ * no number yet, so no gap) and the winner's invoice is returned.
  */
 export async function convertToInvoice(
   offerId: number,
@@ -478,11 +432,18 @@ export async function convertToInvoice(
   const invoiceId = await createInvoice(
     invoiceInputFromOffer(data.offer, data.items, issueDate, addDaysUnix(issueDate, paymentDays)),
   );
-  await execute(
-    "UPDATE offers SET status = 'accepted', accepted_at = COALESCE(accepted_at, unixepoch()), converted_invoice_id = ?, updated_at = unixepoch() WHERE id = ?",
+  const link = await execute(
+    `UPDATE offers SET status = 'accepted', accepted_at = COALESCE(accepted_at, unixepoch()),
+       converted_invoice_id = ?, updated_at = unixepoch()
+     WHERE id = ? AND converted_invoice_id IS NULL AND status != 'rejected'`,
     [invoiceId, offerId],
   );
-  return invoiceId;
+  if (link.rowsAffected === 1) return invoiceId;
+
+  await deleteInvoice(invoiceId);
+  const winner = (await getOffer(offerId))?.offer.convertedInvoiceId;
+  if (winner == null) throw new Error("Angebot konnte nicht umgewandelt werden.");
+  return winner;
 }
 
 // --- Dashboard ---
@@ -490,19 +451,31 @@ export async function convertToInvoice(
 export async function openOffersStats(): Promise<{
   count: number;
   total: number;
+  /** Open offers left out of `total` because they have no usable exchange rate. */
+  unconvertedCount: number;
   expiringSoonCount: number;
 }> {
   const today = startOfTodayUnix();
-  const [open] = await select<{ c: number; t: number }>(
-    `SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS t FROM offers WHERE status IN ${OPEN_STATUSES_SQL}`,
+  const openOffers = await select<{ total: number; currency: string | null; exchange_rate: string | null }>(
+    `SELECT total, currency, exchange_rate FROM offers WHERE status IN ${OPEN_STATUSES_SQL}`,
   );
+  // Foreign-currency offers count in EUR at their stored rate; without a usable rate they add nothing
+  // rather than mixing currencies into one sum.
+  let totalEur = 0;
+  let unconvertedCount = 0;
+  for (const o of openOffers) {
+    const eur = computeEurTotalCent(o.currency ?? DEFAULT_CURRENCY, o.total, o.exchange_rate);
+    if (eur === null) unconvertedCount += 1;
+    else totalEur += eur;
+  }
   const [soonRow] = await select<{ c: number }>(
     `SELECT COUNT(*) AS c FROM offers WHERE status IN ${OPEN_STATUSES_SQL} AND valid_until BETWEEN ? AND ?`,
     [today, addDaysUnix(today, EXPIRING_SOON_DAYS)],
   );
   return {
-    count: open?.c ?? 0,
-    total: open?.t ?? 0,
+    count: openOffers.length,
+    total: totalEur,
+    unconvertedCount,
     expiringSoonCount: soonRow?.c ?? 0,
   };
 }

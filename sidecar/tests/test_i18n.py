@@ -57,13 +57,13 @@ def test_t_interpolation_safe_against_missing_kwargs():
     # missing kwargs return the raw template instead of crashing — caller's bug,
     # not the user's.
     out = t("skonto_inline", language="de", date="22.05.2026")
-    assert "{percent}" in out or "Skonto" in out
+    assert out == _DE["skonto_inline"]
 
 
 _PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
 
-@pytest.mark.parametrize("key", ["skonto_inline", "skonto_offer_text", "credit_note_ref", "offer_disclaimer", "page_n_of_m"])
+@pytest.mark.parametrize("key", ["skonto_inline", "skonto_offer_text", "credit_note_ref", "offer_disclaimer", "page_n_of_m", "totals_net_at_rate", "totals_vat_at_rate"])
 def test_de_and_en_share_the_same_placeholders(key: str):
     de_holders = set(_PLACEHOLDER_RE.findall(_DE[key]))
     en_holders = set(_PLACEHOLDER_RE.findall(_EN[key]))

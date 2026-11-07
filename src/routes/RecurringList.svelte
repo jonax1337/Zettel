@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { link } from "svelte-spa-router";
+  import { link, push } from "svelte-spa-router";
   import {
     listRecurring,
     deleteRecurring,
@@ -8,11 +8,29 @@
   } from "$lib/db/recurring";
   import { formatDate, nowUnix } from "$lib/utils/date";
   import { applySort } from "$lib/utils/sort";
-  import { Button, Badge, Card, ConfirmDialog, SortableTh, toast, EmptyState } from "$lib/ui";
-  import { Plus, FileText, Pencil, Trash2, PowerOff, Power } from "$lib/brand-icons";
+  import {
+    Button,
+    Card,
+    DropdownItem,
+    ConfirmDialog,
+    toast,
+    EmptyState,
+    PageHeader,
+    QueryBoundary,
+    StatusBadge,
+  } from "$lib/ui";
+  import { Plus, FileText, PowerOff, Power } from "$lib/brand-icons";
+  import RowActionsMenu from "./parts/entity/RowActionsMenu.svelte";
+  import { createDeleteFlow } from "./parts/entity/delete-flow.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
-  import { RECURRING_INTERVAL_LABEL, generateInvoiceAndOpen } from "./parts/entity/recurring";
+  import {
+    RECURRING_INTERVAL_LABEL,
+    generateInvoiceAndOpen,
+    generatingRecurringIds,
+  } from "./parts/entity/recurring";
+  import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
+  import { RECURRING_STATE, recurringState } from "./parts/entity/status";
 
   const templates = createQueryState<RecurringListRow[]>([], listRecurring);
   $effect(() => {
@@ -21,6 +39,13 @@
 
   type SortKey = "name" | "customer" | "interval" | "nextDueDate" | "active";
   const sort = createListSort<SortKey>("recurring", { key: "nextDueDate", dir: "asc" });
+  const columns: SortColumn<SortKey>[] = [
+    { key: "name", label: "Name", class: "min-w-32" },
+    { key: "customer", label: "Kunde", class: "hidden @3xl:table-cell min-w-32" },
+    { key: "interval", label: "Intervall", class: "hidden @3xl:table-cell whitespace-nowrap" },
+    { key: "nextDueDate", label: "Nächste Fälligkeit", class: "whitespace-nowrap" },
+    { key: "active", label: "Status", class: "whitespace-nowrap" },
+  ];
   const sortedTemplates = $derived(
     applySort(templates.data, sort.state, {
       name: (r) => r.name,
@@ -31,86 +56,65 @@
     }),
   );
 
-  let confirmOpen = $state(false);
-  let confirmDeleteId = $state<number | null>(null);
+  const deletion = createDeleteFlow<RecurringListRow>({
+    remove: (row) => deleteRecurring(row.id),
+    entityLabel: "Wiederkehrende Rechnung",
+    reload: templates.reload,
+  });
 
   function isDue(row: RecurringListRow): boolean {
     return row.nextDueDate <= nowUnix();
+  }
+
+  function editTemplate(row: RecurringListRow) {
+    push(`/recurring/${row.id}`);
   }
 
   async function onToggle(row: RecurringListRow) {
     try {
       await toggleActive(row.id, !row.active);
       await templates.reload();
+      toast.success(row.active ? "Wiederkehrende Rechnung pausiert" : "Wiederkehrende Rechnung aktiviert");
     } catch (e) {
       toast.error("Fehler", String(e));
     }
   }
-
-  function askDelete(id: number) {
-    confirmDeleteId = id;
-    confirmOpen = true;
-  }
-
-  async function onConfirmDelete() {
-    if (confirmDeleteId === null) return;
-    try {
-      await deleteRecurring(confirmDeleteId);
-      toast.success("Vorlage gelöscht");
-      await templates.reload();
-    } catch (e) {
-      toast.error("Löschen fehlgeschlagen", String(e));
-    } finally {
-      confirmDeleteId = null;
-    }
-  }
 </script>
 
-<header class="mb-6 flex items-end justify-between gap-3">
-  <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Wiederkehrende Rechnungen</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      Vorlagen für Retainer- oder Abo-Modelle. Erzeugung erfolgt manuell pro Fälligkeit.
-    </p>
-  </div>
-  <a href="/recurring/new" use:link>
-    <Button>
+<PageHeader
+  title="Wiederkehrende Rechnungen"
+  subtitle="Wiederkehrende Rechnungen für Retainer- oder Abo-Modelle. Erzeugung erfolgt manuell pro Fälligkeit."
+>
+  {#snippet actions()}
+    <Button href="/recurring/new">
       <Plus class="size-4" />
-      Neue Vorlage
+      Neue wiederkehrende Rechnung
     </Button>
-  </a>
-</header>
+  {/snippet}
+</PageHeader>
 
-{#if templates.error}
-  <p class="text-sm text-destructive">Fehler: {templates.error}</p>
-{:else if templates.loading}
-  <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if templates.data.length === 0}
-  <EmptyState message="Noch keine Vorlagen. Erstelle die erste über „Neue Vorlage“." />
-{:else}
-  <Card class="overflow-hidden">
+<QueryBoundary query={templates} isEmpty={templates.data.length === 0}>
+  {#snippet empty()}
+    <EmptyState
+      message="Noch keine wiederkehrenden Rechnungen."
+      actionLabel="Neue wiederkehrende Rechnung"
+      onAction={() => push("/recurring/new")}
+    />
+  {/snippet}
+  <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
-      <thead class="bg-muted/40 text-left">
-        <tr>
-          <SortableTh column="name" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Name</SortableTh>
-          <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Kunde</SortableTh>
-          <SortableTh column="interval" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Intervall</SortableTh>
-          <SortableTh column="nextDueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Nächste Fälligkeit</SortableTh>
-          <SortableTh column="active" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-3 py-2">Status</SortableTh>
-          <th class="px-3 py-2 font-medium text-right w-px text-xs uppercase tracking-wider text-muted-foreground">Aktionen</th>
-        </tr>
-      </thead>
+      <SortableHeaderRow {sort} {columns} actionsColumn />
       <tbody class="stagger">
         {#each sortedTemplates as row (row.id)}
-          <tr class="border-t">
-            <td class="px-3 py-2">
-              <a href={`/recurring/${row.id}`} use:link class="font-medium hover:underline">
-                {row.name}
+          <tr class="border-t hover:bg-muted/30 transition-colors">
+            <td class="px-4 py-3 min-w-32">
+              <a href={`/recurring/${row.id}`} use:link class="font-medium hover:underline" title={row.name}>
+                <span class="line-clamp-2">{row.name}</span>
               </a>
             </td>
-            <td class="px-3 py-2 text-muted-foreground">{row.customerName}</td>
-            <td class="px-3 py-2">{RECURRING_INTERVAL_LABEL[row.interval]}</td>
-            <td class="px-3 py-2">
+            <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground min-w-32"><span class="line-clamp-2" title={row.customerName}>{row.customerName}</span></td>
+            <td class="hidden @3xl:table-cell px-4 py-3 whitespace-nowrap">{RECURRING_INTERVAL_LABEL[row.interval]}</td>
+            <td class="px-4 py-3 whitespace-nowrap">
               <span class={isDue(row) && row.active ? "text-warning font-medium" : ""}>
                 {formatDate(row.nextDueDate)}
               </span>
@@ -120,36 +124,34 @@
                 </div>
               {/if}
             </td>
-            <td class="px-3 py-2">
-              {#if row.active}
-                <Badge variant="default">Aktiv</Badge>
-              {:else}
-                <Badge variant="secondary">Pausiert</Badge>
-              {/if}
+            <td class="px-4 py-3 whitespace-nowrap">
+              <StatusBadge status={recurringState(row.active)} table={RECURRING_STATE} />
             </td>
-            <td class="px-3 py-2 text-right whitespace-nowrap">
+            <td class="px-4 py-3 text-right whitespace-nowrap">
               <div class="inline-flex items-center gap-1">
                 {#if row.active && isDue(row)}
-                  <Button size="sm" onclick={() => generateInvoiceAndOpen(row.id)}>
+                  <Button
+                    size="sm"
+                    disabled={generatingRecurringIds.has(row.id)}
+                    onclick={() => generateInvoiceAndOpen(row.id)}
+                  >
                     <FileText class="size-3.5" />
                     Jetzt erzeugen
                   </Button>
                 {/if}
-                <Button size="icon" variant="ghost" onclick={() => onToggle(row)} aria-label={row.active ? "Pausieren" : "Aktivieren"}>
-                  {#if row.active}
-                    <PowerOff class="size-4" />
-                  {:else}
-                    <Power class="size-4" />
-                  {/if}
-                </Button>
-                <a href={`/recurring/${row.id}`} use:link>
-                  <Button size="icon" variant="ghost" aria-label="Bearbeiten">
-                    <Pencil class="size-4" />
-                  </Button>
-                </a>
-                <Button size="icon" variant="ghost" onclick={() => askDelete(row.id)} aria-label="Löschen">
-                  <Trash2 class="size-4" />
-                </Button>
+                <RowActionsMenu onEdit={() => editTemplate(row)} onDelete={() => deletion.ask(row)}>
+                  {#snippet extraItems()}
+                    <DropdownItem onSelect={() => onToggle(row)}>
+                      {#if row.active}
+                        <PowerOff />
+                        Pausieren
+                      {:else}
+                        <Power />
+                        Aktivieren
+                      {/if}
+                    </DropdownItem>
+                  {/snippet}
+                </RowActionsMenu>
               </div>
             </td>
           </tr>
@@ -157,13 +159,13 @@
       </tbody>
     </table>
   </Card>
-{/if}
+</QueryBoundary>
 
 <ConfirmDialog
-  bind:open={confirmOpen}
-  title="Vorlage löschen?"
-  description="Die Vorlage wird unwiderruflich entfernt. Bereits erzeugte Rechnungen bleiben bestehen."
+  bind:open={deletion.open}
+  title="Wiederkehrende Rechnung löschen?"
+  description="Die wiederkehrende Rechnung wird unwiderruflich entfernt. Bereits erzeugte Rechnungen bleiben bestehen."
   confirmLabel="Löschen"
   destructive
-  onConfirm={onConfirmDelete}
+  onConfirm={deletion.confirm}
 />

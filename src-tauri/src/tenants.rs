@@ -17,7 +17,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use crate::paths::{app_data_dir, app_data_dir_static};
+use crate::fs_export::sanitize_segment;
+use crate::paths::{app_data_dir, app_data_dir_static, documents_dir, DOCUMENTS_SUBDIR};
 use crate::sandbox;
 
 const CONFIG_FILE: &str = "tenants.json";
@@ -26,6 +27,9 @@ pub const SANDBOX_DB_URL: &str = "sqlite:zettel-sandbox.db";
 const DEFAULT_ID: &str = "default";
 const DEFAULT_LABEL: &str = "Standard";
 const RELOCATED_DEFAULT_LABEL: &str = "Cloud-DB";
+/// Same folder as `cli/zettel.py` uses for sandbox PDFs.
+const SANDBOX_DOCUMENTS_SUBDIR: &str = "Zettel-Sandbox";
+const TENANT_DOCUMENTS_SUBDIR: &str = "Mandanten";
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct TenantConfig {
@@ -106,14 +110,59 @@ fn db_url_for_path(path: &str) -> String {
     format!("sqlite:{path}")
 }
 
-/// Aktive DB-URL inkl. Sandbox-Vorrang — Quelle der Wahrheit für `client.ts`.
-fn resolve_active_url(dir: &Path) -> String {
+enum ActiveDb {
+    Default,
+    Sandbox,
+    Custom(Tenant),
+}
+
+/// Sandbox hat Vorrang vor dem aktiven Tenant.
+fn resolve_active(dir: &Path) -> ActiveDb {
     if dir.join(sandbox::FLAG_FILE).exists() {
-        return SANDBOX_DB_URL.to_string();
+        return ActiveDb::Sandbox;
     }
     load_config_or_default(dir)
         .active_custom_tenant()
-        .map_or_else(|| DEFAULT_DB_URL.to_string(), |t| db_url_for_path(&t.path))
+        .cloned()
+        .map_or(ActiveDb::Default, ActiveDb::Custom)
+}
+
+/// Aktive DB-URL inkl. Sandbox-Vorrang — Quelle der Wahrheit für `client.ts`.
+fn resolve_active_url(dir: &Path) -> String {
+    match resolve_active(dir) {
+        ActiveDb::Default => DEFAULT_DB_URL.to_string(),
+        ActiveDb::Sandbox => SANDBOX_DB_URL.to_string(),
+        ActiveDb::Custom(tenant) => db_url_for_path(&tenant.path),
+    }
+}
+
+/// Folder below `documents_dir` for the active DB's PDFs and backups. Every
+/// DB numbers its documents independently, so sandbox and custom tenants get
+/// folders of their own; a shared one would let them overwrite each other's
+/// PDFs (and archive them as versions of the wrong document).
+pub fn active_documents_root(data_dir: &Path, documents_dir: &Path) -> PathBuf {
+    let production_root = documents_dir.join(DOCUMENTS_SUBDIR);
+    match resolve_active(data_dir) {
+        ActiveDb::Default => production_root,
+        ActiveDb::Sandbox => documents_dir.join(SANDBOX_DOCUMENTS_SUBDIR),
+        ActiveDb::Custom(tenant) => production_root
+            .join(TENANT_DOCUMENTS_SUBDIR)
+            .join(sanitize_segment(&tenant.id)),
+    }
+}
+
+pub fn active_documents_root_for(app: &AppHandle) -> Result<PathBuf, String> {
+    let documents = documents_dir().ok_or("Kein Dokumente-Ordner ermittelbar.")?;
+    Ok(active_documents_root(&app_data_dir(app)?, &documents))
+}
+
+/// Single source for where the frontend writes PDFs, matching what backups
+/// collect.
+#[tauri::command]
+pub async fn get_documents_root(app: AppHandle) -> Result<String, String> {
+    Ok(active_documents_root_for(&app)?
+        .to_string_lossy()
+        .into_owned())
 }
 
 /// Datei, die das SQL-Plugin für die aktive DB öffnet. Spiegelt dessen
@@ -168,7 +217,9 @@ fn tenant_entries(cfg: TenantConfig) -> Vec<TenantEntry> {
         label: t.label,
         path: t.path,
     });
-    std::iter::once(default_entry).chain(custom_entries).collect()
+    std::iter::once(default_entry)
+        .chain(custom_entries)
+        .collect()
 }
 
 #[tauri::command]
@@ -217,7 +268,20 @@ pub async fn relocate_active_tenant(
     path: String,
     label: String,
 ) -> Result<(), String> {
+    ensure_sandbox_inactive(&app_data_dir(&app)?)?;
     update_config(&app, |cfg| relocate(cfg, &path, &label))
+}
+
+/// In the sandbox the open DB is the sandbox DB, so "moving the active DB"
+/// would turn sandbox data into the real tenant.
+fn ensure_sandbox_inactive(data_dir: &Path) -> Result<(), String> {
+    if data_dir.join(sandbox::FLAG_FILE).exists() {
+        return Err(
+            "Im Sandbox-Modus kann die Datenbank nicht verschoben werden. Bitte zuerst die Sandbox verlassen."
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 fn relocate(cfg: &mut TenantConfig, path: &str, label: &str) -> Result<(), String> {
@@ -240,7 +304,11 @@ fn relocate(cfg: &mut TenantConfig, path: &str, label: &str) -> Result<(), Strin
             }
         }
         None => {
-            let label = if label.is_empty() { RELOCATED_DEFAULT_LABEL } else { label };
+            let label = if label.is_empty() {
+                RELOCATED_DEFAULT_LABEL
+            } else {
+                label
+            };
             cfg.active = Some(cfg.push_tenant(label.to_string(), path.to_string()));
         }
     }
@@ -330,6 +398,38 @@ mod tests {
     }
 
     #[test]
+    fn documents_root_is_zettel_for_the_default_db() {
+        let (data, documents) = (TempDir::new("docs-default"), TempDir::new("docs"));
+        assert_eq!(
+            active_documents_root(data.path(), documents.path()),
+            documents.path().join("Zettel")
+        );
+    }
+
+    #[test]
+    fn documents_root_of_the_sandbox_is_separate_from_production() {
+        let (data, documents) = (TempDir::new("docs-sandbox"), TempDir::new("docs"));
+        write_config(data.path(), &config_with_active_custom_tenant()).unwrap();
+        fs::write(data.path().join(sandbox::FLAG_FILE), b"1").unwrap();
+        assert_eq!(
+            active_documents_root(data.path(), documents.path()),
+            documents.path().join("Zettel-Sandbox")
+        );
+    }
+
+    #[test]
+    fn documents_root_of_a_custom_tenant_is_its_own_folder() {
+        let (data, documents) = (TempDir::new("docs-tenant"), TempDir::new("docs"));
+        let cfg = config_with_active_custom_tenant();
+        let id = cfg.tenants[0].id.clone();
+        write_config(data.path(), &cfg).unwrap();
+        assert_eq!(
+            active_documents_root(data.path(), documents.path()),
+            documents.path().join("Zettel").join("Mandanten").join(id)
+        );
+    }
+
+    #[test]
     fn tenant_with_blank_path_falls_back_to_default() {
         let mut cfg = config_with_active_custom_tenant();
         cfg.tenants[0].path = "  ".into();
@@ -368,6 +468,15 @@ mod tests {
         set_active(&mut cfg, DEFAULT_ID.into()).unwrap();
         assert_eq!(cfg.active, None);
         assert!(set_active(&mut cfg, "missing".into()).is_err());
+    }
+
+    #[test]
+    fn relocating_is_refused_while_the_sandbox_is_active() {
+        let dir = TempDir::new("tenants-relocate-sandbox");
+        assert!(ensure_sandbox_inactive(dir.path()).is_ok());
+        fs::write(dir.path().join(sandbox::FLAG_FILE), b"1").unwrap();
+        let err = ensure_sandbox_inactive(dir.path()).unwrap_err();
+        assert!(err.contains("Sandbox"), "{err}");
     }
 
     #[test]

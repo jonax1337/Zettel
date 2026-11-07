@@ -1,4 +1,6 @@
+import { normalizeIban } from "$lib/utils/iban";
 import { containsPattern, execute, insert, select, toSqlBool } from "./client";
+import { assertCustomerDeletable, assertVendorDeletable } from "./references";
 import type { Customer, Settings, Vendor } from "./schema";
 
 // --- Settings (singleton row id=1) ---
@@ -111,7 +113,7 @@ function mapSettings(r: SettingsRow): Settings {
     phone: r.phone,
     website: r.website,
     bankName: r.bank_name,
-    bankIban: r.bank_iban,
+    bankIban: r.bank_iban && normalizeIban(r.bank_iban),
     bankBic: r.bank_bic,
     isKleinunternehmer: r.is_kleinunternehmer === 1,
     kleinunternehmerNote: r.kleinunternehmer_note,
@@ -190,25 +192,20 @@ function settingsColumnValues(s: Partial<Settings>): Array<[column: string, valu
     ["phone", s.phone ?? null],
     ["website", s.website ?? null],
     ["bank_name", s.bankName ?? ""],
-    ["bank_iban", s.bankIban ?? ""],
+    ["bank_iban", normalizeIban(s.bankIban ?? "")],
     ["bank_bic", s.bankBic ?? ""],
     ["is_kleinunternehmer", toSqlBool(s.isKleinunternehmer)],
     ["kleinunternehmer_note", s.kleinunternehmerNote ?? ""],
     ["invoice_number_format", s.invoiceNumberFormat ?? d.invoiceNumberFormat],
-    ["invoice_number_counter", s.invoiceNumberCounter ?? 0],
     ["offer_number_format", s.offerNumberFormat ?? d.offerNumberFormat],
-    ["offer_number_counter", s.offerNumberCounter ?? 0],
     ["default_offer_validity_days", s.defaultOfferValidityDays ?? d.defaultOfferValidityDays],
     ["default_payment_terms_days", s.defaultPaymentTermsDays ?? d.defaultPaymentTermsDays],
     ["logo_path", s.logoPath ?? null],
     ["zugferd_profile", s.zugferdProfile ?? d.zugferdProfile],
     ["pdf_theme", s.pdfTheme ?? d.pdfTheme],
     ["vendor_number_format", s.vendorNumberFormat ?? d.vendorNumberFormat],
-    ["vendor_number_counter", s.vendorNumberCounter ?? 0],
     ["expense_number_format", s.expenseNumberFormat ?? d.expenseNumberFormat],
-    ["expense_number_counter", s.expenseNumberCounter ?? 0],
     ["reminder_number_format", s.reminderNumberFormat ?? d.reminderNumberFormat],
-    ["reminder_number_counter", s.reminderNumberCounter ?? 0],
     ["reminder_days_l1", s.reminderDaysL1 ?? d.reminderDays],
     ["reminder_days_l2", s.reminderDaysL2 ?? d.reminderDays],
     ["reminder_days_l3", s.reminderDaysL3 ?? d.reminderDays],
@@ -233,20 +230,68 @@ function settingsColumnValues(s: Partial<Settings>): Array<[column: string, valu
     ["default_skonto_percent", s.defaultSkontoPercent ?? d.defaultSkontoPercent],
     ["default_skonto_days", s.defaultSkontoDays ?? d.defaultSkontoDays],
     ["auto_backup_interval_days", s.autoBackupIntervalDays ?? 0],
-    ["last_auto_backup_at", s.lastAutoBackupAt ?? null],
     ["default_pdf_language", s.defaultPdfLanguage ?? d.defaultPdfLanguage],
     ["vat_accounting", s.vatAccounting ?? d.vatAccounting],
     ["tax_reserve_expenses_gross", toSqlBool(s.taxReserveExpensesGross)],
   ];
 }
 
+/**
+ * Saves the editable settings. Number counters and the auto-backup stamp are
+ * left out on purpose: they change in the background (issuing a document,
+ * auto-backup), and a form loaded earlier would write stale values back.
+ * They have their own targeted updates below.
+ */
 export async function saveSettings(s: Partial<Settings>): Promise<void> {
-  const columnValues = settingsColumnValues(s);
+  await updateSettingsColumns(settingsColumnValues(s));
+}
+
+async function updateSettingsColumns(
+  columnValues: Array<[column: string, value: unknown]>,
+): Promise<void> {
+  if (columnValues.length === 0) return;
   const assignments = columnValues.map(([column]) => `${column} = ?`).join(", ");
   await execute(
     `UPDATE settings SET ${assignments}, updated_at = unixepoch() WHERE id = 1`,
     columnValues.map(([, value]) => value),
   );
+}
+
+const NUMBER_COUNTER_COLUMNS = {
+  invoiceNumberCounter: "invoice_number_counter",
+  offerNumberCounter: "offer_number_counter",
+  vendorNumberCounter: "vendor_number_counter",
+  expenseNumberCounter: "expense_number_counter",
+  reminderNumberCounter: "reminder_number_counter",
+} as const;
+
+export type NumberCounters = Pick<Settings, keyof typeof NUMBER_COUNTER_COLUMNS>;
+
+/** The counters in `after` that differ from `before`. */
+export function changedNumberCounters(
+  before: NumberCounters,
+  after: NumberCounters,
+): Partial<NumberCounters> {
+  const keys = Object.keys(NUMBER_COUNTER_COLUMNS) as Array<keyof NumberCounters>;
+  return Object.fromEntries(
+    keys.filter((key) => before[key] !== after[key]).map((key) => [key, after[key]]),
+  );
+}
+
+/** Writes only the given counters, for an explicit edit in the settings. */
+export async function saveNumberCounters(counters: Partial<NumberCounters>): Promise<void> {
+  const keys = Object.keys(counters) as Array<keyof NumberCounters>;
+  await updateSettingsColumns(
+    keys.map((key) => [NUMBER_COUNTER_COLUMNS[key], counters[key] ?? 0]),
+  );
+}
+
+export async function saveLastAutoBackupAt(unixSeconds: number): Promise<void> {
+  await execute("UPDATE settings SET last_auto_backup_at = ? WHERE id = 1", [unixSeconds]);
+}
+
+export async function saveAutoBackupInterval(days: number): Promise<void> {
+  await updateSettingsColumns([["auto_backup_interval_days", days]]);
 }
 
 // --- Numbering shared by customers and vendors ---
@@ -395,6 +440,7 @@ export async function updateCustomer(
 }
 
 export async function deleteCustomer(id: number): Promise<void> {
+  await assertCustomerDeletable(id);
   await execute("DELETE FROM customers WHERE id = ?", [id]);
 }
 
@@ -435,7 +481,7 @@ function mapVendor(r: VendorRow): Vendor {
     phone: r.phone,
     vatId: r.vat_id,
     bankName: r.bank_name,
-    bankIban: r.bank_iban,
+    bankIban: r.bank_iban && normalizeIban(r.bank_iban),
     bankBic: r.bank_bic,
     defaultCategory: r.default_category,
     notes: r.notes,
@@ -490,7 +536,7 @@ export async function createVendor(input: VendorInput): Promise<number> {
       input.phone ?? null,
       input.vatId ?? null,
       input.bankName ?? null,
-      input.bankIban ?? null,
+      input.bankIban ? normalizeIban(input.bankIban) : null,
       input.bankBic ?? null,
       input.defaultCategory ?? null,
       input.notes ?? null,
@@ -517,7 +563,7 @@ export async function updateVendor(id: number, input: VendorInput): Promise<void
       input.phone ?? null,
       input.vatId ?? null,
       input.bankName ?? null,
-      input.bankIban ?? null,
+      input.bankIban ? normalizeIban(input.bankIban) : null,
       input.bankBic ?? null,
       input.defaultCategory ?? null,
       input.notes ?? null,
@@ -527,5 +573,6 @@ export async function updateVendor(id: number, input: VendorInput): Promise<void
 }
 
 export async function deleteVendor(id: number): Promise<void> {
+  await assertVendorDeletable(id);
   await execute("DELETE FROM vendors WHERE id = ?", [id]);
 }

@@ -2,16 +2,21 @@ import { describe, expect, it } from "vitest";
 import {
   SUPPORTED_CURRENCIES,
   computeEurTotalCent,
+  eurCentsToCurrency,
   formatMoney,
+  fromEurCents,
   isValidCurrencyCode,
   parseExchangeRateScaled,
   toEurCents,
 } from "./currency";
 
 describe("isValidCurrencyCode", () => {
-  it("accepts every supported code", () => {
-    for (const c of SUPPORTED_CURRENCIES) {
-      expect(isValidCurrencyCode(c.code)).toBe(true);
+  it("accepts exactly the supported codes", () => {
+    expect(SUPPORTED_CURRENCIES.map((c) => c.code)).toEqual([
+      "EUR", "USD", "GBP", "CHF", "AUD", "CAD", "JPY", "NOK", "SEK", "DKK", "PLN", "CZK",
+    ]);
+    for (const code of ["EUR", "USD", "JPY", "CZK"]) {
+      expect(isValidCurrencyCode(code)).toBe(true);
     }
   });
   it("rejects unknown codes", () => {
@@ -70,14 +75,46 @@ describe("toEurCents", () => {
     expect(toEurCents(-108, rate)).toBe(-100);
   });
   it("handles large totals without precision loss", () => {
-    // 1 mio cents = 10000 EUR at rate 1.0
-    const rate = parseExchangeRateScaled("1.0")!;
-    expect(toEurCents(1_000_000, rate)).toBe(1_000_000);
+    // naive Math.round(total / 1.0832) gives ...805 here; exact BigInt division gives ...804
+    const rate = parseExchangeRateScaled("1.0832")!;
+    expect(toEurCents(1_000_000_000_000_001, rate)).toBe(923190546528804);
   });
-  it("rate < 1 inflates the foreign-currency total", () => {
+  it("rate < 1 yields a larger EUR amount", () => {
     // 100 GBP cents at rate 0.85 (1 EUR buys 0.85 GBP) ≈ 117.65 EUR cents → 118
     const rate = parseExchangeRateScaled("0.85")!;
     expect(toEurCents(100, rate)).toBe(118);
+  });
+});
+
+describe("fromEurCents", () => {
+  it("converts EUR to USD at 1.08", () => {
+    expect(fromEurCents(500, parseExchangeRateScaled("1.08")!)).toBe(540);
+  });
+  it("rounds half-up", () => {
+    // 5 EUR cents at rate 1.1 = 5.5 cents → 6
+    expect(fromEurCents(5, parseExchangeRateScaled("1.1")!)).toBe(6);
+    // 1 EUR cent at rate 1.4 = 1.4 cents → 1
+    expect(fromEurCents(1, parseExchangeRateScaled("1.4")!)).toBe(1);
+  });
+  it("preserves sign", () => {
+    expect(fromEurCents(-500, parseExchangeRateScaled("1.08")!)).toBe(-540);
+  });
+  it("rate < 1 shrinks the amount", () => {
+    // 1 EUR buys 0.85 GBP: 5,00 EUR = 4,25 GBP
+    expect(fromEurCents(500, parseExchangeRateScaled("0.85")!)).toBe(425);
+  });
+});
+
+describe("eurCentsToCurrency", () => {
+  it("returns the amount unchanged for EUR", () => {
+    expect(eurCentsToCurrency(500, "EUR", null)).toBe(500);
+  });
+  it("converts with the invoice's exchange rate", () => {
+    expect(eurCentsToCurrency(500, "USD", "1.0832")).toBe(542);
+  });
+  it("returns null for a foreign currency without a usable rate", () => {
+    expect(eurCentsToCurrency(500, "USD", null)).toBeNull();
+    expect(eurCentsToCurrency(500, "USD", "abc")).toBeNull();
   });
 });
 
@@ -102,22 +139,18 @@ describe("computeEurTotalCent", () => {
 
 describe("formatMoney", () => {
   it("formats EUR with 2 decimals", () => {
-    expect(formatMoney(12345, "EUR")).toMatch(/123,45/);
+    expect(formatMoney(12345, "EUR")).toBe("123,45\u00a0€");
   });
   it("formats JPY with 0 decimals (zero-decimal currency)", () => {
-    const out = formatMoney(12345, "JPY");
-    expect(out).not.toMatch(/[,.]/);
-    expect(out).toContain("12");
+    expect(formatMoney(12345, "JPY")).toBe("123\u00a0¥");
   });
-  it("falls back gracefully for unknown ISO code", () => {
-    // Intl.NumberFormat accepts unknown 3-letter codes on modern V8; both
-    // the Intl path and the catch fallback should at least surface the code
-    // and the numeric value.
-    const out = formatMoney(12345, "XYZ");
-    expect(out).toContain("XYZ");
-    expect(out).toMatch(/123[,.]45/);
+  it("formats a well-formed but unlisted code via Intl", () => {
+    expect(formatMoney(12345, "XYZ")).toBe("123,45\u00a0XYZ");
+  });
+  it("falls back to plain formatting when Intl rejects the code", () => {
+    expect(formatMoney(12345, "EURO")).toBe("123.45 EURO");
   });
   it("defaults to EUR when currency is empty", () => {
-    expect(formatMoney(100, "")).toMatch(/1,00/);
+    expect(formatMoney(100, "")).toBe("1,00\u00a0€");
   });
 });

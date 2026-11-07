@@ -2,12 +2,24 @@
   import { push } from "svelte-spa-router";
   import { listCatalog, deleteCatalogItem, setArchived } from "$lib/db/catalog";
   import type { CatalogItem } from "$lib/db/schema";
-  import { Button, Card, Checkbox, ConfirmDialog, DropdownItem, Badge, toast, EmptyState } from "$lib/ui";
+  import {
+    Button,
+    Card,
+    Checkbox,
+    ConfirmDialog,
+    DropdownItem,
+    Badge,
+    toast,
+    EmptyState,
+    PageHeader,
+    QueryBoundary,
+  } from "$lib/ui";
   import { Plus, Archive, ArchiveRestore } from "$lib/brand-icons";
   import { centsToEur } from "$lib/utils/money";
   import RowActionsMenu from "./parts/entity/RowActionsMenu.svelte";
   import SearchInput from "./parts/entity/SearchInput.svelte";
   import { pluralize } from "./parts/entity/format";
+  import { createDeleteFlow } from "./parts/entity/delete-flow.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
 
   let search = $state("");
@@ -31,8 +43,11 @@
     );
   });
 
-  let confirmOpen = $state(false);
-  let toDelete = $state<CatalogItem | null>(null);
+  const deletion = createDeleteFlow<CatalogItem>({
+    remove: (it) => deleteCatalogItem(it.id),
+    entityLabel: "Eintrag",
+    reload: catalog.reload,
+  });
 
   function editItem(it: CatalogItem) {
     push(`/catalog/${it.id}`);
@@ -47,38 +62,19 @@
       toast.error("Aktion fehlgeschlagen", String(e));
     }
   }
-
-  function askDelete(it: CatalogItem) {
-    toDelete = it;
-    confirmOpen = true;
-  }
-
-  async function performDelete() {
-    if (!toDelete) return;
-    try {
-      await deleteCatalogItem(toDelete.id);
-      toast.success("Eintrag gelöscht");
-      toDelete = null;
-      await catalog.reload();
-    } catch (e) {
-      toast.error("Löschen fehlgeschlagen", String(e));
-    }
-  }
 </script>
 
-<header class="mb-6 flex items-end justify-between gap-4">
-  <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Artikel-Katalog</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      Wiederverwendbare Positionen für Rechnungen, Angebote und Ausgaben.
-      {filtered.length} {pluralize(filtered.length, "Eintrag", "Einträge")}
-    </p>
-  </div>
-  <Button onclick={() => push("/catalog/new")}>
-    <Plus />
-    Neuer Eintrag
-  </Button>
-</header>
+<PageHeader
+  title="Artikel-Katalog"
+  subtitle="Wiederverwendbare Positionen für Rechnungen, Angebote und Ausgaben. {filtered.length} {pluralize(filtered.length, "Eintrag", "Einträge")}"
+>
+  {#snippet actions()}
+    <Button onclick={() => push("/catalog/new")}>
+      <Plus />
+      Neuer Eintrag
+    </Button>
+  {/snippet}
+</PageHeader>
 
 <div class="mb-4 flex flex-wrap items-center gap-3">
   <SearchInput
@@ -92,49 +88,48 @@
   </label>
 </div>
 
-{#if catalog.error}
-  <p class="text-sm text-destructive">Fehler: {catalog.error}</p>
-{:else if catalog.loading}
-  <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if filtered.length === 0}
-  <EmptyState
-    variant={search ? "no-results" : "empty"}
-    message={search ? "Keine Treffer." : "Noch keine Katalog-Einträge."}
-  />
-{:else}
+<QueryBoundary query={catalog} isEmpty={filtered.length === 0}>
+  {#snippet empty()}
+    <EmptyState
+      variant={search ? "no-results" : "empty"}
+      message={search ? "Keine Treffer." : "Noch keine Katalog-Einträge."}
+      actionLabel={search ? undefined : "Neuer Katalog-Eintrag"}
+      onAction={() => push("/catalog/new")}
+    />
+  {/snippet}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
       <thead class="bg-muted/40 text-left">
         <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-          <th class="px-4 py-3 font-medium">Name</th>
-          <th class="px-4 py-3 font-medium">Beschreibung</th>
-          <th class="px-4 py-3 font-medium text-right">Standardpreis</th>
-          <th class="px-4 py-3 font-medium text-right">USt</th>
-          <th class="px-4 py-3 font-medium">Einheit</th>
+          <th class="px-4 py-3 font-medium min-w-32">Name</th>
+          <th class="hidden @3xl:table-cell px-4 py-3 font-medium">Beschreibung</th>
+          <th class="px-4 py-3 font-medium text-right whitespace-nowrap">Standardpreis</th>
+          <th class="px-4 py-3 font-medium text-right whitespace-nowrap">USt</th>
+          <th class="hidden @3xl:table-cell px-4 py-3 font-medium whitespace-nowrap">Einheit</th>
           <th class="px-4 py-3 font-medium w-12"></th>
         </tr>
       </thead>
       <tbody class="stagger">
         {#each filtered as it (it.id)}
           <tr class="border-t hover:bg-muted/30 transition-colors {it.archived ? 'opacity-60' : ''}">
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 min-w-32">
               <button
                 type="button"
                 class="text-left hover:text-foreground font-medium transition-colors"
                 onclick={() => editItem(it)}
               >
-                {it.name}
+                <span class="line-clamp-2" title={it.name}>{it.name}</span>
               </button>
               {#if it.archived}
                 <Badge variant="secondary" class="ml-2 text-[10px]">archiviert</Badge>
               {/if}
             </td>
-            <td class="px-4 py-3 text-muted-foreground truncate max-w-xs">{it.descriptionDe}</td>
-            <td class="px-4 py-3 text-right tabular-nums">{centsToEur(it.defaultUnitPrice)}</td>
-            <td class="px-4 py-3 text-right tabular-nums">{it.defaultVatRate} %</td>
-            <td class="px-4 py-3 text-muted-foreground">{it.unit}</td>
+            <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground truncate max-w-xs">{it.descriptionDe}</td>
+            <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap">{centsToEur(it.defaultUnitPrice)}</td>
+            <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap">{it.defaultVatRate} %</td>
+            <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground whitespace-nowrap">{it.unit}</td>
             <td class="px-4 py-3 text-right">
-              <RowActionsMenu onEdit={() => editItem(it)} onDelete={() => askDelete(it)}>
+              <RowActionsMenu onEdit={() => editItem(it)} onDelete={() => deletion.ask(it)}>
                 {#snippet extraItems()}
                   <DropdownItem onSelect={() => toggleArchive(it)}>
                     {#if it.archived}
@@ -153,13 +148,13 @@
       </tbody>
     </table>
   </Card>
-{/if}
+</QueryBoundary>
 
 <ConfirmDialog
-  bind:open={confirmOpen}
+  bind:open={deletion.open}
   title="Katalog-Eintrag löschen?"
-  description={toDelete ? `"${toDelete.name}" wird unwiderruflich entfernt. Bestehende Rechnungen mit dieser Position bleiben unverändert (Item-Daten sind kopiert).` : ""}
+  description={deletion.target ? `"${deletion.target.name}" wird unwiderruflich entfernt. Bestehende Rechnungen mit dieser Position bleiben unverändert (Item-Daten sind kopiert).` : ""}
   confirmLabel="Löschen"
   destructive
-  onConfirm={performDelete}
+  onConfirm={deletion.confirm}
 />

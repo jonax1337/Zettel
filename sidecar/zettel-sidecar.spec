@@ -8,6 +8,7 @@ binaries = []
 hiddenimports = ['lxml', 'lxml.etree']
 datas += collect_data_files('iso4217')
 datas += collect_data_files('stdnum')
+datas += collect_data_files('tzdata')
 hiddenimports += collect_submodules('jinja2')
 tmp_ret = collect_all('weasyprint')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Booking, BookingMatch, MatchCandidate } from "$lib/bank/match";
+import { bankBookingKey, type Booking, type BookingMatch, type MatchCandidate } from "$lib/bank/match";
 import type { InvoiceListRow } from "$lib/db/invoices";
 import { fromIsoDate } from "$lib/utils/date";
 import {
@@ -81,7 +81,15 @@ describe("paymentFor", () => {
       amountCent: 11900,
       source: "camt053",
       notes: "RE-2026-0001",
+      bankTransactionId: bankBookingKey(booking()),
     });
+  });
+
+  it("gives a re-imported booking the same dedupe key, so it is not booked twice", () => {
+    const again = toImportRows([match({}, [candidate("high", 42)])])[0];
+    expect(paymentFor(again, "camt", now)?.bankTransactionId).toBe(
+      paymentFor(ticked(), "camt", now)?.bankTransactionId,
+    );
   });
 
   it("marks MT940 statements as such", () => {

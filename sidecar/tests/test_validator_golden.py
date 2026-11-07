@@ -18,18 +18,26 @@ import pytest
 
 from invoice.zugferd import render_zugferd_xml
 
-VALIDATOR_DIR = Path(__file__).resolve().parents[2] / "tools" / "kosit-validator"
+TOOLS_DIR = Path(__file__).resolve().parents[2] / "tools"
+VALIDATOR_DIR = TOOLS_DIR / "kosit-validator"
 VALIDATOR_JAR = VALIDATOR_DIR / "validator.jar"
 SCENARIOS = VALIDATOR_DIR / "scenarios.xml"
 NS_REP = "{http://www.xoev.de/de/validator/varl/1}"
 
 
+def _java() -> str | None:
+    """Same lookup order as validator.rs in a dev build: bundled tools/jre first."""
+    bundled = TOOLS_DIR / "jre" / "bin" / ("java.exe" if os.name == "nt" else "java")
+    if bundled.exists():
+        return str(bundled)
+    return shutil.which("java")
+
+
+JAVA = _java() or "java"
+
+
 def _validator_available() -> bool:
-    return (
-        VALIDATOR_JAR.exists()
-        and SCENARIOS.exists()
-        and shutil.which("java") is not None
-    )
+    return VALIDATOR_JAR.exists() and SCENARIOS.exists() and _java() is not None
 
 
 pytestmark = pytest.mark.skipif(
@@ -47,7 +55,7 @@ def _run_validator(xml_path: Path, out_dir: Path) -> Path:
     with stdin_path.open("rb") as stdin_f:
         subprocess.run(
             [
-                "java", "-jar", str(VALIDATOR_JAR),
+                JAVA, "-jar", str(VALIDATOR_JAR),
                 "-s", str(SCENARIOS),
                 "-r", str(VALIDATOR_DIR),
                 "-o", str(out_dir),
@@ -116,5 +124,34 @@ def test_reverse_charge_intra_eu_passes_kosit(payloads, tmp_path):
     valid, msgs = _is_valid(report)
     assert valid, (
         "reverse-charge intra-EU REJECTED by KoSIT:\n"
+        + "\n".join(f"  - {m}" for m in msgs[:10])
+    )
+
+
+def _credit_note(payloads, paid_cent: int) -> dict:
+    payload = payloads("01-standard-19.json")
+    invoice = payload["invoice"]
+    invoice.update(
+        isCreditNote=True,
+        subtotal=-invoice["subtotal"],
+        vatAmount=-invoice["vatAmount"],
+        total=-invoice["total"],
+        amountPaidCent=paid_cent,
+    )
+    return payload
+
+
+@pytest.mark.parametrize("refunded_share", [0, 0.5, 1], ids=["unpaid", "partly-refunded", "refunded"])
+def test_credit_note_passes_kosit(payloads, refunded_share, tmp_path):
+    payload = _credit_note(payloads, paid_cent=0)
+    payload["invoice"]["amountPaidCent"] = round(abs(payload["invoice"]["total"]) * refunded_share)
+    xml_file = tmp_path / "credit-note.xml"
+    xml_file.write_text(render_zugferd_xml(payload), encoding="utf-8")
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    valid, msgs = _is_valid(_run_validator(xml_file, out_dir))
+    assert valid, (
+        f"credit note ({refunded_share:.0%} refunded) REJECTED by KoSIT:\n"
         + "\n".join(f"  - {m}" for m in msgs[:10])
     )

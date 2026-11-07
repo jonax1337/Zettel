@@ -1,26 +1,25 @@
-name: Test
+name: CI
 
+# No paths-ignore: a required check that never starts blocks docs-only PRs.
 on:
   push:
     branches: [main, 'release/**']
-    paths-ignore:
-      - '**/*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE.md'
-      - 'LICENSE'
   pull_request:
     branches: [main, 'release/**']
-    paths-ignore:
-      - '**/*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE.md'
-      - 'LICENSE'
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   frontend:
-    name: Frontend (vitest)
+    name: Frontend (check, vitest, build)
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -31,12 +30,16 @@ jobs:
           node-version: '24'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test
+      - name: Versions in all manifests agree
+        run: node scripts/version.mjs check
       - run: pnpm check
+      - run: pnpm test
+      - run: pnpm build
 
   sidecar:
     name: Sidecar (pytest)
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -56,22 +59,28 @@ jobs:
           pytest -ra
 
   rust:
-    name: Rust (cargo test)
+    name: Rust (fmt, clippy, test)
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      - name: cargo fmt
+        working-directory: src-tauri
+        run: cargo fmt --check
       # Tauri Linux build deps — required even for lib tests because tauri-build
       # links against system libs at compile-time.
       - run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev
-      # tauri-build verifies every bundle.resources path at compile time, even
-      # for `cargo test --lib`. Stub them out so the test job doesn't depend on
-      # the full PyInstaller + jlink pipeline that lives in build.yml.
+      # tauri-build verifies every bundle.resources path at compile time. The
+      # production resources live in tauri.bundle.conf.json, but stub them so
+      # the job never depends on the PyInstaller + jlink pipeline from build.yml.
       - name: Stub bundle resources
         run: |
           mkdir -p sidecar/dist tools/kosit-validator tools/jre/bin
@@ -79,5 +88,20 @@ jobs:
           touch tools/kosit-validator/validator.jar
           touch tools/kosit-validator/scenarios.xml
           touch tools/jre/bin/java
-      - working-directory: src-tauri
-        run: cargo test --lib
+      - name: cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --lib --locked
+
+  # Single required check for branch protection, independent of job renames.
+  ci-ok:
+    name: CI ok
+    if: always()
+    needs: [frontend, sidecar, rust]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All jobs succeeded
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

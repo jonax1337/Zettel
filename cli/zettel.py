@@ -13,6 +13,8 @@ DB-Auswahl folgt derselben Quelle der Wahrheit wie die App:
   sandbox.flag vorhanden  -> zettel-sandbox.db
   sonst aktiver Tenant    -> dessen Pfad aus tenants.json
   sonst                   -> zettel.db (Standard)
+Linux: the built-in DBs live in ~/.config/digital.laux.zettel/, sandbox.flag and
+tenants.json in ~/.local/share/digital.laux.zettel/ (Windows/macOS: one folder).
 
 Nur stdlib — bewusst ohne externe Abhängigkeiten.
 
@@ -25,6 +27,8 @@ import argparse
 import json
 import math
 import os
+import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -52,6 +56,13 @@ ERROR_TAIL_CHARS = 2000
 ERROR_DETAIL_CHARS = 800
 MIN_ITEM_FIELDS = 4
 CENTS_PER_EUR = 100
+BASE_CURRENCY = "EUR"
+# Spiegel von SUPPORTED_CURRENCIES in src/lib/utils/currency.ts
+SUPPORTED_CURRENCIES = ("EUR", "USD", "GBP", "CHF", "AUD", "CAD", "JPY", "NOK", "SEK", "DKK", "PLN", "CZK")
+RATE_FRACTION_DIGITS = 8
+RATE_SCALE = 10**RATE_FRACTION_DIGITS
+DEFAULT_SKONTO_PERCENT = 2.0
+DEFAULT_SKONTO_DAYS = 7
 # unixepoch() needs SQLite 3.38+; older Python builds ship an older SQLite.
 SQL_NOW = "CAST(strftime('%s', 'now') AS INTEGER)"
 
@@ -70,23 +81,44 @@ def app_data_dir() -> Path:
     return base / APP_IDENTIFIER
 
 
+def app_config_dir() -> Path:
+    """Where tauri-plugin-sql puts relative DB paths (app_config_dir). Differs from app_data_dir on Linux only."""
+    if sys.platform in ("win32", "darwin"):
+        return app_data_dir()
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / APP_IDENTIFIER
+
+
+def is_sandbox_active() -> bool:
+    return (app_data_dir() / "sandbox.flag").exists()
+
+
+def active_custom_tenant() -> dict | None:
+    """Aktiver Tenant mit DB-Pfad, None für den eingebauten Standard."""
+    cfg_path = app_data_dir() / "tenants.json"
+    if not cfg_path.exists():
+        return None
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    active = cfg.get("active")
+    if not active or active == "default":
+        return None
+    for t in cfg.get("tenants", []):
+        if t.get("id") == active and str(t.get("path", "")).strip():
+            return t
+    return None
+
+
 def resolve_db_path() -> Path:
-    """Aktive DB: Sandbox > aktiver Tenant > Standard. Wie resolve_active_url()."""
-    d = app_data_dir()
-    if (d / "sandbox.flag").exists():
-        return d / "zettel-sandbox.db"
-    cfg_path = d / "tenants.json"
-    if cfg_path.exists():
-        try:
-            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-            active = cfg.get("active")
-            if active and active != "default":
-                for t in cfg.get("tenants", []):
-                    if t.get("id") == active and str(t.get("path", "")).strip():
-                        return Path(t["path"])
-        except (json.JSONDecodeError, OSError):
-            pass
-    return d / "zettel.db"
+    """Active DB: sandbox > active tenant > default. Like resolve_active_url().
+    The flag file and tenants.json live in the data dir, the built-in DBs in the config dir."""
+    if is_sandbox_active():
+        return app_config_dir() / "zettel-sandbox.db"
+    tenant = active_custom_tenant()
+    if tenant:
+        return Path(tenant["path"])
+    return app_config_dir() / "zettel.db"
 
 
 @contextmanager
@@ -126,6 +158,58 @@ def compute_totals(items: list[dict], is_kleinunternehmer: bool, is_reverse_char
         if not vat_exempt:
             vat_amount += js_round(line * it["vatRate"] / 100)
     return {"subtotal": subtotal, "vatAmount": vat_amount, "total": subtotal + vat_amount}
+
+
+def parse_exchange_rate_scaled(text: str | None) -> int | None:
+    """Spiegel von parseExchangeRateScaled(): "1,0832" -> Rate * 1e8, None bei ungültig/nicht positiv."""
+    if not text:
+        return None
+    normalized = text.strip().replace(",", ".", 1)
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", normalized):
+        return None
+    whole, _, fraction = normalized.partition(".")
+    scaled = int(whole + fraction.ljust(RATE_FRACTION_DIGITS, "0")[:RATE_FRACTION_DIGITS])
+    return scaled if scaled > 0 else None
+
+
+def to_eur_cents(total_cent: int, rate_scaled: int) -> int:
+    """Spiegel von toEurCents(): "1 EUR = X Fremdwährung", half-up auf dem Betrag, Vorzeichen bleibt."""
+    numerator = abs(total_cent) * RATE_SCALE
+    quotient, remainder = divmod(numerator, rate_scaled)
+    rounded = quotient + 1 if remainder * 2 >= rate_scaled else quotient
+    return -rounded if total_cent < 0 else rounded
+
+
+def compute_eur_total_cent(currency: str, total_cent: int, exchange_rate: str | None) -> int | None:
+    """Spiegel von computeEurTotalCent(): None bei Fremdwährung ohne gültigen Kurs."""
+    if currency == BASE_CURRENCY:
+        return total_cent
+    rate_scaled = parse_exchange_rate_scaled(exchange_rate)
+    return None if rate_scaled is None else to_eur_cents(total_cent, rate_scaled)
+
+
+def payment_terms_text(days: int) -> str:
+    """Spiegel von defaultPaymentTermsText() in src/lib/utils/payment-terms.ts."""
+    return f"Zahlbar innerhalb von {days} Tagen ohne Abzug."
+
+
+def resolve_skonto(args, settings: dict) -> tuple[float | None, int | None]:
+    """Wie ein neues Rechnungsformular: Skonto-Voreinstellung aus den Settings, explizite Flags gewinnen."""
+    if args.no_skonto:
+        return None, None
+    if args.skonto_percent is not None or args.skonto_days is not None:
+        percent = args.skonto_percent if args.skonto_percent is not None else settings.get("default_skonto_percent")
+        days = args.skonto_days if args.skonto_days is not None else settings.get("default_skonto_days")
+        return (
+            DEFAULT_SKONTO_PERCENT if percent is None else percent,
+            DEFAULT_SKONTO_DAYS if days is None else days,
+        )
+    if settings.get("default_skonto_active"):
+        return (
+            settings.get("default_skonto_percent") or DEFAULT_SKONTO_PERCENT,
+            settings.get("default_skonto_days") or DEFAULT_SKONTO_DAYS,
+        )
+    return None, None
 
 
 def format_invoice_number(pattern: str, counter: int, dt: datetime) -> str:
@@ -184,10 +268,17 @@ def add_days_unix(unix_seconds: int, days: int) -> int:
     return int(shifted.timestamp())
 
 
-def fmt_eur(cent) -> str:
+def fmt_money(cent, currency: str | None = None) -> str:
+    """Betrag in der Belegwährung; EUR bleibt "1.234,56 €"."""
     if cent is None:
         return "—"
-    return f"{cent / 100:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+    code = currency or BASE_CURRENCY
+    amount = f"{cent / 100:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"{amount} {'€' if code == BASE_CURRENCY else code}"
+
+
+def fmt_eur(cent) -> str:
+    return fmt_money(cent)
 
 
 def fmt_date(unix) -> str:
@@ -283,7 +374,7 @@ def skonto_of(inv: dict) -> dict | None:
     return {
         "percent": percent,
         "days": days,
-        "discountCent": math.floor(inv["total"] * percent / 100),
+        "discountCent": (inv["total"] * js_round(percent * 100) + 5000) // 10000,
         "deadlineUnix": add_days_unix(inv["issue_date"] or now_unix(), days),
     }
 
@@ -422,7 +513,7 @@ def cmd_invoice_list(args) -> None:
     for r in rows:
         print(
             f"{r['id']:>3}  {display_number(r['number'], r['status']):<15} "
-            f"{fmt_date(r['issue_date'])}  {fmt_eur(r['total']):>12}  {r['status']:<9} "
+            f"{fmt_date(r['issue_date'])}  {fmt_money(r['total'], r['currency']):>12}  {r['status']:<9} "
             f"{'PDF' if r['pdf_path'] else '—':<3} fällig {fmt_date(r['due_date'])}"
         )
 
@@ -450,13 +541,24 @@ def load_invoice_full(con, invoice_id: int) -> tuple[dict, list[dict], dict]:
 
 
 def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
-    """Spiegel von issueInvoice(): DRAFT -> echte Nummer, status sent."""
+    """Spiegel von issueInvoice(): Entwurf beanspruchen (Kundendaten einfrieren), dann echte Nummer ziehen."""
     inv = fetch_invoice(con, invoice_id)
     if inv["status"] != "draft":
         return inv["number"]
+    customer = con.execute("SELECT * FROM customers WHERE id = ?", (inv["customer_id"],)).fetchone()
+    if not customer:
+        sys.exit(f"Kunde {inv['customer_id']} der Rechnung {invoice_id} nicht gefunden.")
     ts = sent_at or now_unix()
+    claimed = con.execute(
+        f"UPDATE invoices SET status = 'sent', sent_at = ?, customer_snapshot = ?, updated_at = {SQL_NOW} "
+        "WHERE id = ? AND status = 'draft'",
+        (ts, json.dumps(customer_snapshot(customer)), invoice_id),
+    ).rowcount
+    if claimed != 1:
+        con.commit()
+        return number_issued_concurrently(con, invoice_id)
     final_number = inv["number"]
-    if is_draft_number(inv["number"]):
+    if is_draft_number(final_number):
         con.execute(
             "UPDATE settings SET invoice_number_counter = invoice_number_counter + 1, "
             f"updated_at = {SQL_NOW} WHERE id = 1"
@@ -469,43 +571,148 @@ def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
             row["invoice_number_counter"],
             datetime.fromtimestamp(inv["issue_date"] or ts),
         )
-    con.execute(
-        f"UPDATE invoices SET number = ?, status = 'sent', sent_at = ?, updated_at = {SQL_NOW} "
-        "WHERE id = ? AND status = 'draft'",
-        (final_number, ts, invoice_id),
-    )
+        con.execute("UPDATE invoices SET number = ? WHERE id = ?", (final_number, invoice_id))
     con.commit()
     return final_number
+
+
+def number_issued_concurrently(con, invoice_id: int) -> str:
+    """Spiegel von numberIssuedConcurrently(): ein anderer Prozess hat den Entwurf
+    beansprucht, aber noch keine echte Nummer vergeben."""
+    number = fetch_invoice(con, invoice_id)["number"]
+    if is_draft_number(number):
+        sys.exit("Die Rechnung wird gerade ausgestellt. Bitte gleich noch einmal versuchen.")
+    return number
 
 
 def safe_filename(s: str) -> str:
     return "".join(c if c not in '\\/:*?"<>|' else "_" for c in s)
 
 
-def archive_pdf_version(path: Path) -> str | None:
-    """Spiegel von fs_export.rs archive_pdf_version: bestehendes PDF vor dem
-    Überschreiben nach <dir>/Versionen/<stem>__<mtime>.pdf verschieben."""
-    if not path.is_file():
-        return None
-    versions_dir = path.parent / "Versionen"
-    versions_dir.mkdir(parents=True, exist_ok=True)
-    mtime = int(path.stat().st_mtime)
-    dest = versions_dir / f"{path.stem}__{mtime}.pdf"
+PDF_VERSIONS_DIR = "Versionen"
+PDF_VERSION_SEPARATOR = "__"
+
+
+def _first_free_pdf_path(directory: Path, base: str) -> Path:
+    dest = directory / f"{base}.pdf"
     n = 2
     while dest.exists():
-        dest = versions_dir / f"{path.stem}__{mtime}-{n}.pdf"
+        dest = directory / f"{base}-{n}.pdf"
         n += 1
-    path.rename(dest)
-    return str(dest)
+    return dest
+
+
+def _archive_into(source: Path, versions_dir: Path, archived_stem: str) -> Path:
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    dest = _first_free_pdf_path(versions_dir, archived_stem)
+    shutil.move(str(source), str(dest))
+    return dest
+
+
+def archive_pdf_version(path: Path, previous: Path | None = None) -> str | None:
+    """Spiegel von fs_export.rs archive_pdf_version: bestehendes PDF vor dem
+    Überschreiben nach <dir>/Versionen/<stem>__<mtime>.pdf verschieben. Liegt
+    das bisher gespeicherte PDF (`previous`) in einem anderen Ordner, wandern
+    es und seine Versionen mit, sonst fielen sie aus Versionsliste und Backup."""
+    versions_dir = path.parent / PDF_VERSIONS_DIR
+    archived = None
+    if path.is_file():
+        stem = f"{path.stem}{PDF_VERSION_SEPARATOR}{int(path.stat().st_mtime)}"
+        archived = str(_archive_into(path, versions_dir, stem))
+    if previous is not None:
+        _adopt_pdf_versions(previous, path)
+    return archived
+
+
+def _same_dir(a: Path, b: Path) -> bool:
+    try:
+        return a.samefile(b)
+    except OSError:
+        return a == b
+
+
+def _adopt_pdf_versions(previous: Path, target: Path) -> None:
+    """Spiegel von fs_export.rs adopt_pdf_versions."""
+    if _same_dir(previous.parent, target.parent):
+        return
+    versions_dir = target.parent / PDF_VERSIONS_DIR
+    moves = []
+    if previous.is_file():
+        moves.append((previous, f"{PDF_VERSION_SEPARATOR}{int(previous.stat().st_mtime)}"))
+    old_versions_dir = previous.parent / PDF_VERSIONS_DIR
+    prefix = f"{previous.stem}{PDF_VERSION_SEPARATOR}"
+    if previous.stem and old_versions_dir.is_dir():
+        for archived in old_versions_dir.iterdir():
+            if archived.is_file() and archived.name.startswith(prefix) and archived.suffix.lower() == ".pdf":
+                moves.append((archived, archived.stem[len(previous.stem):]))
+    for source, suffix in moves:
+        _archive_into(source, versions_dir, f"{target.stem}{suffix}")
+
+
+def _windows_documents_dir() -> Path | None:
+    """Known Folder FOLDERID_Documents — folgt einer OneDrive-Umleitung."""
+    import ctypes
+    from ctypes import wintypes
+
+    class GUID(ctypes.Structure):
+        _fields_ = [
+            ("Data1", wintypes.DWORD),
+            ("Data2", wintypes.WORD),
+            ("Data3", wintypes.WORD),
+            ("Data4", ctypes.c_ubyte * 8),
+        ]
+
+    folder_id = GUID(
+        0xFDD39AD0, 0x238F, 0x46AF, (ctypes.c_ubyte * 8)(0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7)
+    )
+    path_ptr = ctypes.c_wchar_p()
+    if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(folder_id), 0, None, ctypes.byref(path_ptr)) != 0:
+        return None
+    try:
+        return Path(path_ptr.value)
+    finally:
+        ctypes.windll.ole32.CoTaskMemFree(path_ptr)
+
+
+def _xdg_documents_dir() -> Path | None:
+    """XDG_DOCUMENTS_DIR aus user-dirs.dirs, wie das dirs-Crate."""
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    try:
+        lines = (config_home / "user-dirs.dirs").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        key, _, value = line.partition("=")
+        if key.strip() == "XDG_DOCUMENTS_DIR":
+            return Path(value.strip().strip('"').replace("$HOME", str(Path.home())))
+    return None
+
+
+def documents_dir() -> Path:
+    """Spiegel von paths.rs documents_dir()."""
+    if sys.platform == "win32":
+        found = _windows_documents_dir()
+    elif sys.platform == "darwin":
+        found = None
+    else:
+        found = _xdg_documents_dir()
+    return found or Path.home() / "Documents"
+
+
+def documents_root() -> Path:
+    """Spiegel von tenants.rs active_documents_root(): Sandbox und eigene
+    Tenants bekommen eigene Ordner — Nummernkreise sind pro DB unabhängig,
+    ein gemeinsamer Ordner würde fremde PDFs überschreiben."""
+    if is_sandbox_active():
+        return documents_dir() / "Zettel-Sandbox"
+    tenant = active_custom_tenant()
+    if tenant:
+        return documents_dir() / "Zettel" / "Mandanten" / safe_filename(tenant["id"])
+    return documents_dir() / "Zettel"
 
 
 def pdf_output_dir() -> Path:
-    """PDF-Zielordner. In der Sandbox wird bewusst getrennt:
-    ~/Documents/Zettel-Sandbox/Rechnungen — Sandbox-PDFs dürfen produktive
-    PDFs nie überschreiben (Nummernkreise sind pro DB unabhängig!)."""
-    if resolve_db_path().name == "zettel-sandbox.db":
-        return Path.home() / "Documents" / "Zettel-Sandbox" / "Rechnungen"
-    return Path.home() / "Documents" / "Zettel" / "Rechnungen"
+    return documents_root() / "Rechnungen"
 
 
 def generate_pdf_for(con, invoice_id: int) -> tuple[str, str]:
@@ -517,14 +724,16 @@ def generate_pdf_for(con, invoice_id: int) -> tuple[str, str]:
     out_dir = pdf_output_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / f"{safe_filename(inv['number'])}.pdf"
-    archive_pdf_version(output_path)
+    archive_pdf_version(output_path, Path(inv["pdf_path"]) if inv["pdf_path"] else None)
     payload = build_pdf_payload(inv, items, cust, settings, str(output_path))
     resp = call_sidecar("generate_invoice", payload)
     if not resp.get("success"):
         err = resp.get("error", {})
         sys.exit(f"PDF-Fehler [{err.get('code')}]: {err.get('message')}\n{err.get('details', '')[:ERROR_DETAIL_CHARS]}")
+    # Der CLI validiert nicht (Java/KoSIT läuft über die App); ein alter Status gehörte zum vorherigen PDF.
     con.execute(
-        f"UPDATE invoices SET pdf_path = ?, updated_at = {SQL_NOW} WHERE id = ?",
+        "UPDATE invoices SET pdf_path = ?, last_validation_status = NULL, last_validated_at = NULL, "
+        f"last_validation_findings_count = NULL, updated_at = {SQL_NOW} WHERE id = ?",
         (resp["pdfPath"], invoice_id),
     )
     con.commit()
@@ -591,7 +800,10 @@ def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, total
         else (settings["default_payment_terms_days"] or DEFAULT_PAYMENT_TERMS_DAYS)
     )
     due_ts = parse_date(args.due_date) or add_days_unix(issue_ts, terms_days)
-    payment_terms = f"Zahlbar innerhalb von {terms_days} Tagen ohne Abzug."
+    payment_terms = payment_terms_text(terms_days)
+    skonto_percent, skonto_days = resolve_skonto(args, settings)
+    pdf_language = args.pdf_language or settings.get("default_pdf_language") or DEFAULT_PDF_LANGUAGE
+    eur_total_cent = compute_eur_total_cent(args.currency, totals["total"], args.exchange_rate)
     cur = con.execute(
         """INSERT INTO invoices
            (number, customer_id, customer_snapshot, issue_date, delivery_date, due_date,
@@ -600,7 +812,7 @@ def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, total
             currency, exchange_rate, eur_total_cent, notes_internal, follow_up_date,
             service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language)
            VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL,
-                   'EUR', NULL, ?, NULL, NULL, ?, ?, ?, ?, ?)""",
+                   ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)""",
         (
             draft_placeholder(),
             customer["id"],
@@ -617,12 +829,14 @@ def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, total
             args.supply_kind,
             args.notes,
             payment_terms,
-            totals["total"],
+            args.currency,
+            args.exchange_rate,
+            eur_total_cent,
             parse_date(args.service_start),
             parse_date(args.service_end),
-            args.skonto_percent,
-            args.skonto_days,
-            args.pdf_language,
+            skonto_percent,
+            skonto_days,
+            pdf_language,
         ),
     )
     return cur.lastrowid
@@ -653,6 +867,8 @@ def cmd_invoice_create(args) -> None:
     items = parse_items_arg(args.items)
     if not items:
         sys.exit("Keine Positionen angegeben (siehe --items).")
+    if args.currency != BASE_CURRENCY and parse_exchange_rate_scaled(args.exchange_rate) is None:
+        sys.exit(f"Wechselkurs erforderlich für {args.currency}: --exchange-rate (1 EUR = X {args.currency}).")
     with connect() as con:
         settings = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
         customer = resolve_customer(con, args.customer)
@@ -661,7 +877,7 @@ def cmd_invoice_create(args) -> None:
         invoice_id = insert_draft_invoice(con, args, customer, settings, totals, is_reverse_charge)
         insert_invoice_items(con, invoice_id, items)
         con.commit()
-        print(f"Draft erstellt: id={invoice_id}  {fmt_eur(totals['total'])}  Kunde: {customer['name']}")
+        print(f"Draft erstellt: id={invoice_id}  {fmt_money(totals['total'], args.currency)}  Kunde: {customer['name']}")
         if args.issue:
             print(f"Bereitgestellt: {issue_invoice(con, invoice_id)}")
         if args.pdf:
@@ -681,9 +897,13 @@ def cmd_invoice_show(args) -> None:
     print()
     for it in items:
         print(f"  {it['position']}. {it['description']}")
-        print(f"     {it['quantity']:g} {it['unit']} × {fmt_eur(it['unit_price'])} = {fmt_eur(it['line_total'])}")
+        print(f"     {it['quantity']:g} {it['unit']} × {fmt_money(it['unit_price'], inv['currency'])} = {fmt_money(it['line_total'], inv['currency'])}")
     print()
-    print(f"Netto: {fmt_eur(inv['subtotal'])}  ·  USt: {fmt_eur(inv['vat_amount'])}  ·  Gesamt: {fmt_eur(inv['total'])}")
+    currency = inv["currency"]
+    print(
+        f"Netto: {fmt_money(inv['subtotal'], currency)}  ·  USt: {fmt_money(inv['vat_amount'], currency)}  "
+        f"·  Gesamt: {fmt_money(inv['total'], currency)}"
+    )
     if inv["pdf_path"]:
         print(f"PDF:   {inv['pdf_path']}")
 
@@ -699,15 +919,42 @@ def cmd_invoice_issue(args) -> None:
         print(f"Bereitgestellt: {issue_invoice(con, args.id, parse_date(args.sent_at))}")
 
 
+# Spiegel von creditedCentSql() in src/lib/db/invoice-lifecycle.ts: nur ausgestellte
+# Stornorechnungen in der Währung der Rechnung zählen, ein Storno-Entwurf nicht.
+# Storno-Beträge sind negativ.
+CREDITED_CENT_SQL = """(SELECT ABS(COALESCE(SUM(credit_note.total), 0)) FROM invoices credit_note
+   WHERE credit_note.corrects_invoice_id = invoices.id
+     AND credit_note.is_credit_note = 1
+     AND credit_note.currency = invoices.currency
+     AND credit_note.status NOT IN ('draft','cancelled'))"""
+
+# Spiegel von settledByCreditNoteSql(): ausgeglichen erst, wenn Zahlungen und
+# Stornorechnungen nichts mehr offen lassen. Ein Teilstorno lässt den Rest offen.
+SETTLED_BY_CREDIT_NOTE_SQL = f"""({CREDITED_CENT_SQL} > 0
+  AND ABS(total) - COALESCE(amount_paid_cent, 0) - {CREDITED_CENT_SQL} <= 0)"""
+
+
+def credited_cent(con, invoice_id: int) -> int:
+    return con.execute(f"SELECT {CREDITED_CENT_SQL} FROM invoices WHERE id = ?", (invoice_id,)).fetchone()[0]
+
+
 def mark_invoice_paid(con, invoice_id: int, paid_at: int) -> sqlite3.Row | None:
-    """Spiegel von markPaid(): zahlt den Restbetrag nur bei sent/partial, sonst None."""
+    """Spiegel von markPaid(): zahlt den nach Zahlungen und Storno offenen Rest nur bei sent/partial, sonst None."""
     if fetch_invoice(con, invoice_id)["status"] == "draft":
         issue_invoice(con, invoice_id, paid_at)
     inv = fetch_invoice(con, invoice_id)
     if inv["status"] not in PAYABLE_STATUSES:
         return None
-    total = abs(inv["total"])
-    remaining = total - (inv["amount_paid_cent"] or 0)
+    paid_before = con.execute(
+        "SELECT COALESCE(SUM(amount_cent), 0) FROM invoice_payments WHERE invoice_id = ?", (invoice_id,)
+    ).fetchone()[0]
+    credited = credited_cent(con, invoice_id)
+    remaining = abs(inv["total"]) - paid_before - credited
+    if credited > 0 and remaining <= 0:
+        sys.exit(
+            f"Rechnung {inv['number']} ist durch eine Stornorechnung ausgeglichen. "
+            "Zahlungen können nicht mehr erfasst werden."
+        )
     if remaining > 0:
         con.execute(
             "INSERT INTO invoice_payments (invoice_id, paid_at, amount_cent, source) VALUES (?, ?, ?, 'auto')",
@@ -716,7 +963,7 @@ def mark_invoice_paid(con, invoice_id: int, paid_at: int) -> sqlite3.Row | None:
     con.execute(
         f"UPDATE invoices SET status = 'paid', paid_at = ?, amount_paid_cent = ?, updated_at = {SQL_NOW} "
         "WHERE id = ? AND status IN ('sent','partial')",
-        (paid_at, total, invoice_id),
+        (paid_at, paid_before + max(remaining, 0), invoice_id),
     )
     con.commit()
     return inv
@@ -728,21 +975,43 @@ def cmd_invoice_paid(args) -> None:
         if inv is None:
             status = fetch_invoice(con, args.id)["status"]
             sys.exit(f"Rechnung {args.id} hat Status '{status}' und kann nicht als bezahlt markiert werden.")
-    print(f"Als bezahlt markiert: {inv['number']} ({fmt_eur(abs(inv['total']))})")
+    print(f"Als bezahlt markiert: {inv['number']} ({fmt_money(abs(inv['total']), inv['currency'])})")
+
+
+# Spiegel von REVENUE_AMOUNT_SQL / OPEN_BALANCE_SQL / OPEN_RECEIVABLE_SQL in
+# src/lib/dashboard/queries.ts: Fremdwährung zählt über den eingefrorenen
+# EUR-Gegenwert, der bezahlte und stornierte Anteil wird proportional umgerechnet
+# (ganzzahlig, half-up). Stornorechnungen und voll ausgeglichene Rechnungen sind
+# keine offenen Forderungen.
+REVENUE_AMOUNT_SQL = "COALESCE(eur_total_cent, total)"
+COVERED_SQL = f"(COALESCE(amount_paid_cent, 0) + {CREDITED_CENT_SQL})"
+OPEN_BALANCE_SQL = f"""(CASE
+  WHEN eur_total_cent IS NULL OR total = 0 THEN total - {COVERED_SQL}
+  ELSE eur_total_cent - (2 * eur_total_cent * {COVERED_SQL} + total) / (2 * total)
+END)"""
+OPEN_RECEIVABLE_SQL = f"""status IN ('sent','partial')
+  AND (is_credit_note IS NULL OR is_credit_note = 0)
+  AND NOT {SETTLED_BY_CREDIT_NOTE_SQL}"""
+
+
+def compute_stats(con, year: int) -> tuple[int, int, int]:
+    """(Umsatz des Jahres, Anzahl offener Rechnungen, offener Saldo) in EUR-Cent."""
+    revenue = con.execute(
+        f"SELECT COALESCE(SUM({REVENUE_AMOUNT_SQL}),0) FROM invoices "
+        "WHERE status NOT IN ('cancelled','draft') "
+        "AND strftime('%Y', issue_date, 'unixepoch', 'localtime') = ?",
+        (str(year),),
+    ).fetchone()[0]
+    open_count, open_total = con.execute(
+        f"SELECT COUNT(*), COALESCE(SUM({OPEN_BALANCE_SQL}),0) FROM invoices WHERE {OPEN_RECEIVABLE_SQL}"
+    ).fetchone()
+    return revenue, open_count, open_total
 
 
 def cmd_stats(_args) -> None:
     year = datetime.now().year
     with connect() as con:
-        revenue = con.execute(
-            "SELECT COALESCE(SUM(total),0) FROM invoices "
-            "WHERE status NOT IN ('cancelled','draft') "
-            "AND strftime('%Y', issue_date, 'unixepoch', 'localtime') = ?",
-            (str(year),),
-        ).fetchone()[0]
-        open_count, open_total = con.execute(
-            "SELECT COUNT(*), COALESCE(SUM(total),0) FROM invoices WHERE status IN ('sent','partial')"
-        ).fetchone()
+        revenue, open_count, open_total = compute_stats(con, year)
     print(f"Umsatz {year} (ohne Entwurf/Storno): {fmt_eur(revenue)}")
     print(f"Offene Forderungen: {open_count} · {fmt_eur(open_total)}")
 
@@ -773,9 +1042,12 @@ def main() -> None:
     p_new.add_argument("--payment-terms", type=int, help="Tage (Default aus Settings)")
     p_new.add_argument("--reverse-charge", default="none", choices=["none", "intra_eu", "third_country"])
     p_new.add_argument("--supply-kind", default="services", choices=["goods", "services"], help="Lieferung oder sonstige Leistung (nur bei Reverse-Charge relevant)")
-    p_new.add_argument("--skonto-percent", type=float)
-    p_new.add_argument("--skonto-days", type=int)
-    p_new.add_argument("--pdf-language", default=DEFAULT_PDF_LANGUAGE)
+    p_new.add_argument("--skonto-percent", type=float, help="Default aus den Settings, falls dort aktiv")
+    p_new.add_argument("--skonto-days", type=int, help="Default aus den Settings, falls dort aktiv")
+    p_new.add_argument("--no-skonto", action="store_true", help="Kein Skonto, auch wenn die Settings es vorbelegen")
+    p_new.add_argument("--pdf-language", choices=["de", "en"], help="Default aus den Settings")
+    p_new.add_argument("--currency", default=BASE_CURRENCY, choices=SUPPORTED_CURRENCIES)
+    p_new.add_argument("--exchange-rate", help="1 EUR = X Fremdwährung (Pflicht außer bei EUR)")
     p_new.add_argument("--notes")
     p_new.add_argument("--issue", action="store_true", help="Direkt bereitstellen (Nummer ziehen)")
     p_new.add_argument("--pdf", action="store_true", help="PDF generieren (impliziert --issue)")

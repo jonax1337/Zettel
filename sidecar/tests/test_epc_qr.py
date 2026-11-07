@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import re
+from xml.etree import ElementTree as ET
 
 import pytest
 
@@ -124,15 +125,40 @@ def test_payload_amount_two_decimals():
     assert "EUR1.00" in payload
 
 
-def test_qr_svg_data_uri_is_valid_data_url():
-    payload = build_epc_payload(
+def _svg_modules(svg: bytes, border: int = 2) -> set[tuple[int, int]]:
+    """Dark modules (row, col) from segno's `M x y h.. m.. h..` path."""
+    path = ET.fromstring(svg).find("{http://www.w3.org/2000/svg}path").get("d")
+    x = y = 0.0
+    dark: set[tuple[int, int]] = set()
+    for cmd, a, b in re.findall(r"([Mmh])(-?[\d.]+)(?: (-?[\d.]+))?", path):
+        if cmd == "M":
+            x, y = float(a), float(b)
+        elif cmd == "m":
+            x, y = x + float(a), y + float(b)
+        else:
+            dark.update((int(y - 0.5) - border, int(x) - border + k) for k in range(int(a)))
+            x += float(a)
+    return dark
+
+
+def _payload(amount_cent: int) -> str:
+    return build_epc_payload(
         beneficiary_name="X",
         iban="DE89370400440532013000",
-        amount_cent=1000,
+        amount_cent=amount_cent,
     )
+
+
+def test_qr_svg_data_uri_encodes_the_payload():
+    segno = pytest.importorskip("segno")
+    payload = _payload(1000)
     uri = epc_qr_svg_data_uri(payload)
     assert uri.startswith("data:image/svg+xml;base64,")
-    # Decoding should yield SVG content
-    encoded = uri.split(",", 1)[1]
-    raw = base64.b64decode(encoded)
-    assert b"<svg" in raw
+    raw = base64.b64decode(uri.split(",", 1)[1])
+    matrix = segno.make(payload, error="m").matrix
+    expected = {(r, c) for r, row in enumerate(matrix) for c, bit in enumerate(row) if bit}
+    assert _svg_modules(raw) == expected
+
+
+def test_qr_svg_differs_for_different_payloads():
+    assert epc_qr_svg_data_uri(_payload(1000)) != epc_qr_svg_data_uri(_payload(1001))

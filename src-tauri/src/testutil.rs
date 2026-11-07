@@ -11,10 +11,8 @@ pub struct TempDir(PathBuf);
 impl TempDir {
     pub fn new(label: &str) -> Self {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "zettel-test-{label}-{}-{id}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("zettel-test-{label}-{}-{id}", std::process::id()));
         std::fs::create_dir_all(&path).expect("create temp dir");
         Self(path)
     }

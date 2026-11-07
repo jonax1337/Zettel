@@ -1,5 +1,6 @@
 <script lang="ts">
   import Card from "./Card.svelte";
+  import Button from "./Button.svelte";
   import emptyIllustration from "../../assets/brand/empty-invoices.svg";
   import noResultsIllustration from "../../assets/brand/no-results.svg";
 
@@ -7,9 +8,12 @@
     message: string;
     /** "no-results" when a search or filter hides existing rows. */
     variant?: "empty" | "no-results";
+    /** Call to action such as "Neue Rechnung"; shown only together with `onAction`. */
+    actionLabel?: string;
+    onAction?: () => void;
   };
 
-  let { message, variant = "empty" }: Props = $props();
+  let { message, variant = "empty", actionLabel, onAction }: Props = $props();
 </script>
 
 <Card>
@@ -21,5 +25,8 @@
       draggable="false"
     />
     <p class="text-sm text-muted-foreground">{message}</p>
+    {#if actionLabel && onAction}
+      <Button onclick={onAction}>{actionLabel}</Button>
+    {/if}
   </div>
 </Card>

@@ -68,6 +68,17 @@ describe("estimateTradeTax", () => {
     expect(r.tradeTax - r.estCredit).toBe(19_200);
   });
 
+  it.each([
+    // [Gewinn in Cent, Hebesatz, Messbetrag €, GewSt €] — float: 210 * 4.1 = 860.9999…
+    [3_050_000, 4.1, 210, 861],
+    [2_580_000, 4.6, 45, 207],
+    [3_080_000, 4.35, 220, 957],
+  ])("Hebesatz ohne Float-Drift: Gewinn %i, Hebesatz %f", (profit, hebesatz, messbetrag, gewst) => {
+    const r = estimateTradeTax(profit, hebesatz, false);
+    expect(r.messbetrag).toBe(messbetrag * 100);
+    expect(r.tradeTax).toBe(gewst * 100);
+  });
+
   it("Verlustfall (negativer Gewinn) → 0 €", () => {
     expect(estimateTradeTax(-1_000_000, 4.0, false)).toEqual({
       tradeTax: 0,
@@ -76,11 +87,15 @@ describe("estimateTradeTax", () => {
     });
   });
 
-  it("Sehr hoher Gewinn (200k) skaliert linear", () => {
+  it("hoher Gewinn: Messbetrag wächst mit 3,5 % des Überschusses über den Freibetrag", () => {
     // 200000 - 24500 = 175500; messbetrag = floor(175500 * 0.035) = 6142 €
     // gewst = floor(6142 * 4.0) = 24568 €
     const r = estimateTradeTax(20_000_000, 4.0, false);
     expect(r.messbetrag).toBe(614_200);
     expect(r.tradeTax).toBe(2_456_800);
+    // 100000 - 24500 = 75500 → floor(2642.5) = 2642 €; 400000 - 24500 = 375500 → floor(13142.5) = 13142 €
+    expect(estimateTradeTax(10_000_000, 4.0, false)).toEqual({ messbetrag: 264_200, tradeTax: 1_056_800, estCredit: 1_056_800 });
+    expect(estimateTradeTax(40_000_000, 4.0, false).messbetrag).toBe(1_314_200);
+    expect(estimateTradeTax(40_000_000, 4.0, false).tradeTax).toBe(5_256_800);
   });
 });

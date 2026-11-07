@@ -14,13 +14,16 @@ export type Toast = {
   action?: ToastAction;
 };
 
+export const PERSISTENT_TOAST = 0;
+// Errors stay until dismissed: a failure the user could not read in time is lost information.
 const DURATION_MS: Record<ToastVariant, number> = {
   default: 3500,
   success: 3500,
-  error: 5000,
+  error: PERSISTENT_TOAST,
   warning: 4000,
 };
-const PERSISTENT = 0;
+// Long enough to reach the button; follow-ups like "PDF öffnen" must not pile up for good.
+const ACTION_DURATION_MS = 10_000;
 
 let nextId = 1;
 
@@ -29,7 +32,7 @@ export const toasts = $state<{ items: Toast[] }>({ items: [] });
 function push(t: Omit<Toast, "id">) {
   const id = nextId++;
   toasts.items = [...toasts.items, { id, ...t }];
-  if (t.duration !== PERSISTENT) {
+  if (t.duration !== PERSISTENT_TOAST) {
     setTimeout(() => dismiss(id), t.duration);
   }
   return id;
@@ -56,7 +59,7 @@ export const toast = {
     push({
       title,
       variant: "default",
-      duration: PERSISTENT,
+      duration: ACTION_DURATION_MS,
       ...opts,
       action,
     }),

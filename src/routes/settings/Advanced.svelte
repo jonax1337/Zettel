@@ -15,9 +15,9 @@
     toast,
   } from "$lib/ui";
   import { AlertTriangle } from "$lib/brand-icons";
-  import { CURRENT_DB_SCHEMA_VERSION } from "$lib/utils/schema-version";
+  import { writeSafetyBackup } from "$lib/utils/backup";
+  import { isSandboxActive } from "$lib/db/client";
   import {
-    autoBackupBeforeWipe,
     resetNumberingCounters,
     wipeAllBusinessData,
     wipeTables,
@@ -34,12 +34,18 @@
     type DangerAction,
   } from "./danger-actions";
 
+  const SAFETY_BACKUP_PREFIX = "pre-wipe";
   const wipeableTables = Object.entries(WIPEABLE_TABLE_LABELS) as [WipeableTable, string][];
 
   let selectedTables = $state<Set<WipeableTable>>(new Set());
   let confirmText = $state("");
   let busy = $state(false);
   let pending = $state<DangerAction | null>(null);
+  let sandbox = $state(false);
+
+  $effect(() => {
+    isSandboxActive().then((active) => (sandbox = active));
+  });
 
   const confirmed = $derived(isDangerConfirmed(confirmText));
 
@@ -49,6 +55,7 @@
   }
 
   function cancelDanger() {
+    if (busy) return;
     pending = null;
     confirmText = "";
   }
@@ -71,7 +78,7 @@
         return `Geleert: ${joinTableLabels(action.tables, WIPEABLE_TABLE_LABELS)}`;
       case "resetCounters":
         await resetNumberingCounters();
-        return "Counter zurückgesetzt.";
+        return "Nummernzähler zurückgesetzt.";
     }
   }
 
@@ -81,11 +88,12 @@
     busy = true;
     let phase: string = "backup";
     try {
-      const backupPath = await autoBackupBeforeWipe(CURRENT_DB_SCHEMA_VERSION);
+      const backupPath = await writeSafetyBackup(SAFETY_BACKUP_PREFIX);
       toast.success("Sicherheits-Backup angelegt", backupPath);
       phase = action.kind;
       toast.success(await performDangerAction(action));
       selectedTables = new Set();
+      busy = false;
       cancelDanger();
     } catch (e) {
       console.error(`[danger:${phase}]`, e);
@@ -98,24 +106,25 @@
 
 <SettingsShell
   title="Erweitert"
-  description="Gefahrenzone — irreversible Aktionen auf den Geschäftsdaten."
+  description="Gefahrenbereich — irreversible Aktionen auf den Geschäftsdaten."
 >
   <Card class="border-destructive/40">
     <CardHeader>
       <CardTitle class="flex items-center gap-2 text-destructive">
         <AlertTriangle class="size-5" />
-        Danger Zone
+        Gefahrenbereich
       </CardTitle>
       <CardDescription>
         Irreversible Aktionen. Vor jeder Ausführung wird automatisch ein unverschlüsseltes
-        Backup nach <code>~/Dokumente/Zettel/Backups/pre-wipe-…zip</code> geschrieben.
+        Backup <code>pre-wipe-…zip</code> in den Backup-Ordner der aktiven Datenbank geschrieben
+        (z. B. <code>Dokumente/Zettel/Backups/</code>).
       </CardDescription>
     </CardHeader>
     <CardContent class="space-y-6">
       <DangerSection title="Alle Geschäftsdaten löschen">
         {#snippet description()}
-          Rechnungen, Angebote, Mahnungen, Ausgaben, Kunden, Lieferanten, Recurring &
-          Vorauszahlungen — Settings (Firma, Steuerprofil, Logo) bleiben.
+          Rechnungen, Angebote, Mahnungen, Ausgaben, Kunden, Lieferanten, wiederkehrende
+          Rechnungen & Vorauszahlungen — Einstellungen (Firma, Steuerprofil, Logo) bleiben.
         {/snippet}
         <Button
           type="button"
@@ -157,9 +166,9 @@
         </Button>
       </DangerSection>
 
-      <DangerSection title="Nummerierungs-Counter zurücksetzen">
+      <DangerSection title="Nummernzähler zurücksetzen">
         {#snippet description()}
-          Setzt die Counter für Rechnung / Angebot / Ausgabe / Mahnung / Lieferant
+          Setzt die Zähler für Rechnung / Angebot / Ausgabe / Mahnung / Lieferant
           auf 0. Sinnvoll <strong>nur</strong> nach einem vorherigen Tabellen-Wipe.
           Bestehende Nummern bleiben unverändert — neue Datensätze starten dann
           wieder bei 0001.
@@ -171,7 +180,7 @@
           disabled={busy}
           onclick={() => startDanger({ kind: "resetCounters" })}
         >
-          Counter zurücksetzen…
+          Zähler zurücksetzen…
         </Button>
       </DangerSection>
     </CardContent>
@@ -183,6 +192,7 @@
       if (!isOpen) cancelDanger();
     }}
     title={pending ? dangerActionLabel(pending) : ""}
+    dismissible={!busy}
   >
     <div class="space-y-4">
       <p class="text-sm text-muted-foreground">
@@ -190,9 +200,14 @@
       </p>
       <div class="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
         <strong>Irreversibel.</strong> Vor der Ausführung wird ein unverschlüsseltes
-        Backup unter <code>Dokumente/Zettel/Backups/</code> (oder dem App-Datenordner als Fallback) angelegt — damit bleibt
+        Backup im Backup-Ordner der aktiven Datenbank (oder dem App-Datenordner als Fallback) angelegt — damit bleibt
         ein Rettungsanker, falls du dich vertippt hast.
       </div>
+      <p class="text-sm font-medium">
+        {sandbox
+          ? "Sandbox aktiv: Es werden nur die Testdaten der Sandbox gelöscht."
+          : "Keine Sandbox: Es werden deine echten Daten gelöscht."}
+      </p>
       <div class="space-y-1.5">
         <Label for="dangerConfirm">Zum Bestätigen <code>{DANGER_CONFIRM_WORD}</code> tippen:</Label>
         <Input

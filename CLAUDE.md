@@ -3,17 +3,17 @@
 Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tauri 2 + Svelte 5 + Python sidecar.** ZUGFeRD/Factur-X PDF/A-3 output. Release-Historie in `CHANGELOG.md` — hier nicht duplizieren.
 
 ## Current state
-- **Released:** v0.22.0 on `main`. Auto-Update aktiv seit v0.4.3.
-- **DB schema:** `user_version = 27` (letzte Migration `0026_v0.22_tax_options.sql`).
+- **Released:** v0.23.0 on `main`. Auto-Update aktiv seit v0.4.3.
+- **DB schema:** `user_version = 28` (letzte Migration `0027_v0.23_lifecycle.sql`).
 - **Dev-Linie:** neue Arbeit auf `release/vX.Y`-Branches.
-- **Test-Suite:** 483 Vitest-Cases (`pnpm test`, Zeitzone in `vite.config.ts` auf Europe/Berlin gepinnt) + 172 Pytest-Cases (`sidecar/tests/`, inkl. CLI-Logik) + 81 Rust-Tests (`cargo test`). Pure-Math (Totals/Tax/Skonto/Currency/Date/DATEV) ist voll abgedeckt, Sidecar deckt ZUGFeRD-XML-Goldens + KoSIT-Validator-Roundtrip + i18n ab.
+- **Test-Suite:** 1004 Vitest-Cases (`pnpm test`, Zeitzone in `vite.config.ts` auf Europe/Berlin gepinnt) + 270 Pytest-Cases (`sidecar/tests/`, inkl. CLI-Logik; 19 weitere brauchen den lokalen KoSIT-Validator; `sidecar/tests/fixtures/invoice-parity.json` wird von Vitest und Pytest gemeinsam geprüft) + 116 Rust-Tests (`cargo test`). Pure-Math (Totals/Tax/Skonto/Currency/Date/DATEV) ist voll abgedeckt, Sidecar deckt ZUGFeRD-XML-Goldens + KoSIT-Validator-Roundtrip + i18n ab.
 
 ## Architecture
 
 ### Frontend (`src/`)
 - **Svelte 5 runes only** (`$state`, `$derived`, `$effect`, `$props`). Kein `export let`, kein legacy store in Components, kein SvelteKit.
 - **Router:** `svelte-spa-router` (hash-based). Alle Form-/Edit-Screens via `push("/...")` — **niemals** ein neues Tauri-WebviewWindow öffnen.
-- **UI in `src/lib/ui/`** — shadcn-style Wrapper über Bits UI (Button, Card, Dialog, Dropdown, Input, Select, Textarea, Badge, Titlebar, Toaster, CommandPalette, DatePicker, ConfirmDialog, Slider). Theme tokens in `theme.svelte.ts`. Lucide-Icons via `@lucide/svelte`. Wrapper erweitern, nicht umgehen.
+- **UI in `src/lib/ui/`** — shadcn-style Wrapper über Bits UI (Button, Card, Dialog, Dropdown, Input, Select, Textarea, Badge, Titlebar, Toaster, CommandPalette, DatePicker, ConfirmDialog, Slider). Theme tokens in `theme.svelte.ts`. Icons aus `$lib/brand-icons` (eigene Bürofreund-Icons, kein Icon-Paket). Wrapper erweitern, nicht umgehen.
 - **Settings ist ein Hub** (`/settings` → fünf Kategorie-Routen `/settings/{company,documents,appearance,data,advanced}`, Shell in `src/routes/settings/SettingsShell.svelte`).
 - **Routen** (`src/routes/`): Dashboard, Customers/Vendors/Expenses/Invoices/Offers/Recurring/Reminders (List + Edit + Detail), Settings, TaxReport, UstvaReport, Export, Validate, NotFound.
 - **DB-Layer (`src/lib/db/`):** `@tauri-apps/plugin-sql` (SQLite). Schema in `schema.ts` ist Drizzle-Typen (nicht Runtime). Queries sind raw parameterized SQL via `client.ts`. Migrationen in `migrations/*.sql`, compile-time via `include_str!` in `src-tauri/src/lib.rs:build_migrations()` für **beide** Pfade (`sqlite:zettel.db` und `sqlite:zettel-sandbox.db`).
@@ -21,10 +21,10 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 
 ### Rust (`src-tauri/src/`)
 - `lib.rs` — Plugin-Init, Migrations-Registry, Command-Registrierung. `apply_pending_restore_blocking()` läuft **vor** dem SQL-Plugin-Init, damit ein staged Restore die DB ersetzt, bevor sie geöffnet wird.
-- `sidecar.rs` — spawnt Python-Sidecar (`std::process::Command`, JSON über stdin/stdout). Dev: Script direkt; Release: PyInstaller-Binary aus Tauri-Resources. Tauri-Commands: `generate_invoice`, `generate_offer`, `generate_reminder`, `extract_zugferd`, `extract_text_pdf`, `ping_sidecar`.
+- `sidecar.rs` — spawnt Python-Sidecar (`std::process::Command`, JSON über stdin/stdout). Dev: Script direkt; Release: PyInstaller-Binary aus Tauri-Resources. Tauri-Commands: `generate_invoice`, `generate_offer`, `generate_reminder`, `extract_zugferd`, `extract_text_pdf`.
 - `backup.rs` — ZIP-Snapshot (`VACUUM INTO` + PDFs + `manifest.json`). Staged Restore: extrahiert nach `<appdata>/pending_restore/`, Marker-File, dann `apply_pending_partial_restore` (`ATTACH DATABASE` + selektiver `INSERT`). Die Ziel-DB (aktiver Tenant bzw. Sandbox) wird beim Stagen in `restore_mode.json` festgehalten; ein fehlgeschlagener Teil-Restore räumt `pending_restore/` wieder ab. App-Identifier ist hardcoded `digital.laux.zettel` (Pre-Builder hat keinen AppHandle). `CURRENT_SCHEMA` muss mit `user_version` der neuesten Migration matchen — sonst `Schema neuer als App-Version` beim Restore.
 - `crypto.rs` — AES-256-GCM + Argon2id für Backup-Verschlüsselung. Magic-Header `ZETTEL-ENC-1`. Kein gespeichertes Master-Passwort.
-- `fs_export.rs` — `save_text_file` (CSV ohne `plugin-fs`), `import_expense_pdf` (kollisionssichere Ablage `~/Documents/Zettel/Eingangsrechnungen/<vendor>/`).
+- `fs_export.rs` — `save_text_file` (CSV ohne `plugin-fs`), `import_expense_pdf` (kollisionssichere Ablage `<Dokumente-Root>/Eingangsrechnungen/<vendor>/`).
 - `sandbox.rs` — `is_sandbox`/`set_sandbox`, gesteuert über Flag-File `sandbox.flag` im AppData-Dir. Toggle → `plugin-process::relaunch`. `client.ts` wählt die DB-URL beim Open.
 - `exchange.rs` — `fetch_ecb_exchange_rate(currency)`, async Command (blockiert den Main-Thread nicht), ureq gegen `eurofxref-daily.xml`, ~8s Timeout.
 - `validator.rs` — E-Rechnungs-Validierung über den gebundelten KoSIT-Validator (**Java**). Extrahiert via Sidecar (`extract_xml_only`) erst die XML aus dem PDF, schreibt sie in eine Temp-Datei und startet Java als CLI-Subprozess (`Command::new(java) -jar validator.jar -s scenarios.xml -r <dir> -o <tmp> <input>`), parst dann den XML-Report (String-Scan: `valid`, Szenario, `failed-assert`-Findings). `resolve_java`: dev `tools/jre/bin/java` → Release `jre/bin/java` aus Resources → System-`java`. Commands: `validator_status`, `validate_einvoice_xml`, `validate_einvoice_pdf`. Nur Release-Build (bzw. dev mit lokalem `tools/jre` + `tools/kosit-validator`). Frontend-Bridge `src/lib/validator.ts`, UI `src/routes/Validate.svelte`. Setup-Skripte: `tools/download-validator.sh` (lädt `validator.jar` + Scenarios), `tools/build-jre.sh` (jlink-minimierte JRE, ~35 MB). Gebundelt via `tauri.bundle.conf.json` (`kosit-validator`, `jre`).
@@ -80,9 +80,12 @@ Eine neue Migration `000N_<name>.sql` heißt **immer drei Stellen gleichzeitig a
 - **Leistungszeitraum (v0.12):** Header-Period `service_period_start/end` (BG-14, BT-73/74) gewinnt gegen `delivery_date` (BT-72), wenn beide gesetzt; XOR App-seitig erzwungen. Line-Period (BG-26, BT-134/135) optional pro Position; Einzeltag = `start = end`. Lange Positions-Beschreibung in `*_items.long_description` (BT-154) zusätzlich zu `name` (BT-153).
 
 ## Cross-platform build
-- CI: `.github/workflows/build.yml` Matrix windows-latest / macos-14 (arm64) / macos-13 (x86_64) / ubuntu-22.04. Jeder Runner installiert Python+GTK+Tauri-Deps, baut `python sidecar/build.py`, dann `pnpm tauri:build`.
+- CI: `.github/workflows/build.yml` Matrix windows-latest / macos-15 (arm64) / ubuntu-22.04 (macOS Intel deaktiviert). Jeder Runner installiert Python+GTK+Tauri-Deps, baut `python sidecar/build.py`, dann `pnpm tauri:build`.
 - **Resources-Split** (v0.10-Fix): Production-Resources (`sidecar/dist`, `tools/jre`, `kosit-validator`) leben in `tauri.bundle.conf.json`, **nicht** in `tauri.conf.json`. Dev-Build hat sie nicht — sonst emittiert `cargo:rerun-if-changed` tausende Files und Tauri-Build crashed mit `Zugriff verweigert (os error 5)` durch AV-Interferenz auf Windows. `pnpm tauri:build` lädt die Bundle-Conf als Overlay.
 - **Updater:** Ed25519-signiert, statisches `latest.json` bei GitHub Releases. Tauri-2-Quirk: NSIS-Setup-Sig ist `-setup.exe.sig`, nicht `*.nsis.zip.sig`. `bundle.createUpdaterArtifacts: true` muss in `tauri.conf.json` gesetzt sein.
+- **Update-Kanäle:** Check läuft über den Rust-Command `updates::check_for_update(channel)`, nicht über JS-`check()` (kann keine Endpoints wechseln). `stable` = `releases/latest` (nie Pre-Releases), `beta` = Rolling-Release `beta-feed`, gepflegt von `update-feed.yml` bei jedem veröffentlichten Release. Wahl in `localStorage` (`zettel.update_channel`), Toggle im Settings-Hub.
+- **Versionen/Releases:** Version nur via `pnpm version:set <semver>` ändern (package.json, tauri.conf.json, Cargo.toml, Cargo.lock), CI prüft Gleichheit. RC = Tag `vX.Y.Z-rc.N` auf einem Commit in `release/vX.Y` → Draft-Pre-Release (Windows nur NSIS, MSI kann keine `-rc`). Details `docs/auto-update-setup.md`.
+- **CI:** `ci.yml` (Frontend check/test/build, Sidecar pytest, Rust fmt/clippy `-D warnings`/test, Sammel-Check „CI ok"), `build.yml` (Installer + Release), `update-feed.yml` (Beta-Feed).
 - **Linux/macOS-Caveat:** WeasyPrint lädt Pango/Cairo dynamisch vom System. User brauchen `libpango1.0-0 libcairo2 libgdk-pixbuf2.0-0` (apt) bzw. `brew install pango cairo gdk-pixbuf`.
 - Windows-Install-Path: `C:\Users\<user>\AppData\Local\zettel\` (NSIS user-scope).
 
@@ -103,7 +106,6 @@ Eine neue Migration `000N_<name>.sql` heißt **immer drei Stellen gleichzeitig a
 - `pnpm dev` — Frontend only (DB-Calls schlagen fehl, kein Tauri-API)
 - `pnpm check` — svelte-check
 - `pnpm test` — Vitest
-- `pnpm db:generate` — Drizzle-Migrationen regenerieren
 - `pnpm tauri:build` — Production-Build mit `tauri.bundle.conf.json`-Overlay
 
 ## Sidecar bootstrap (dev)
@@ -121,7 +123,7 @@ python build.py            # PyInstaller-Bundle nach sidecar/dist/
 - **Windows:** `%APPDATA%\digital.laux.zettel\` (DB, `sandbox.flag`, `pending_restore/`)
 - **macOS:** `~/Library/Application Support/digital.laux.zettel/`
 - **Linux:** `~/.local/share/digital.laux.zettel/`
-- **PDFs:** `~/Documents/Zettel/{Rechnungen,Angebote,Mahnungen,Eingangsrechnungen/<vendor>}/`
+- **PDFs + Backups:** `<Dokumente-Root>/{Rechnungen,Angebote,Mahnungen,Eingangsrechnungen/<vendor>,Backups}/`. Root = `<Dokumente>/Zettel` (Standard), `<Dokumente>/Zettel-Sandbox` (Sandbox), `<Dokumente>/Zettel/Mandanten/<tenant-id>` (eigene Tenants); `<Dokumente>` ist der Windows-Known-Folder (folgt OneDrive). Einzige Quelle: `tenants::active_documents_root` (Command `get_documents_root`), CLI spiegelt es.
 
 ## Git workflow
 - Feature-Arbeit auf `release/vX.Y`-Branches via PR. `main` = letztes shipped Release.

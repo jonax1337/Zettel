@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { Vendor } from "$lib/db/schema";
 import type { ExtractedInvoice, ExtractedText } from "$lib/sidecar/extract";
 import { fromIsoDate } from "$lib/utils/date";
+import { computeLineTotal } from "$lib/utils/totals";
+import type { ExpenseCategory } from "$lib/db/schema";
 import {
+  applyCategory,
   applyInvoiceExtract,
   applyTextExtract,
   emptyExpenseForm,
@@ -32,12 +35,14 @@ function invoice(overrides: Partial<ExtractedInvoice> = {}): ExtractedInvoice {
         quantity: 2,
         unit: "Monat",
         unitPrice: 1250,
+        unitPriceDecimal: "12.5",
         vatRate: 19,
         lineTotal: 2500,
         categoryCode: null,
       },
     ],
-    totals: { subtotal: 2500, vatAmount: 475, total: 2975 },
+    taxGroups: [{ vatRate: 19, basis: 2500, tax: 475, categoryCode: "S" }],
+    totals: { subtotal: 2500, net: 2500, vatAmount: 475, total: 2975 },
     ...overrides,
   };
 }
@@ -73,6 +78,107 @@ describe("applyInvoiceExtract", () => {
       unitPrice: 1250,
       priceText: "12,50",
     });
+  });
+
+  it("books the supplier's line total when the unit price has sub-cent precision", () => {
+    // 1000 kWh x 0,3249 EUR = 324,90 EUR; the cent-rounded price would give 320,00.
+    const form = emptyExpenseForm();
+    applyInvoiceExtract(
+      form,
+      invoice({
+        lineItems: [
+          {
+            description: "Strom",
+            quantity: 1000,
+            unit: "kWh",
+            unitPrice: 32,
+            unitPriceDecimal: "0.3249",
+            vatRate: 19,
+            lineTotal: 32490,
+            categoryCode: "S",
+          },
+        ],
+        taxGroups: [{ vatRate: 19, basis: 32490, tax: 6173, categoryCode: "S" }],
+      }),
+      null,
+    );
+
+    expect(form.items).toHaveLength(1);
+    expect(computeLineTotal(form.items[0])).toBe(32490);
+    expect(form.items[0]).toMatchObject({
+      description: "Strom (1000 kWh × 0,3249 €)",
+      quantity: 1,
+      unit: "Pauschal",
+      unitPrice: 32490,
+      priceText: "324,90",
+    });
+  });
+
+  it("keeps quantity and unit price when they reproduce the line total", () => {
+    const form = emptyExpenseForm();
+    applyInvoiceExtract(form, invoice(), null);
+
+    expect(form.items[0]).toMatchObject({ quantity: 2, unit: "Monat", unitPrice: 1250 });
+  });
+
+  it("falls back to the VAT breakdown when a document allowance makes the lines disagree with it", () => {
+    // Lines add up to 100,00 net, but a 10,00 document allowance leaves 90,00 owed.
+    const form = emptyExpenseForm();
+    applyInvoiceExtract(
+      form,
+      invoice({
+        lineItems: [
+          {
+            description: "Beratung",
+            quantity: 1,
+            unit: "Pauschal",
+            unitPrice: 10000,
+            unitPriceDecimal: "100",
+            vatRate: 19,
+            lineTotal: 10000,
+            categoryCode: "S",
+          },
+        ],
+        taxGroups: [{ vatRate: 19, basis: 9000, tax: 1710, categoryCode: "S" }],
+      }),
+      vendor,
+    );
+
+    expect(form.items).toHaveLength(1);
+    expect(form.items[0]).toMatchObject({
+      description: "Rechnungsposten 19 % USt",
+      category: "Hosting",
+      unitPrice: 9000,
+      vatRate: 19,
+      priceText: "90,00",
+    });
+  });
+
+  it("books one position per VAT rate when the breakdown has several", () => {
+    const form = emptyExpenseForm();
+    applyInvoiceExtract(
+      form,
+      invoice({
+        taxGroups: [
+          { vatRate: 7, basis: 1000, tax: 70, categoryCode: "S" },
+          { vatRate: 19, basis: 2500, tax: 475, categoryCode: "S" },
+        ],
+      }),
+      null,
+    );
+
+    expect(form.items.map((item) => [item.vatRate, item.unitPrice])).toEqual([
+      [7, 1000],
+      [19, 2500],
+    ]);
+  });
+
+  it("keeps the lines when the invoice has no VAT breakdown to check against", () => {
+    const form = emptyExpenseForm();
+    applyInvoiceExtract(form, invoice({ taxGroups: [] }), null);
+
+    expect(form.items).toHaveLength(1);
+    expect(form.items[0].description).toBe("Server");
   });
 
   it("keeps the kind of reverse charge the supplier declared", () => {
@@ -134,6 +240,33 @@ describe("applyTextExtract", () => {
     applyTextExtract(form, text({ totalCents: null }), null);
     applyTextExtract(form, text({ totalCents: 0 }), null);
     expect(form.items[0].unitPrice).toBe(0);
+  });
+});
+
+describe("applyCategory", () => {
+  const hosting = {
+    id: 1,
+    name: "Hosting",
+    datevAccountSkr03: "4930",
+    datevAccountSkr04: "6805",
+  } as ExpenseCategory;
+
+  it("stores category id and name but no account, since the SKR is only chosen at export", () => {
+    const row = emptyItemRow();
+    applyCategory(row, hosting);
+    expect([row.categoryId, row.category, row.datevAccount]).toEqual([1, "Hosting", null]);
+  });
+
+  it("keeps an account the user typed", () => {
+    const row = emptyItemRow({ datevAccount: "4999" });
+    applyCategory(row, hosting);
+    expect(row.datevAccount).toBe("4999");
+  });
+
+  it("switches to free text without touching name or account", () => {
+    const row = emptyItemRow({ categoryId: 1, category: "Hosting", datevAccount: "4999" });
+    applyCategory(row, undefined);
+    expect([row.categoryId, row.category, row.datevAccount]).toEqual([null, "Hosting", "4999"]);
   });
 });
 

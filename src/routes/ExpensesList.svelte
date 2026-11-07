@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { link, push } from "svelte-spa-router";
   import {
     deleteExpense,
     getExpenseYears,
@@ -11,56 +11,54 @@
   import type { ExpenseStatus, Vendor } from "$lib/db/schema";
   import { listVendors } from "$lib/db/queries";
   import { centsToEur } from "$lib/utils/money";
-  import { formatDate } from "$lib/utils/date";
+  import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { applySort } from "$lib/utils/sort";
   import {
     Button,
     Card,
-    Select,
-    Badge,
-    Label,
     Checkbox,
-    SortableTh,
     BulkActionBar,
     ConfirmDialog,
     toast,
-    EmptyState,
+    PageHeader,
+    QueryBoundary,
+    StatusBadge,
   } from "$lib/ui";
   import { Plus, CheckCircle2, Trash2 } from "$lib/brand-icons";
-  import SearchInput from "./parts/entity/SearchInput.svelte";
+  import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
+  import { paidDateWarning } from "./invoice/date-warnings";
+  import DocumentListFilters from "./invoice/DocumentListFilters.svelte";
+  import { createRowSelection } from "./invoice/list-selection.svelte";
+  import { ALL, numberOrAll, statusFilterItems } from "./invoice/list-support";
   import { pluralize } from "./parts/entity/format";
+  import { createListFilters } from "./parts/entity/list-filters.svelte";
+  import ListEmptyState from "./parts/entity/ListEmptyState.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
-  import {
-    EXPENSE_STATUS_FILTER_ORDER,
-    EXPENSE_STATUS_LABEL,
-    EXPENSE_STATUS_VARIANT,
-  } from "./parts/expense/expense-status";
+  import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
+  import { EXPENSE_STATUS, EXPENSE_STATUS_FILTER_ORDER } from "./parts/expense/expense-status";
 
-  const ALL = "all";
+  const VENDOR_COUNTERPARTY = { label: "Lieferant", allLabel: "Alle Lieferanten" };
 
   let vendors = $state<Vendor[]>([]);
   let years = $state<number[]>([]);
 
-  let status = $state<string>(ALL);
-  let year = $state<string>(ALL);
-  let vendorId = $state<string>(ALL);
-  let search = $state("");
+  const filters = createListFilters<{
+    status: ExpenseStatus | typeof ALL;
+    year: string;
+    vendorId: string;
+    search: string;
+  }>("expenses", { status: ALL, year: ALL, vendorId: ALL, search: "" });
+  const f = filters.values;
 
-  function numericFilter(value: string): number | typeof ALL {
-    return value === ALL ? ALL : Number.parseInt(value, 10);
-  }
+  const filter = $derived<ExpenseFilter>({
+    status: f.status,
+    year: numberOrAll(f.year),
+    vendorId: numberOrAll(f.vendorId),
+    search: f.search,
+  });
 
-  function currentFilter(): ExpenseFilter {
-    return {
-      status: status === ALL ? ALL : (status as ExpenseStatus),
-      year: numericFilter(year),
-      vendorId: numericFilter(vendorId),
-      search,
-    };
-  }
-
-  const expenses = createQueryState<ExpenseListRow[]>([], () => listExpenses(currentFilter()));
+  const expenses = createQueryState<ExpenseListRow[]>([], () => listExpenses(filter));
   $effect(() => {
     expenses.reload();
   });
@@ -74,23 +72,19 @@
       .catch((e) => toast.error("Jahre konnten nicht geladen werden", String(e)));
   });
 
-  const statusItems = [
-    { value: ALL, label: "Alle Status" },
-    ...EXPENSE_STATUS_FILTER_ORDER.map((s) => ({ value: s, label: EXPENSE_STATUS_LABEL[s] })),
-  ];
-
-  const yearItems = $derived([
-    { value: ALL, label: "Alle Jahre" },
-    ...years.map((y) => ({ value: String(y), label: String(y) })),
-  ]);
-
-  const vendorItems = $derived([
-    { value: ALL, label: "Alle Lieferanten" },
-    ...vendors.map((v) => ({ value: String(v.id), label: v.name })),
-  ]);
+  const statusItems = statusFilterItems(EXPENSE_STATUS, EXPENSE_STATUS_FILTER_ORDER);
 
   type SortKey = "internalNumber" | "number" | "issueDate" | "vendor" | "total" | "status" | "dueDate";
   const sort = createListSort<SortKey>("expenses", { key: "issueDate", dir: "desc" });
+  const columns: SortColumn<SortKey>[] = [
+    { key: "internalNumber", label: "Interne Nr.", class: "whitespace-nowrap" },
+    { key: "number", label: "Beleg-Nr.", class: "hidden @3xl:table-cell whitespace-nowrap" },
+    { key: "issueDate", label: "Datum", class: "whitespace-nowrap" },
+    { key: "vendor", label: "Lieferant", class: "min-w-32" },
+    { key: "total", label: "Brutto", align: "right", class: "text-right whitespace-nowrap" },
+    { key: "status", label: "Status", class: "whitespace-nowrap" },
+    { key: "dueDate", label: "Fällig", class: "hidden @3xl:table-cell whitespace-nowrap" },
+  ];
   const sortedExpenses = $derived(
     applySort(expenses.data, sort.state, {
       internalNumber: (r) => r.internalNumber,
@@ -103,134 +97,114 @@
     }),
   );
 
-  let selectedIds = $state<Set<number>>(new Set());
-  let bulkBusy = $state(false);
+  const selection = createRowSelection(() => sortedExpenses);
   let bulkDeleteConfirmOpen = $state(false);
+  let paidDialogOpen = $state(false);
+  let paidDate = $state(toIsoDate(nowUnix()));
 
-  const selectedExpenses = $derived(sortedExpenses.filter((e) => selectedIds.has(e.id)));
   const canBulkMarkPaid = $derived(
-    selectedExpenses.length > 0 && selectedExpenses.every((e) => e.status === "open"),
+    selection.selected.length > 0 && selection.selected.every((e) => e.status === "open"),
   );
   const canBulkDelete = $derived(
-    selectedExpenses.length > 0 &&
-      selectedExpenses.every((e) => e.status === "draft" || e.status === "cancelled"),
+    selection.selected.length > 0 &&
+      selection.selected.every((e) => e.status === "draft" || e.status === "cancelled"),
   );
   const selectionLabel = $derived(
-    pluralize(selectedIds.size, "Eingangsrechnung", "Eingangsrechnungen"),
+    pluralize(selection.selected.length, "Eingangsrechnung", "Eingangsrechnungen"),
   );
+  const paidWarning = $derived.by(() => {
+    if (!paidDate || selection.selected.length === 0) return null;
+    const latestIssueDate = Math.max(...selection.selected.map((e) => e.issueDate));
+    return paidDateWarning(fromIsoDate(paidDate), { sentAt: null, issueDate: latestIssueDate }, nowUnix());
+  });
 
-  function toggleSelect(id: number) {
-    const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    selectedIds = next;
+  function openPaidDialog() {
+    paidDate = toIsoDate(nowUnix());
+    paidDialogOpen = true;
   }
 
-  function toggleSelectAll() {
-    selectedIds =
-      selectedIds.size === sortedExpenses.length
-        ? new Set()
-        : new Set(sortedExpenses.map((e) => e.id));
+  async function confirmBulkPaid() {
+    const paidAt = fromIsoDate(paidDate);
+    paidDialogOpen = false;
+    await selection.runBulk("als bezahlt markiert", (id) => markExpensePaid(id, paidAt), expenses.reload);
   }
 
-  async function runBulkAction(successMessage: string, action: (id: number) => Promise<void>) {
-    const targets = selectedExpenses;
-    bulkBusy = true;
-    try {
-      for (const e of targets) await action(e.id);
-      toast.success(`${targets.length} ${successMessage}`);
-      selectedIds = new Set();
-    } catch (e) {
-      toast.error("Bulk-Aktion fehlgeschlagen", String(e));
-    } finally {
-      bulkBusy = false;
-      bulkDeleteConfirmOpen = false;
-      await expenses.reload();
-    }
+  async function confirmBulkDelete() {
+    bulkDeleteConfirmOpen = false;
+    await selection.runBulk("gelöscht", deleteExpense, expenses.reload);
   }
 </script>
 
-<header class="mb-6 flex items-end justify-between gap-4">
-  <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Eingangsrechnungen</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      {expenses.data.length} {pluralize(expenses.data.length, "Beleg", "Belege")}
-    </p>
-  </div>
-  <Button onclick={() => push("/expenses/new")}>
-    <Plus />
-    Neue Eingangsrechnung
-  </Button>
-</header>
+<PageHeader
+  title="Eingangsrechnungen"
+  subtitle="{expenses.data.length} {pluralize(expenses.data.length, "Beleg", "Belege")}"
+>
+  {#snippet actions()}
+    <Button onclick={() => push("/expenses/new")}>
+      <Plus />
+      Neue Eingangsrechnung
+    </Button>
+  {/snippet}
+</PageHeader>
 
-<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Status</Label>
-    <Select bind:value={status} items={statusItems} />
-  </div>
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Jahr</Label>
-    <Select bind:value={year} items={yearItems} />
-  </div>
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Lieferant</Label>
-    <Select bind:value={vendorId} items={vendorItems} />
-  </div>
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Suche</Label>
-    <SearchInput bind:value={search} placeholder="Nummer oder Lieferant…" />
-  </div>
+<div class="mb-5">
+  <DocumentListFilters
+    bind:status={f.status}
+    {statusItems}
+    bind:year={f.year}
+    bind:customerId={f.vendorId}
+    bind:search={f.search}
+    {years}
+    customers={vendors}
+    counterparty={VENDOR_COUNTERPARTY}
+  />
 </div>
 
-{#if expenses.error}
-  <p class="text-sm text-destructive">Fehler: {expenses.error}</p>
-{:else if expenses.loading}
-  <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if expenses.data.length === 0}
-  <EmptyState variant={search ? "no-results" : "empty"} message="Keine Eingangsrechnungen gefunden." />
-{:else}
+<QueryBoundary query={expenses} isEmpty={expenses.data.length === 0}>
+  {#snippet empty()}
+    <ListEmptyState
+      filtered={filters.isFiltered}
+      onResetFilters={filters.reset}
+      filteredMessage="Keine Eingangsrechnungen für diese Filter."
+      emptyMessage="Noch keine Eingangsrechnungen erfasst."
+      createLabel="Neue Eingangsrechnung"
+      onCreate={() => push("/expenses/new")}
+    />
+  {/snippet}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
-      <thead class="bg-muted/40 text-left">
-        <tr>
-          <th class="px-4 py-3 w-10">
-            <Checkbox
-              checked={selectedIds.size > 0 && selectedIds.size === sortedExpenses.length}
-              onCheckedChange={toggleSelectAll}
-              aria-label="Alle auswählen"
-            />
-          </th>
-          <SortableTh column="internalNumber" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Interne Nr.</SortableTh>
-          <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Beleg-Nr.</SortableTh>
-          <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Datum</SortableTh>
-          <SortableTh column="vendor" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Lieferant</SortableTh>
-          <SortableTh column="total" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-4 py-3 text-right">Brutto</SortableTh>
-          <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Status</SortableTh>
-          <SortableTh column="dueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Fällig</SortableTh>
-        </tr>
-      </thead>
+      <SortableHeaderRow {sort} {columns} cellClass="px-3 @3xl:px-4 py-3" {selection} />
       <tbody class="stagger">
         {#each sortedExpenses as e (e.id)}
           <tr
             class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
             onclick={() => push(`/expenses/${e.id}`)}
           >
-            <td class="px-4 py-3" onclick={(ev) => ev.stopPropagation()}>
+            <td class="px-3 @3xl:px-4 py-3" onclick={(ev) => ev.stopPropagation()}>
               <Checkbox
-                checked={selectedIds.has(e.id)}
-                onCheckedChange={() => toggleSelect(e.id)}
+                checked={selection.isSelected(e.id)}
+                onCheckedChange={() => selection.toggle(e.id)}
                 aria-label={`Eingangsrechnung ${e.internalNumber} auswählen`}
               />
             </td>
-            <td class="px-4 py-3 font-mono text-xs">{e.internalNumber}</td>
-            <td class="px-4 py-3 font-mono text-xs text-muted-foreground">{e.number ?? "—"}</td>
-            <td class="px-4 py-3 text-muted-foreground">{formatDate(e.issueDate)}</td>
-            <td class="px-4 py-3">{e.vendorName}</td>
-            <td class="px-4 py-3 text-right font-mono">{centsToEur(e.total)}</td>
-            <td class="px-4 py-3">
-              <Badge variant={EXPENSE_STATUS_VARIANT[e.status]}>{EXPENSE_STATUS_LABEL[e.status]}</Badge>
+            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">
+              <a
+                href={`/expenses/${e.id}`}
+                use:link
+                onclick={(ev) => ev.stopPropagation()}
+                class="hover:underline focus-visible:underline"
+              >
+                {e.internalNumber}
+              </a>
             </td>
-            <td class="px-4 py-3 text-muted-foreground text-xs">
+            <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{e.number ?? "—"}</td>
+            <td class="px-3 @3xl:px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(e.issueDate)}</td>
+            <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={e.vendorName}>{e.vendorName}</span></td>
+            <td class="px-3 @3xl:px-4 py-3 text-right font-mono whitespace-nowrap">{centsToEur(e.total)}</td>
+            <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
+              <StatusBadge status={e.status} table={EXPENSE_STATUS} />
+            </td>
+            <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
               {e.dueDate ? formatDate(e.dueDate) : "—"}
             </td>
           </tr>
@@ -238,28 +212,41 @@
       </tbody>
     </table>
   </Card>
-{/if}
+</QueryBoundary>
 
-<BulkActionBar count={selectedIds.size} label={selectionLabel} onClear={() => (selectedIds = new Set())}>
+<BulkActionBar count={selection.selected.length} label={selectionLabel} onClear={selection.clear}>
   {#if canBulkMarkPaid}
-    <Button size="sm" variant="outline" onclick={() => runBulkAction("als bezahlt markiert", markExpensePaid)} disabled={bulkBusy}>
+    <Button size="sm" variant="outline" onclick={openPaidDialog} disabled={selection.busy}>
       <CheckCircle2 class="size-3.5" />
       Als bezahlt
     </Button>
   {/if}
   {#if canBulkDelete}
-    <Button size="sm" variant="destructive" onclick={() => (bulkDeleteConfirmOpen = true)} disabled={bulkBusy}>
+    <Button size="sm" variant="destructive" onclick={() => (bulkDeleteConfirmOpen = true)} disabled={selection.busy}>
       <Trash2 class="size-3.5" />
       Löschen
     </Button>
   {/if}
 </BulkActionBar>
 
+<DateConfirmDialog
+  bind:open={paidDialogOpen}
+  bind:date={paidDate}
+  title="Als bezahlt markieren"
+  description="{selection.selected.length} {selectionLabel} werden mit diesem Zahldatum als bezahlt markiert."
+  dateInputId="expense-paid-date"
+  dateLabel="Zahldatum"
+  hint="Standard ist heute. Bei Nacherfassung das echte Zahldatum eintragen."
+  confirmLabel="Bestätigen"
+  warning={paidWarning}
+  onConfirm={confirmBulkPaid}
+/>
+
 <ConfirmDialog
   bind:open={bulkDeleteConfirmOpen}
-  title="{selectedIds.size} {selectionLabel} löschen?"
+  title="{selection.selected.length} {selectionLabel} löschen?"
   description="Nur Entwürfe und stornierte Belege werden gelöscht. Offene/bezahlte bleiben unangetastet."
   confirmLabel="Löschen"
   destructive
-  onConfirm={() => runBulkAction("gelöscht", deleteExpense)}
+  onConfirm={confirmBulkDelete}
 />

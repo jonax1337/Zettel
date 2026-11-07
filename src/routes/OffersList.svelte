@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { link, push } from "svelte-spa-router";
   import {
     deleteOffer,
     expireDueOffers,
@@ -12,53 +12,71 @@
   } from "$lib/db/offers";
   import type { Customer, OfferStatus } from "$lib/db/schema";
   import { listCustomers } from "$lib/db/queries";
+  import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
-  import { Button, Card, Badge, Checkbox, SortableTh, BulkActionBar, ConfirmDialog, toast, EmptyState } from "$lib/ui";
+  import {
+    Button,
+    Card,
+    Checkbox,
+    BulkActionBar,
+    ConfirmDialog,
+    toast,
+    PageHeader,
+    QueryBoundary,
+    StatusBadge,
+  } from "$lib/ui";
   import { Plus, Send, Ban, Trash2 } from "$lib/brand-icons";
   import { applySort } from "$lib/utils/sort";
   import DocumentListFilters from "./invoice/DocumentListFilters.svelte";
   import { createRowSelection } from "./invoice/list-selection.svelte";
   import { pluralize } from "./parts/entity/format";
+  import { createListFilters } from "./parts/entity/list-filters.svelte";
+  import ListEmptyState from "./parts/entity/ListEmptyState.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
-  import {
-    ALL,
-    numberOrAll,
-    statusFilterItems,
-  } from "./invoice/list-support";
-  import { OFFER_STATUS_LABEL, OFFER_STATUS_VARIANT } from "./offer/status";
+  import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
+  import { ALL, numberOrAll, statusFilterItems } from "./invoice/list-support";
+  import { createOfferListFetcher } from "./offer/list-fetch";
+  import { OFFER_STATUS } from "./offer/status";
 
-  const statusItems = statusFilterItems(OFFER_STATUS_LABEL);
+  const statusItems = statusFilterItems(OFFER_STATUS);
 
   let customers = $state<Customer[]>([]);
   let years = $state<number[]>([]);
 
-  let status = $state<OfferStatus | typeof ALL>(ALL);
-  let year = $state(ALL);
-  let customerId = $state(ALL);
-  let search = $state("");
+  type OfferListFilters = {
+    status: OfferStatus | typeof ALL;
+    year: string;
+    customerId: string;
+    search: string;
+  };
+  const filters = createListFilters<OfferListFilters>("offers", {
+    status: ALL,
+    year: ALL,
+    customerId: ALL,
+    search: "",
+  });
+  const f = filters.values;
 
   const filter = $derived<OfferFilter>({
-    status,
-    year: numberOrAll(year),
-    customerId: numberOrAll(customerId),
-    search,
+    status: f.status,
+    year: numberOrAll(f.year),
+    customerId: numberOrAll(f.customerId),
+    search: f.search,
   });
 
-  const offers = createQueryState<OfferListRow[]>([], () => listOffers(filter));
+  const fetchOffers = createOfferListFetcher({
+    expire: expireDueOffers,
+    list: listOffers,
+    onExpireError: (e) =>
+      toast.error("Abgelaufene Angebote konnten nicht aktualisiert werden", String(e)),
+  });
 
-  async function expireOutdatedOffers() {
-    try {
-      await expireDueOffers();
-    } catch (e) {
-      toast.error("Abgelaufene Angebote konnten nicht aktualisiert werden", String(e));
-    }
-    await offers.reload();
-  }
+  // Passing `filter` synchronously lets the surrounding effect track it.
+  const offers = createQueryState<OfferListRow[]>([], () => fetchOffers(filter));
 
   $effect(() => {
-    expireOutdatedOffers();
     listCustomers().then((c) => (customers = c));
     getOfferYears().then((y) => (years = y));
   });
@@ -69,6 +87,14 @@
 
   type SortKey = "number" | "issueDate" | "customer" | "total" | "status" | "validUntil";
   const sort = createListSort<SortKey>("offers", { key: "issueDate", dir: "desc" });
+  const columns: SortColumn<SortKey>[] = [
+    { key: "number", label: "Nummer", class: "whitespace-nowrap" },
+    { key: "issueDate", label: "Datum", class: "whitespace-nowrap" },
+    { key: "customer", label: "Kunde", class: "min-w-32" },
+    { key: "total", label: "Betrag", align: "right", class: "text-right whitespace-nowrap" },
+    { key: "status", label: "Status", class: "whitespace-nowrap" },
+    { key: "validUntil", label: "Gültig bis", class: "hidden @3xl:table-cell whitespace-nowrap" },
+  ];
   const sortedOffers = $derived(
     applySort(offers.data, sort.state, {
       number: (r) => r.number,
@@ -100,101 +126,102 @@
 
   const selectedLabel = $derived(pluralize(selection.selected.length, "Angebot", "Angebote"));
 
+  async function bulkMarkSent() {
+    if (!(await ensureCompanyDataComplete())) return;
+    await selection.runBulk("als versendet markiert", markSent, offers.reload);
+  }
+
   async function bulkDelete() {
     bulkDeleteConfirmOpen = false;
     await selection.runBulk("gelöscht", deleteOffer, offers.reload);
   }
 </script>
 
-<header class="mb-6 flex items-end justify-between gap-4">
-  <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Angebote</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      {offers.data.length} {pluralize(offers.data.length, "Angebot", "Angebote")}
-    </p>
-  </div>
-  <Button onclick={() => push("/offers/new")}>
-    <Plus />
-    Neues Angebot
-  </Button>
-</header>
+<PageHeader
+  title="Angebote"
+  subtitle="{offers.data.length} {pluralize(offers.data.length, "Angebot", "Angebote")}"
+>
+  {#snippet actions()}
+    <Button onclick={() => push("/offers/new")}>
+      <Plus />
+      Neues Angebot
+    </Button>
+  {/snippet}
+</PageHeader>
 
 <div class="mb-5">
   <DocumentListFilters
-    bind:status
+    bind:status={f.status}
     {statusItems}
-    bind:year
-    bind:customerId
-    bind:search
+    bind:year={f.year}
+    bind:customerId={f.customerId}
+    bind:search={f.search}
     {years}
     {customers}
   />
 </div>
 
-{#if offers.error}
-  <p class="text-sm text-destructive">Fehler: {offers.error}</p>
-{:else if offers.loading}
-  <p class="text-sm text-muted-foreground">Lade…</p>
-{:else if offers.data.length === 0}
-  <EmptyState variant={search ? "no-results" : "empty"} message="Keine Angebote gefunden." />
-{:else}
+<QueryBoundary query={offers} isEmpty={offers.data.length === 0}>
+  {#snippet empty()}
+    <ListEmptyState
+      filtered={filters.isFiltered}
+      onResetFilters={filters.reset}
+      filteredMessage="Keine Angebote für diese Filter."
+      emptyMessage="Noch keine Angebote angelegt."
+      createLabel="Neues Angebot"
+      onCreate={() => push("/offers/new")}
+    />
+  {/snippet}
   <Card class="overflow-hidden py-0">
     <table class="w-full text-sm">
-      <thead class="bg-muted/40 text-left">
-        <tr>
-          <th class="px-4 py-3 w-10">
-            <Checkbox
-              checked={selection.allSelected}
-              onCheckedChange={selection.toggleAll}
-              aria-label="Alle auswählen"
-            />
-          </th>
-          <SortableTh column="number" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Nummer</SortableTh>
-          <SortableTh column="issueDate" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Datum</SortableTh>
-          <SortableTh column="customer" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Kunde</SortableTh>
-          <SortableTh column="total" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} align="right" class="px-4 py-3 text-right">Betrag</SortableTh>
-          <SortableTh column="status" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Status</SortableTh>
-          <SortableTh column="validUntil" activeKey={sort.state.key} activeDir={sort.state.dir} onChange={sort.change} class="px-4 py-3">Gültig bis</SortableTh>
-        </tr>
-      </thead>
+      <SortableHeaderRow {sort} {columns} cellClass="px-3 @3xl:px-4 py-3" {selection} />
       <tbody class="stagger">
         {#each sortedOffers as off (off.id)}
           <tr
             class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
             onclick={() => push(`/offers/${off.id}`)}
           >
-            <td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
+            <td class="px-3 @3xl:px-4 py-3" onclick={(e) => e.stopPropagation()}>
               <Checkbox
                 checked={selection.isSelected(off.id)}
                 onCheckedChange={() => selection.toggle(off.id)}
                 aria-label={`Angebot ${off.number} auswählen`}
               />
             </td>
-            <td class="px-4 py-3 font-mono text-xs">{off.number}</td>
-            <td class="px-4 py-3 text-muted-foreground">{formatDate(off.issueDate)}</td>
-            <td class="px-4 py-3">{off.customerName}</td>
-            <td class="px-4 py-3 text-right font-mono">{formatMoney(off.total, off.currency)}</td>
-            <td class="px-4 py-3">
-              <Badge variant={OFFER_STATUS_VARIANT[off.status]}>{OFFER_STATUS_LABEL[off.status]}</Badge>
+            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">
+              <a
+                href={`/offers/${off.id}`}
+                use:link
+                onclick={(e) => e.stopPropagation()}
+                class="hover:underline focus-visible:underline"
+              >
+                {off.number}
+              </a>
             </td>
-            <td class="px-4 py-3 text-muted-foreground text-xs">{formatDate(off.validUntil)}</td>
+            <td class="px-3 @3xl:px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(off.issueDate)}</td>
+            <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={off.customerName}>{off.customerName}</span></td>
+            <td class="px-3 @3xl:px-4 py-3 text-right font-mono whitespace-nowrap">{formatMoney(off.total, off.currency)}</td>
+            <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
+              <StatusBadge status={off.status} table={OFFER_STATUS} />
+            </td>
+            <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDate(off.validUntil)}</td>
           </tr>
         {/each}
       </tbody>
     </table>
   </Card>
-{/if}
+</QueryBoundary>
 
 <BulkActionBar count={selection.selected.length} label={selectedLabel} onClear={selection.clear}>
   {#if canBulkMarkSent}
     <Button
       size="sm"
       variant="outline"
-      onclick={() => selection.runBulk("als versandt markiert", markSent, offers.reload)}
+      onclick={bulkMarkSent}
       disabled={selection.busy}
     >
       <Send class="size-3.5" />
-      Versenden
+      Als versendet markieren
     </Button>
   {/if}
   {#if canBulkReject}

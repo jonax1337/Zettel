@@ -8,19 +8,21 @@
     CardDescription,
     Label,
     Select,
+    PageHeader,
     toast,
   } from "$lib/ui";
   import {
     buildUstvaReport,
+    formatUstvaAmount,
     ustvaToCsv,
     VAT_ACCOUNTING_LABELS,
     type Quarter,
     type UstvaReport,
   } from "$lib/reports/ustva";
   import { loadSettings } from "$lib/db/queries";
-  import { centsToEur } from "$lib/utils/money";
   import { formatDate } from "$lib/utils/date";
-  import { Download, AlertTriangle } from "$lib/brand-icons";
+  import { Download, AlertTriangle, ArrowRight } from "$lib/brand-icons";
+  import BackLink from "./parts/entity/BackLink.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import { saveTextFileWithDialog } from "./parts/reports/save-text-file";
 
@@ -73,13 +75,20 @@
   }
 </script>
 
-<header class="mb-6">
-  <h1 class="text-3xl font-semibold tracking-tight">UStVA-Vorbereitung</h1>
-  <p class="text-sm text-muted-foreground mt-1">
-    Quartalsweise Aggregation der wichtigsten Kennzahlen für die Umsatzsteuer-Voranmeldung.
-    Werte zum Abtippen in ELSTER — kein direkter Upload.
-  </p>
-</header>
+<PageHeader
+  title="UStVA-Vorbereitung"
+  subtitle="Quartalsweise Aggregation der wichtigsten Kennzahlen für die Umsatzsteuer-Voranmeldung. Werte zum Abtippen in ELSTER — kein direkter Upload. Bemessungsgrundlagen sind wie in ELSTER auf volle Euro abgeschnitten, Steuerbeträge mit Cent."
+>
+  {#snippet back()}
+    <BackLink href="/">Dashboard</BackLink>
+  {/snippet}
+  {#snippet actions()}
+    <Button href="/reports/taxes" variant="outline" size="sm">
+      Steuer-Rücklage ansehen
+      <ArrowRight class="size-4" />
+    </Button>
+  {/snippet}
+</PageHeader>
 
 <div class="mb-6 rounded-md border border-warning/40 bg-warning/5 p-3 flex items-start gap-3">
   <AlertTriangle class="size-5 text-warning shrink-0 mt-0.5" />
@@ -137,7 +146,7 @@
                 <div class="text-xs text-muted-foreground mt-0.5">{row.computedFrom}</div>
               </td>
               <td class="px-4 py-3 text-right font-mono tabular-nums">
-                {centsToEur(row.amount)}
+                {formatUstvaAmount(row)}
               </td>
             </tr>
           {/each}

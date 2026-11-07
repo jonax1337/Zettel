@@ -1,7 +1,7 @@
 /**
  * Skonto (Frühzahler-Rabatt) — EN-16931 ApplicableTradePaymentDiscountTerms.
  *
- * Berechnung: Rabatt-Betrag = Gesamt-Brutto × Prozent / 100, abgerundet auf Cent.
+ * Berechnung: Rabatt-Betrag = Gesamt-Brutto × Prozent / 100, kaufmännisch gerundet (half-up) auf Cent.
  * Frist = Rechnungs-Issue-Date + days. (Nicht due_date — der Skonto-Zeitraum
  * läuft ab Rechnungsausstellung, nicht ab Fälligkeit.)
  *
@@ -34,11 +34,21 @@ export function isSkontoActive(input: SkontoInput): boolean {
   return p > 0 && d > 0;
 }
 
+const BASIS_POINTS_PER_UNIT = 10000;
+const HALF_BASIS_POINT_UNIT = BASIS_POINTS_PER_UNIT / 2;
+
+/** Integer basis points (2,3 % -> 230): `total * 2.3 / 100` drifts in float (3000 * 2.3 = 6899.999...). */
+function percentToBasisPoints(percent: number): number {
+  return Math.round(percent * 100);
+}
+
 export function computeSkonto(input: SkontoInput): SkontoResult | null {
   if (!isSkontoActive(input)) return null;
   const percent = input.percent!;
   const days = input.days!;
-  const discountCent = Math.floor((input.totalCent * percent) / 100);
+  const discountCent = Math.floor(
+    (input.totalCent * percentToBasisPoints(percent) + HALF_BASIS_POINT_UNIT) / BASIS_POINTS_PER_UNIT,
+  );
   const deadlineUnix = addDaysUnix(input.issueDate, days);
   return { discountCent, deadlineUnix, percent, days };
 }

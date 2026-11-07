@@ -75,7 +75,10 @@ mod tests {
 
     #[test]
     fn missing_rate_does_not_borrow_the_next_elements_rate() {
-        assert_eq!(parse_rate(ECB_XML, "CHF").unwrap_err(), "rate-Attribut fehlt");
+        assert_eq!(
+            parse_rate(ECB_XML, "CHF").unwrap_err(),
+            "rate-Attribut fehlt"
+        );
     }
 
     #[test]
