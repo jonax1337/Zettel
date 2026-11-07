@@ -47,6 +47,7 @@ DEFAULT_PAYMENT_TERMS_DAYS = 14
 DEFAULT_UNIT = "Std"
 DEFAULT_PDF_PROFILE = "en16931"
 DEFAULT_PDF_THEME = "classic"
+DEFAULT_PDF_RENDERER = "weasyprint"
 DEFAULT_PDF_LANGUAGE = "de"
 PAYABLE_STATUSES = ("sent", "partial")
 DRAFT_PREFIX = "DRAFT-"
@@ -458,6 +459,9 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
             "email": trimmed(company["email"]),
             "phone": trimmed(company["phone"]),
             "website": company["website"],
+            "registerCourt": company.get("register_court"),
+            "registerNumber": company.get("register_number"),
+            "managingDirectors": company.get("managing_directors"),
             "bankName": company["bank_name"],
             "bankIban": company["bank_iban"],
             "bankBic": company["bank_bic"],
@@ -477,7 +481,11 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
         },
         "outputPath": output_path,
         "profile": company["zugferd_profile"] or DEFAULT_PDF_PROFILE,
-        "settings": {"pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME},
+        "settings": {
+            "pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME,
+            # .get: the CLI may run against a database the app has not migrated yet.
+            "pdf_renderer": company.get("pdf_renderer") or DEFAULT_PDF_RENDERER,
+        },
     }
 
 

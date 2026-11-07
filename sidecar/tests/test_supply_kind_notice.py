@@ -17,7 +17,7 @@ SERVICES_EN = "Reverse charge — VAT to be paid by the recipient (§ 13b UStG /
 
 def _render_invoice(payloads, **invoice_overrides) -> str:
     payload = payloads("05-reverse-charge.json")
-    invoice = {**payload["invoice"], "reverseChargeType": "intra_eu", **invoice_overrides}
+    invoice = {**payload["invoice"], **invoice_overrides}
     return build_env().get_template("invoice.html.j2").render(
         company=payload["company"],
         customer=payload["customer"],
