@@ -1,3 +1,4 @@
+import { normalizeIban } from "$lib/utils/iban";
 import { containsPattern, execute, insert, select, toSqlBool } from "./client";
 import { assertCustomerDeletable, assertVendorDeletable } from "./references";
 import type { Customer, Settings, Vendor } from "./schema";
@@ -118,7 +119,7 @@ function mapSettings(r: SettingsRow): Settings {
     phone: r.phone,
     website: r.website,
     bankName: r.bank_name,
-    bankIban: r.bank_iban,
+    bankIban: r.bank_iban && normalizeIban(r.bank_iban),
     bankBic: r.bank_bic,
     isKleinunternehmer: r.is_kleinunternehmer === 1,
     kleinunternehmerNote: r.kleinunternehmer_note,
@@ -208,7 +209,7 @@ function settingsColumnValues(s: Partial<Settings>): Array<[column: string, valu
     ["phone", s.phone ?? null],
     ["website", s.website ?? null],
     ["bank_name", s.bankName ?? ""],
-    ["bank_iban", s.bankIban ?? ""],
+    ["bank_iban", normalizeIban(s.bankIban ?? "")],
     ["bank_bic", s.bankBic ?? ""],
     ["is_kleinunternehmer", toSqlBool(s.isKleinunternehmer)],
     ["kleinunternehmer_note", s.kleinunternehmerNote ?? ""],
@@ -513,7 +514,7 @@ function mapVendor(r: VendorRow): Vendor {
     phone: r.phone,
     vatId: r.vat_id,
     bankName: r.bank_name,
-    bankIban: r.bank_iban,
+    bankIban: r.bank_iban && normalizeIban(r.bank_iban),
     bankBic: r.bank_bic,
     defaultCategory: r.default_category,
     notes: r.notes,
@@ -568,7 +569,7 @@ export async function createVendor(input: VendorInput): Promise<number> {
       input.phone ?? null,
       input.vatId ?? null,
       input.bankName ?? null,
-      input.bankIban ?? null,
+      input.bankIban ? normalizeIban(input.bankIban) : null,
       input.bankBic ?? null,
       input.defaultCategory ?? null,
       input.notes ?? null,
@@ -595,7 +596,7 @@ export async function updateVendor(id: number, input: VendorInput): Promise<void
       input.phone ?? null,
       input.vatId ?? null,
       input.bankName ?? null,
-      input.bankIban ?? null,
+      input.bankIban ? normalizeIban(input.bankIban) : null,
       input.bankBic ?? null,
       input.defaultCategory ?? null,
       input.notes ?? null,

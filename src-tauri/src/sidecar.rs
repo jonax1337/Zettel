@@ -190,11 +190,6 @@ pub async fn generate_xrechnung(app: AppHandle, payload: Value) -> Result<Value,
 }
 
 #[tauri::command]
-pub async fn ping_sidecar(app: AppHandle) -> Result<Value, String> {
-    call_off_runtime(app, "ping", None).await
-}
-
-#[tauri::command]
 pub async fn extract_zugferd(app: AppHandle, pdf_path: String) -> Result<Value, String> {
     call_off_runtime(app, "extract_zugferd", pdf_payload(&pdf_path)).await
 }

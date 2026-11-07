@@ -19,7 +19,7 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 | E-Rechnung-Validierung | KoSIT-Validator (`validator.jar`, **Java**) auf gebundelter jlink-JRE, von Rust als CLI gespawnt |
 | Tests | Vitest (inkl. echte SQLite-DB via `src/lib/db/sqlite-test-db.ts`; Zeitzone in `vite.config.ts` auf Europe/Berlin gepinnt), Pytest (`sidecar/tests/`), `cargo test` |
 
-`pnpm tauri:dev` (App) · `pnpm dev` (nur Frontend, DB-Calls schlagen fehl) · `pnpm check` · `pnpm test` · `pnpm db:generate` · `pnpm tauri:build` (mit `tauri.bundle.conf.json`-Overlay) · `cd sidecar && pytest`.
+`pnpm tauri:dev` (App) · `pnpm dev` (nur Frontend, DB-Calls schlagen fehl) · `pnpm check` · `pnpm test` · `pnpm tauri:build` (mit `tauri.bundle.conf.json`-Overlay) · `cd sidecar && pytest`.
 
 ## Frontend-Konventionen
 - **Svelte 5 runes only** (`$state`, `$derived`, `$effect`, `$props`). Kein `export let`, keine Legacy-Stores in Components, kein SvelteKit.

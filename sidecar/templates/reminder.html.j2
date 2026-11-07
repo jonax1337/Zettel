@@ -82,7 +82,7 @@
     {% if company.bankName or company.bankIban %}
     <div class="bank">
       {% if company.bankName %}<div>{{ company.bankName }}</div>{% endif %}
-      {% if company.bankIban %}<div>IBAN: {{ company.bankIban }}</div>{% endif %}
+      {% if company.bankIban %}<div>IBAN: {{ company.bankIban | iban }}</div>{% endif %}
       {% if company.bankBic %}<div>BIC: {{ company.bankBic }}</div>{% endif %}
       <div>Verwendungszweck: {{ invoice.invoiceNumber }}</div>
     </div>

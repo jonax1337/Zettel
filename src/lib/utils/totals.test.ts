@@ -92,7 +92,7 @@ describe("computeTotals — regular (no exemption)", () => {
     expect(t.total).toBe(12970);
   });
 
-  it("rounds VAT per line (not on the cumulative subtotal)", () => {
+  it("rounds a single line's VAT to the nearest cent", () => {
     // 3 × 333 = 999 cents net, 19 % → 189.81 → rounded to 190
     const t = computeTotals(
       [{ quantity: 3, unitPrice: 333, vatRate: 19 }],
@@ -101,6 +101,20 @@ describe("computeTotals — regular (no exemption)", () => {
     expect(t.subtotal).toBe(999);
     expect(t.vatAmount).toBe(190);
     expect(t.total).toBe(1189);
+  });
+
+  it("rounds VAT per line (not on the cumulative subtotal)", () => {
+    // each line: 333 × 19 % = 63.27 → 63; cumulative: 666 × 19 % = 126.54 → 127
+    const t = computeTotals(
+      [
+        { quantity: 1, unitPrice: 333, vatRate: 19 },
+        { quantity: 1, unitPrice: 333, vatRate: 19 },
+      ],
+      opts,
+    );
+    expect(t.subtotal).toBe(666);
+    expect(t.vatAmount).toBe(126);
+    expect(t.total).toBe(792);
   });
 
   it("handles 0 % VAT positions (passes through subtotal)", () => {

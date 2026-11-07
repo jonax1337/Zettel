@@ -21,6 +21,10 @@
     <ram:IncludedNote>
       <ram:Content>Lieferung an EU-Geschäftskunden.</ram:Content>
     </ram:IncludedNote>
+    <ram:IncludedNote>
+      <ram:Content>Steuerschuldnerschaft des Leistungsempfängers / Reverse charge — VAT to be paid by the recipient.</ram:Content>
+      <ram:SubjectCode>AAI</ram:SubjectCode>
+    </ram:IncludedNote>
   </rsm:ExchangedDocument>
 
   <rsm:SupplyChainTradeTransaction>
@@ -42,7 +46,7 @@
       <ram:SpecifiedLineTradeSettlement>
         <ram:ApplicableTradeTax>
           <ram:TypeCode>VAT</ram:TypeCode>
-          <ram:CategoryCode>S</ram:CategoryCode>
+          <ram:CategoryCode>K</ram:CategoryCode>
           <ram:RateApplicablePercent>0</ram:RateApplicablePercent>
         </ram:ApplicableTradeTax>
         <ram:SpecifiedTradeSettlementLineMonetarySummation>
@@ -109,10 +113,12 @@
       <ram:ApplicableTradeTax>
         <ram:CalculatedAmount>0.00</ram:CalculatedAmount>
         <ram:TypeCode>VAT</ram:TypeCode>
+        <ram:ExemptionReason>VAT exempt for EEA intra-community supply of goods and services</ram:ExemptionReason>
         <ram:BasisAmount>2500.00</ram:BasisAmount>
-        <ram:CategoryCode>S</ram:CategoryCode>
-        <ram:RateApplicablePercent>0.0</ram:RateApplicablePercent>
+        <ram:CategoryCode>K</ram:CategoryCode>
+        <ram:RateApplicablePercent>0</ram:RateApplicablePercent>
       </ram:ApplicableTradeTax>
+
 
       <ram:SpecifiedTradePaymentTerms>
         <ram:Description>Zahlbar innerhalb von 14 Tagen ohne Abzug.</ram:Description>
