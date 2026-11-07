@@ -74,9 +74,7 @@ def test_missing_line_period_suppresses_block(payloads):
     start, end = _line_period_dates(xml)
     assert start is None
     assert end is None
-    assert "BillingSpecifiedPeriod" not in xml or "BillingSpecifiedPeriod" in xml.split("<ram:ApplicableHeaderTradeSettlement")[0] == False or True
-    # Practical check: only the header-level period block should be eligible
-    # (and the standard payload doesn't set one), so no occurrence at all.
+    # the standard payload sets no header-level period either, so no block at all
     assert xml.count("BillingSpecifiedPeriod") == 0
 
 
@@ -95,11 +93,11 @@ def test_period_per_item_only(payloads):
     payload = payloads("02-mixed-vat.json")
     payload["items"][0]["linePeriodStart"] = DAY
     payload["items"][0]["linePeriodEnd"] = DAY_PLUS_7
-    if len(payload["items"]) > 1:
-        payload["items"][1].pop("linePeriodStart", None)
-        payload["items"][1].pop("linePeriodEnd", None)
-        xml = render_zugferd_xml(payload)
-        s0, e0 = _line_period_dates(xml, 0)
-        s1, e1 = _line_period_dates(xml, 1)
-        assert s0 and e0
-        assert s1 is None and e1 is None
+    assert len(payload["items"]) > 1
+    payload["items"][1].pop("linePeriodStart", None)
+    payload["items"][1].pop("linePeriodEnd", None)
+    xml = render_zugferd_xml(payload)
+    s0, e0 = _line_period_dates(xml, 0)
+    s1, e1 = _line_period_dates(xml, 1)
+    assert s0 == "20250515" and e0 == "20250522"
+    assert s1 is None and e1 is None

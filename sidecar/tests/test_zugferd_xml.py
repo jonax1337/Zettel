@@ -18,7 +18,6 @@ import pytest
 from invoice.vat import vat_groups
 from invoice.zugferd import (
     XRECHNUNG_GUIDELINE_URN,
-    _PROFILE_URNS,
     render_xrechnung_xml,
     render_zugferd_xml,
 )
@@ -48,32 +47,43 @@ def _xpath_all(xml: str, path: str) -> list[ET.Element]:
     return root.findall(path, NS)
 
 
-def _assert_matches_golden(xml: str, payload_name: str, request) -> None:
-    golden = GOLDEN_DIR / payload_name.replace(".json", ".xml")
+def _seller(xml: str) -> ET.Element:
+    seller = ET.fromstring(xml).find(".//ram:SellerTradeParty", NS)
+    assert seller is not None
+    return seller
+
+
+def _assert_matches_golden(xml: str, golden_name: str, request) -> None:
+    golden = GOLDEN_DIR / f"{golden_name}.xml"
     if request.config.getoption("--record", default=False) or not golden.exists():
         golden.write_text(xml, encoding="utf-8")
         pytest.skip(f"recorded golden: {golden.name}")
 
     expected = golden.read_text(encoding="utf-8")
     assert _normalize(xml) == _normalize(expected), (
-        f"XML drift in {payload_name}. "
+        f"XML drift in {golden_name}. "
         f"If intentional, re-record with: pytest --record"
     )
 
 
 class TestZugferdGoldens:
-    @pytest.mark.parametrize("payload_name", [
-        "01-standard-19.json",
-        "02-mixed-vat.json",
-        "03-five-positions.json",
-        "04-ku-with-vatid.json",
-        "05-reverse-charge.json",
-        "06-basic.json",
-        "07-extended.json",
-        "13-hourly-service-periods.json",
+    # The 05 fixture only carries isReverseCharge; the template keys on reverseChargeType.
+    @pytest.mark.parametrize("golden_name,payload_name,reverse_charge_type", [
+        ("01-standard-19", "01-standard-19.json", None),
+        ("02-mixed-vat", "02-mixed-vat.json", None),
+        ("03-five-positions", "03-five-positions.json", None),
+        ("04-ku-with-vatid", "04-ku-with-vatid.json", None),
+        ("05-reverse-charge", "05-reverse-charge.json", "intra_eu"),
+        ("05-reverse-charge-third-country", "05-reverse-charge.json", "third_country"),
+        ("06-basic", "06-basic.json", None),
+        ("07-extended", "07-extended.json", None),
+        ("13-hourly-service-periods", "13-hourly-service-periods.json", None),
     ])
-    def test_xml_matches_golden(self, payloads, payload_name, request):
-        _assert_matches_golden(render_zugferd_xml(payloads(payload_name)), payload_name, request)
+    def test_xml_matches_golden(self, payloads, golden_name, payload_name, reverse_charge_type, request):
+        payload = payloads(payload_name)
+        if reverse_charge_type:
+            payload["invoice"]["reverseChargeType"] = reverse_charge_type
+        _assert_matches_golden(render_zugferd_xml(payload), golden_name, request)
 
 
 class TestXRechnungGoldens:
@@ -85,7 +95,9 @@ class TestXRechnungGoldens:
         "12-xrechnung-kleinunternehmer.json",
     ])
     def test_xml_matches_golden(self, payloads, payload_name, request):
-        _assert_matches_golden(render_xrechnung_xml(payloads(payload_name)), payload_name, request)
+        _assert_matches_golden(
+            render_xrechnung_xml(payloads(payload_name)), payload_name.removesuffix(".json"), request
+        )
 
 
 class TestHourlyTimeBilling:
@@ -138,50 +150,73 @@ class TestZugferdSemantics:
         assert "DE123456789" in xml
 
     def test_kleinunternehmer_falls_back_to_tax_number(self, payloads):
-        """BR-CO-26: seller must be identifiable. Without VAT-ID we emit
-        the tax number as <ram:ID> on SellerTradeParty."""
+        """BR-CO-26: seller must be identifiable. Without VAT-ID we emit the
+        tax number as BT-29 (<ram:ID> directly under SellerTradeParty, before
+        <ram:Name>), in addition to the FC tax registration."""
         payload = payloads("04-ku-with-vatid.json")
         payload["company"]["vatId"] = None
-        payload["company"]["isKleinunternehmer"] = True
-        payload["invoice"]["isKleinunternehmer"] = True
         xml = render_zugferd_xml(payload)
-        assert payload["company"]["taxNumber"] in xml
+        seller = _seller(xml)
+        tags = [c.tag.split("}")[1] for c in seller]
+        assert tags[:2] == ["ID", "Name"]
+        assert seller.find("ram:ID", NS).text == payload["company"]["taxNumber"]
+
+    def test_seller_with_vat_id_has_no_bt29_fallback(self, payloads):
+        xml = render_zugferd_xml(payloads("04-ku-with-vatid.json"))
+        seller = _seller(xml)
+        assert seller.find("ram:ID", NS) is None
+        assert [c.tag.split("}")[1] for c in seller][0] == "Name"
 
     def test_reverse_charge_intra_eu_emits_category_k(self, payloads):
         payload = payloads("05-reverse-charge.json")
         payload["invoice"]["reverseChargeType"] = "intra_eu"
         xml = render_zugferd_xml(payload)
         assert "<ram:CategoryCode>K</ram:CategoryCode>" in xml
-        assert "intra-community" in xml.lower() or "intra community" in xml.lower()
+        assert "<ram:CategoryCode>S</ram:CategoryCode>" not in xml
+        assert "VAT exempt for EEA intra-community supply" in xml
 
     def test_reverse_charge_third_country_emits_category_g(self, payloads):
         payload = payloads("05-reverse-charge.json")
         payload["invoice"]["reverseChargeType"] = "third_country"
         xml = render_zugferd_xml(payload)
         assert "<ram:CategoryCode>G</ram:CategoryCode>" in xml
+        assert "<ram:CategoryCode>S</ram:CategoryCode>" not in xml
+        assert "Export outside EU" in xml
 
-    def test_basic_profile_urn(self, payloads):
+    @pytest.mark.parametrize("profile,urn", [
+        ("basic", "urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:basic"),
+        ("en16931", "urn:cen.eu:en16931:2017"),
+        ("extended", "urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended"),
+        ("EXTENDED", "urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended"),
+        ("unknown", "urn:cen.eu:en16931:2017"),
+    ])
+    def test_profile_urn_is_exact(self, payloads, profile, urn):
         payload = payloads("01-standard-19.json")
-        payload["profile"] = "basic"
+        payload["profile"] = profile
         xml = render_zugferd_xml(payload)
-        assert _PROFILE_URNS["basic"] in xml
-
-    def test_extended_profile_urn(self, payloads):
-        payload = payloads("01-standard-19.json")
-        payload["profile"] = "extended"
-        xml = render_zugferd_xml(payload)
-        assert _PROFILE_URNS["extended"] in xml
+        assert _xpath_text(xml, ".//ram:GuidelineSpecifiedDocumentContextParameter/ram:ID") == urn
 
     def test_default_profile_is_en16931(self, payloads):
-        xml = render_zugferd_xml(payloads("01-standard-19.json"))
-        assert _PROFILE_URNS["en16931"] in xml
-
-    def test_credit_note_inverts_amounts(self, payloads):
         payload = payloads("01-standard-19.json")
-        payload["invoice"]["isCreditNote"] = True
-        groups = vat_groups(payload["items"], is_klein=False, sign=-1)
-        assert all(g["basis"] <= 0 for g in groups)
-        assert all(g["tax"] <= 0 for g in groups)
+        del payload["profile"]
+        xml = render_zugferd_xml(payload)
+        assert _xpath_text(xml, ".//ram:GuidelineSpecifiedDocumentContextParameter/ram:ID") == "urn:cen.eu:en16931:2017"
+
+    def test_credit_note_renders_negative_amounts(self, payloads):
+        payload = payloads("01-standard-19.json")
+        payload["invoice"].update(isCreditNote=True, subtotal=-120000, vatAmount=-22800, total=-142800)
+        xml = render_zugferd_xml(payload)
+        assert _xpath_text(xml, ".//rsm:ExchangedDocument/ram:TypeCode") == "381"
+        assert _xpath_text(xml, ".//ram:IncludedSupplyChainTradeLineItem//ram:LineTotalAmount") == "-1200.00"
+        tax = _xpath_all(xml, ".//ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax")
+        assert [t.find("ram:BasisAmount", NS).text for t in tax] == ["-1200.00"]
+        assert [t.find("ram:CalculatedAmount", NS).text for t in tax] == ["-228.00"]
+        summation = ".//ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:"
+        assert _xpath_text(xml, summation + "GrandTotalAmount") == "-1428.00"
+
+    def test_credit_note_flag_invertsvat_groups(self):
+        groups = vat_groups([{"lineTotal": 120000, "vatRate": 19}], is_klein=False, sign=-1)
+        assert groups == [{"rate": 19.0, "basis": -120000, "tax": -22800}]
 
 
 class TestVatGrouping:
@@ -206,6 +241,7 @@ class TestVatGrouping:
         assert len(groups) == 1
         assert groups[0]["rate"] == 0
         assert groups[0]["tax"] == 0
+        assert groups[0]["basis"] == 10000
 
     def test_empty_items_returns_zero_group(self):
         groups = vat_groups([], is_klein=False)

@@ -40,8 +40,6 @@ Sollte eine Lizenz hier fehlerhaft oder veraltet sein: bitte ein Issue öffnen o
 | `typescript` | 6.0.3 | Apache-2.0 | Compiler |
 | `svelte-check` | 4.7.6 | MIT | Type-Check |
 | `vitest` | 5.0.2 | MIT | Unit-Tests |
-| `@vitest/ui` | 5.0.2 | MIT | Test-Oberfläche |
-| `drizzle-kit` | 0.31.11 | MIT | Schema-Generator |
 | `@tauri-apps/cli` | 2.12.0 | Apache-2.0 OR MIT | Build-Tool |
 
 ## Rust (`src-tauri/Cargo.toml`)

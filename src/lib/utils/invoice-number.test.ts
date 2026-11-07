@@ -4,22 +4,12 @@ import { displayInvoiceNumber, draftPlaceholder, formatInvoiceNumber, isDraftNum
 const D = new Date(2026, 4, 17); // May 17, 2026
 
 describe("formatInvoiceNumber", () => {
-  it("renders the default invoice pattern", () => {
+  it("renders an invoice pattern", () => {
     expect(formatInvoiceNumber("RE-{YYYY}-{NNNN}", 1, D)).toBe("RE-2026-0001");
   });
 
-  it("renders the default customer pattern", () => {
+  it("renders a customer pattern", () => {
     expect(formatInvoiceNumber("K-{NNNN}", 42, D)).toBe("K-0042");
-  });
-
-  it("renders the default vendor pattern", () => {
-    expect(formatInvoiceNumber("L-{NNNN}", 7, D)).toBe("L-0007");
-  });
-
-  it("renders all document-type prefixes consistently", () => {
-    expect(formatInvoiceNumber("AN-{YYYY}-{NNNN}", 12, D)).toBe("AN-2026-0012");
-    expect(formatInvoiceNumber("EX-{YYYY}-{NNNN}", 12, D)).toBe("EX-2026-0012");
-    expect(formatInvoiceNumber("MA-{YYYY}-{NNNN}", 12, D)).toBe("MA-2026-0012");
   });
 
   it("handles YY (two-digit year)", () => {

@@ -420,6 +420,11 @@ table.totals tr.grand td {
   flex: 1;
 }
 
+/* Wide enough for a 22-character IBAN in groups of four on one line. */
+.doc-footer .col-bank {
+  flex: 1.4;
+}
+
 .doc-footer .col-title {
   font-weight: 600;
   color: var(--color-text);
@@ -431,4 +436,12 @@ table.totals tr.grand td {
 .doc-footer .iban {
   font-family: var(--font-mono);
   letter-spacing: 0.2pt;
+}
+
+.iban-g {
+  display: inline-block;
+  margin-right: 0.55em;
+}
+.iban-g:last-child {
+  margin-right: 0;
 }

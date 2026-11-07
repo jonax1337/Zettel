@@ -143,10 +143,10 @@
       {% if company.vatId %}<div>{{ t('footer_vat_id', lang) }} {{ company.vatId }}</div>{% endif %}
     </div>
     {% if with_bank %}
-    <div class="col">
+    <div class="col col-bank">
       <div class="col-title">{{ t('footer_bank', lang) }}</div>
       {% if company.bankName %}<div>{{ company.bankName }}</div>{% endif %}
-      {% if company.bankIban %}<div class="iban">{{ company.bankIban }}</div>{% endif %}
+      {% if company.bankIban %}<div class="iban">{{ company.bankIban | iban }}</div>{% endif %}
       {% if company.bankBic %}<div>{{ company.bankBic }}</div>{% endif %}
     </div>
     {% endif %}

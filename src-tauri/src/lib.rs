@@ -138,7 +138,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             sidecar::generate_invoice,
             sidecar::generate_offer,
-            sidecar::ping_sidecar,
             sidecar::extract_zugferd,
             sidecar::extract_text_pdf,
             sidecar::generate_reminder,
