@@ -18,6 +18,9 @@ type SettingsRow = {
   email: string;
   phone: string | null;
   website: string | null;
+  register_court: string | null;
+  register_number: string | null;
+  managing_directors: string | null;
   bank_name: string;
   bank_iban: string;
   bank_bic: string;
@@ -120,6 +123,9 @@ function mapSettings(r: SettingsRow): Settings {
     email: r.email,
     phone: r.phone,
     website: r.website,
+    registerCourt: r.register_court,
+    registerNumber: r.register_number,
+    managingDirectors: r.managing_directors,
     bankName: r.bank_name,
     bankIban: r.bank_iban && normalizeIban(r.bank_iban),
     bankBic: r.bank_bic,
@@ -211,6 +217,9 @@ function settingsColumnValues(s: Partial<Settings>): Array<[column: string, valu
     ["email", s.email ?? ""],
     ["phone", s.phone ?? null],
     ["website", s.website ?? null],
+    ["register_court", s.registerCourt ?? null],
+    ["register_number", s.registerNumber ?? null],
+    ["managing_directors", s.managingDirectors ?? null],
     ["bank_name", s.bankName ?? ""],
     ["bank_iban", normalizeIban(s.bankIban ?? "")],
     ["bank_bic", s.bankBic ?? ""],

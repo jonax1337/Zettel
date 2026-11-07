@@ -17,20 +17,20 @@
   soft-fill: rgb("#f7f8f9"),
   accent: rgb("#1f2933"),
   accent-soft: rgb("#66707b"),
-  doctype-size: 22pt,
-  doctype-weight: "light",
-  doctype-tracking: 1.5pt,
-  doctype-upper: true,
-  brand-size: 13pt,
+  brand-size: 14pt,
   brand-weight: "bold",
   brand-tracking: 0.2pt,
-  masthead-rule: 0.6pt + rgb("#1f2933"),
+  brand-fill: rgb("#1f2933"),
+  brand-align: left,
+  subject-weight: "bold",
+  subject-fill: rgb("#1f2933"),
+  meta-fill: none,
+  meta-top-rule: 0.6pt + rgb("#1f2933"),
+  meta-bar: none,
+  meta-row-rule: 0.2pt + rgb("#e6e9ec"),
   grand-rule: 0.6pt + rgb("#1f2933"),
   thead-rule: 0.6pt + rgb("#1f2933"),
   last-row-rule: 0.4pt + rgb("#1f2933"),
-  meta-fill: rgb("#f7f8f9"),
-  meta-stroke: 0.3pt + rgb("#e6e9ec"),
-  meta-radius: 1.5mm,
   callout-fill: rgb("#f7f8f9"),
   callout-bar: 1mm + rgb("#66707b"),
   callout-radius: (right: 1.5mm),
@@ -44,18 +44,18 @@
     rule: rgb("#0f4c75"),
     soft-fill: rgb("#eef4f8"),
     rule-soft: rgb("#cfe0eb"),
-    doctype-weight: "bold",
-    doctype-tracking: 0.5pt,
-    doctype-upper: false,
-    brand-size: 14pt,
+    brand-size: 15pt,
     brand-tracking: 0pt,
-    masthead-rule: 1.2pt + rgb("#0f4c75"),
+    brand-fill: rgb("#0f4c75"),
+    brand-align: right,
+    subject-fill: rgb("#0f4c75"),
+    meta-fill: rgb("#eef4f8"),
+    meta-top-rule: none,
+    meta-bar: 1mm + rgb("#3282b8"),
+    meta-row-rule: 0.2pt + rgb("#cfe0eb"),
     grand-rule: 1.2pt + rgb("#0f4c75"),
     thead-rule: 1pt + rgb("#0f4c75"),
     last-row-rule: 0.6pt + rgb("#0f4c75"),
-    meta-fill: rgb("#eef4f8"),
-    meta-stroke: 0.3pt + rgb("#cfe0eb"),
-    meta-radius: 2.5mm,
     callout-fill: rgb("#eef4f8"),
     callout-bar: 1mm + rgb("#3282b8"),
     callout-radius: 1.5mm,
@@ -70,19 +70,17 @@
     soft-fill: none,
     accent: rgb("#111111"),
     accent-soft: rgb("#888888"),
-    doctype-size: 18pt,
-    doctype-weight: "regular",
-    doctype-tracking: 0.5pt,
-    doctype-upper: false,
+    brand-size: 13pt,
     brand-weight: "medium",
     brand-tracking: 0pt,
-    masthead-rule: 0.3pt + rgb("#111111"),
+    brand-fill: rgb("#111111"),
+    subject-weight: "semibold",
+    subject-fill: rgb("#111111"),
+    meta-top-rule: none,
+    meta-row-rule: 0.2pt + rgb("#eeeeee"),
     grand-rule: 0.3pt + rgb("#111111"),
     thead-rule: 0.3pt + rgb("#111111"),
     last-row-rule: 0.3pt + rgb("#111111"),
-    meta-fill: none,
-    meta-stroke: none,
-    meta-radius: 0pt,
     callout-fill: none,
     callout-bar: 0.3pt + rgb("#eeeeee"),
     callout-radius: 0pt,
@@ -93,6 +91,29 @@
 #let sans = ("Helvetica", "Arial", "Liberation Sans", "DejaVu Sans")
 #let mono = ("Courier New", "Liberation Mono", "DejaVu Sans Mono")
 #let page-count-color = rgb("#9a9a9a")
+
+// DIN 5008 form B, measured from the sheet edge. The text area starts at
+// the left margin; page-one elements outside it are placed with `at-sheet`.
+#let page-width = 210mm
+#let margin-left = 25mm
+#let margin-right = 20mm
+#let margin-top = 20mm
+#let margin-bottom = 38mm
+#let footer-clearance = 8mm
+#let text-width = page-width - margin-left - margin-right
+#let letterhead-top = 10mm
+#let address-field = (x: 20mm, y: 45mm, width: 85mm, height: 45mm)
+#let address-note-height = 17.7mm
+#let address-indent = 5mm
+#let info-block = (x: 125mm, y: 50mm, width: 75mm)
+#let subject-top = 98.5mm
+#let fold-marks = ((y: 105mm, length: 5mm), (y: 148.5mm, length: 7mm), (y: 210mm, length: 5mm))
+#let fold-mark-x = 2mm
+#let fold-mark-stroke = 0.3pt + luma(150)
+
+#let at-sheet(x, y, width, body) = place(
+  top + left, dx: x - margin-left, dy: y - margin-top, block(width: width, body),
+)
 
 // ----- building blocks -----------------------------------------------------
 
@@ -131,7 +152,7 @@
   column.lines.map(footer-line).join(linebreak())
 }
 
-#let page-footer() = {
+#let page-footer() = align(bottom, pad(bottom: footer-clearance, {
   set text(size: 7.5pt, fill: th.muted)
   set par(leading: 0.45em)
   block(width: 100%, stroke: (top: 0.3pt + th.rule-soft), inset: (top: 3mm), grid(
@@ -142,70 +163,78 @@
   ))
   v(2mm, weak: true)
   align(right, text(size: 8pt, fill: page-count-color, page-label()))
+}))
+
+#let letterhead() = {
+  let align-brand(body) = align(th.brand-align, body)
+  let parts = ()
+  if d.logo != none { parts.push(align-brand(image(d.logo, height: 16mm))) }
+  parts.push(align-brand(text(
+    size: th.brand-size, weight: th.brand-weight, tracking: th.brand-tracking, fill: th.brand-fill, d.company.name,
+  )))
+  if d.company.owner != none { parts.push(align-brand(text(size: 9pt, fill: th.muted, d.company.owner))) }
+  at-sheet(margin-left, letterhead-top, text-width, stack(spacing: 2.5mm, ..parts))
 }
 
-#let masthead() = block(
-  width: 100%,
-  below: 10mm,
-  inset: (bottom: 6mm),
-  stroke: (bottom: th.masthead-rule),
-  grid(
-    columns: (1fr, auto),
-    align: (left + top, right + top),
-    {
-      if d.logo != none {
-        block(below: 4mm, image(d.logo, height: 22mm))
-      }
-      text(size: th.brand-size, weight: th.brand-weight, tracking: th.brand-tracking, d.company.name)
-      if d.company.owner != none {
-        block(above: 1.5mm, text(size: 9pt, fill: th.muted, d.company.owner))
-      }
-    },
-    {
-      text(
-        size: th.doctype-size,
-        weight: th.doctype-weight,
-        tracking: th.doctype-tracking,
-        fill: th.accent,
-        if th.doctype-upper { upper(d.title) } else { d.title },
-      )
-      block(above: 3mm, text(font: mono, size: 10pt, fill: th.muted, d.number))
-    },
-  ),
-)
-
-#let addressee() = {
+#let address-window() = at-sheet(address-field.x, address-field.y, address-field.width, {
+  set par(leading: 0.4em)
   block(
     width: 100%,
-    below: 4mm,
-    inset: (bottom: 1.5mm),
-    stroke: (bottom: 0.3pt + th.rule-soft),
-    text(size: 7.5pt, fill: th.faint, d.senderLine),
+    height: address-note-height,
+    inset: (left: address-indent),
+    align(bottom, block(
+      width: 100%,
+      inset: (bottom: 0.8mm),
+      stroke: (bottom: 0.3pt + th.faint),
+      text(size: 7pt, fill: th.muted, d.senderLine),
+    )),
   )
-  text(weight: "semibold", d.recipient.name)
-  for line in d.recipient.lines {
-    linebreak()
-    line
-  }
-}
+  block(width: 100%, inset: (left: address-indent), {
+    text(weight: "semibold", d.recipient.name)
+    for line in d.recipient.lines {
+      linebreak()
+      line
+    }
+  })
+})
 
-#let meta-box() = block(
+#let meta-box() = at-sheet(info-block.x, info-block.y, info-block.width, block(
   width: 100%,
-  inset: (x: 4mm, y: 2.5mm),
+  inset: if th.meta-fill == none { 0pt } else { (x: 3mm, y: 1.5mm) },
   fill: th.meta-fill,
-  stroke: th.meta-stroke,
-  radius: th.meta-radius,
+  stroke: (top: th.meta-top-rule, left: th.meta-bar),
   {
     set text(size: 9pt)
     table(
       columns: (auto, 1fr),
       inset: label-inset,
-      stroke: (x, y) => (top: if y > 0 { 0.2pt + th.rule-soft } else { none }),
-      align: (left, right),
+      stroke: (x, y) => (top: if y > 0 { th.meta-row-rule } else { none }),
+      align: left,
       ..d.meta.map(row => (text(fill: th.muted, row.label), text(weight: "medium", row.value))).flatten(),
     )
   },
+))
+
+#let subject-line() = block(
+  below: 6mm,
+  text(size: 11pt, weight: th.subject-weight, fill: th.subject-fill, d.title + " " + d.number),
 )
+
+#let fold-mark-layer() = for mark in fold-marks {
+  place(top + left, dx: fold-mark-x, dy: mark.y, line(length: mark.length, stroke: fold-mark-stroke))
+}
+
+#let continuation-header() = context {
+  if counter(page).get().first() > 1 {
+    set text(size: 8pt, fill: th.muted)
+    block(
+      width: 100%,
+      inset: (bottom: 1.5mm),
+      stroke: (bottom: 0.3pt + th.rule-soft),
+      grid(columns: (1fr, auto), d.company.name, d.title + " " + d.number),
+    )
+  }
+}
 
 #let description-cell(row) = {
   row.description
@@ -236,12 +265,16 @@
 
 #let items-table(spec) = {
   if spec.title != none {
-    block(below: 3mm, text(size: 11pt, weight: "bold", spec.title))
+    block(above: 6mm, below: 3mm, text(size: 11pt, weight: "bold", spec.title))
   }
   let columns = spec.columns
   table(
     columns: columns.map(c => if c.key in ("description", "document") { 1fr } else { auto }),
-    inset: (x: 2.5mm, y: 2.5mm),
+    inset: (x, y) => (
+      left: if x == 0 { 0pt } else { 2.5mm },
+      right: if x == columns.len() - 1 { 0pt } else { 2.5mm },
+      y: 2.4mm,
+    ),
     stroke: (x, y) => (bottom: row-rule(y, spec.rows.len())),
     align: (x, y) => (if columns.at(x).align == "right" { right } else { left }) + top,
     table.header(..columns.map(c => small-caps-title(c.label))),
@@ -310,22 +343,21 @@
 #set par(leading: 0.55em)
 #set page(
   paper: "a4",
-  margin: (top: 20mm, bottom: 40mm, x: 18mm),
+  margin: (left: margin-left, right: margin-right, top: margin-top, bottom: margin-bottom),
+  header: continuation-header(),
+  header-ascent: 6mm,
   footer: page-footer(),
-  footer-descent: 6mm,
+  footer-descent: 0pt,
+  background: fold-mark-layer(),
 )
 
-#masthead()
+#letterhead()
+#address-window()
+#meta-box()
+#v(subject-top - margin-top)
+#subject-line()
 
 #for note in d.topCallouts { callout(note) }
-
-#grid(
-  columns: (1fr, 75mm),
-  column-gutter: 12mm,
-  addressee(),
-  meta-box(),
-)
-#v(12mm)
 
 #for paragraph in d.intro { block(below: 4mm, paragraph) }
 

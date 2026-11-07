@@ -3,16 +3,13 @@
     Document-specific parts (meta rows, totals extras, notices) stay in the
     templates themselves. -#}
 
-{% macro masthead(company, doctype, number) %}
+{# Letterhead: logo or company name above the address window (DIN 5008 form B). #}
+{% macro masthead(company) %}
   <header class="masthead">
     <div class="brand">
       {% if company.logoDataUri %}<img class="brand-logo" src="{{ company.logoDataUri }}" alt="" />{% endif %}
       <div class="brand-name">{{ company.companyName }}</div>
       {% if company.ownerName %}<div class="brand-owner">{{ company.ownerName }}</div>{% endif %}
-    </div>
-    <div class="title-block">
-      <div class="doctype">{{ doctype }}</div>
-      <div class="docnumber">{{ number }}</div>
     </div>
   </header>
 {% endmacro %}
@@ -20,17 +17,55 @@
 {# Sender line (DIN 5008 window) plus the customer's address block. #}
 {% macro addressee(company, customer, attention_label) %}
     <div class="addressee">
-      <div class="sender-line">
-        {{ company.companyName }}
-        {%- if company.street %} · {{ company.street }}{% endif %}
-        {%- if company.postalCode %} · {{ company.postalCode }} {{ company.city }}{% endif %}
+      <div class="addressee-extra">
+        <div class="sender-line">
+          {{ company.companyName }}
+          {%- if company.street %} · {{ company.street }}{% endif %}
+          {%- if company.postalCode %} · {{ company.postalCode }} {{ company.city }}{% endif %}
+        </div>
       </div>
-      <div class="addressee-name">{{ customer.name }}</div>
-      {% if customer.contactPerson %}<div>{{ attention_label }} {{ customer.contactPerson }}</div>{% endif %}
-      <div>{{ customer.street }}</div>
-      <div>{{ customer.postalCode }} {{ customer.city }}</div>
-      {% if customer.country and customer.country != "DE" %}<div>{{ customer.country }}</div>{% endif %}
+      <div class="addressee-zone">
+        <div class="addressee-name">{{ customer.name }}</div>
+        {% if customer.contactPerson %}<div>{{ attention_label }} {{ customer.contactPerson }}</div>{% endif %}
+        <div>{{ customer.street }}</div>
+        <div>{{ customer.postalCode }} {{ customer.city }}</div>
+        {% if customer.country and customer.country != "DE" %}<div>{{ customer.country }}</div>{% endif %}
+      </div>
     </div>
+{% endmacro %}
+
+{# Everything positioned by sheet coordinates on page one: letterhead, address
+   window, information block (the `call` body: meta rows) and the fold and
+   punch marks. #}
+{% macro letter_head(company, customer, attention_label) %}
+  <div class="sheet-head">
+    {{ masthead(company) }}
+    {{ addressee(company, customer, attention_label) }}
+    <div class="meta">
+      {{ caller() }}
+    </div>
+    <div class="sheet-mark fold-mark-upper"></div>
+    <div class="sheet-mark punch-mark"></div>
+    <div class="sheet-mark fold-mark-lower"></div>
+  </div>
+{% endmacro %}
+
+{# Narrow header of every page but the first; a running element like the footer,
+   so it must precede the content, too. #}
+{% macro page_head(company, doctype, number) %}
+  <div class="page-head">
+    <span>{{ company.companyName }}</span>
+    <span>{{ doctype }} {{ number }}</span>
+  </div>
+{% endmacro %}
+
+{# Subject line below the address window. `docnumber` stays a block element in
+   the markup but prints inline. #}
+{% macro subject(doctype, number) %}
+  <div class="subject">
+    <span class="doctype">{{ doctype }}</span>
+    <div class="docnumber">{{ number }}</div>
+  </div>
 {% endmacro %}
 
 {% macro meta_row(label, value) %}
@@ -123,6 +158,14 @@
     </section>
 {% endmacro %}
 
+{# Mandatory for GmbH/UG business letters (§ 35a GmbHG). Mirrors
+   `_register_lines` in invoice/document_view.py. #}
+{% macro register_lines(company, lang) %}
+      {% if company.managingDirectors and company.managingDirectors.strip() %}<div>{{ t('footer_managing_directors', lang) }}: {{ company.managingDirectors.strip() }}</div>{% endif %}
+      {% set register = [company.registerCourt, company.registerNumber] | select | map('trim') | select | join(' ') %}
+      {% if register %}<div>{{ register }}</div>{% endif %}
+{% endmacro %}
+
 {% macro footer(company, lang, with_bank=false) %}
   <footer class="doc-footer">
     <div class="col">
@@ -130,6 +173,7 @@
       {% if company.ownerName %}<div>{{ company.ownerName }}</div>{% endif %}
       <div>{{ company.street }}</div>
       <div>{{ company.postalCode }} {{ company.city }}</div>
+      {{ register_lines(company, lang) }}
     </div>
     <div class="col">
       <div class="col-title">{{ t('footer_contact', lang) }}</div>

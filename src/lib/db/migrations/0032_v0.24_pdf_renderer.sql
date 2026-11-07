@@ -1,7 +1,11 @@
 -- PDF engine for invoices, offers and reminders: 'weasyprint' or 'typst'.
+-- Also the company register data (court, number, managing directors) for the PDF footer (§ 35a GmbHG).
 ALTER TABLE settings ADD COLUMN pdf_renderer TEXT NOT NULL DEFAULT 'weasyprint';
+ALTER TABLE settings ADD COLUMN register_court TEXT;
+ALTER TABLE settings ADD COLUMN register_number TEXT;
+ALTER TABLE settings ADD COLUMN managing_directors TEXT;
 
--- The audit triggers name every column, so they are recreated with the new one
+-- The audit triggers name every column, so they are recreated with the new ones
 -- (output of `python tools/gen_audit_triggers.py settings`).
 DROP TRIGGER audit_settings_insert;
 DROP TRIGGER audit_settings_update;
@@ -79,6 +83,9 @@ BEGIN
       UNION ALL SELECT 'mail_reminder_subject', NEW.mail_reminder_subject
       UNION ALL SELECT 'mail_reminder_body', NEW.mail_reminder_body
       UNION ALL SELECT 'pdf_renderer', NEW.pdf_renderer
+      UNION ALL SELECT 'register_court', NEW.register_court
+      UNION ALL SELECT 'register_number', NEW.register_number
+      UNION ALL SELECT 'managing_directors', NEW.managing_directors
   );
 END;
 
@@ -150,6 +157,9 @@ WHEN OLD.id IS NOT NEW.id
    OR OLD.mail_reminder_subject IS NOT NEW.mail_reminder_subject
    OR OLD.mail_reminder_body IS NOT NEW.mail_reminder_body
    OR OLD.pdf_renderer IS NOT NEW.pdf_renderer
+   OR OLD.register_court IS NOT NEW.register_court
+   OR OLD.register_number IS NOT NEW.register_number
+   OR OLD.managing_directors IS NOT NEW.managing_directors
 BEGIN
   INSERT INTO audit_log (table_name, row_id, parent_id, action, old_values, new_values)
   SELECT 'settings', NEW.id, NULL, 'update', json_group_object(k, o), json_group_object(k, n)
@@ -221,6 +231,9 @@ BEGIN
       UNION ALL SELECT 'mail_reminder_subject', OLD.mail_reminder_subject, NEW.mail_reminder_subject
       UNION ALL SELECT 'mail_reminder_body', OLD.mail_reminder_body, NEW.mail_reminder_body
       UNION ALL SELECT 'pdf_renderer', OLD.pdf_renderer, NEW.pdf_renderer
+      UNION ALL SELECT 'register_court', OLD.register_court, NEW.register_court
+      UNION ALL SELECT 'register_number', OLD.register_number, NEW.register_number
+      UNION ALL SELECT 'managing_directors', OLD.managing_directors, NEW.managing_directors
   )
   WHERE o IS NOT n;
 END;
@@ -297,6 +310,9 @@ BEGIN
       UNION ALL SELECT 'mail_reminder_subject', OLD.mail_reminder_subject
       UNION ALL SELECT 'mail_reminder_body', OLD.mail_reminder_body
       UNION ALL SELECT 'pdf_renderer', OLD.pdf_renderer
+      UNION ALL SELECT 'register_court', OLD.register_court
+      UNION ALL SELECT 'register_number', OLD.register_number
+      UNION ALL SELECT 'managing_directors', OLD.managing_directors
   );
 END;
 

@@ -40,6 +40,9 @@ export function companyContactPayload(company: Settings) {
     email: company.email.trim(),
     phone: company.phone?.trim() ?? null,
     website: company.website,
+    registerCourt: company.registerCourt,
+    registerNumber: company.registerNumber,
+    managingDirectors: company.managingDirectors,
     logoPath: company.logoPath,
   };
 }

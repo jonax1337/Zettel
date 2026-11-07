@@ -147,11 +147,19 @@ def _footer_column(title: str | None, lines: list[str | None], *, mono_line: str
     }
 
 
+def _register_lines(company: dict[str, Any], lang: str) -> list[str | None]:
+    directors = (company.get("managingDirectors") or "").strip()
+    register = " ".join(part for part in ((company.get(key) or "").strip()
+                                          for key in ("registerCourt", "registerNumber")) if part)
+    return [f"{t('footer_managing_directors', lang)}: {directors}" if directors else None, register or None]
+
+
 def _company_footer(company: dict[str, Any], lang: str, *, with_bank: bool) -> list[dict[str, Any]]:
     tax_no, vat_id = company.get("taxNumber"), company.get("vatId")
     columns = [
         _footer_column(company.get("companyName") or "",
-                       [company.get("ownerName"), company.get("street"), _postal_line(company)]),
+                       [company.get("ownerName"), company.get("street"), _postal_line(company),
+                        *_register_lines(company, lang)]),
         _footer_column(t("footer_contact", lang), [company.get("email"), company.get("phone"), company.get("website")]),
         _footer_column(t("footer_tax", lang), [
             f"{t('footer_tax_no', lang)} {tax_no}" if tax_no else None,
@@ -171,6 +179,7 @@ def _reminder_footer(company: dict[str, Any]) -> list[dict[str, Any]]:
     tax_no, vat_id = company.get("taxNumber"), company.get("vatId")
     return [_footer_column(None, [
         (company.get("companyName") or "") + (f" · {owner}" if owner else ""),
+        *_register_lines(company, REMINDER_LANGUAGE),
         f"Steuernr.: {tax_no}" if tax_no else None,
         f"USt-IdNr.: {vat_id}" if vat_id else None,
     ])]

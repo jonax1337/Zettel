@@ -20,10 +20,9 @@
   --color-accent: #1f2933;
   --color-accent-soft: #66707b;
 
-  --doctype-size: 22pt;
-  --doctype-weight: 300;
-  --doctype-tracking: 1.5pt;
-  --doctype-transform: uppercase;
+  --subject-size: 12pt;
+  --subject-weight: 700;
+  --subject-color: var(--color-text);
 
   --brand-name-size: 13pt;
   --brand-name-weight: 700;
@@ -57,9 +56,7 @@ body.theme-modern {
   --color-bg-soft: #eef4f8;
   --color-rule-soft: #cfe0eb;
 
-  --doctype-weight: 700;
-  --doctype-tracking: 0.5pt;
-  --doctype-transform: none;
+  --subject-color: var(--color-accent);
 
   --brand-name-size: 14pt;
   --brand-name-tracking: 0pt;
@@ -85,10 +82,8 @@ body.theme-minimal {
   --color-accent: #111111;
   --color-accent-soft: #888888;
 
-  --doctype-size: 18pt;
-  --doctype-weight: 400;
-  --doctype-tracking: 0.5pt;
-  --doctype-transform: none;
+  --subject-size: 11pt;
+  --subject-weight: 600;
 
   --brand-name-weight: 500;
   --brand-name-tracking: 0pt;
@@ -107,9 +102,18 @@ body.theme-minimal {
   --callout-radius: 0;
 }
 
+/* DIN 5008 form B on A4: text between 25 mm and 190 mm. Page one leaves
+   98.5 mm open at the top for letterhead, address window and information
+   block, which are placed by sheet coordinates in .sheet-head. */
 @page {
   size: A4;
-  margin: 20mm 18mm 40mm 18mm;
+  margin: 32mm 20mm 40mm 25mm;
+  @top-center {
+    content: element(page-head);
+    width: 100%;
+    vertical-align: bottom;
+    padding-bottom: 4mm;
+  }
   /* Anchored to the bottom so a longer footer grows upwards into the margin
      instead of pushing its last row, the page count, off the page. */
   @bottom-center {
@@ -117,6 +121,13 @@ body.theme-minimal {
     width: 100%;
     vertical-align: bottom;
     padding-bottom: 8mm;
+  }
+}
+
+@page :first {
+  margin-top: 98.5mm;
+  @top-center {
+    content: none;
   }
 }
 
@@ -131,21 +142,35 @@ body {
   -webkit-print-color-adjust: exact;
 }
 
-/* ----- Top: brand + title block ----- */
+/* ----- Page one head: positioned by sheet coordinates (mm from the page
+   corner); the box reaches back over the page margins to the corner. ----- */
+
+.sheet-head {
+  position: absolute;
+  top: -98.5mm;
+  left: -25mm;
+  width: 210mm;
+  height: 98.5mm;
+}
 
 .masthead {
+  position: absolute;
+  top: 10mm;
+  left: 25mm;
+  width: 165mm;
+  height: 31mm;
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  flex-direction: column;
+  justify-content: flex-end;
   border-bottom: var(--masthead-rule);
-  padding-bottom: 6mm;
-  margin-bottom: 10mm;
+  padding-bottom: 2.5mm;
 }
 
 .brand .brand-logo {
-  max-height: 22mm;
+  display: block;
+  max-height: 18mm;
   max-width: 60mm;
-  margin-bottom: 4mm;
+  margin-bottom: 2mm;
   object-fit: contain;
 }
 
@@ -153,6 +178,7 @@ body {
   font-size: var(--brand-name-size);
   font-weight: var(--brand-name-weight);
   letter-spacing: var(--brand-name-tracking);
+  line-height: 1.2;
 }
 
 .brand .brand-owner {
@@ -161,60 +187,54 @@ body {
   margin-top: 0.5mm;
 }
 
-.title-block {
-  text-align: right;
-}
-
-.title-block .doctype {
-  font-size: var(--doctype-size);
-  font-weight: var(--doctype-weight);
-  letter-spacing: var(--doctype-tracking);
-  text-transform: var(--doctype-transform);
-  color: var(--color-accent);
-  line-height: 1;
-}
-
-.title-block .docnumber {
-  font-size: 10pt;
-  font-family: var(--font-mono);
-  color: var(--color-muted);
-  margin-top: 2mm;
-}
-
-/* ----- Addressee + meta box ----- */
-
-.parties {
-  display: flex;
-  gap: 12mm;
-  align-items: flex-start;
-  margin-bottom: 12mm;
-}
-
+/* Address field: 85 x 45 mm, 17.7 mm extra zone above the 27.3 mm address zone. */
 .addressee {
-  flex: 1;
+  position: absolute;
+  top: 45mm;
+  left: 20mm;
+  width: 85mm;
+  height: 45mm;
+  padding-left: 5mm;
   font-size: 10pt;
+  line-height: 1.3;
+}
+
+.addressee-extra {
+  height: 17.7mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.addressee-zone {
+  height: 27.3mm;
+  padding-top: 1mm;
 }
 
 .addressee .sender-line {
-  font-size: 7.5pt;
+  font-size: 7pt;
+  line-height: 1.25;
   color: var(--color-faint);
   border-bottom: 0.3pt solid var(--color-rule-soft);
-  padding-bottom: 1.5mm;
-  margin-bottom: 4mm;
+  padding-bottom: 0.6mm;
 }
 
 .addressee .addressee-name {
   font-weight: 600;
-  margin-top: 2mm;
 }
 
+/* Information block: the text spans 125 to 200 mm from 50 mm down; the box
+   behind it reaches 3 mm (padding) beyond. */
 .meta {
-  width: 75mm;
+  position: absolute;
+  top: 47.5mm;
+  left: 122mm;
+  width: 81mm;
   font-size: 9pt;
   background: var(--meta-bg);
   border: var(--meta-border);
   border-radius: var(--meta-radius);
-  padding: 3.5mm 4mm;
+  padding: 2.5mm 3mm;
 }
 
 .meta-row {
@@ -237,12 +257,50 @@ body {
   text-align: right;
 }
 
+/* Fold marks at 105 and 210 mm (5 mm), punch mark at 148.5 mm (7 mm). */
+.sheet-mark {
+  position: absolute;
+  left: 0;
+  width: 5mm;
+  height: 0;
+  border-top: 0.3pt solid #8a8a8a;
+}
+
+.fold-mark-upper { top: 105mm; }
+.punch-mark { top: 148.5mm; width: 7mm; }
+.fold-mark-lower { top: 210mm; }
+
+/* ----- Running header of the following pages ----- */
+
+.page-head {
+  position: running(page-head);
+  display: flex;
+  justify-content: space-between;
+  font-size: 8pt;
+  color: var(--color-muted);
+  border-bottom: 0.3pt solid var(--color-rule-soft);
+  padding-bottom: 1.5mm;
+}
+
+/* ----- Subject line ----- */
+
+.subject {
+  font-size: var(--subject-size);
+  font-weight: var(--subject-weight);
+  color: var(--subject-color);
+  margin-bottom: 6mm;
+}
+
+.subject .docnumber {
+  display: inline;
+}
+
 /* ----- Items table ----- */
 
 table.items {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 6mm;
+  margin-bottom: 4mm;
 }
 
 table.items thead th {
@@ -252,8 +310,25 @@ table.items thead th {
   text-transform: uppercase;
   letter-spacing: 0.4pt;
   color: var(--color-muted);
-  padding: 2.5mm 2.5mm;
+  padding: 2.2mm 1.8mm;
   border-bottom: var(--thead-rule);
+  white-space: nowrap;
+}
+
+table.items th:first-child,
+table.items td:first-child {
+  padding-left: 0;
+}
+
+table.items th:last-child,
+table.items td:last-child {
+  padding-right: 0;
+}
+
+th.num,
+td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 table.items tbody tr {
@@ -261,7 +336,7 @@ table.items tbody tr {
 }
 
 table.items tbody td {
-  padding: 2.5mm 2.5mm;
+  padding: 2.2mm 1.8mm;
   border-bottom: 0.2pt solid var(--color-rule-row);
   vertical-align: top;
   font-size: 10pt;
@@ -271,7 +346,7 @@ table.items tbody tr:last-child td {
   border-bottom: var(--tbody-last-rule);
 }
 
-.col-pos    { width: 9mm;  text-align: right; color: var(--color-faint); }
+.col-pos    { width: 8mm;  text-align: right; color: var(--color-faint); }
 .col-desc   { }
 .col-desc .item-name { }
 .col-desc .item-detail {
@@ -287,39 +362,51 @@ table.items tbody tr:last-child td {
   font-style: italic;
 }
 .col-qty    { width: 14mm; text-align: right; font-variant-numeric: tabular-nums; }
-.col-unit   { width: 16mm; }
-.col-price  { width: 24mm; text-align: right; font-variant-numeric: tabular-nums; }
+.col-unit   { width: 15mm; }
+.col-price  { width: 22mm; text-align: right; font-variant-numeric: tabular-nums; }
 .col-vat    { width: 14mm; text-align: right; font-variant-numeric: tabular-nums; }
-.col-total  { width: 26mm; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
+.col-total  { width: 25mm; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
 
 /* ----- Totals ----- */
 
-.totals-wrap {
+.totals-wrap,
+section.totals {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 10mm;
+  margin-bottom: 6mm;
 }
 
-table.totals {
+table.totals,
+table.totals-table {
   width: 80mm;
   border-collapse: collapse;
+}
+
+table.totals-table td {
+  padding: 1.5mm 0;
+}
+
+table.totals-table td:first-child {
+  color: var(--color-muted);
+  padding-right: 4mm;
 }
 
 table.totals th {
   text-align: left;
   font-weight: 400;
   color: var(--color-muted);
-  padding: 1.5mm 4mm 1.5mm 0;
+  padding: 1.1mm 4mm 1.1mm 0;
 }
 
 table.totals td {
   text-align: right;
-  padding: 1.5mm 0;
+  padding: 1.1mm 0;
   font-variant-numeric: tabular-nums;
 }
 
 table.totals tr.grand th,
-table.totals tr.grand td {
+table.totals tr.grand td,
+table.totals-table tr.grand td {
   border-top: var(--grand-rule);
   font-weight: 700;
   font-size: 12pt;
@@ -327,10 +414,41 @@ table.totals tr.grand td {
   padding-top: 2.5mm;
 }
 
+table.totals-table tr.grand td:first-child {
+  color: var(--color-accent);
+}
+
+/* ----- Reminder body ----- */
+
+.intro p {
+  margin: 0 0 3mm 0;
+}
+
+.reference h3 {
+  margin: 6mm 0 1.5mm 0;
+  font-size: 8.5pt;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4pt;
+  color: var(--color-muted);
+}
+
+.payment p {
+  margin: 0 0 3mm 0;
+}
+
+.payment .bank {
+  margin: 0 0 3mm 0;
+  padding: 3mm 4mm;
+  background: var(--callout-bg);
+  border-left: var(--callout-border);
+  border-radius: var(--callout-radius);
+}
+
 /* ----- Callout (Kleinunternehmer-Hinweis) ----- */
 
 .callout {
-  margin: 6mm 0;
+  margin: 5mm 0;
   padding: 3.5mm 4.5mm;
   background: var(--callout-bg);
   border-left: var(--callout-border);
@@ -342,7 +460,8 @@ table.totals tr.grand td {
 /* ----- Generic content blocks ----- */
 
 .block {
-  margin: 6mm 0;
+  break-inside: avoid;
+  margin: 5mm 0;
   font-size: 9.5pt;
 }
 
@@ -435,16 +554,20 @@ html[lang="en"] .doc-footer::after {
   content: "Page " counter(page) " of " counter(pages);
 }
 
-.doc-footer {
-  flex-wrap: wrap;
-  display: flex;
-  gap: 6mm;
-  justify-content: space-between;
+.doc-footer,
+.page-footer {
   font-size: 7.5pt;
   line-height: 1.35;
   color: var(--color-muted);
   border-top: 0.3pt solid var(--color-rule-soft);
   padding-top: 3mm;
+}
+
+.doc-footer {
+  flex-wrap: wrap;
+  display: flex;
+  gap: 6mm;
+  justify-content: space-between;
 }
 
 .doc-footer .col {

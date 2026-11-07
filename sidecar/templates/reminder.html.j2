@@ -1,5 +1,5 @@
 <!doctype html>
-{% from '_partials.j2' import masthead, addressee, meta_row %}
+{% from '_partials.j2' import letter_head, page_head, subject, meta_row, register_lines %}
 {% set currency = invoice.currency or 'EUR' %}
 <html lang="de">
 <head>
@@ -11,21 +11,20 @@
   {#- Running page footer: it must precede the content to appear from page one. #}
   <footer class="page-footer">
     <div>{{ company.companyName }}{% if company.ownerName %} · {{ company.ownerName }}{% endif %}</div>
+    {{ register_lines(company, 'de') }}
     {% if company.taxNumber %}<div>Steuernr.: {{ company.taxNumber }}</div>{% endif %}
     {% if company.vatId %}<div>USt-IdNr.: {{ company.vatId }}</div>{% endif %}
   </footer>
 
-  {{ masthead(company, reminder.levelLabel, reminder.number) }}
+  {{ page_head(company, reminder.levelLabel, reminder.number) }}
 
-  <section class="parties">
-    {{ addressee(company, customer, 'z. Hd.') }}
-
-    <div class="meta">
+  {% call letter_head(company, customer, 'z. Hd.') %}
       {{ meta_row(reminder.levelLabel ~ '-Nr.', reminder.number) }}
       {{ meta_row('Datum', reminder.issueDate | date_unix) }}
       {{ meta_row('Neue Frist', reminder.dueDate | date_unix) }}
-    </div>
-  </section>
+  {% endcall %}
+
+  {{ subject(reminder.levelLabel, reminder.number) }}
 
   <section class="intro">
     <p>Sehr geehrte Damen und Herren,</p>

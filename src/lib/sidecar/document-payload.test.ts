@@ -51,6 +51,27 @@ describe("buildOfferPayload", () => {
   });
 });
 
+describe("company register payload", () => {
+  const offer = { number: "AN-1", currency: "EUR", skontoPercent: null, skontoDays: null } as unknown as Offer;
+
+  it("sends court, number and managing directors for the footer", () => {
+    const company = {
+      ...COMPANY,
+      registerCourt: "Amtsgericht Berlin",
+      registerNumber: "HRB 1",
+      managingDirectors: "Erika Mustermann",
+    } as Settings;
+
+    const payload = buildOfferPayload({ offer, items: [], customer: CUSTOMER, company, outputPath: "o.pdf" });
+
+    expect(payload.company).toMatchObject({
+      registerCourt: "Amtsgericht Berlin",
+      registerNumber: "HRB 1",
+      managingDirectors: "Erika Mustermann",
+    });
+  });
+});
+
 describe("pdf settings payload", () => {
   const offer = { number: "AN-1", currency: "EUR", skontoPercent: null, skontoDays: null } as unknown as Offer;
   const settingsOf = (company: Settings) =>

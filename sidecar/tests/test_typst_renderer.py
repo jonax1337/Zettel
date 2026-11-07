@@ -109,6 +109,22 @@ class TestSameContentAsWeasyPrint:
 
         assert typst == weasy
 
+    @pytest.mark.parametrize("build,render", [
+        (lambda base: base, render_invoice_pdf),
+        (offer_payload, render_offer_pdf),
+        (reminder_payload, render_reminder_pdf),
+    ])
+    def test_company_register_details(self, payloads, tmp_path, build, render):
+        base = payloads("02-mixed-vat.json")
+        base["company"].update(registerCourt="Amtsgericht Berlin-Charlottenburg", registerNumber="HRB 123456 B",
+                               managingDirectors="Erika Mustermann")
+        payload = build(base)
+
+        weasy, typst = (_words(_render(render, payload, tmp_path, e)) for e in ENGINES)
+
+        assert typst == weasy
+        assert {"geschäftsführung:", "hrb", "123456"} <= typst
+
     @pytest.mark.parametrize("engine", ENGINES)
     def test_english_documents_count_pages_in_english(self, payloads, tmp_path, engine):
         payload = payloads("01-standard-19.json")

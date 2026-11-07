@@ -165,7 +165,8 @@ PDF_COMPANY = {
     "country": "DE", "tax_number": None, "vat_id": "DE1", "email": " a@b.de ", "phone": " +49 30 123 ",
     "website": None, "bank_name": None, "bank_iban": "DE00", "bank_bic": None, "is_kleinunternehmer": 0,
     "kleinunternehmer_note": None, "logo_path": None, "zugferd_profile": None, "pdf_theme": None,
-    "pdf_renderer": None,
+    "pdf_renderer": None, "register_court": " Amtsgericht Berlin ", "register_number": "HRB 1",
+    "managing_directors": "Erika Mustermann",
 }
 PDF_INVOICE = {
     key: None for key in (
@@ -183,6 +184,23 @@ def test_payload_trims_what_the_pre_check_accepted(cli):
         "Jonas Laux", "a@b.de", "+49 30 123",
     )
     assert payload["customer"]["email"] == "k@x.de"
+
+
+def test_payload_carries_the_company_register_data(cli):
+    payload = cli.build_pdf_payload(PDF_INVOICE, [], {"name": "K"}, PDF_COMPANY, "out.pdf")
+
+    assert (
+        payload["company"]["registerCourt"], payload["company"]["registerNumber"],
+        payload["company"]["managingDirectors"],
+    ) == (" Amtsgericht Berlin ", "HRB 1", "Erika Mustermann")
+
+
+def test_payload_of_a_database_before_the_register_columns_has_none(cli):
+    company = {k: v for k, v in PDF_COMPANY.items() if not k.startswith(("register_", "managing_"))}
+
+    payload = cli.build_pdf_payload(PDF_INVOICE, [], {"name": "K"}, company, "out.pdf")
+
+    assert payload["company"]["registerCourt"] is None
 
 
 def test_payload_of_a_database_before_the_pdf_engine_setting_uses_weasyprint(cli):
