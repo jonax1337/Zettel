@@ -43,12 +43,17 @@ from pathlib import Path
 from typing import Iterator
 
 APP_IDENTIFIER = "digital.laux.zettel"
+# Must equal CURRENT_DB_SCHEMA_VERSION in src/lib/utils/schema-version.ts (a test pins that).
+EXPECTED_SCHEMA = 32
 DEFAULT_PAYMENT_TERMS_DAYS = 14
+DEFAULT_OFFER_VALIDITY_DAYS = 30
+SECONDS_PER_DAY = 86400
 DEFAULT_UNIT = "Std"
 DEFAULT_PDF_PROFILE = "en16931"
 DEFAULT_PDF_THEME = "classic"
 DEFAULT_PDF_LANGUAGE = "de"
 PAYABLE_STATUSES = ("sent", "partial")
+REMINDER_LABELS = {1: "Zahlungserinnerung", 2: "Mahnung", 3: "Letzte Mahnung"}
 DRAFT_PREFIX = "DRAFT-"
 DRAFT_TOKEN_LENGTH = 16
 DRAFT_DISPLAY_LENGTH = 4
@@ -128,16 +133,97 @@ def resolve_db_path() -> Path:
 
 
 @contextmanager
-def connect() -> Iterator[sqlite3.Connection]:
+def connect(check_schema: bool = True) -> Iterator[sqlite3.Connection]:
     path = resolve_db_path()
     if not path.exists():
         sys.exit(f"Fehler: Datenbank nicht gefunden: {path}")
     con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
     try:
+        version = con.execute("PRAGMA user_version").fetchone()[0]
+        if check_schema and version != EXPECTED_SCHEMA:
+            sys.exit(
+                f"Schema-Version {version} der Datenbank passt nicht zu dieser CLI (erwartet {EXPECTED_SCHEMA}). "
+                "App und CLI auf dieselbe Version bringen; es wurde nichts geschrieben."
+            )
         yield con
     finally:
         con.close()
+
+
+# ----------------------------------------------------------------------------
+# Ausgabe (--json) und Idempotenz-Schlüssel
+# ----------------------------------------------------------------------------
+
+JSON_MODE = False
+
+
+def emit(data: dict, text: str = "") -> None:
+    """Text für Menschen; mit --json genau ein Objekt {"ok": true, ...} auf stdout."""
+    if JSON_MODE:
+        print(json.dumps({"ok": True, **data}, ensure_ascii=False))
+    elif text:
+        print(text)
+
+
+def iso(unix) -> str | None:
+    return datetime.fromtimestamp(unix).strftime("%Y-%m-%d") if unix else None
+
+
+def idempotency_file() -> Path:
+    return app_data_dir() / "cli-idempotency.json"
+
+
+def _idempotency_load() -> dict:
+    try:
+        return json.loads(idempotency_file().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _idempotency_id(kind: str, key: str) -> str:
+    return f"{resolve_db_path()}|{kind}|{key}"
+
+
+def idempotency_lookup(con, kind: str, table: str, key: str | None) -> int | None:
+    """Id des mit diesem Schlüssel angelegten Datensatzes. created_at muss zum gespeicherten Wert passen,
+    sonst stammt der Schlüssel aus einer anderen DB-Generation (Restore, Wipe) und wird ignoriert."""
+    if not key:
+        return None
+    entry = _idempotency_load().get(_idempotency_id(kind, key))
+    if not isinstance(entry, dict):
+        return None
+    row = con.execute(f"SELECT created_at FROM {table} WHERE id = ?", (entry.get("id"),)).fetchone()
+    return entry["id"] if row and row[0] == entry.get("createdAt") else None
+
+
+def idempotency_store(con, kind: str, table: str, key: str | None, row_id: int) -> None:
+    # ponytail: Schlüssel liegen neben der DB, nicht darin (keine Migration). Stirbt der Prozess zwischen COMMIT
+    # und diesem Schreiben, entsteht beim Retry ein Duplikat. Echte Garantie = Spalte + Migration.
+    if not key:
+        return
+    created_at = con.execute(f"SELECT created_at FROM {table} WHERE id = ?", (row_id,)).fetchone()[0]
+    data = _idempotency_load()
+    data[_idempotency_id(kind, key)] = {"id": row_id, "createdAt": created_at}
+    target = idempotency_file()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
+    tmp.replace(target)
+
+
+def create_once(con, kind: str, table: str, key: str | None, create) -> tuple[int, bool]:
+    """(id, reused): mit Schlüssel legt eine Wiederholung nichts neu an."""
+    existing = idempotency_lookup(con, kind, table, key)
+    if existing:
+        return existing, True
+    row_id = create()
+    idempotency_store(con, kind, table, key, row_id)
+    return row_id, False
+
+
+def reuse_note(reused: bool, key: str | None) -> str:
+    return f" (idempotency-key '{key}': bereits vorhanden, nichts neu angelegt)" if reused else ""
 
 
 # ----------------------------------------------------------------------------
@@ -187,6 +273,21 @@ def parse_exchange_rate_scaled(text: str | None) -> int | None:
     return scaled if scaled > 0 else None
 
 
+def from_eur_cents(eur_cents: int, rate_scaled: int) -> int:
+    """Spiegel von fromEurCents(): EUR-Betrag in die Fremdwährung ("1 EUR = X Fremdwährung"), half-up."""
+    quotient, remainder = divmod(abs(eur_cents) * rate_scaled, RATE_SCALE)
+    rounded = quotient + 1 if remainder * 2 >= RATE_SCALE else quotient
+    return -rounded if eur_cents < 0 else rounded
+
+
+def eur_cents_to_currency(eur_cents: int, currency: str, exchange_rate: str | None) -> int | None:
+    """Spiegel von eurCentsToCurrency(): None bei Fremdwährung ohne brauchbaren Kurs."""
+    if currency == BASE_CURRENCY:
+        return eur_cents
+    rate_scaled = parse_exchange_rate_scaled(exchange_rate)
+    return None if rate_scaled is None else from_eur_cents(eur_cents, rate_scaled)
+
+
 def to_eur_cents(total_cent: int, rate_scaled: int) -> int:
     """Spiegel von toEurCents(): "1 EUR = X Fremdwährung", half-up auf dem Betrag, Vorzeichen bleibt."""
     numerator = abs(total_cent) * RATE_SCALE
@@ -227,6 +328,15 @@ def resolve_skonto(args, settings: dict) -> tuple[float | None, int | None]:
     return None, None
 
 
+def draw_next_number(con, sequence: str, document_date: int) -> str:
+    """Spiegel von drawNextNumber() (Angebot/Mahnung): Zähler hochzählen, Jahr und Monat aus dem Belegdatum.
+    Hochzählen und Lesen laufen in einer Transaktion, der Schreibzugriff sperrt die DB bis zum COMMIT."""
+    counter, fmt = f"{sequence}_number_counter", f"{sequence}_number_format"
+    con.execute(f"UPDATE settings SET {counter} = {counter} + 1, updated_at = {SQL_NOW} WHERE id = 1")
+    row = con.execute(f"SELECT {counter} AS counter, {fmt} AS format FROM settings WHERE id = 1").fetchone()
+    return format_invoice_number(row["format"], row["counter"], datetime.fromtimestamp(document_date))
+
+
 def format_invoice_number(pattern: str, counter: int, dt: datetime) -> str:
     yyyy = str(dt.year)
     yy = yyyy[2:]
@@ -265,6 +375,8 @@ def parse_date(s: str | None) -> int | None:
     """Akzeptiert YYYY-MM-DD / TT.MM.JJJJ (lokal, 12:00 Uhr) oder Unix-Timestamp."""
     if not s:
         return None
+    if isinstance(s, int):
+        return s
     s = s.strip()
     if s.isdigit():
         return int(s)
@@ -399,6 +511,169 @@ def trimmed(value):
     return value.strip() if isinstance(value, str) else value
 
 
+def items_payload(items: list[dict]) -> list[dict]:
+    """Spiegel von itemsPayload() in src/lib/sidecar/payload.ts."""
+    return [
+        {
+            "position": it["position"],
+            "description": it["description"],
+            "quantity": it["quantity"],
+            "unit": it["unit"],
+            "unitPrice": it["unit_price"],
+            "vatRate": it["vat_rate"],
+            "lineTotal": it["line_total"],
+            "longDescription": it["long_description"],
+            "linePeriodStart": it["line_period_start"],
+            "linePeriodEnd": it["line_period_end"],
+        }
+        for it in items
+    ]
+
+
+def company_contact_payload(company: dict) -> dict:
+    """Spiegel von companyContactPayload()."""
+    return {
+        "companyName": company["company_name"],
+        "ownerName": trimmed(company["owner_name"]),
+        "street": company["street"],
+        "postalCode": company["postal_code"],
+        "city": company["city"],
+        "country": company["country"],
+        "taxNumber": company["tax_number"],
+        "vatId": company["vat_id"],
+        "email": trimmed(company["email"]),
+        "phone": trimmed(company["phone"]),
+        "website": company["website"],
+        "logoPath": company["logo_path"],
+    }
+
+
+def customer_payload(customer: dict) -> dict:
+    """Spiegel von customerPayload(); akzeptiert Snapshot (camelCase) und DB-Zeile (snake_case)."""
+    return {
+        "name": customer.get("name"),
+        "contactPerson": customer.get("contactPerson") or customer.get("contact_person"),
+        "street": customer.get("street"),
+        "postalCode": customer.get("postalCode") or customer.get("postal_code"),
+        "city": customer.get("city"),
+        "country": customer.get("country"),
+        "email": trimmed(customer.get("email")),
+        "vatId": customer.get("vatId") or customer.get("vat_id"),
+    }
+
+
+def skonto_payload(skonto: dict | None) -> dict:
+    return {
+        "skontoPercent": skonto["percent"] if skonto else None,
+        "skontoDays": skonto["days"] if skonto else None,
+        "skontoAmountCent": skonto["discountCent"] if skonto else None,
+        "skontoDeadline": skonto["deadlineUnix"] if skonto else None,
+    }
+
+
+def missing_company_data(company: dict) -> list[str]:
+    """Spiegel von missingCompanyData() in src/lib/utils/company-completeness.ts (§ 14 UStG)."""
+    missing = []
+    if _blank(company["company_name"]):
+        missing.append("Firmenname")
+    if not _has_address(company["street"], company["postal_code"], company["city"]):
+        missing.append("Anschrift")
+    if _blank(company["tax_number"]) and _blank(company["vat_id"]):
+        missing.append("Steuernummer oder USt-IdNr.")
+    return missing
+
+
+def require_complete_company(company: dict) -> None:
+    missing = missing_company_data(company)
+    if missing:
+        sys.exit(
+            f"Firmendaten unvollständig: {', '.join(missing)}. "
+            "Bitte in der App unter Einstellungen → Unternehmen ergänzen."
+        )
+
+
+def build_offer_payload(offer: dict, items: list[dict], customer: dict, company: dict, output_path: str) -> dict:
+    """Spiegel von buildOfferPayload() in src/lib/sidecar/offer.ts."""
+    skonto = skonto_of({**offer, "is_credit_note": 0})
+    return {
+        "offer": {
+            "number": offer["number"],
+            "issueDate": offer["issue_date"],
+            "validUntil": offer["valid_until"],
+            "subtotal": offer["subtotal"],
+            "vatAmount": offer["vat_amount"],
+            "total": offer["total"],
+            "currency": offer["currency"] or BASE_CURRENCY,
+            "exchangeRate": offer["exchange_rate"],
+            "isKleinunternehmer": bool(offer["is_kleinunternehmer"]),
+            "isReverseCharge": bool(offer["is_reverse_charge"]),
+            "reverseChargeType": stored_reverse_charge_type(offer["reverse_charge_type"], bool(offer["is_reverse_charge"])),
+            "supplyKind": offer["supply_kind"],
+            "notes": offer["notes"],
+            "introText": offer["intro_text"],
+            "servicePeriodStart": offer["service_period_start"],
+            "servicePeriodEnd": offer["service_period_end"],
+            **skonto_payload(skonto),
+            "pdfLanguage": offer["pdf_language"] or DEFAULT_PDF_LANGUAGE,
+        },
+        "items": items_payload(items),
+        "company": {
+            **company_contact_payload(company),
+            "isKleinunternehmer": bool(company["is_kleinunternehmer"]),
+            "kleinunternehmerNote": company["kleinunternehmer_note"],
+        },
+        "customer": customer_payload(customer),
+        "outputPath": output_path,
+        "settings": {"pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME},
+    }
+
+
+def build_reminder_payload(reminder: dict, invoice: dict, snapshot: dict, company: dict, output_path: str) -> dict:
+    """Spiegel von buildReminderPayload() in src/lib/sidecar/reminder.ts."""
+    return {
+        "reminder": {
+            "number": reminder["number"],
+            "level": reminder["level"],
+            "levelLabel": REMINDER_LABELS[reminder["level"]],
+            "issueDate": reminder["issue_date"],
+            "dueDate": reminder["due_date"],
+            "feeCents": reminder["fee_cents"],
+            "interestCents": reminder["interest_cents"],
+            "originalTotalCents": reminder["original_total_cents"],
+            "totalDueCents": reminder["total_due_cents"],
+            "bodyText": reminder["body_text"],
+        },
+        "invoice": {
+            "invoiceNumber": snapshot.get("invoiceNumber"),
+            "invoiceIssueDate": snapshot.get("invoiceIssueDate"),
+            "invoiceDueDate": snapshot.get("invoiceDueDate"),
+            "currency": invoice["currency"] or BASE_CURRENCY,
+        },
+        "customer": {
+            "name": snapshot.get("customerName"),
+            "contactPerson": snapshot.get("customerContactPerson"),
+            "street": snapshot.get("customerStreet"),
+            "postalCode": snapshot.get("customerPostalCode"),
+            "city": snapshot.get("customerCity"),
+            "country": snapshot.get("customerCountry"),
+        },
+        "company": {
+            **company_contact_payload(company),
+            "bankName": company["bank_name"],
+            "bankIban": company["bank_iban"],
+            "bankBic": company["bank_bic"],
+        },
+        "outputPath": output_path,
+        "settings": {"pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME},
+    }
+
+
+def stored_reverse_charge_type(stored: str | None, is_reverse_charge: bool) -> str:
+    """Spiegel von storedReverseChargeType(): alte Zeilen mit nur dem Boolean gelten als innergemeinschaftlich."""
+    kind = stored if stored in ("intra_eu", "third_country") else "none"
+    return "intra_eu" if kind == "none" and is_reverse_charge else kind
+
+
 def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dict, output_path: str) -> dict:
     skonto = skonto_of(inv)
     return {
@@ -431,50 +706,16 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
             "pdfLanguage": inv["pdf_language"] or DEFAULT_PDF_LANGUAGE,
             "buyerReference": inv["buyer_reference"],
         },
-        "items": [
-            {
-                "position": it["position"],
-                "description": it["description"],
-                "quantity": it["quantity"],
-                "unit": it["unit"],
-                "unitPrice": it["unit_price"],
-                "vatRate": it["vat_rate"],
-                "lineTotal": it["line_total"],
-                "longDescription": it["long_description"],
-                "linePeriodStart": it["line_period_start"],
-                "linePeriodEnd": it["line_period_end"],
-            }
-            for it in items
-        ],
+        "items": items_payload(items),
         "company": {
-            "companyName": company["company_name"],
-            "ownerName": trimmed(company["owner_name"]),
-            "street": company["street"],
-            "postalCode": company["postal_code"],
-            "city": company["city"],
-            "country": company["country"],
-            "taxNumber": company["tax_number"],
-            "vatId": company["vat_id"],
-            "email": trimmed(company["email"]),
-            "phone": trimmed(company["phone"]),
-            "website": company["website"],
+            **company_contact_payload(company),
             "bankName": company["bank_name"],
             "bankIban": company["bank_iban"],
             "bankBic": company["bank_bic"],
             "isKleinunternehmer": bool(company["is_kleinunternehmer"]),
             "kleinunternehmerNote": company["kleinunternehmer_note"],
-            "logoPath": company["logo_path"],
         },
-        "customer": {
-            "name": customer.get("name"),
-            "contactPerson": customer.get("contactPerson") or customer.get("contact_person"),
-            "street": customer.get("street"),
-            "postalCode": customer.get("postalCode") or customer.get("postal_code"),
-            "city": customer.get("city"),
-            "country": customer.get("country"),
-            "email": trimmed(customer.get("email")),
-            "vatId": customer.get("vatId") or customer.get("vat_id"),
-        },
+        "customer": customer_payload(customer),
         "outputPath": output_path,
         "profile": company["zugferd_profile"] or DEFAULT_PDF_PROFILE,
         "settings": {"pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME},
@@ -541,26 +782,124 @@ def missing_xrechnung_fields(buyer_reference: str | None, company: dict, custome
 # ----------------------------------------------------------------------------
 
 
+def snapshot_of(raw) -> dict:
+    try:
+        return json.loads(raw) or {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def inv_dict(r) -> dict:
+    return {
+        "id": r["id"],
+        "number": None if is_draft_number(r["number"]) else r["number"],
+        "displayNumber": display_number(r["number"], r["status"]),
+        "status": r["status"],
+        "customer": snapshot_of(r["customer_snapshot"]).get("name"),
+        "issueDate": iso(r["issue_date"]),
+        "dueDate": iso(r["due_date"]),
+        "totalCent": r["total"],
+        "currency": r["currency"] or BASE_CURRENCY,
+        "pdfPath": r["pdf_path"],
+    }
+
+
+def items_dict(rows) -> list[dict]:
+    return [
+        {"position": r["position"], "description": r["description"], "quantity": r["quantity"], "unit": r["unit"],
+         "unitPriceCent": r["unit_price"], "vatRate": r["vat_rate"], "lineTotalCent": r["line_total"]}
+        for r in rows
+    ]
+
+
+def print_items(items, currency) -> list[str]:
+    lines = []
+    for it in items:
+        lines.append(f"  {it['position']}. {it['description']}")
+        lines.append(
+            f"     {it['quantity']:g} {it['unit']} × {fmt_money(it['unit_price'], currency)} "
+            f"= {fmt_money(it['line_total'], currency)}"
+        )
+    return lines
+
+
 def cmd_status(_args) -> None:
     path = resolve_db_path()
-    with connect() as con:
+    with connect(check_schema=False) as con:
         n_inv = con.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
         n_cust = con.execute("SELECT COUNT(*) FROM customers").fetchone()[0]
-    sandbox = (app_data_dir() / "sandbox.flag").exists()
-    print(f"DB:         {path}")
-    print(f"Sandbox:    {'JA' if sandbox else 'nein'}")
-    print(f"Rechnungen: {n_inv}  ·  Kunden: {n_cust}")
+        schema = con.execute("PRAGMA user_version").fetchone()[0]
+    sandbox = is_sandbox_active()
     exe, _ = resolve_sidecar()
-    print(f"Sidecar:    {exe or 'nicht verfügbar'}")
+    compatible = schema == EXPECTED_SCHEMA
+    emit(
+        {"db": str(path), "sandbox": sandbox, "invoices": n_inv, "customers": n_cust, "sidecar": exe,
+         "schema": schema, "expectedSchema": EXPECTED_SCHEMA, "compatible": compatible},
+        f"DB:         {path}\n"
+        f"Schema:     {schema}" + ("" if compatible else f"  (CLI erwartet {EXPECTED_SCHEMA} — Befehle brechen ab)") + "\n"
+        f"Sandbox:    {'JA' if sandbox else 'nein'}\n"
+        f"Rechnungen: {n_inv}  ·  Kunden: {n_cust}\n"
+        f"Sidecar:    {exe or 'nicht verfügbar'}",
+    )
+
+
+def customer_dict(r) -> dict:
+    return {
+        "id": r["id"], "customerNumber": r["customer_number"], "name": r["name"],
+        "contactPerson": r["contact_person"], "street": r["street"], "postalCode": r["postal_code"],
+        "city": r["city"], "country": r["country"], "email": r["email"], "phone": r["phone"],
+        "vatId": r["vat_id"], "leitwegId": r["leitweg_id"],
+    }
 
 
 def cmd_customers(_args) -> None:
     with connect() as con:
         rows = con.execute("SELECT * FROM customers ORDER BY id").fetchall()
-    if not rows:
-        print("Keine Kunden.")
-    for c in rows:
-        print(f"{c['id']:>3}  {c['customer_number']:<8} {c['name']:<40} {c['city'] or '':<20} {c['email'] or ''}")
+    text = "\n".join(
+        f"{c['id']:>3}  {c['customer_number']:<8} {c['name']:<40} {c['city'] or '':<20} {c['email'] or ''}"
+        for c in rows
+    ) or "Keine Kunden."
+    emit({"customers": [customer_dict(c) for c in rows]}, text)
+
+
+def next_customer_number(con) -> str:
+    """Spiegel von nextPrefixedNumber() in queries.ts: höchster numerischer Suffix + 1."""
+    highest = 0
+    for (number,) in con.execute("SELECT customer_number FROM customers WHERE customer_number LIKE 'K-%'"):
+        try:
+            highest = max(highest, int(number[2:]))
+        except ValueError:
+            pass
+    return f"K-{highest + 1:04d}"
+
+
+def cmd_customer_create(args) -> None:
+    if not args.name.strip():
+        sys.exit("--name darf nicht leer sein.")
+    with connect() as con:
+        def create() -> int:
+            number = args.number or next_customer_number(con)
+            if con.execute("SELECT 1 FROM customers WHERE customer_number = ?", (number,)).fetchone():
+                sys.exit(f"Kundennummer {number} ist bereits vergeben.")
+            cur = con.execute(
+                """INSERT INTO customers
+                   (customer_number, name, contact_person, street, postal_code, city, country, email, phone, vat_id,
+                    notes, leitweg_id, receives_xrechnung)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (number, args.name.strip(), args.contact_person, args.street or "", args.postal_code or "",
+                 args.city or "", args.country or "DE", args.email, args.phone, args.vat_id, args.notes,
+                 args.leitweg_id, 1 if args.receives_xrechnung else 0),
+            )
+            con.commit()
+            return cur.lastrowid
+
+        customer_id, reused = create_once(con, "customer", "customers", args.idempotency_key, create)
+        row = con.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
+    emit(
+        {"customer": customer_dict(row), "reused": reused},
+        f"Kunde {'vorhanden' if reused else 'angelegt'}: id={customer_id}  {row['customer_number']}  {row['name']}"
+        + reuse_note(reused, args.idempotency_key),
+    )
 
 
 def resolve_customer(con, ref: str) -> sqlite3.Row:
@@ -569,7 +908,7 @@ def resolve_customer(con, ref: str) -> sqlite3.Row:
         (int(ref) if ref.isdigit() else -1, ref, ref),
     ).fetchone()
     if not row:
-        sys.exit(f"Kunde nicht gefunden: {ref} (siehe 'zettel.py customers')")
+        sys.exit(f"Kunde nicht gefunden: {ref} (siehe 'zettel-cli customers')")
     return row
 
 
@@ -582,17 +921,29 @@ def cmd_invoice_list(args) -> None:
     if args.year:
         cond.append("CAST(strftime('%Y', issue_date, 'unixepoch', 'localtime') AS INT) = ?")
         params.append(args.year)
+    if args.overdue:
+        cond.append(f"status IN ('sent','partial') AND due_date < ? AND (is_credit_note IS NULL OR is_credit_note = 0) AND NOT {SETTLED_BY_CREDIT_NOTE_SQL}")
+        params.append(now_unix())
     if cond:
         q += " WHERE " + " AND ".join(cond)
     q += " ORDER BY id DESC"
     with connect() as con:
         rows = con.execute(q, params).fetchall()
-    for r in rows:
-        print(
-            f"{r['id']:>3}  {display_number(r['number'], r['status']):<15} "
-            f"{fmt_date(r['issue_date'])}  {fmt_money(r['total'], r['currency']):>12}  {r['status']:<9} "
-            f"{'PDF' if r['pdf_path'] else '—':<3} fällig {fmt_date(r['due_date'])}"
-        )
+        levels: dict[int, list[int]] = {}
+        for r in con.execute("SELECT invoice_id, level FROM reminders ORDER BY level"):
+            levels.setdefault(r["invoice_id"], []).append(r["level"])
+    now = now_unix()
+    text = "\n".join(
+        f"{r['id']:>3}  {display_number(r['number'], r['status']):<15} "
+        f"{fmt_date(r['issue_date'])}  {fmt_money(r['total'], r['currency']):>12}  {r['status']:<9} "
+        f"{'PDF' if r['pdf_path'] else '—':<3} fällig {fmt_date(r['due_date'])}"
+        for r in rows
+    )
+    emit({"invoices": [
+        {**inv_dict(r), "reminderLevels": levels.get(r["id"], []),
+         "daysOverdue": max(0, (now - r["due_date"]) // SECONDS_PER_DAY) if r["due_date"] else 0}
+        for r in rows
+    ]}, text)
 
 
 def fetch_invoice(con, invoice_id: int) -> sqlite3.Row:
@@ -906,11 +1257,12 @@ def documents_root() -> Path:
     return documents_dir() / "Zettel"
 
 
-def pdf_output_dir() -> Path:
-    return documents_root() / "Rechnungen"
+def pdf_output_dir(folder: str = "Rechnungen") -> Path:
+    return documents_root() / folder
 
 
 def generate_pdf_for(con, invoice_id: int) -> tuple[str, str]:
+    require_complete_company(dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone()))
     inv, items, cust = load_invoice_full(con, invoice_id)
     if inv["status"] == "draft" and is_draft_number(inv["number"]):
         issue_invoice(con, invoice_id)
@@ -1061,15 +1413,15 @@ def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, total
     return cur.lastrowid
 
 
-def insert_invoice_items(con, invoice_id: int, items: list[dict]) -> None:
+def insert_line_items(con, table: str, fk: str, doc_id: int, items: list[dict]) -> None:
     for position, it in enumerate(items, start=1):
         con.execute(
-            """INSERT INTO invoice_items
-               (invoice_id, position, description, quantity, unit, unit_price, vat_rate, line_total,
+            f"""INSERT INTO {table}
+               ({fk}, position, description, quantity, unit, unit_price, vat_rate, line_total,
                 long_description, line_period_start, line_period_end)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                invoice_id,
+                doc_id,
                 position,
                 it["description"],
                 it["quantity"],
@@ -1078,70 +1430,99 @@ def insert_invoice_items(con, invoice_id: int, items: list[dict]) -> None:
                 it["vatRate"],
                 compute_line_total(it["quantity"], it["unitPrice"]),
                 it.get("longDescription"),
+                it.get("linePeriodStart"),
+                it.get("linePeriodEnd"),
             ),
         )
+
+
+def insert_invoice_items(con, invoice_id: int, items: list[dict]) -> None:
+    insert_line_items(con, "invoice_items", "invoice_id", invoice_id, items)
 
 
 def cmd_invoice_create(args) -> None:
     items = parse_items_arg(args.items)
     if not items:
         sys.exit("Keine Positionen angegeben (siehe --items).")
+    require_exchange_rate(args)
+    if args.pdf:
+        with connect() as con:
+            require_complete_company(dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone()))
+    with connect() as con:
+        def create() -> int:
+            settings = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+            customer = resolve_customer(con, args.customer)
+            is_reverse_charge = args.reverse_charge != "none"
+            totals = compute_totals(items, bool(settings["is_kleinunternehmer"]), is_reverse_charge)
+            invoice_id = insert_draft_invoice(con, args, customer, settings, totals, is_reverse_charge)
+            insert_invoice_items(con, invoice_id, items)
+            con.commit()
+            return invoice_id
+
+        invoice_id, reused = create_once(con, "invoice", "invoices", args.idempotency_key, create)
+        inv = fetch_invoice(con, invoice_id)
+        lines = [
+            f"Draft {'vorhanden' if reused else 'erstellt'}: id={invoice_id}  "
+            f"{fmt_money(inv['total'], inv['currency'])}  Kunde: {snapshot_of(inv['customer_snapshot']).get('name')}"
+            + reuse_note(reused, args.idempotency_key)
+        ]
+        if args.issue:
+            lines.append(f"Bereitgestellt: {issue_invoice(con, invoice_id)}")
+        if args.pdf:
+            if reused and inv["pdf_path"]:
+                lines.append("PDF bereits vorhanden — nicht neu erzeugt.")
+            else:
+                lines.append(f"PDF: {generate_pdf_for(con, invoice_id)[1]}")
+        inv = fetch_invoice(con, invoice_id)
+    emit({"invoice": inv_dict(inv), "reused": reused}, "\n".join(lines))
+
+
+def require_exchange_rate(args) -> None:
     if args.currency != BASE_CURRENCY and parse_exchange_rate_scaled(args.exchange_rate) is None:
         sys.exit(f"Wechselkurs erforderlich für {args.currency}: --exchange-rate (1 EUR = X {args.currency}).")
-    with connect() as con:
-        settings = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
-        customer = resolve_customer(con, args.customer)
-        is_reverse_charge = args.reverse_charge != "none"
-        totals = compute_totals(items, bool(settings["is_kleinunternehmer"]), is_reverse_charge)
-        invoice_id = insert_draft_invoice(con, args, customer, settings, totals, is_reverse_charge)
-        insert_invoice_items(con, invoice_id, items)
-        con.commit()
-        print(f"Draft erstellt: id={invoice_id}  {fmt_money(totals['total'], args.currency)}  Kunde: {customer['name']}")
-        if args.issue:
-            print(f"Bereitgestellt: {issue_invoice(con, invoice_id)}")
-        if args.pdf:
-            _, pdf_path = generate_pdf_for(con, invoice_id)
-            print(f"PDF: {pdf_path}")
 
 
 def cmd_invoice_show(args) -> None:
     with connect() as con:
         inv, items, cust = load_invoice_full(con, args.id)
-    print(f"Rechnung {display_number(inv['number'], inv['status'])}  [{inv['status']}]")
-    print(f"Kunde:        {cust.get('name')} ({cust.get('customerNumber')})")
-    print(f"Datum:        {fmt_date(inv['issue_date'])}  ·  fällig {fmt_date(inv['due_date'])}")
-    if inv["service_period_start"]:
-        print(f"Leistung:     {fmt_date(inv['service_period_start'])} – {fmt_date(inv['service_period_end'])}")
-    print(f"Zahlungsziel: {inv['payment_terms'] or '—'}")
-    print()
-    for it in items:
-        print(f"  {it['position']}. {it['description']}")
-        print(f"     {it['quantity']:g} {it['unit']} × {fmt_money(it['unit_price'], inv['currency'])} = {fmt_money(it['line_total'], inv['currency'])}")
-    print()
     currency = inv["currency"]
-    print(
-        f"Netto: {fmt_money(inv['subtotal'], currency)}  ·  USt: {fmt_money(inv['vat_amount'], currency)}  "
-        f"·  Gesamt: {fmt_money(inv['total'], currency)}"
-    )
+    lines = [
+        f"Rechnung {display_number(inv['number'], inv['status'])}  [{inv['status']}]",
+        f"Kunde:        {cust.get('name')} ({cust.get('customerNumber')})",
+        f"Datum:        {fmt_date(inv['issue_date'])}  ·  fällig {fmt_date(inv['due_date'])}",
+    ]
+    if inv["service_period_start"]:
+        lines.append(f"Leistung:     {fmt_date(inv['service_period_start'])} – {fmt_date(inv['service_period_end'])}")
+    lines += [f"Zahlungsziel: {inv['payment_terms'] or '—'}", "", *print_items(items, currency), "",
+              f"Netto: {fmt_money(inv['subtotal'], currency)}  ·  USt: {fmt_money(inv['vat_amount'], currency)}  "
+              f"·  Gesamt: {fmt_money(inv['total'], currency)}"]
     if inv["pdf_path"]:
-        print(f"PDF:   {inv['pdf_path']}")
+        lines.append(f"PDF:   {inv['pdf_path']}")
+    emit(
+        {"invoice": {**inv_dict(inv), "subtotalCent": inv["subtotal"], "vatAmountCent": inv["vat_amount"],
+                     "amountPaidCent": inv["amount_paid_cent"] or 0, "paymentTerms": inv["payment_terms"],
+                     "servicePeriodStart": iso(inv["service_period_start"]),
+                     "servicePeriodEnd": iso(inv["service_period_end"]), "items": items_dict(items)}},
+        "\n".join(lines),
+    )
 
 
 def cmd_invoice_pdf(args) -> None:
     with connect() as con:
         number, path = generate_pdf_for(con, args.id)
-    print(f"{number}: {path}")
+    emit({"number": number, "pdfPath": path}, f"{number}: {path}")
 
 
 def cmd_invoice_xrechnung(args) -> None:
     with connect() as con:
         number, path = export_xrechnung_for(con, args.id)
-    print(f"{number}: {path}")
+    emit({"number": number, "xmlPath": path}, f"{number}: {path}")
 
 
 def cmd_invoice_issue(args) -> None:
     with connect() as con:
-        print(f"Bereitgestellt: {issue_invoice(con, args.id, parse_date(args.sent_at))}")
+        number = issue_invoice(con, args.id, parse_date(args.sent_at))
+    emit({"id": args.id, "number": number}, f"Bereitgestellt: {number}")
 
 
 # Spiegel von creditedCentSql() in src/lib/db/invoice-lifecycle.ts: nur ausgestellte
@@ -1200,7 +1581,381 @@ def cmd_invoice_paid(args) -> None:
         if inv is None:
             status = fetch_invoice(con, args.id)["status"]
             sys.exit(f"Rechnung {args.id} hat Status '{status}' und kann nicht als bezahlt markiert werden.")
-    print(f"Als bezahlt markiert: {inv['number']} ({fmt_money(abs(inv['total']), inv['currency'])})")
+    emit(
+        {"id": args.id, "number": inv["number"], "totalCent": abs(inv["total"]), "status": "paid"},
+        f"Als bezahlt markiert: {inv['number']} ({fmt_money(abs(inv['total']), inv['currency'])})",
+    )
+
+
+
+# ----------------------------------------------------------------------------
+# Angebote (Spiegel von src/lib/db/offers.ts)
+# ----------------------------------------------------------------------------
+
+
+def offer_dict(r) -> dict:
+    return {
+        "id": r["id"], "number": r["number"], "status": r["status"],
+        "customer": snapshot_of(r["customer_snapshot"]).get("name"),
+        "issueDate": iso(r["issue_date"]), "validUntil": iso(r["valid_until"]),
+        "totalCent": r["total"], "currency": r["currency"] or BASE_CURRENCY, "pdfPath": r["pdf_path"],
+        "convertedInvoiceId": r["converted_invoice_id"],
+    }
+
+
+def fetch_offer(con, offer_id: int) -> sqlite3.Row:
+    row = con.execute("SELECT * FROM offers WHERE id = ?", (offer_id,)).fetchone()
+    if not row:
+        sys.exit(f"Angebot {offer_id} nicht gefunden.")
+    return row
+
+
+def fetch_offer_items(con, offer_id: int) -> list[sqlite3.Row]:
+    return con.execute("SELECT * FROM offer_items WHERE offer_id = ? ORDER BY position", (offer_id,)).fetchall()
+
+
+def create_offer(con, args, items: list[dict]) -> int:
+    settings = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+    customer = resolve_customer(con, args.customer)
+    is_reverse_charge = args.reverse_charge != "none"
+    totals = compute_totals(items, bool(settings["is_kleinunternehmer"]), is_reverse_charge)
+    issue_ts = parse_date(args.issue_date) or now_unix()
+    valid_days = settings["default_offer_validity_days"] or DEFAULT_OFFER_VALIDITY_DAYS
+    valid_ts = parse_date(args.valid_until) or add_days_unix(issue_ts, valid_days)
+    skonto_percent, skonto_days = resolve_skonto(args, settings)
+    pdf_language = args.pdf_language or settings.get("default_pdf_language") or DEFAULT_PDF_LANGUAGE
+    number = draw_next_number(con, "offer", issue_ts)
+    cur = con.execute(
+        """INSERT INTO offers
+           (number, customer_id, customer_snapshot, issue_date, valid_until, status, subtotal, vat_amount, total,
+            is_kleinunternehmer, is_reverse_charge, reverse_charge_type, supply_kind, notes, intro_text, currency,
+            exchange_rate, service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language)
+           VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (number, customer["id"], json.dumps(customer_snapshot(customer), ensure_ascii=False), issue_ts, valid_ts,
+         totals["subtotal"], totals["vatAmount"], totals["total"], 1 if settings["is_kleinunternehmer"] else 0,
+         1 if is_reverse_charge else 0, args.reverse_charge, args.supply_kind, args.notes, args.intro_text,
+         args.currency, args.exchange_rate, parse_date(args.service_start), parse_date(args.service_end),
+         skonto_percent, skonto_days, pdf_language),
+    )
+    insert_line_items(con, "offer_items", "offer_id", cur.lastrowid, items)
+    con.commit()
+    return cur.lastrowid
+
+
+def cmd_offer_list(args) -> None:
+    cond, params = [], []
+    if args.status:
+        cond.append("status = ?")
+        params.append(args.status)
+    if args.year:
+        cond.append("CAST(strftime('%Y', issue_date, 'unixepoch', 'localtime') AS INT) = ?")
+        params.append(args.year)
+    query = "SELECT * FROM offers" + (" WHERE " + " AND ".join(cond) if cond else "") + " ORDER BY id DESC"
+    with connect() as con:
+        rows = con.execute(query, params).fetchall()
+    text = "\n".join(
+        f"{r['id']:>3}  {r['number']:<15} {fmt_date(r['issue_date'])}  {fmt_money(r['total'], r['currency']):>12}  "
+        f"{r['status']:<9} {'PDF' if r['pdf_path'] else '—':<3} gültig bis {fmt_date(r['valid_until'])}"
+        for r in rows
+    )
+    emit({"offers": [offer_dict(r) for r in rows]}, text)
+
+
+def cmd_offer_create(args) -> None:
+    items = parse_items_arg(args.items)
+    if not items:
+        sys.exit("Keine Positionen angegeben (siehe --items).")
+    require_exchange_rate(args)
+    with connect() as con:
+        if args.pdf:
+            require_complete_company(dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone()))
+        offer_id, reused = create_once(
+            con, "offer", "offers", args.idempotency_key, lambda: create_offer(con, args, items),
+        )
+        lines = [f"Angebot {'vorhanden' if reused else 'erstellt'}: id={offer_id}" + reuse_note(reused, args.idempotency_key)]
+        if args.pdf:
+            if reused and fetch_offer(con, offer_id)["pdf_path"]:
+                lines.append("PDF bereits vorhanden — nicht neu erzeugt.")
+            else:
+                lines.append(f"PDF: {generate_document_pdf(con, 'offer', offer_id)[1]}")
+        offer = fetch_offer(con, offer_id)
+    lines.append(
+        f"{offer['number']}  Gesamt: {fmt_money(offer['total'], offer['currency'])}  gültig bis {fmt_date(offer['valid_until'])}"
+    )
+    emit({"offer": offer_dict(offer), "reused": reused}, "\n".join(lines))
+
+
+def cmd_offer_show(args) -> None:
+    with connect() as con:
+        offer = fetch_offer(con, args.id)
+        items = fetch_offer_items(con, args.id)
+    currency = offer["currency"]
+    lines = [
+        f"Angebot {offer['number']}  [{offer['status']}]",
+        f"Kunde:        {snapshot_of(offer['customer_snapshot']).get('name')}",
+        f"Datum:        {fmt_date(offer['issue_date'])}  ·  gültig bis {fmt_date(offer['valid_until'])}",
+        "", *print_items(items, currency), "",
+        f"Netto: {fmt_money(offer['subtotal'], currency)}  ·  USt: {fmt_money(offer['vat_amount'], currency)}  "
+        f"·  Gesamt: {fmt_money(offer['total'], currency)}",
+    ]
+    if offer["converted_invoice_id"]:
+        lines.append(f"Umgewandelt in Rechnung id={offer['converted_invoice_id']}")
+    if offer["pdf_path"]:
+        lines.append(f"PDF:   {offer['pdf_path']}")
+    emit({"offer": {**offer_dict(offer), "subtotalCent": offer["subtotal"], "vatAmountCent": offer["vat_amount"],
+                    "introText": offer["intro_text"], "notes": offer["notes"], "items": items_dict(items)}},
+         "\n".join(lines))
+
+
+def offer_transition(status: str, stamp: str, allowed: tuple[str, ...]):
+    """Statuswechsel wie markSent/markAccepted/markRejected; gleicher Zielstatus ist ein No-op."""
+    def run(args) -> None:
+        with connect() as con:
+            offer = fetch_offer(con, args.id)
+            changed = offer["status"] != status
+            if changed:
+                if offer["status"] not in allowed:
+                    sys.exit(f"Angebot {offer['number']}: Übergang '{offer['status']}' -> '{status}' nicht erlaubt.")
+                con.execute(
+                    f"UPDATE offers SET status = ?, {stamp} = {SQL_NOW}, updated_at = {SQL_NOW} WHERE id = ?",
+                    (status, args.id),
+                )
+                con.commit()
+            result = fetch_offer(con, args.id)
+        emit({"offer": offer_dict(result), "changed": changed},
+             f"Angebot {offer['number']}: {'jetzt' if changed else 'bereits'} {status}")
+    return run
+
+
+def convert_offer(con, offer_id: int, payment_terms: int | None) -> tuple[int, bool]:
+    """Spiegel von convertToInvoice(): (Rechnungs-id, bereits umgewandelt). Eine zweite Umwandlung liefert die erste."""
+    offer = fetch_offer(con, offer_id)
+    if offer["converted_invoice_id"]:
+        return offer["converted_invoice_id"], True
+    if offer["status"] == "rejected":
+        sys.exit("Abgelehnte Angebote können nicht umgewandelt werden.")
+    settings = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+    customer = con.execute("SELECT * FROM customers WHERE id = ?", (offer["customer_id"],)).fetchone()
+    if not customer:
+        sys.exit(f"Kunde {offer['customer_id']} des Angebots {offer['number']} nicht gefunden.")
+    items = [
+        {"description": r["description"], "quantity": r["quantity"], "unit": r["unit"], "unitPrice": r["unit_price"],
+         "vatRate": r["vat_rate"], "longDescription": r["long_description"],
+         "linePeriodStart": r["line_period_start"], "linePeriodEnd": r["line_period_end"]}
+        for r in fetch_offer_items(con, offer_id)
+    ]
+    reverse_charge = stored_reverse_charge_type(offer["reverse_charge_type"], bool(offer["is_reverse_charge"]))
+    is_reverse_charge = reverse_charge != "none"
+    totals = compute_totals(items, bool(settings["is_kleinunternehmer"]), is_reverse_charge)
+    has_skonto = offer["skonto_percent"] is not None and offer["skonto_days"] is not None
+    args = argparse.Namespace(
+        issue_date=None, due_date=None, delivery_date=None, payment_terms=payment_terms,
+        reverse_charge=reverse_charge, supply_kind=offer["supply_kind"], notes=offer["notes"],
+        service_start=offer["service_period_start"], service_end=offer["service_period_end"],
+        skonto_percent=offer["skonto_percent"], skonto_days=offer["skonto_days"], no_skonto=not has_skonto,
+        pdf_language=offer["pdf_language"], currency=offer["currency"] or BASE_CURRENCY,
+        exchange_rate=offer["exchange_rate"],
+    )
+    invoice_id = insert_draft_invoice(con, args, customer, settings, totals, is_reverse_charge)
+    insert_invoice_items(con, invoice_id, items)
+    linked = con.execute(
+        f"UPDATE offers SET status = 'accepted', accepted_at = COALESCE(accepted_at, {SQL_NOW}), "
+        f"converted_invoice_id = ?, updated_at = {SQL_NOW} "
+        "WHERE id = ? AND converted_invoice_id IS NULL AND status != 'rejected'",
+        (invoice_id, offer_id),
+    ).rowcount
+    if linked == 1:
+        con.commit()
+        return invoice_id, False
+    con.rollback()
+    winner = fetch_offer(con, offer_id)["converted_invoice_id"]
+    if winner is None:
+        sys.exit("Angebot konnte nicht umgewandelt werden.")
+    return winner, True
+
+
+def cmd_offer_convert(args) -> None:
+    with connect() as con:
+        offer = fetch_offer(con, args.id)
+        invoice_id, reused = convert_offer(con, args.id, args.payment_terms)
+        inv = fetch_invoice(con, invoice_id)
+    emit({"invoice": inv_dict(inv), "reused": reused},
+         f"Angebot {offer['number']} " + ("bereits umgewandelt: " if reused else "-> ")
+         + f"Rechnung id={invoice_id} ({fmt_money(inv['total'], inv['currency'])})")
+
+
+def cmd_offer_pdf(args) -> None:
+    with connect() as con:
+        number, path = generate_document_pdf(con, "offer", args.id)
+    emit({"number": number, "pdfPath": path}, f"{number}: {path}")
+
+
+# ----------------------------------------------------------------------------
+# Mahnungen (Spiegel von src/lib/db/reminders.ts)
+# ----------------------------------------------------------------------------
+
+
+def reminder_invoice_snapshot(invoice: dict) -> dict:
+    """Spiegel von buildInvoiceSnapshot()."""
+    customer = snapshot_of(invoice["customer_snapshot"])
+    return {
+        "invoiceNumber": invoice["number"], "invoiceIssueDate": invoice["issue_date"],
+        "invoiceDueDate": invoice["due_date"], "customerName": customer.get("name") or "—",
+        "customerStreet": customer.get("street") or "", "customerPostalCode": customer.get("postalCode") or "",
+        "customerCity": customer.get("city") or "", "customerCountry": customer.get("country") or "DE",
+        "customerContactPerson": customer.get("contactPerson"),
+    }
+
+
+def reminder_dict(r) -> dict:
+    snapshot = snapshot_of(r["invoice_snapshot"])
+    return {
+        "id": r["id"], "number": r["number"], "invoiceId": r["invoice_id"],
+        "invoiceNumber": snapshot.get("invoiceNumber"), "customer": snapshot.get("customerName"),
+        "level": r["level"], "levelLabel": REMINDER_LABELS.get(r["level"]), "status": r["status"],
+        "issueDate": iso(r["issue_date"]), "dueDate": iso(r["due_date"]), "feeCent": r["fee_cents"],
+        "interestCent": r["interest_cents"], "originalTotalCent": r["original_total_cents"],
+        "totalDueCent": r["total_due_cents"], "pdfPath": r["pdf_path"],
+    }
+
+
+def fetch_reminder(con, reminder_id: int) -> sqlite3.Row:
+    row = con.execute("SELECT * FROM reminders WHERE id = ?", (reminder_id,)).fetchone()
+    if not row:
+        sys.exit(f"Mahnung {reminder_id} nicht gefunden.")
+    return row
+
+
+def parse_money(text: str) -> int:
+    try:
+        return js_round(parse_decimal(text) * CENTS_PER_EUR)
+    except ValueError:
+        sys.exit(f"Ungültiger Betrag: {text}")
+
+
+def create_reminder(con, args) -> int:
+    inv = fetch_invoice(con, args.invoice)
+    if inv["status"] not in PAYABLE_STATUSES:
+        sys.exit("Mahnungen können nur für versendete oder teilbezahlte Rechnungen erstellt werden.")
+    if inv["is_credit_note"]:
+        sys.exit("Für Stornorechnungen können keine Mahnungen erstellt werden.")
+    credited = credited_cent(con, inv["id"])
+    open_cent = abs(inv["total"]) - (inv["amount_paid_cent"] or 0) - credited
+    if credited > 0 and open_cent <= 0:
+        sys.exit("Die Rechnung wurde storniert und kann nicht gemahnt werden.")
+    settings = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+    level = args.level
+    issue_ts = parse_date(args.issue_date) or now_unix()
+    due_ts = parse_date(args.due_date) or add_days_unix(issue_ts, settings[f"reminder_days_l{level}"])
+    if args.fee is not None:
+        fee = parse_money(args.fee)
+    else:
+        fee = eur_cents_to_currency(settings[f"reminder_fee_l{level}_cents"], inv["currency"], inv["exchange_rate"]) or 0
+    interest = parse_money(args.interest) if args.interest is not None else 0
+    number = draw_next_number(con, "reminder", issue_ts)
+    cur = con.execute(
+        """INSERT INTO reminders
+           (number, invoice_id, invoice_snapshot, level, issue_date, due_date, fee_cents, interest_cents,
+            original_total_cents, total_due_cents, status, body_text, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)""",
+        (number, inv["id"], json.dumps(reminder_invoice_snapshot(dict(inv)), ensure_ascii=False), level, issue_ts,
+         due_ts, fee, interest, open_cent, open_cent + fee + interest, args.body or settings[f"reminder_text_l{level}"],
+         args.notes),
+    )
+    con.commit()
+    return cur.lastrowid
+
+
+def cmd_reminder_list(args) -> None:
+    with connect() as con:
+        if args.invoice:
+            rows = con.execute("SELECT * FROM reminders WHERE invoice_id = ? ORDER BY id DESC", (args.invoice,)).fetchall()
+        else:
+            rows = con.execute("SELECT * FROM reminders ORDER BY id DESC").fetchall()
+        currencies = {r["id"]: r["currency"] for r in con.execute("SELECT id, currency FROM invoices")}
+    text = "\n".join(
+        f"{r['id']:>3}  {r['number']:<15} Stufe {r['level']}  Rechnung {snapshot_of(r['invoice_snapshot']).get('invoiceNumber')}  "
+        f"{fmt_money(r['total_due_cents'], currencies.get(r['invoice_id'])):>12}  {r['status']:<6} {'PDF' if r['pdf_path'] else '—'}"
+        for r in rows
+    )
+    emit({"reminders": [reminder_dict(r) for r in rows]}, text)
+
+
+def cmd_reminder_create(args) -> None:
+    with connect() as con:
+        if args.pdf:
+            require_complete_company(dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone()))
+        reminder_id, reused = create_once(
+            con, "reminder", "reminders", args.idempotency_key, lambda: create_reminder(con, args),
+        )
+        lines = [f"Mahnung {'vorhanden' if reused else 'erstellt'}: id={reminder_id}" + reuse_note(reused, args.idempotency_key)]
+        if args.pdf:
+            if reused and fetch_reminder(con, reminder_id)["pdf_path"]:
+                lines.append("PDF bereits vorhanden — nicht neu erzeugt.")
+            else:
+                lines.append(f"PDF: {generate_document_pdf(con, 'reminder', reminder_id)[1]}")
+        reminder = fetch_reminder(con, reminder_id)
+        currency = fetch_invoice(con, reminder["invoice_id"])["currency"]
+    lines.append(
+        f"{reminder['number']}  Stufe {reminder['level']}  fällig {fmt_date(reminder['due_date'])}  "
+        f"Forderung gesamt {fmt_money(reminder['total_due_cents'], currency)}"
+    )
+    emit({"reminder": reminder_dict(reminder), "reused": reused}, "\n".join(lines))
+
+
+def cmd_reminder_send(args) -> None:
+    with connect() as con:
+        reminder = fetch_reminder(con, args.id)
+        changed = reminder["status"] == "draft"
+        if changed:
+            con.execute(
+                f"UPDATE reminders SET status = 'sent', sent_at = ?, updated_at = {SQL_NOW} WHERE id = ? AND status = 'draft'",
+                (parse_date(args.sent_at) or now_unix(), args.id),
+            )
+            con.commit()
+        result = fetch_reminder(con, args.id)
+    emit({"reminder": reminder_dict(result), "changed": changed},
+         f"Mahnung {reminder['number']}: {'jetzt' if changed else 'bereits'} sent")
+
+
+def cmd_reminder_pdf(args) -> None:
+    with connect() as con:
+        number, path = generate_document_pdf(con, "reminder", args.id)
+    emit({"number": number, "pdfPath": path}, f"{number}: {path}")
+
+
+def render_pdf(command: str, payload: dict) -> str:
+    resp = call_sidecar(command, payload)
+    if not resp.get("success"):
+        err = resp.get("error", {})
+        sys.exit(f"PDF-Fehler [{err.get('code')}]: {err.get('message')}\n{err.get('details', '')[:ERROR_DETAIL_CHARS]}")
+    return resp["pdfPath"]
+
+
+def generate_document_pdf(con, kind: str, doc_id: int) -> tuple[str, str]:
+    """PDF für Angebot oder Mahnung über den Sidecar; (Nummer, PDF-Pfad)."""
+    table, folder = {"offer": ("offers", "Angebote"), "reminder": ("reminders", "Mahnungen")}[kind]
+    row = dict(fetch_offer(con, doc_id) if kind == "offer" else fetch_reminder(con, doc_id))
+    company = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+    require_complete_company(company)
+    output_path = pdf_output_dir(folder) / f"{safe_filename(row['number'])}.pdf"
+    if kind == "offer":
+        payload = build_offer_payload(
+            row, [dict(r) for r in fetch_offer_items(con, doc_id)], snapshot_of(row["customer_snapshot"]),
+            company, str(output_path),
+        )
+    else:
+        invoice = dict(fetch_invoice(con, row["invoice_id"]))
+        snapshot = snapshot_of(row["invoice_snapshot"])
+        if not snapshot.get("invoiceNumber"):
+            snapshot = reminder_invoice_snapshot(invoice)
+        payload = build_reminder_payload(row, invoice, snapshot, company, str(output_path))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    archive_pdf_version(output_path, Path(row["pdf_path"]) if row["pdf_path"] else None)
+    pdf_path = render_pdf(f"generate_{kind}", payload)
+    con.execute(f"UPDATE {table} SET pdf_path = ?, updated_at = {SQL_NOW} WHERE id = ?", (pdf_path, doc_id))
+    con.commit()
+    return row["number"], pdf_path
 
 
 # Spiegel von REVENUE_AMOUNT_SQL / OPEN_BALANCE_SQL / OPEN_RECEIVABLE_SQL in
@@ -1237,74 +1992,195 @@ def cmd_stats(_args) -> None:
     year = datetime.now().year
     with connect() as con:
         revenue, open_count, open_total = compute_stats(con, year)
-    print(f"Umsatz {year} (ohne Entwurf/Storno): {fmt_eur(revenue)}")
-    print(f"Offene Forderungen: {open_count} · {fmt_eur(open_total)}")
+    emit(
+        {"year": year, "revenueCent": revenue, "openCount": open_count, "openCent": open_total},
+        f"Umsatz {year} (ohne Entwurf/Storno): {fmt_eur(revenue)}\nOffene Forderungen: {open_count} · {fmt_eur(open_total)}",
+    )
+
+
+GUIDE = """\
+Headless-Steuerung der Zettel-DB (Rechnungen, Angebote, Mahnungen, Kunden für deutsche Freelancer).
+Ausgabe ist deutscher Klartext. Mit --json (vor oder nach dem Befehl) kommt genau EIN JSON-Objekt auf stdout:
+{"ok": true, ...Daten} bzw. {"ok": false, "error": "..."} mit Exit-Code 1. In JSON sind Beträge Cent-Integer
+(*Cent), Daten ISO YYYY-MM-DD. Zuerst `status` aufrufen: zeigt DB, Schema-Kompatibilität und Sidecar.
+
+TYPISCHER ABLAUF
+  Rechnung   customers -> invoice:create -> invoice:issue -> invoice:pdf -> invoice:paid
+             Kurzform: invoice:create ... --pdf   (impliziert Ausstellen)
+  Angebot    offer:create -> offer:send -> offer:accept -> offer:convert (erzeugt Rechnungsentwurf)
+  Mahnung    invoices --overdue -> reminder:create --invoice <id> --level 1 -> reminder:send / reminder:pdf
+  Kunde      customer:create --name "ACME GmbH" --city Berlin   (Nummer K-0001 wird vergeben)
+  Beispiel   zettel-cli invoice:create --customer K-0001 --items "Beratung|2|Std|90|19" \\
+                 --idempotency-key mai-beratung --json
+
+IDEMPOTENZ  (wichtig bei Automatisierung und Wiederholungen)
+  * Alle *:create-Befehle akzeptieren --idempotency-key <String>. Gleicher Schlüssel (pro DB und Typ) legt
+    NICHTS neu an und liefert den bestehenden Datensatz ("reused": true). Immer setzen, wenn ein Aufruf
+    wiederholt werden könnte (Timeout, Retry, Neustart eines Agenten).
+  * Ohne Schlüssel legt jeder Aufruf einen neuen Datensatz an (bei Angeboten und Mahnungen verbraucht das eine Nummer).
+  * Die Schlüssel liegen in <AppData>/cli-idempotency.json, nicht in der DB. Nach einem Restore oder Wipe
+    werden alte Schlüssel erkannt und ignoriert.
+  * Von Natur aus wiederholbar: invoice:issue, invoice:paid, offer:send/accept/reject, reminder:send,
+    offer:convert (liefert die bereits erzeugte Rechnung). PDF-Befehle erzeugen immer neu (altes PDF -> Versionen/).
+
+SCHEMA-SCHUTZ
+  Alle Befehle außer `status` brechen ab, wenn die DB ein anderes Schema hat als diese CLI erwartet
+  (PRAGMA user_version). Dann App und CLI auf dieselbe Version bringen.
+
+WICHTIG
+  * <id> ist immer die DB-id aus *:create bzw. den Listen, NICHT die Dokumentnummer. Rechnungsentwürfe haben
+    noch keine Nummer ("Entwurf #abcd"); sie wird erst bei issue/pdf/paid gezogen. Angebote und Mahnungen
+    bekommen ihre Nummer sofort.
+  * Mahnungen nur für Rechnungen mit Status 'sent' oder 'partial', nicht für Stornorechnungen oder per Storno
+    ausgeglichene Rechnungen. Die Forderung ist der offene Rest.
+  * Ausgestellte Rechnungen sind gesperrt (GoBD-Siegel). Korrekturen nur per Storno in der App.
+  * Nicht möglich: Dokumente bearbeiten/löschen/stornieren, Kunden ändern, Ausgaben, Einstellungen.
+  * PDFs brauchen vollständige Firmendaten (Name, Anschrift, Steuernummer oder USt-IdNr.).
+
+FORMATE
+  --items   'Beschreibung|Menge|Einheit|Preis-in-EUR[|MwSt-%][|Langtext]', Positionen mit ';'
+            Menge/Preis mit Punkt oder Komma. Einheit leer = "Std". MwSt-% ganzzahlig und OPTIONAL mit
+            Default 0, für 19 % also ausdrücklich "19". Bei Kleinunternehmer oder Reverse-Charge ist die MwSt 0.
+  Datum     YYYY-MM-DD, TT.MM.JJJJ oder Unix-Timestamp. Default Ausstellungsdatum: heute.
+  --customer  DB-id, Kundennummer (K-0001) oder exakter Name.
+  --fee/--interest (Mahnung)  Betrag in der Währung der Rechnung.
+
+DATENBANK / UMGEBUNG
+  DB-Auswahl wie die App: sandbox.flag -> zettel-sandbox.db, sonst aktiver Mandant, sonst zettel.db.
+  Nicht parallel zur laufenden App SCHREIBEN (SQLite single-writer). PDFs brauchen den Sidecar:
+  ZETTEL_SIDECAR=<Pfad zu zettel-sidecar> oder installierte App bzw. sidecar/.venv im Repo.
+"""
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(prog="zettel", description="Zettel CLI")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    global JSON_MODE
+    json_help = "Ausgabe als ein JSON-Objekt (vor oder nach dem Befehl erlaubt)"
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--json", dest="json_sub", action="store_true", help=json_help)
+    ap = argparse.ArgumentParser(prog="zettel-cli", description=GUIDE, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--json", dest="json_top", action="store_true", help=json_help)
+    ap.add_argument("--version", action="version", version=f"zettel-cli (DB-Schema {EXPECTED_SCHEMA})")
+    sub = ap.add_subparsers(dest="cmd", required=True, metavar="BEFEHL")
 
-    sub.add_parser("status", help="DB/Sidecar-Status").set_defaults(func=cmd_status)
-    sub.add_parser("customers", help="Kunden listen").set_defaults(func=cmd_customers)
+    def add(name, func, help, idem=False):
+        p = sub.add_parser(name, help=help, parents=[common])
+        if idem:
+            p.add_argument("--idempotency-key", help="Wiederholung mit gleichem Schlüssel legt nichts neu an")
+        p.set_defaults(func=func)
+        return p
 
-    p_ls = sub.add_parser("invoices", help="Rechnungen listen")
-    p_ls.add_argument("--status", choices=["draft", "sent", "partial", "paid", "cancelled"])
-    p_ls.add_argument("--year", type=int)
-    p_ls.set_defaults(func=cmd_invoice_list)
+    def with_id(name, func, help):
+        p = add(name, func, help)
+        p.add_argument("id", type=int, help="DB-id (nicht die Dokumentnummer)")
+        return p
 
-    p_new = sub.add_parser("invoice:create", help="Rechnung (Draft) anlegen")
-    p_new.add_argument("--customer", required=True, help="ID, Kundennummer oder Name")
-    p_new.add_argument(
-        "--items", required=True,
-        help="'Desc|Menge|Einheit|Preis€[|MwSt][|Langtext]' — mehrere mit ;",
-    )
-    p_new.add_argument("--issue-date")
-    p_new.add_argument("--due-date")
-    p_new.add_argument("--delivery-date")
-    p_new.add_argument("--service-start")
-    p_new.add_argument("--service-end")
-    p_new.add_argument("--payment-terms", type=int, help="Tage (Default aus Settings)")
-    p_new.add_argument("--reverse-charge", default="none", choices=["none", "intra_eu", "third_country"])
-    p_new.add_argument("--supply-kind", default="services", choices=["goods", "services"], help="Lieferung oder sonstige Leistung (nur bei Reverse-Charge relevant)")
-    p_new.add_argument("--skonto-percent", type=float, help="Default aus den Settings, falls dort aktiv")
-    p_new.add_argument("--skonto-days", type=int, help="Default aus den Settings, falls dort aktiv")
-    p_new.add_argument("--no-skonto", action="store_true", help="Kein Skonto, auch wenn die Settings es vorbelegen")
-    p_new.add_argument("--pdf-language", choices=["de", "en"], help="Default aus den Settings")
-    p_new.add_argument("--currency", default=BASE_CURRENCY, choices=SUPPORTED_CURRENCIES)
-    p_new.add_argument("--exchange-rate", help="1 EUR = X Fremdwährung (Pflicht außer bei EUR)")
-    p_new.add_argument("--notes")
-    p_new.add_argument("--issue", action="store_true", help="Direkt bereitstellen (Nummer ziehen)")
-    p_new.add_argument("--pdf", action="store_true", help="PDF generieren (impliziert --issue)")
-    p_new.set_defaults(func=cmd_invoice_create)
+    def document_options(p, offer: bool) -> None:
+        p.add_argument("--customer", required=True, help="ID, Kundennummer oder Name")
+        p.add_argument("--items", required=True,
+                       help="'Desc|Menge|Einheit|Preis€[|MwSt][|Langtext]' — mehrere mit ; (MwSt-Default 0!)")
+        p.add_argument("--issue-date")
+        p.add_argument("--service-start")
+        p.add_argument("--service-end")
+        p.add_argument("--reverse-charge", default="none", choices=["none", "intra_eu", "third_country"])
+        p.add_argument("--supply-kind", default="services", choices=["goods", "services"],
+                       help="Lieferung oder sonstige Leistung (nur bei Reverse-Charge relevant)")
+        p.add_argument("--skonto-percent", type=float, help="Default aus den Settings, falls dort aktiv")
+        p.add_argument("--skonto-days", type=int, help="Default aus den Settings, falls dort aktiv")
+        p.add_argument("--no-skonto", action="store_true", help="Kein Skonto, auch wenn die Settings es vorbelegen")
+        p.add_argument("--pdf-language", choices=["de", "en"], help="Default aus den Settings")
+        p.add_argument("--currency", default=BASE_CURRENCY, choices=SUPPORTED_CURRENCIES)
+        p.add_argument("--exchange-rate", help="1 EUR = X Fremdwährung (Pflicht außer bei EUR)")
+        p.add_argument("--notes")
 
-    p_show = sub.add_parser("invoice:show", help="Rechnung anzeigen")
-    p_show.add_argument("id", type=int)
-    p_show.set_defaults(func=cmd_invoice_show)
+    add("status", cmd_status, "DB-Pfad, Schema, Sandbox-Flag, Anzahl Rechnungen/Kunden, Sidecar (zuerst aufrufen)")
 
-    p_pdf = sub.add_parser("invoice:pdf", help="PDF generieren")
-    p_pdf.add_argument("id", type=int)
-    p_pdf.set_defaults(func=cmd_invoice_pdf)
+    add("customers", cmd_customers, "Kunden listen")
+    p = add("customer:create", cmd_customer_create, "Kunden anlegen (Nummer K-NNNN automatisch)", idem=True)
+    p.add_argument("--name", required=True)
+    p.add_argument("--number", help="eigene Kundennummer statt K-NNNN (muss eindeutig sein)")
+    p.add_argument("--contact-person")
+    p.add_argument("--street")
+    p.add_argument("--postal-code")
+    p.add_argument("--city")
+    p.add_argument("--country", help="ISO-Code, Default DE")
+    p.add_argument("--email")
+    p.add_argument("--phone")
+    p.add_argument("--vat-id", help="USt-IdNr.")
+    p.add_argument("--leitweg-id", help="Leitweg-ID für XRechnung")
+    p.add_argument("--receives-xrechnung", action="store_true")
+    p.add_argument("--notes")
 
-    p_xr = sub.add_parser("invoice:xrechnung", help="XRechnung (CII) neben dem PDF erzeugen")
-    p_xr.add_argument("id", type=int)
-    p_xr.set_defaults(func=cmd_invoice_xrechnung)
+    p = add("invoices", cmd_invoice_list, "Rechnungen listen (neueste zuerst)")
+    p.add_argument("--status", choices=["draft", "sent", "partial", "paid", "cancelled"])
+    p.add_argument("--year", type=int)
+    p.add_argument("--overdue", action="store_true",
+                   help="nur überfällige, nicht per Storno ausgeglichene (sent/partial); JSON enthält reminderLevels")
 
-    p_iss = sub.add_parser("invoice:issue", help="Draft bereitstellen (Nummer ziehen)")
-    p_iss.add_argument("id", type=int)
-    p_iss.add_argument("--sent-at")
-    p_iss.set_defaults(func=cmd_invoice_issue)
+    p = add("invoice:create", cmd_invoice_create, "Rechnungsentwurf anlegen (ohne Nummer)", idem=True)
+    document_options(p, offer=False)
+    p.add_argument("--due-date")
+    p.add_argument("--delivery-date")
+    p.add_argument("--payment-terms", type=int, help="Tage (Default aus Settings)")
+    p.add_argument("--issue", action="store_true", help="Direkt bereitstellen (Nummer ziehen)")
+    p.add_argument("--pdf", action="store_true", help="PDF generieren (impliziert --issue)")
 
-    p_paid = sub.add_parser("invoice:paid", help="Als bezahlt markieren")
-    p_paid.add_argument("id", type=int)
-    p_paid.add_argument("--paid-at")
-    p_paid.set_defaults(func=cmd_invoice_paid)
+    with_id("invoice:show", cmd_invoice_show, "Rechnung mit Positionen, Summen und PDF-Pfad anzeigen")
+    with_id("invoice:pdf", cmd_invoice_pdf, "PDF generieren (Entwurf wird vorher bereitgestellt)")
+    with_id("invoice:xrechnung", cmd_invoice_xrechnung, "XRechnung (CII) neben dem PDF erzeugen")
+    p = with_id("invoice:issue", cmd_invoice_issue, "Entwurf bereitstellen = Nummer ziehen und versiegeln (sonst No-op)")
+    p.add_argument("--sent-at")
+    p = with_id("invoice:paid", cmd_invoice_paid, "Als bezahlt markieren")
+    p.add_argument("--paid-at")
 
-    p_stats = sub.add_parser("stats", help="Kennzahlen")
-    p_stats.set_defaults(func=cmd_stats)
+    p = add("offers", cmd_offer_list, "Angebote listen (neueste zuerst)")
+    p.add_argument("--status", choices=["draft", "sent", "accepted", "rejected", "expired"])
+    p.add_argument("--year", type=int)
+    p = add("offer:create", cmd_offer_create, "Angebotsentwurf anlegen (Nummer AN-… sofort)", idem=True)
+    document_options(p, offer=True)
+    p.add_argument("--valid-until", help="Gültig bis (Default: Ausstellung + Gültigkeit aus den Settings)")
+    p.add_argument("--intro-text", help="Einleitungstext über den Positionen")
+    p.add_argument("--pdf", action="store_true", help="PDF generieren (braucht Sidecar)")
+    with_id("offer:show", cmd_offer_show, "Angebot mit Positionen und Summen anzeigen")
+    with_id("offer:send", offer_transition("sent", "sent_at", ("draft",)), "Als gesendet markieren")
+    with_id("offer:accept", offer_transition("accepted", "accepted_at", ("sent", "draft")), "Als angenommen markieren")
+    with_id("offer:reject", offer_transition("rejected", "rejected_at", ("sent", "draft")), "Als abgelehnt markieren")
+    p = with_id("offer:convert", cmd_offer_convert, "In Rechnungsentwurf umwandeln; Angebot wird 'accepted' (wiederholbar)")
+    p.add_argument("--payment-terms", type=int, help="Zahlungsziel in Tagen (Default aus den Settings)")
+    with_id("offer:pdf", cmd_offer_pdf, "Angebots-PDF erzeugen")
+
+    p = add("reminders", cmd_reminder_list, "Mahnungen listen (neueste zuerst)")
+    p.add_argument("--invoice", type=int, help="nur Mahnungen zu dieser Rechnungs-id")
+    p = add("reminder:create", cmd_reminder_create, "Mahnungsentwurf zu einer offenen Rechnung anlegen (Nummer MA-… sofort)", idem=True)
+    p.add_argument("--invoice", type=int, required=True, help="DB-id der Rechnung (sent oder partial)")
+    p.add_argument("--level", type=int, choices=[1, 2, 3], required=True, help="1 Zahlungserinnerung, 2 Mahnung, 3 Letzte Mahnung")
+    p.add_argument("--issue-date")
+    p.add_argument("--due-date", help="Default: Ausstellung + Frist der Stufe aus den Settings")
+    p.add_argument("--fee", help="Mahngebühr in Rechnungswährung (Default aus den Settings je Stufe)")
+    p.add_argument("--interest", help="Verzugszinsen in Rechnungswährung (Default 0)")
+    p.add_argument("--body", help="Text (Default: Standardtext der Stufe)")
+    p.add_argument("--notes")
+    p.add_argument("--pdf", action="store_true", help="PDF generieren (braucht Sidecar)")
+    p = with_id("reminder:send", cmd_reminder_send, "Als gesendet markieren")
+    p.add_argument("--sent-at")
+    with_id("reminder:pdf", cmd_reminder_pdf, "Mahnungs-PDF erzeugen")
+
+    add("stats", cmd_stats, "Umsatz des laufenden Jahres und offene Forderungen")
 
     args = ap.parse_args()
-    args.func(args)
+    JSON_MODE = args.json_top or args.json_sub
+    try:
+        args.func(args)
+    except SystemExit as exit_:
+        if JSON_MODE and isinstance(exit_.code, str):
+            print(json.dumps({"ok": False, "error": exit_.code}, ensure_ascii=False))
+            sys.exit(1)
+        raise
+    except sqlite3.Error as error:
+        message = f"DB-Fehler: {error}"
+        if JSON_MODE:
+            print(json.dumps({"ok": False, "error": message}, ensure_ascii=False))
+            sys.exit(1)
+        sys.exit(message)
 
 
 if __name__ == "__main__":
