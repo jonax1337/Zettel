@@ -180,6 +180,9 @@ jobs:
         working-directory: sidecar
         run: python build.py
 
+      - name: Build CLI (PyInstaller)
+        run: python cli/build.py
+
       # ---------- Build bundled validator + JRE ----------
 
       - name: Download KoSIT validator

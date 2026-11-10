@@ -3,6 +3,18 @@
 Headless-Steuerung der Zettel-Datenbank für Automatisierung (z. B. Agenten,
 Scripts, Cron). Nur Python-stdlib, keine Abhängigkeiten.
 
+## Mit der App installiert
+
+Der Installer liefert die CLI als `zettel-cli` (PyInstaller-Binary, baut `python cli/build.py`) mit; sie findet den
+PDF-Sidecar der Installation selbst. Einstellungen → Daten → „Kommandozeile“ zeigt den Pfad zum Kopieren.
+
+| Plattform | Aufruf |
+|---|---|
+| Linux (`.deb`) | `zettel-cli` (Symlink nach `/usr/bin`, beim Entfernen des Pakets weg) |
+| Linux (AppImage), Windows, macOS | voller Pfad aus den Einstellungen; kein PATH-Eintrag |
+
+Die Beispiele unten laufen aus dem Repo mit `python cli/zettel.py`; installiert ersetzt `zettel-cli` diesen Aufruf.
+
 ## DB-Auflösung
 
 Wie die App (`src-tauri/src/tenants.rs`): `sandbox.flag` → Sandbox-DB,
@@ -15,9 +27,10 @@ Lesende Befehle sind unproblematisch.
 ## Befehle
 
 ```
-python cli/zettel.py status                          # DB, Sandbox, Sidecar
+python cli/zettel.py status                          # DB, Schema (Ist/Soll), Sandbox, Sidecar
 python cli/zettel.py customers                       # Kunden listen
-python cli/zettel.py invoices [--status X] [--year N]
+python cli/zettel.py customer:create --name "ACME GmbH" [--city ..] [--leitweg-id ..]  # Nummer K-NNNN
+python cli/zettel.py invoices [--status X] [--year N] [--overdue]
 python cli/zettel.py invoice:show <id>
 python cli/zettel.py invoice:create --customer "ITGG Berlin e.V." \
     --items "IT-Vor-Ort-Service|2|Std|90|0;Remote-Support|1.5|Std|90|0" \
@@ -26,8 +39,38 @@ python cli/zettel.py invoice:issue <id>              # Nummer ziehen (lazy) + Re
 python cli/zettel.py invoice:pdf <id>                # PDF via Sidecar
 python cli/zettel.py invoice:xrechnung <id>          # XRechnung (CII) als .xml neben dem PDF
 python cli/zettel.py invoice:paid <id>               # bezahlt + Payment-Eintrag
+python cli/zettel.py offers [--status X] [--year N]
+python cli/zettel.py offer:create --customer K-0001 --items "..." [--valid-until ..] [--pdf]
+python cli/zettel.py offer:show|send|accept|reject|pdf <id>
+python cli/zettel.py offer:convert <id>              # Rechnungsentwurf; zweiter Aufruf liefert denselben
+python cli/zettel.py reminders [--invoice <id>]
+python cli/zettel.py reminder:create --invoice <id> --level 1|2|3 [--fee 5,00] [--interest ..] [--pdf]
+python cli/zettel.py reminder:send|pdf <id>
 python cli/zettel.py stats                           # Umsatz / offene Posten
+python cli/zettel.py --version                       # erwartetes DB-Schema
 ```
+
+### `--json` und Idempotenz
+
+`--json` (vor oder nach dem Befehl) gibt genau ein Objekt auf stdout aus:
+`{"ok": true, ...}` bzw. `{"ok": false, "error": "..."}` mit Exit-Code 1. Beträge sind Cent-Integer
+(`*Cent`), Daten ISO `YYYY-MM-DD`.
+
+Alle `*:create`-Befehle akzeptieren `--idempotency-key <String>`. Derselbe Schlüssel (pro DB und Typ) legt nichts
+neu an und liefert den vorhandenen Datensatz (`"reused": true`). Die Schlüssel stehen in
+`<AppData>/cli-idempotency.json` (keine Migration); sie merken sich `created_at` des Datensatzes, ein Schlüssel
+aus einer anderen DB-Generation (Restore, „Daten löschen“) wird ignoriert. Stirbt der Prozess zwischen Anlegen und
+Schreiben der Datei, kann ein Retry ein Duplikat erzeugen. `offer:convert`, `*:send`, `*:accept`, `*:reject`,
+`invoice:issue` und `invoice:paid` sind ohnehin wiederholbar.
+
+### Schema-Schutz
+
+Jeder Befehl außer `status` prüft `PRAGMA user_version` gegen `EXPECTED_SCHEMA` (Test gleicht es mit
+`src/lib/utils/schema-version.ts` ab) und bricht bei Abweichung ab, bevor etwas geschrieben wird. Bei jeder
+Migration `EXPECTED_SCHEMA` mitziehen, sonst schlägt der Test fehl.
+
+PDFs für Rechnungen, Angebote und Mahnungen brauchen vollständige Firmendaten (wie die App) und landen in
+`Rechnungen/`, `Angebote/` bzw. `Mahnungen/` des Dokumente-Roots.
 
 Neue Rechnungen übernehmen wie das App-Formular `default_pdf_language` und die
 Skonto-Voreinstellung aus den Settings; `--pdf-language`, `--skonto-percent`/`--skonto-days`
@@ -47,7 +90,7 @@ mehrere Positionen mit `;`.
 
 ## Konventions-Parität zur App
 
-Der CLI repliziert bewusst die App-Logik aus `src/lib/db/invoices.ts`:
+Der CLI repliziert bewusst die App-Logik aus `src/lib/db/{invoices,offers,reminders,numbering}.ts`:
 
 - **Draft-Placeholder** `DRAFT-<hex>` — kein Nummern-Slot wird verbrannt
 - **Lazy Numbering**: echte `RE-{YYYY}-{NNNN}` erst bei `issue`/`pdf`

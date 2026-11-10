@@ -144,6 +144,7 @@ CREATE TABLE invoice_items (
     quantity REAL, unit TEXT, unit_price INTEGER, vat_rate REAL, line_total INTEGER,
     long_description TEXT, line_period_start INTEGER, line_period_end INTEGER
 );
+CREATE TABLE reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER, level INTEGER);
 CREATE TABLE invoice_seals (
     id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, kind TEXT NOT NULL,
     sealed_at INTEGER NOT NULL, content_hash TEXT NOT NULL, prev_hash TEXT NOT NULL UNIQUE, hash TEXT NOT NULL UNIQUE
@@ -558,7 +559,7 @@ class TestInvoiceListYear:
         shortly_after_local_new_year = local_timestamp(2026, 1, 1, hour=0) + 30 * 60
         insert_invoice(con, status="sent", number="RE-2026-0001", issue_date=shortly_after_local_new_year)
         monkeypatch.setattr(cli, "connect", lambda: SharedConnection(con))
-        cli.cmd_invoice_list(SimpleNamespace(status=None, year=2026))
+        cli.cmd_invoice_list(SimpleNamespace(status=None, year=2026, overdue=False))
         assert "RE-2026-0001" in capsys.readouterr().out
 
 
@@ -589,3 +590,16 @@ class TestResolveDbPath:
     def test_windows_and_macos_keep_a_single_dir(self, cli, dirs, monkeypatch):
         monkeypatch.setattr(cli.sys, "platform", "darwin")
         assert cli.app_config_dir() == cli.app_data_dir()
+
+
+class TestFrozenSidecarLookup:
+    def test_installed_cli_finds_the_sidecar_next_to_its_folder(self, cli, monkeypatch, tmp_path):
+        sidecar = tmp_path / "sidecar" / "zettel-sidecar"
+        sidecar.parent.mkdir()
+        sidecar.touch()
+        (tmp_path / "cli").mkdir()
+        monkeypatch.delenv("ZETTEL_SIDECAR", raising=False)
+        monkeypatch.setattr(cli.sys, "platform", "linux")
+        monkeypatch.setattr(cli.sys, "frozen", True, raising=False)
+        monkeypatch.setattr(cli.sys, "executable", str(tmp_path / "cli" / "zettel-cli"))
+        assert cli.resolve_sidecar() == (str(sidecar), None)
