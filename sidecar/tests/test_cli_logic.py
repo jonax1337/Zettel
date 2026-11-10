@@ -590,3 +590,16 @@ class TestResolveDbPath:
     def test_windows_and_macos_keep_a_single_dir(self, cli, dirs, monkeypatch):
         monkeypatch.setattr(cli.sys, "platform", "darwin")
         assert cli.app_config_dir() == cli.app_data_dir()
+
+
+class TestFrozenSidecarLookup:
+    def test_installed_cli_finds_the_sidecar_next_to_its_folder(self, cli, monkeypatch, tmp_path):
+        sidecar = tmp_path / "sidecar" / "zettel-sidecar"
+        sidecar.parent.mkdir()
+        sidecar.touch()
+        (tmp_path / "cli").mkdir()
+        monkeypatch.delenv("ZETTEL_SIDECAR", raising=False)
+        monkeypatch.setattr(cli.sys, "platform", "linux")
+        monkeypatch.setattr(cli.sys, "frozen", True, raising=False)
+        monkeypatch.setattr(cli.sys, "executable", str(tmp_path / "cli" / "zettel-cli"))
+        assert cli.resolve_sidecar() == (str(sidecar), None)

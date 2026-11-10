@@ -3,6 +3,18 @@
 Headless-Steuerung der Zettel-Datenbank für Automatisierung (z. B. Agenten,
 Scripts, Cron). Nur Python-stdlib, keine Abhängigkeiten.
 
+## Mit der App installiert
+
+Der Installer liefert die CLI als `zettel-cli` (PyInstaller-Binary, baut `python cli/build.py`) mit; sie findet den
+PDF-Sidecar der Installation selbst. Einstellungen → Daten → „Kommandozeile“ zeigt den Pfad zum Kopieren.
+
+| Plattform | Aufruf |
+|---|---|
+| Linux (`.deb`) | `zettel-cli` (Symlink nach `/usr/bin`, beim Entfernen des Pakets weg) |
+| Linux (AppImage), Windows, macOS | voller Pfad aus den Einstellungen; kein PATH-Eintrag |
+
+Die Beispiele unten laufen aus dem Repo mit `python cli/zettel.py`; installiert ersetzt `zettel-cli` diesen Aufruf.
+
 ## DB-Auflösung
 
 Wie die App (`src-tauri/src/tenants.rs`): `sandbox.flag` → Sandbox-DB,
