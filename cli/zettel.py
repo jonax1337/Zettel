@@ -440,6 +440,12 @@ def resolve_sidecar() -> tuple[str | None, str | None]:
             if p.suffix.lower() == ".exe":
                 return str(p), None
             return str(p), str(_find_main_py())
+    if getattr(sys, "frozen", False):
+        # installierte App: <install>/cli/zettel-cli(.exe) neben <install>/sidecar/
+        name = "zettel-sidecar.exe" if sys.platform == "win32" else "zettel-sidecar"
+        sibling = Path(sys.executable).resolve().parent.parent / "sidecar" / name
+        if sibling.is_file():
+            return str(sibling), None
     repo_root = Path(__file__).resolve().parent.parent
     main_py = repo_root / "sidecar" / "main.py"
     for cand in SIDECAR_SEARCH_PATHS:

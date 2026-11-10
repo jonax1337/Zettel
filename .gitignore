@@ -48,3 +48,5 @@ tools/jre/
 
 # local-only pnpm config (repo is NOT a workspace)
 pnpm-workspace.yaml
+cli/dist/
+cli/build/
