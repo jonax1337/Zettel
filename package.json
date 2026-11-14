@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build --config src-tauri/tauri.bundle.conf.json",
+    "tauri:build": "node scripts/build-sidecar.mjs && tauri build --config src-tauri/tauri.bundle.conf.json",
     "version:set": "node scripts/version.mjs set",
     "version:check": "node scripts/version.mjs check"
   },
