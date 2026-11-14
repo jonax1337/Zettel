@@ -728,9 +728,12 @@ fn extract_backup(zip_path: &Path, pending_root: &Path) -> Result<(), String> {
     let mut found_db = false;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-        let relative = entry
-            .enclosed_name()
-            .ok_or_else(|| format!("Unsicherer Pfad im Backup: {}", entry.name()))?;
+        let relative = entry.enclosed_name().ok_or_else(|| {
+            format!(
+                "Unsicherer Pfad im Backup: {}",
+                String::from_utf8_lossy(entry.name_raw())
+            )
+        })?;
 
         if relative == Path::new(MANIFEST_NAME) {
             let mut content = String::new();
@@ -2386,7 +2389,7 @@ mod tests {
     fn zip_entries(zip_path: &Path) -> Vec<String> {
         let mut archive = ZipArchive::new(File::open(zip_path).unwrap()).unwrap();
         (0..archive.len())
-            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .map(|i| archive.by_index(i).unwrap().name().unwrap().to_string())
             .collect()
     }
 
