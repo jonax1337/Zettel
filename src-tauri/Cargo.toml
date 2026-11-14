@@ -27,7 +27,7 @@ zip = { version = "8", default-features = false, features = ["deflate"] }
 walkdir = "2"
 dirs = "7"
 rusqlite = { version = "0.32", features = ["bundled"] }
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 argon2 = "0.5"
 rand = "0.10"
 zeroize = "1.7"
