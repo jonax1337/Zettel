@@ -70,18 +70,23 @@ CREATE TABLE invoices (
     eur_total_cent INTEGER, notes_internal TEXT, follow_up_date INTEGER,
     service_period_start INTEGER, service_period_end INTEGER, skonto_percent REAL,
     skonto_days INTEGER, pdf_language TEXT, pdf_path TEXT, updated_at INTEGER,
-    last_validation_status TEXT, last_validated_at INTEGER, last_validation_findings_count INTEGER
+    last_validation_status TEXT, last_validated_at INTEGER, last_validation_findings_count INTEGER,
+    buyer_reference TEXT
 );
-CREATE TABLE settings (id INTEGER PRIMARY KEY, default_payment_terms_days INTEGER);
+CREATE TABLE settings (
+    id INTEGER PRIMARY KEY, default_payment_terms_days INTEGER, company_name TEXT, owner_name TEXT,
+    street TEXT, postal_code TEXT, city TEXT, phone TEXT, email TEXT, vat_id TEXT, tax_number TEXT, bank_iban TEXT
+);
 CREATE TABLE customers (
     id INTEGER PRIMARY KEY, customer_number TEXT, name TEXT, contact_person TEXT, street TEXT,
-    postal_code TEXT, city TEXT, country TEXT, email TEXT, vat_id TEXT
+    postal_code TEXT, city TEXT, country TEXT, email TEXT, vat_id TEXT, leitweg_id TEXT
 );
 """
 
 CUSTOMER = {
     "id": 1, "customer_number": "K-0001", "name": "A", "contact_person": None,
     "street": None, "postal_code": None, "city": None, "country": None, "email": None, "vat_id": None,
+    "leitweg_id": None,
 }
 TOTALS = {"subtotal": 10000, "vatAmount": 1900, "total": 11900}
 
@@ -110,6 +115,161 @@ def create_draft(cli, con, settings=None, **overrides):
     settings = {"default_payment_terms_days": 14, "is_kleinunternehmer": 0, **(settings or {})}
     invoice_id = cli.insert_draft_invoice(con, create_args(**overrides), CUSTOMER, settings, TOTALS, False)
     return con.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+
+
+COMPANY_FIELDS = {
+    "companyName": "company_name", "ownerName": "owner_name", "street": "street", "postalCode": "postal_code",
+    "city": "city", "phone": "phone", "email": "email", "vatId": "vat_id", "taxNumber": "tax_number",
+    "bankIban": "bank_iban",
+}
+
+
+@pytest.mark.parametrize("case", FIXTURE["xrechnungMissing"], ids=lambda c: c["name"])
+def test_xrechnung_pre_export_check(cli, case):
+    base, change = FIXTURE["xrechnungComplete"], case["change"]
+    company = {**base["company"], **change.get("company", {})}
+    customer = {**base["customer"], **change.get("customer", {})}
+    buyer_reference = change["buyerReference"] if "buyerReference" in change else base["buyerReference"]
+    missing = cli.missing_xrechnung_fields(
+        buyer_reference, {COMPANY_FIELDS[key]: value for key, value in company.items()}, customer
+    )
+    assert missing == case["expected"]
+
+
+class TestBuyerReferenceDefault:
+    def test_is_copied_from_the_customers_leitweg_id_like_the_app(self, cli, con, monkeypatch):
+        monkeypatch.setitem(CUSTOMER, "leitweg_id", " 04011000-1234512345-35 ")
+        assert create_draft(cli, con)["buyer_reference"] == "04011000-1234512345-35"
+
+    def test_stays_empty_for_a_customer_without_one(self, cli, con):
+        assert create_draft(cli, con)["buyer_reference"] is None
+
+
+@pytest.mark.parametrize("case", FIXTURE["xrechnungFallback"], ids=lambda c: c["name"])
+def test_xrechnung_live_customer_fallbacks(cli, case):
+    live = {"leitweg_id": case["liveLeitwegId"], "email": case["liveEmail"]}
+    buyer_reference, customer = cli.with_live_customer_fallbacks(
+        case["invoiceBuyerReference"], {"email": case["snapshotEmail"], "name": "A"}, live
+    )
+    assert {"buyerReference": buyer_reference, "email": customer["email"]} == case["expected"]
+
+
+def test_xrechnung_fallbacks_without_a_live_customer(cli):
+    snapshot = {"email": None}
+    assert cli.with_live_customer_fallbacks(None, snapshot, None) == (None, {"email": None})
+    assert snapshot == {"email": None}
+
+
+PDF_COMPANY = {
+    "company_name": "A", "owner_name": " Jonas Laux ", "street": "S", "postal_code": "1", "city": "C",
+    "country": "DE", "tax_number": None, "vat_id": "DE1", "email": " a@b.de ", "phone": " +49 30 123 ",
+    "website": None, "bank_name": None, "bank_iban": "DE00", "bank_bic": None, "is_kleinunternehmer": 0,
+    "kleinunternehmer_note": None, "logo_path": None, "zugferd_profile": None, "pdf_theme": None,
+    "pdf_renderer": None, "register_court": " Amtsgericht Berlin ", "register_number": "HRB 1",
+    "managing_directors": "Erika Mustermann",
+}
+PDF_INVOICE = {
+    key: None for key in (
+        "number", "issue_date", "delivery_date", "due_date", "subtotal", "vat_amount", "total",
+        "reverse_charge_type", "supply_kind", "notes", "payment_terms", "currency", "exchange_rate",
+        "eur_total_cent", "service_period_start", "service_period_end", "skonto_percent", "skonto_days",
+        "amount_paid_cent", "pdf_language", "buyer_reference",
+    )
+} | {"is_kleinunternehmer": 0, "is_reverse_charge": 0, "is_credit_note": 0, "total": 0}
+
+
+def test_payload_trims_what_the_pre_check_accepted(cli):
+    payload = cli.build_pdf_payload(PDF_INVOICE, [], {"name": "K", "email": " k@x.de "}, PDF_COMPANY, "out.xml")
+    assert (payload["company"]["ownerName"], payload["company"]["email"], payload["company"]["phone"]) == (
+        "Jonas Laux", "a@b.de", "+49 30 123",
+    )
+    assert payload["customer"]["email"] == "k@x.de"
+
+
+def test_payload_carries_the_company_register_data(cli):
+    payload = cli.build_pdf_payload(PDF_INVOICE, [], {"name": "K"}, PDF_COMPANY, "out.pdf")
+
+    assert (
+        payload["company"]["registerCourt"], payload["company"]["registerNumber"],
+        payload["company"]["managingDirectors"],
+    ) == (" Amtsgericht Berlin ", "HRB 1", "Erika Mustermann")
+
+
+def test_payload_of_a_database_before_the_register_columns_has_none(cli):
+    company = {k: v for k, v in PDF_COMPANY.items() if not k.startswith(("register_", "managing_"))}
+
+    payload = cli.build_pdf_payload(PDF_INVOICE, [], {"name": "K"}, company, "out.pdf")
+
+    assert payload["company"]["registerCourt"] is None
+
+
+def test_payload_of_a_database_before_the_pdf_engine_setting_uses_weasyprint(cli):
+    company = {key: value for key, value in PDF_COMPANY.items() if key != "pdf_renderer"}
+
+    payload = cli.build_pdf_payload(PDF_INVOICE, [], {"name": "K"}, company, "out.pdf")
+
+    assert payload["settings"]["pdf_renderer"] == "weasyprint"
+
+
+class TestXrechnungExport:
+    @staticmethod
+    def stub_invoice(cli, monkeypatch, number, buyer_reference="04011000-1234512345-35", snapshot=None):
+        monkeypatch.setattr(cli, "load_invoice_full", lambda con, invoice_id: (
+            {"number": number, "buyer_reference": buyer_reference, "customer_id": 1}, [], snapshot or {},
+        ))
+
+    def test_a_draft_is_refused(self, cli, con, monkeypatch):
+        self.stub_invoice(cli, monkeypatch, "DRAFT-0123456789abcdef")
+        with pytest.raises(SystemExit, match="Entwürfe"):
+            cli.export_xrechnung_for(con, 1)
+
+    def test_missing_fields_are_listed_instead_of_writing_a_file(self, cli, con, monkeypatch):
+        con.execute("INSERT INTO settings (id) VALUES (1)")
+        self.stub_invoice(cli, monkeypatch, "RE-2026-0001", buyer_reference=None)
+        monkeypatch.setattr(cli, "call_sidecar", lambda *args: pytest.fail("must not call the sidecar"))
+        with pytest.raises(SystemExit) as exit_info:
+            cli.export_xrechnung_for(con, 1)
+        message = str(exit_info.value)
+        assert "  - Leitweg-ID / Käuferreferenz" in message
+        assert "  - Anschrift des Verkäufers" in message
+
+    def test_writes_the_xml_next_to_the_pdf(self, cli, con, monkeypatch, tmp_path):
+        con.execute("INSERT INTO settings (id) VALUES (1)")
+        self.stub_invoice(cli, monkeypatch, "RE-2026-0001")
+        monkeypatch.setattr(cli, "missing_xrechnung_fields", lambda *args: [])
+        monkeypatch.setattr(cli, "pdf_output_dir", lambda: tmp_path)
+        monkeypatch.setattr(cli, "build_pdf_payload", lambda inv, items, cust, company, output_path: {"outputPath": output_path})
+        calls = []
+
+        def fake_sidecar(command, payload):
+            calls.append((command, payload))
+            return {"success": True, "xmlPath": payload["outputPath"]}
+
+        monkeypatch.setattr(cli, "call_sidecar", fake_sidecar)
+
+        number, path = cli.export_xrechnung_for(con, 1)
+
+        assert (number, path) == ("RE-2026-0001", str(tmp_path / "RE-2026-0001.xml"))
+        assert calls == [("generate_xrechnung", {"outputPath": path})]
+
+    def test_an_issued_invoice_takes_leitweg_id_and_email_from_the_live_customer(self, cli, con, monkeypatch, tmp_path):
+        con.execute("INSERT INTO settings (id) VALUES (1)")
+        con.execute("INSERT INTO customers (id, leitweg_id, email) VALUES (1, '04011000-1234512345-35', 'amt@bfb.de')")
+        self.stub_invoice(cli, monkeypatch, "RE-2026-0001", buyer_reference=None, snapshot={"email": None})
+        checked = []
+        monkeypatch.setattr(cli, "missing_xrechnung_fields", lambda *args: checked.append(args) or [])
+        monkeypatch.setattr(cli, "pdf_output_dir", lambda: tmp_path)
+        sent = []
+        monkeypatch.setattr(
+            cli, "build_pdf_payload",
+            lambda inv, items, cust, company, output_path: sent.append((inv["buyer_reference"], cust["email"])) or {},
+        )
+        monkeypatch.setattr(cli, "call_sidecar", lambda command, payload: {"success": True, "xmlPath": "x.xml"})
+
+        cli.export_xrechnung_for(con, 1)
+
+        assert sent == [("04011000-1234512345-35", "amt@bfb.de")]
+        assert checked[0][0] == "04011000-1234512345-35"
 
 
 class TestPdfLanguageDefault:

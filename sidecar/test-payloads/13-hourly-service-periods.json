@@ -1,0 +1,75 @@
+{
+  "command": "generate_invoice",
+  "payload": {
+    "invoice": {
+      "number": "RE-2026-TEST-13",
+      "issueDate": 1778587200,
+      "deliveryDate": null,
+      "servicePeriodStart": 1777982400,
+      "servicePeriodEnd": 1778155200,
+      "dueDate": 1779796800,
+      "subtotal": 16500,
+      "vatAmount": 3135,
+      "total": 19635,
+      "isKleinunternehmer": false,
+      "notes": "Abrechnung nach Zeitaufwand.",
+      "paymentTerms": "Zahlbar innerhalb von 14 Tagen ohne Abzug."
+    },
+    "items": [
+      {
+        "position": 1,
+        "description": "Website",
+        "longDescription": "05.05.2026 · 1:00 · Konzept\n07.05.2026 · 0:30 · Review",
+        "quantity": 1.5,
+        "unit": "Std",
+        "unitPrice": 9000,
+        "vatRate": 19,
+        "lineTotal": 13500,
+        "linePeriodStart": 1777982400,
+        "linePeriodEnd": 1778155200
+      },
+      {
+        "position": 2,
+        "description": "App",
+        "longDescription": null,
+        "quantity": 0.25,
+        "unit": "Std",
+        "unitPrice": 12000,
+        "vatRate": 19,
+        "lineTotal": 3000,
+        "linePeriodStart": 1778068800,
+        "linePeriodEnd": 1778068800
+      }
+    ],
+    "company": {
+      "companyName": "Laux Digital GmbH",
+      "ownerName": "Jonas Laux",
+      "street": "Musterstr. 1",
+      "postalCode": "10115",
+      "city": "Berlin",
+      "country": "DE",
+      "taxNumber": "12/345/67890",
+      "vatId": "DE123456789",
+      "email": "hi@laux.digital",
+      "phone": "+49 30 1234567",
+      "website": "laux.digital",
+      "bankName": "Sparkasse",
+      "bankIban": "DE89370400440532013000",
+      "bankBic": "COBADEFFXXX",
+      "isKleinunternehmer": false,
+      "kleinunternehmerNote": "",
+      "logoPath": null
+    },
+    "customer": {
+      "name": "Großkunde AG",
+      "contactPerson": "Herr Dr. Meyer",
+      "street": "Industriestraße 99",
+      "postalCode": "20095",
+      "city": "Hamburg",
+      "country": "DE",
+      "vatId": "DE555555555"
+    },
+    "outputPath": "test-payloads/out-13-hourly-service-periods.pdf",
+    "profile": "en16931"
+  }
+}

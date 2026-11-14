@@ -1,3 +1,4 @@
+import { hasReleasedTimeEntries } from "./audit";
 import { execute, insert, select, toSqlBool } from "./client";
 import {
   buildDocumentFilter,
@@ -25,7 +26,8 @@ import {
 } from "./invoice-lifecycle";
 import { recomputeInvoiceStatus } from "./invoice-payments";
 import { drawNextNumber } from "./numbering";
-import { loadSettings } from "./queries";
+import { getCustomer, loadSettings } from "./queries";
+import { appendSeal } from "./seals";
 import { parseSnapshot } from "./snapshot-json";
 import { buildCustomerSnapshot } from "./snapshots";
 import type {
@@ -38,13 +40,14 @@ import type {
 import { computeEurTotalCent } from "$lib/utils/currency";
 import { nowUnix, toUnix } from "$lib/utils/date";
 import { displayInvoiceNumber, draftPlaceholder, isDraftNumber } from "$lib/utils/invoice-number";
-import { computeTotals, type Totals } from "$lib/utils/totals";
+import { assertQuantities, computeTotals, type Totals } from "$lib/utils/totals";
+import { normalizeBuyerReference, resolveBuyerReference } from "$lib/xrechnung/buyer-reference";
 
 export { displayInvoiceNumber, isDraftNumber };
 
 // --- Input types ---
 
-/** No id/invoiceId/lineTotal: those are derived. */
+/** No id/invoiceId: those are derived. `fixedLineTotal` is only set to keep a stored amount (see TotalsItem). */
 type InvoiceItemInput = {
   description: string;
   quantity: number;
@@ -54,6 +57,7 @@ type InvoiceItemInput = {
   longDescription?: string | null;
   linePeriodStart?: number | null;
   linePeriodEnd?: number | null;
+  fixedLineTotal?: number;
 };
 
 export type ReverseChargeType = "none" | "intra_eu" | "third_country";
@@ -83,6 +87,8 @@ export type InvoiceFormInput = {
   skontoPercent?: number | null;
   skontoDays?: number | null;
   pdfLanguage?: PdfLanguage;
+  /** BT-10 / Leitweg-ID. Left out, a new invoice takes the customer's; null clears it. */
+  buyerReference?: string | null;
   /** Defaults to the current setting; a credit note takes the flag of the invoice it corrects. */
   isKleinunternehmer?: boolean;
 };
@@ -209,8 +215,8 @@ export function orKeep<T>(incoming: T | undefined, current: T): T {
 
 /**
  * Foreign-currency invoices need a frozen EUR total for KPIs, UStVA and DATEV.
- * Callers that do not pass one (offer conversion, recurring, credit notes) get
- * it derived from the invoice's own total and exchange rate.
+ * Callers that do not pass one (offer conversion, recurring) get it derived from
+ * the invoice's own total and exchange rate. Credit notes use `creditNoteEurTotal`.
  */
 function eurTotalFor(input: InvoiceFormInput, unsignedTotal: number): number | null {
   if (input.eurTotalCent !== undefined) return input.eurTotalCent;
@@ -219,18 +225,37 @@ function eurTotalFor(input: InvoiceFormInput, unsignedTotal: number): number | n
   return computeEurTotalCent(currency, unsignedTotal, input.exchangeRate);
 }
 
-/** A credit note is denominated in its original's currency, whatever the caller passes. */
-async function withCorrectedCurrency(input: InvoiceFormInput): Promise<InvoiceFormInput> {
-  if (!input.isCreditNote || input.correctsInvoiceId == null) return input;
-  const original = await findInvoice(input.correctsInvoiceId);
-  if (!original) throw new Error(`Rechnung ${input.correctsInvoiceId} nicht gefunden.`);
-  return { ...input, currency: original.currency, exchangeRate: original.exchangeRate };
+async function loadOriginal(correctsInvoiceId: number): Promise<Invoice> {
+  const original = await findInvoice(correctsInvoiceId);
+  if (!original) throw new Error(`Rechnung ${correctsInvoiceId} nicht gefunden.`);
+  return original;
+}
+
+/**
+ * The EUR total of a credit note, whatever the caller passes: a refund of the full
+ * amount is exactly the negative of the original's frozen EUR total, a partial one
+ * is converted at the original's rate. Unsigned; the caller applies the sign.
+ */
+function creditNoteEurTotal(original: Invoice, unsignedTotal: number): number | null {
+  if (original.eurTotalCent != null && unsignedTotal === Math.abs(original.total)) {
+    return Math.abs(original.eurTotalCent);
+  }
+  return computeEurTotalCent(original.currency, unsignedTotal, original.exchangeRate);
 }
 
 export async function createInvoice(formInput: InvoiceFormInput): Promise<number> {
-  const input = await withCorrectedCurrency(formInput);
+  assertQuantities(formInput.items);
+  // A credit note is denominated in its original's currency, whatever the caller passes.
+  const original =
+    formInput.isCreditNote && formInput.correctsInvoiceId != null
+      ? await loadOriginal(formInput.correctsInvoiceId)
+      : null;
+  const input = original
+    ? { ...formInput, currency: original.currency, exchangeRate: original.exchangeRate }
+    : formInput;
   const settings = await loadSettings();
   const snapshot = await buildCustomerSnapshot(input.customerId);
+  const customer = input.buyerReference === undefined ? await getCustomer(input.customerId) : null;
   const isCreditNote = !!input.isCreditNote;
   const isKleinunternehmer = input.isKleinunternehmer ?? settings.isKleinunternehmer;
   const sign = creditNoteSign(isCreditNote);
@@ -246,8 +271,8 @@ export async function createInvoice(formInput: InvoiceFormInput): Promise<number
        status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
        reverse_charge_type, supply_kind, notes, payment_terms, is_credit_note, corrects_invoice_id,
        currency, exchange_rate, eur_total_cent, notes_internal, follow_up_date,
-       service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language, buyer_reference)
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       draftPlaceholder(),
       input.customerId,
@@ -268,7 +293,12 @@ export async function createInvoice(formInput: InvoiceFormInput): Promise<number
       input.correctsInvoiceId ?? null,
       input.currency ?? DEFAULT_CURRENCY,
       input.exchangeRate ?? null,
-      signedOrNull(eurTotalFor(input, Math.abs(totals.total)), sign),
+      signedOrNull(
+        original
+          ? creditNoteEurTotal(original, Math.abs(totals.total))
+          : eurTotalFor(input, Math.abs(totals.total)),
+        sign,
+      ),
       input.notesInternal ?? null,
       input.followUpDate ?? null,
       input.servicePeriodStart ?? null,
@@ -276,6 +306,7 @@ export async function createInvoice(formInput: InvoiceFormInput): Promise<number
       isCreditNote ? null : input.skontoPercent ?? null,
       isCreditNote ? null : input.skontoDays ?? null,
       input.pdfLanguage ?? settings.defaultPdfLanguage,
+      resolveBuyerReference(input.buyerReference, customer?.leitwegId ?? null),
     ],
   );
   await writeItems(id, input.items);
@@ -286,11 +317,16 @@ export async function updateInvoice(
   id: number,
   input: InvoiceFormInput,
 ): Promise<void> {
+  assertQuantities(input.items);
   const current = await findInvoice(id);
   if (!current) throw new Error(`Invoice ${id} not found`);
   if (current.status !== "draft") {
     throw new Error("Nur Entwürfe können bearbeitet werden.");
   }
+  const original =
+    current.isCreditNote && current.correctsInvoiceId != null
+      ? await loadOriginal(current.correctsInvoiceId)
+      : null;
   const sign = creditNoteSign(current.isCreditNote);
   const currency = current.isCreditNote ? current.currency : input.currency ?? current.currency;
   const exchangeRate = current.isCreditNote ? current.exchangeRate : orKeep(input.exchangeRate, current.exchangeRate);
@@ -299,6 +335,11 @@ export async function updateInvoice(
     reverseChargeType: input.reverseChargeType,
     isCreditNote: current.isCreditNote,
   });
+  const eurTotalCent = original
+    ? signedOrNull(creditNoteEurTotal(original, Math.abs(totals.total)), sign)
+    : input.eurTotalCent === undefined
+      ? current.eurTotalCent
+      : signedOrNull(input.eurTotalCent, sign);
   // Drafts follow the customer's master data until they are issued.
   const customerSnapshot = JSON.stringify(await buildCustomerSnapshot(input.customerId));
 
@@ -313,7 +354,7 @@ export async function updateInvoice(
       notes_internal = ?, follow_up_date = ?,
       service_period_start = ?, service_period_end = ?,
       skonto_percent = ?, skonto_days = ?,
-      pdf_language = ?,
+      pdf_language = ?, buyer_reference = ?,
       updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -332,9 +373,7 @@ export async function updateInvoice(
       input.paymentTerms,
       currency,
       exchangeRate,
-      input.eurTotalCent === undefined
-        ? current.eurTotalCent
-        : signedOrNull(input.eurTotalCent, sign),
+      eurTotalCent,
       orKeep(input.notesInternal, current.notesInternal),
       orKeep(input.followUpDate, current.followUpDate),
       input.servicePeriodStart ?? null,
@@ -342,6 +381,7 @@ export async function updateInvoice(
       current.isCreditNote ? null : input.skontoPercent ?? null,
       current.isCreditNote ? null : input.skontoDays ?? null,
       input.pdfLanguage ?? current.pdfLanguage,
+      normalizeBuyerReference(orKeep(input.buyerReference, current.buyerReference)),
       id,
     ],
   );
@@ -398,6 +438,8 @@ export async function deleteInvoice(id: number): Promise<void> {
   }
   // invoice_payments has no FK to invoices, so they would be left behind.
   await execute("DELETE FROM invoice_payments WHERE invoice_id = ?", [id]);
+  // Billed time entries become open again; explicit, because the FK action only applies with foreign keys on.
+  await execute("UPDATE time_entries SET invoice_id = NULL, updated_at = unixepoch() WHERE invoice_id = ?", [id]);
   await execute("DELETE FROM invoices WHERE id = ?", [id]);
 }
 
@@ -413,11 +455,13 @@ export async function findCreditNoteFor(invoiceId: number): Promise<Invoice | nu
 }
 
 /**
- * Items are mirrored verbatim; the user can edit quantities in the draft to model
- * partial refunds. The foreign-currency terms of the original carry over, because
- * the mirrored unit prices are denominated in that currency; the EUR total is
- * derived from the credit note's own total. The Kleinunternehmer treatment is the
- * original's, not today's setting.
+ * Items are mirrored verbatim, including the stored line totals: the credit note is
+ * exactly the negative of the original, also where the original was issued under an
+ * older rounding. The user can edit quantities in the draft to model partial refunds
+ * (an edited position is computed again). The foreign-currency terms of the original
+ * carry over, because the mirrored unit prices are denominated in that currency; the
+ * EUR total is decided when the credit note is stored (see `creditNoteEurTotal`). The
+ * Kleinunternehmer treatment is the original's, not today's setting.
  */
 export function creditNoteInputFor(
   invoice: Invoice,
@@ -440,6 +484,7 @@ export function creditNoteInputFor(
     currency: invoice.currency,
     exchangeRate: invoice.exchangeRate,
     isKleinunternehmer: invoice.isKleinunternehmer,
+    buyerReference: invoice.buyerReference,
     items: items.map((it) => ({
       description: it.description,
       quantity: it.quantity,
@@ -449,6 +494,7 @@ export function creditNoteInputFor(
       longDescription: it.longDescription,
       linePeriodStart: it.linePeriodStart,
       linePeriodEnd: it.linePeriodEnd,
+      fixedLineTotal: it.lineTotal,
     })),
   };
 }
@@ -503,8 +549,18 @@ export async function issueInvoice(
   );
   if (claim.rowsAffected !== 1) return numberIssuedConcurrently(id);
   const number = isDraftNumber(invoice.number) ? await assignFinalNumber(invoice) : invoice.number;
+  await sealIssuedInvoice(id);
   await recomputeCorrectedInvoice(invoice);
   return number;
+}
+
+/** The invoice is already issued; a failed seal must not undo that, the startup backfill seals it later. */
+async function sealIssuedInvoice(id: number): Promise<void> {
+  try {
+    await appendSeal(id, "issue");
+  } catch (error) {
+    console.error(`Versiegeln der Rechnung ${id} fehlgeschlagen, wird beim nächsten Start nachgeholt`, error);
+  }
 }
 
 /** An issued credit note changes what its original still owes, so the original's status is derived again. */
@@ -596,10 +652,13 @@ export async function cancelInvoice(id: number): Promise<void> {
       "Nur Entwürfe ohne Rechnungsnummer können verworfen werden. Ausgestellte Rechnungen bitte per Stornorechnung stornieren.",
     );
   }
-  await execute(
+  const cancelled = await execute(
     "UPDATE invoices SET status = 'cancelled', updated_at = unixepoch() WHERE id = ? AND status = 'draft'",
     [id],
   );
+  if (cancelled.rowsAffected === 1) {
+    await execute("UPDATE time_entries SET invoice_id = NULL, updated_at = unixepoch() WHERE invoice_id = ?", [id]);
+  }
 }
 
 async function countPayments(invoiceId: number): Promise<number> {
@@ -617,12 +676,19 @@ export async function reopenDraft(id: number): Promise<void> {
   const facts = {
     paymentCount: await countPayments(id),
     hasCreditNote: (await findCreditNoteFor(id)) !== null,
+    timeReleasedOnOriginal:
+      invoice.correctsInvoiceId !== null && (await hasReleasedTimeEntries(invoice.correctsInvoiceId)),
   };
   if (!canReopenInvoice(invoice, facts)) {
     throw new Error(
-      "Nur versendete Rechnungen ohne Zahlungen und ohne Stornorechnung können wieder bearbeitet werden.",
+      facts.timeReleasedOnOriginal
+        ? "Für die Originalrechnung wurden Zeiten wieder freigegeben – die Stornorechnung kann nicht mehr zum Entwurf werden."
+        : "Nur versendete Rechnungen ohne Zahlungen und ohne Stornorechnung können wieder bearbeitet werden.",
     );
   }
+  // Seal first: should the status change then fail, an issued invoice behind a
+  // reopen seal only counts as unsealed and is sealed again at the next start.
+  await appendSeal(id, "reopen");
   await execute(
     "UPDATE invoices SET status = 'draft', sent_at = NULL, paid_at = NULL, updated_at = unixepoch() WHERE id = ? AND status = ?",
     [id, invoice.status],

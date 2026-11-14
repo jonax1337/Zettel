@@ -7,6 +7,7 @@ Repliziert die App-Geschäftslogik aus src/lib/db/invoices.ts exakt:
   - Lazy Invoice-Numbering: echte Nummer erst bei issue/markSent/PDF
   - computeTotals: Per-Line-Rundung (Finanzamt-Konvention), Cent-Integer
   - markPaid protokolliert Restbetrag als invoice_payments-Eintrag
+  - issue hängt ein Siegel an die Hash-Kette über ausgestellte Rechnungen (invoice_seals)
   - PDF-Generierung über den Sidecar (JSON-RPC über stdin/stdout)
 
 DB-Auswahl folgt derselben Quelle der Wahrheit wie die App:
@@ -24,6 +25,7 @@ verwenden (SQLite single-writer). Lesende Befehle sind unproblematisch.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -36,6 +38,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Iterator
 
@@ -44,6 +47,7 @@ DEFAULT_PAYMENT_TERMS_DAYS = 14
 DEFAULT_UNIT = "Std"
 DEFAULT_PDF_PROFILE = "en16931"
 DEFAULT_PDF_THEME = "classic"
+DEFAULT_PDF_RENDERER = "weasyprint"
 DEFAULT_PDF_LANGUAGE = "de"
 PAYABLE_STATUSES = ("sent", "partial")
 DRAFT_PREFIX = "DRAFT-"
@@ -65,6 +69,9 @@ DEFAULT_SKONTO_PERCENT = 2.0
 DEFAULT_SKONTO_DAYS = 7
 # unixepoch() needs SQLite 3.38+; older Python builds ship an older SQLite.
 SQL_NOW = "CAST(strftime('%s', 'now') AS INTEGER)"
+# Spiegel von src/lib/xrechnung/preflight.ts (BR-DE-27/28)
+XRECHNUNG_MIN_PHONE_DIGITS = 3
+XRECHNUNG_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+$")
 
 # ----------------------------------------------------------------------------
 # DB-Auflösung (Spiegel von src-tauri/src/tenants.rs)
@@ -144,8 +151,17 @@ def js_round(v: float) -> int:
     return math.floor(v + 0.5)
 
 
+QUANTITY_SCALE = 10_000  # Mengen haben höchstens vier Nachkommastellen (wie im ZUGFeRD-XML)
+
+
+def round_quantity(quantity: float) -> float:
+    """Spiegel von roundQuantity in src/lib/utils/totals.ts: die gespeicherte Menge ist die, mit der gerechnet wird."""
+    return js_round(quantity * QUANTITY_SCALE) / QUANTITY_SCALE
+
+
 def compute_line_total(quantity: float, unit_price_cent: int) -> int:
-    return js_round(quantity * unit_price_cent)
+    """Menge x Einzelpreis exakt in Cent, .5 Richtung +unendlich; die Float-Rechnung rundet 0,47 x 8550 falsch ab."""
+    return (js_round(quantity * QUANTITY_SCALE) * unit_price_cent + QUANTITY_SCALE // 2) // QUANTITY_SCALE
 
 
 def compute_totals(items: list[dict], is_kleinunternehmer: bool, is_reverse_charge: bool) -> dict:
@@ -379,6 +395,11 @@ def skonto_of(inv: dict) -> dict | None:
     }
 
 
+def trimmed(value):
+    """Spiegel von .trim() in payload.ts: was die Vorprüfung akzeptiert hat, landet unverändert im XML."""
+    return value.strip() if isinstance(value, str) else value
+
+
 def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dict, output_path: str) -> dict:
     skonto = skonto_of(inv)
     return {
@@ -409,6 +430,7 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
             "skontoDeadline": skonto["deadlineUnix"] if skonto else None,
             "amountPaidCent": inv["amount_paid_cent"] or 0,
             "pdfLanguage": inv["pdf_language"] or DEFAULT_PDF_LANGUAGE,
+            "buyerReference": inv["buyer_reference"],
         },
         "items": [
             {
@@ -427,16 +449,19 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
         ],
         "company": {
             "companyName": company["company_name"],
-            "ownerName": company["owner_name"],
+            "ownerName": trimmed(company["owner_name"]),
             "street": company["street"],
             "postalCode": company["postal_code"],
             "city": company["city"],
             "country": company["country"],
             "taxNumber": company["tax_number"],
             "vatId": company["vat_id"],
-            "email": company["email"],
-            "phone": company["phone"],
+            "email": trimmed(company["email"]),
+            "phone": trimmed(company["phone"]),
             "website": company["website"],
+            "registerCourt": company.get("register_court"),
+            "registerNumber": company.get("register_number"),
+            "managingDirectors": company.get("managing_directors"),
             "bankName": company["bank_name"],
             "bankIban": company["bank_iban"],
             "bankBic": company["bank_bic"],
@@ -451,12 +476,72 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
             "postalCode": customer.get("postalCode") or customer.get("postal_code"),
             "city": customer.get("city"),
             "country": customer.get("country"),
+            "email": trimmed(customer.get("email")),
             "vatId": customer.get("vatId") or customer.get("vat_id"),
         },
         "outputPath": output_path,
         "profile": company["zugferd_profile"] or DEFAULT_PDF_PROFILE,
-        "settings": {"pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME},
+        "settings": {
+            "pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME,
+            # .get: the CLI may run against a database the app has not migrated yet.
+            "pdf_renderer": company.get("pdf_renderer") or DEFAULT_PDF_RENDERER,
+        },
     }
+
+
+def _blank(value) -> bool:
+    return value is None or not str(value).strip()
+
+
+def _has_address(street, postal_code, city) -> bool:
+    return not (_blank(street) or _blank(postal_code) or _blank(city))
+
+
+def _has_phone_number(phone) -> bool:
+    return len(re.sub(r"[^0-9]", "", phone or "")) >= XRECHNUNG_MIN_PHONE_DIGITS
+
+
+def _is_email(value) -> bool:
+    return bool(XRECHNUNG_EMAIL_PATTERN.fullmatch((value or "").strip()))
+
+
+def with_live_customer_fallbacks(buyer_reference, snapshot: dict, live) -> tuple[str | None, dict]:
+    """Spiegel von withLiveCustomerFallbacks() in src/lib/xrechnung/export-data.ts: eine ausgestellte
+    Rechnung bleibt unverändert, fehlende Leitweg-ID und Kunden-E-Mail kommen vom aktuellen Kunden."""
+    live_leitweg = live["leitweg_id"] if live else None
+    live_email = live["email"] if live else None
+    own = (buyer_reference or "").strip() or (live_leitweg or "").strip() or None
+    customer = dict(snapshot)
+    if _blank(customer.get("email")):
+        customer["email"] = live_email or customer.get("email")
+    return own, customer
+
+
+def missing_xrechnung_fields(buyer_reference: str | None, company: dict, customer: dict) -> list[str]:
+    """Spiegel von missingXrechnungFields() in src/lib/xrechnung/preflight.ts: deutsche Labels
+    der Pflichtangaben (BR-DE-1 bis BR-DE-16, elektronische Adressen); leer = exportierbar."""
+    missing = []
+    if _blank(buyer_reference):
+        missing.append("Leitweg-ID / Käuferreferenz")
+    if _blank(company["company_name"]):
+        missing.append("Firmenname des Verkäufers")
+    if not _has_address(company["street"], company["postal_code"], company["city"]):
+        missing.append("Anschrift des Verkäufers")
+    if _blank(company["owner_name"]):
+        missing.append("Ansprechpartner des Verkäufers (Inhaber:in)")
+    if not _has_phone_number(company["phone"]):
+        missing.append("Telefonnummer des Verkäufers")
+    if not _is_email(company["email"]):
+        missing.append("E-Mail-Adresse des Verkäufers")
+    if _blank(company["vat_id"]) and _blank(company["tax_number"]):
+        missing.append("USt-IdNr. oder Steuernummer des Verkäufers")
+    if _blank(company["bank_iban"]):
+        missing.append("Zahlungsweg (IBAN des Verkäufers)")
+    if not _has_address(customer.get("street"), customer.get("postalCode"), customer.get("city")):
+        missing.append("Anschrift des Kunden")
+    if not _is_email(customer.get("email")):
+        missing.append("E-Mail-Adresse des Kunden")
+    return missing
 
 
 # ----------------------------------------------------------------------------
@@ -540,6 +625,123 @@ def load_invoice_full(con, invoice_id: int) -> tuple[dict, list[dict], dict]:
     return dict(inv), items, cust
 
 
+# Spiegel von src/lib/db/seals.ts: Hash-Kette über ausgestellte Rechnungen (GoBD).
+# Das Format ist durch sidecar/tests/fixtures/invoice-seal.json festgelegt.
+GENESIS_HASH = "0" * 64
+SEAL_DOCUMENT_TAG = "zettel-invoice-seal"
+SEAL_FORMAT_VERSION = 1
+SEAL_APPEND_ATTEMPTS = 3
+SEALED_INVOICE_COLUMNS = (
+    "number", "customer_id", "customer_snapshot", "issue_date", "delivery_date", "due_date",
+    "subtotal", "vat_amount", "total", "is_kleinunternehmer", "is_reverse_charge",
+    "reverse_charge_type", "supply_kind", "notes", "payment_terms", "is_credit_note",
+    "corrects_invoice_id", "currency", "exchange_rate", "eur_total_cent", "service_period_start",
+    "service_period_end", "skonto_percent", "skonto_days", "pdf_language", "buyer_reference",
+)
+SEALED_ITEM_COLUMNS = (
+    "position", "description", "quantity", "unit", "unit_price", "vat_rate", "line_total",
+    "long_description", "line_period_start", "line_period_end",
+)
+
+
+def sha256_hex(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def js_number(value: float) -> str:
+    """Rendert eine Zahl wie JavaScripts Number.prototype.toString (kürzeste Round-Trip-Ziffern,
+    Dezimalschreibweise für Exponenten -7 < e < 21), damit Python und JS dieselben Bytes hashen."""
+    if value == 0:
+        return "0"
+    sign, digits, exponent = Decimal(repr(value)).as_tuple()
+    digits_text = "".join(map(str, digits)).rstrip("0")
+    point = exponent + len(digits)
+    count = len(digits_text)
+    if count <= point <= 21:
+        body = digits_text + "0" * (point - count)
+    elif 0 < point <= 21:
+        body = f"{digits_text[:point]}.{digits_text[point:]}"
+    elif -6 < point <= 0:
+        body = f"0.{'0' * -point}{digits_text}"
+    else:
+        mantissa = digits_text[0] + (f".{digits_text[1:]}" if count > 1 else "")
+        body = f"{mantissa}e{'+' if point > 0 else '-'}{abs(point - 1)}"
+    return f"-{body}" if sign else body
+
+
+def canonical_json(value) -> str:
+    """JSON ohne Whitespace wie JSON.stringify; json.dumps formatiert Floats selbst (repr), daher hier Zahlen zuerst."""
+    if isinstance(value, list):
+        return "[" + ",".join(canonical_json(element) for element in value) + "]"
+    if isinstance(value, float):
+        return js_number(value)
+    return json.dumps(value, ensure_ascii=False)
+
+
+def canonical_seal_document(invoice: dict, items: list[dict]) -> str:
+    return canonical_json([
+        SEAL_DOCUMENT_TAG,
+        SEAL_FORMAT_VERSION,
+        [invoice[column] for column in SEALED_INVOICE_COLUMNS],
+        [[item[column] for column in SEALED_ITEM_COLUMNS] for item in items],
+    ])
+
+
+def seal_content_hash(invoice: dict, items: list[dict]) -> str:
+    return sha256_hex(canonical_seal_document(invoice, items))
+
+
+def seal_chain_hash(prev_hash: str, invoice_id: int, kind: str, sealed_at: int, content_hash: str) -> str:
+    return sha256_hex(f"{prev_hash}|{invoice_id}|{kind}|{sealed_at}|{content_hash}")
+
+
+def append_seal_once(con, invoice_id: int, kind: str) -> None:
+    invoice = {c: v for c, v in zip(SEALED_INVOICE_COLUMNS, con.execute(
+        f"SELECT {', '.join(SEALED_INVOICE_COLUMNS)} FROM invoices WHERE id = ?", (invoice_id,)
+    ).fetchone())}
+    items = [
+        dict(zip(SEALED_ITEM_COLUMNS, row))
+        for row in con.execute(
+            f"SELECT {', '.join(SEALED_ITEM_COLUMNS)} FROM invoice_items WHERE invoice_id = ? ORDER BY position, id",
+            (invoice_id,),
+        )
+    ]
+    content_hash = seal_content_hash(invoice, items)
+    last = con.execute("SELECT hash FROM invoice_seals ORDER BY id DESC LIMIT 1").fetchone()
+    prev_hash = last[0] if last else GENESIS_HASH
+    sealed_at = now_unix()
+    con.execute(
+        "INSERT INTO invoice_seals (invoice_id, kind, sealed_at, content_hash, prev_hash, hash) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (invoice_id, kind, sealed_at, content_hash, prev_hash,
+         seal_chain_hash(prev_hash, invoice_id, kind, sealed_at, content_hash)),
+    )
+
+
+def append_seal(con, invoice_id: int, kind: str) -> None:
+    """Versiegelt den aktuellen Inhalt. Ein parallel angehängtes Siegel lässt prev_hash kollidieren: Kette neu lesen."""
+    for attempt in range(1, SEAL_APPEND_ATTEMPTS + 1):
+        try:
+            append_seal_once(con, invoice_id, kind)
+            return
+        except sqlite3.IntegrityError:
+            if attempt == SEAL_APPEND_ATTEMPTS:
+                raise
+
+
+def seal_issued_invoice(con, invoice_id: int) -> None:
+    """Die Rechnung ist bereits ausgestellt; ein fehlgeschlagenes Siegel macht das nicht rückgängig,
+    die App holt es beim nächsten Start nach."""
+    try:
+        append_seal(con, invoice_id, "issue")
+    except sqlite3.Error as error:
+        print(
+            f"Warnung: Rechnung {invoice_id} konnte nicht versiegelt werden ({error}); "
+            "die App holt das beim nächsten Start nach.",
+            file=sys.stderr,
+        )
+
+
 def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
     """Spiegel von issueInvoice(): Entwurf beanspruchen (Kundendaten einfrieren), dann echte Nummer ziehen."""
     inv = fetch_invoice(con, invoice_id)
@@ -572,6 +774,7 @@ def issue_invoice(con, invoice_id: int, sent_at: int | None = None) -> str:
             datetime.fromtimestamp(inv["issue_date"] or ts),
         )
         con.execute("UPDATE invoices SET number = ? WHERE id = ?", (final_number, invoice_id))
+    seal_issued_invoice(con, invoice_id)
     con.commit()
     return final_number
 
@@ -740,6 +943,28 @@ def generate_pdf_for(con, invoice_id: int) -> tuple[str, str]:
     return inv["number"], resp["pdfPath"]
 
 
+def export_xrechnung_for(con, invoice_id: int) -> tuple[str, str]:
+    """Spiegel von exportInvoiceXrechnung(): XML neben dem PDF, oder Abbruch mit der Liste fehlender Angaben."""
+    inv, items, cust = load_invoice_full(con, invoice_id)
+    if is_draft_number(inv["number"]):
+        sys.exit("Entwürfe können nicht als XRechnung exportiert werden. Bitte die Rechnung erst ausstellen (invoice:issue).")
+    settings = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+    live = con.execute("SELECT leitweg_id, email FROM customers WHERE id = ?", (inv["customer_id"],)).fetchone()
+    buyer_reference, cust = with_live_customer_fallbacks(inv["buyer_reference"], cust, live)
+    inv = {**inv, "buyer_reference": buyer_reference}
+    missing = missing_xrechnung_fields(buyer_reference, settings, cust)
+    if missing:
+        sys.exit("Für die XRechnung fehlen Angaben:\n" + "\n".join(f"  - {label}" for label in missing))
+    out_dir = pdf_output_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    output_path = out_dir / f"{safe_filename(inv['number'])}.xml"
+    resp = call_sidecar("generate_xrechnung", build_pdf_payload(inv, items, cust, settings, str(output_path)))
+    if not resp.get("success"):
+        err = resp.get("error", {})
+        sys.exit(f"XRechnung-Fehler [{err.get('code')}]: {err.get('message')}\n{err.get('details', '')[:ERROR_DETAIL_CHARS]}")
+    return inv["number"], resp["xmlPath"]
+
+
 def parse_items_arg(spec: str | None) -> list[dict]:
     """Format: 'Beschreibung|Menge|Einheit|Einzelpreis-Euro[|MwSt%][|Langtext]'.
     Mehrere Positionen mit ; trennen."""
@@ -764,7 +989,7 @@ def parse_items_arg(spec: str | None) -> list[dict]:
         items.append(
             {
                 "description": fields[0],
-                "quantity": qty,
+                "quantity": round_quantity(qty),
                 "unit": fields[2] or DEFAULT_UNIT,
                 "unitPrice": js_round(price_eur * CENTS_PER_EUR),
                 "vatRate": int(vat),
@@ -810,9 +1035,10 @@ def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, total
             status, subtotal, vat_amount, total, is_kleinunternehmer, is_reverse_charge,
             reverse_charge_type, supply_kind, notes, payment_terms, is_credit_note, corrects_invoice_id,
             currency, exchange_rate, eur_total_cent, notes_internal, follow_up_date,
-            service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language)
+            service_period_start, service_period_end, skonto_percent, skonto_days, pdf_language,
+            buyer_reference)
            VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL,
-                   ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)""",
+                   ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?)""",
         (
             draft_placeholder(),
             customer["id"],
@@ -837,6 +1063,7 @@ def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, total
             skonto_percent,
             skonto_days,
             pdf_language,
+            (customer["leitweg_id"] or "").strip() or None,
         ),
     )
     return cur.lastrowid
@@ -911,6 +1138,12 @@ def cmd_invoice_show(args) -> None:
 def cmd_invoice_pdf(args) -> None:
     with connect() as con:
         number, path = generate_pdf_for(con, args.id)
+    print(f"{number}: {path}")
+
+
+def cmd_invoice_xrechnung(args) -> None:
+    with connect() as con:
+        number, path = export_xrechnung_for(con, args.id)
     print(f"{number}: {path}")
 
 
@@ -1060,6 +1293,10 @@ def main() -> None:
     p_pdf = sub.add_parser("invoice:pdf", help="PDF generieren")
     p_pdf.add_argument("id", type=int)
     p_pdf.set_defaults(func=cmd_invoice_pdf)
+
+    p_xr = sub.add_parser("invoice:xrechnung", help="XRechnung (CII) neben dem PDF erzeugen")
+    p_xr.add_argument("id", type=int)
+    p_xr.set_defaults(func=cmd_invoice_xrechnung)
 
     p_iss = sub.add_parser("invoice:issue", help="Draft bereitstellen (Nummer ziehen)")
     p_iss.add_argument("id", type=int)

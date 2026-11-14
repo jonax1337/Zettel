@@ -1,5 +1,5 @@
 <!doctype html>
-{% from '_partials.j2' import masthead, addressee, meta_row, items_table, totals_table, notes_block, footer %}
+{% from '_partials.j2' import letter_head, page_head, subject, meta_row, items_table, totals_table, notes_block, footer %}
 {% set lang = offer.pdfLanguage or 'de' %}
 <html lang="{{ lang }}">
 <head>
@@ -8,12 +8,12 @@
 </head>
 <body class="theme-{{ settings.pdf_theme if settings and settings.pdf_theme else 'classic' }}">
 
-  {{ masthead(company, t('doctype_offer', lang), offer.number) }}
+  {#- Running page footer: it must precede the content to appear from page one. #}
+  {{ footer(company, lang) }}
 
-  <section class="parties">
-    {{ addressee(company, customer, t('addr_attention', lang)) }}
+  {{ page_head(company, t('doctype_offer', lang), offer.number) }}
 
-    <div class="meta">
+  {% call letter_head(company, customer, t('addr_attention', lang)) %}
       {{ meta_row(t('meta_offer_no', lang), offer.number) }}
       {{ meta_row(t('meta_offer_date', lang), offer.issueDate | date_unix) }}
       {{ meta_row(t('meta_valid_until', lang), offer.validUntil | date_unix) }}
@@ -23,8 +23,9 @@
       {% if customer.vatId %}
       {{ meta_row(t('meta_customer_vatid', lang), customer.vatId) }}
       {% endif %}
-    </div>
-  </section>
+  {% endcall %}
+
+  {{ subject(t('doctype_offer', lang), offer.number) }}
 
   {% if offer.introText %}
     <section class="block">
@@ -62,8 +63,6 @@
   {% if offer.notes %}
     {{ notes_block(offer.notes, lang) }}
   {% endif %}
-
-  {{ footer(company, lang) }}
 
 </body>
 </html>

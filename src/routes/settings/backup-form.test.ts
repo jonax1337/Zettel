@@ -3,6 +3,8 @@ import {
   backupPasswordProblem,
   defaultBackupFilename,
   isPasswordRequiredError,
+  restoreSealWarning,
+  restoreTimeEntryWarning,
 } from "./backup-form";
 
 describe("defaultBackupFilename", () => {
@@ -37,5 +39,45 @@ describe("isPasswordRequiredError", () => {
   });
   it("ignores other failures", () => {
     expect(isPasswordRequiredError("disk full")).toBe(false);
+  });
+});
+
+describe("restoreSealWarning", () => {
+  it("stays silent when the invoices were not restored or the chain came along", () => {
+    expect(restoreSealWarning({ sealsFromBackup: null, droppedLiveSeals: 0, unlinkedTimeEntries: 0 })).toBeNull();
+    expect(restoreSealWarning({ sealsFromBackup: true, droppedLiveSeals: 0, unlinkedTimeEntries: 0 })).toBeNull();
+  });
+
+  it("explains a backup from before the seals without claiming the invoices are gone", () => {
+    const warning = restoreSealWarning({ sealsFromBackup: false, droppedLiveSeals: 9, unlinkedTimeEntries: 0 });
+    expect(warning?.title).toBe("Rechnungen ohne Siegel wiederhergestellt");
+    expect(warning?.description).toContain("neu versiegelt");
+    expect(warning?.description).not.toContain("nicht mehr vorhanden");
+  });
+
+  it("counts the seals a newer chain lost, singular and plural", () => {
+    expect(restoreSealWarning({ sealsFromBackup: true, droppedLiveSeals: 1, unlinkedTimeEntries: 0 })?.description).toMatch(
+      /^1 Rechnungssiegel .* wurde verworfen/,
+    );
+    expect(restoreSealWarning({ sealsFromBackup: true, droppedLiveSeals: 3, unlinkedTimeEntries: 0 })?.description).toMatch(
+      /^3 Rechnungssiegel .* wurden verworfen/,
+    );
+  });
+});
+
+describe("restoreTimeEntryWarning", () => {
+  const outcome = { sealsFromBackup: null, droppedLiveSeals: 0 };
+
+  it("stays silent when no billed entry was detached from its invoice", () => {
+    expect(restoreTimeEntryWarning({ ...outcome, unlinkedTimeEntries: 0 })).toBeNull();
+  });
+
+  it("tells how many billed entries are open again, singular and plural", () => {
+    expect(restoreTimeEntryWarning({ ...outcome, unlinkedTimeEntries: 1 })?.description).toBe(
+      "1 Zeiteintrag war abgerechnet und ist jetzt wieder offen – bitte prüfen, bevor du ihn erneut abrechnest.",
+    );
+    expect(restoreTimeEntryWarning({ ...outcome, unlinkedTimeEntries: 4 })?.description).toBe(
+      "4 Zeiteinträge waren abgerechnet und sind jetzt wieder offen – bitte prüfen, bevor du sie erneut abrechnest.",
+    );
   });
 });

@@ -11,6 +11,7 @@ import {
   creditedCentSql,
   isIssuedCreditNote,
   isSettledByCreditNote,
+  keepsStoredAmounts,
   notSettledByCreditNoteSql,
   openBalanceCent,
   settledByCreditNoteSql,
@@ -50,8 +51,22 @@ describe("canCancelInvoice", () => {
   });
 });
 
+describe("keepsStoredAmounts", () => {
+  it("is false for a draft that never got a real number: it follows the current rounding", () => {
+    expect(keepsStoredAmounts({ number: DRAFT_NUMBER, isCreditNote: false })).toBe(false);
+  });
+
+  it("is true for a reopened invoice, which already carries its issued number", () => {
+    expect(keepsStoredAmounts({ number: REAL_NUMBER, isCreditNote: false })).toBe(true);
+  });
+
+  it("is true for a credit note, also while it still has a draft placeholder number", () => {
+    expect(keepsStoredAmounts({ number: DRAFT_NUMBER, isCreditNote: true })).toBe(true);
+  });
+});
+
 describe("canReopenInvoice", () => {
-  const clean = { paymentCount: 0, hasCreditNote: false };
+  const clean = { paymentCount: 0, hasCreditNote: false, timeReleasedOnOriginal: false };
 
   it("allows reopening a sent invoice without payments or credit note", () => {
     expect(canReopenInvoice({ number: REAL_NUMBER, status: "sent" }, clean)).toBe(true);
@@ -66,12 +81,17 @@ describe("canReopenInvoice", () => {
     expect(canReopenInvoice({ number: REAL_NUMBER, status: "sent" }, facts)).toBe(false);
   });
 
+  it("forbids reopening a credit note once time entries of its original were released", () => {
+    const facts = { ...clean, timeReleasedOnOriginal: true };
+    expect(canReopenInvoice({ number: REAL_NUMBER, status: "sent" }, facts)).toBe(false);
+  });
+
   it.each(["draft", "partial", "paid"] as const)("forbids reopening a %s invoice", (status) => {
     expect(canReopenInvoice({ number: REAL_NUMBER, status }, clean)).toBe(false);
   });
 
-  it("allows picking up a discarded unnumbered draft, but not a cancelled numbered invoice", () => {
-    expect(canReopenInvoice({ number: DRAFT_NUMBER, status: "cancelled" }, clean)).toBe(true);
+  it("forbids reopening a discarded draft or a cancelled numbered invoice", () => {
+    expect(canReopenInvoice({ number: DRAFT_NUMBER, status: "cancelled" }, clean)).toBe(false);
     expect(canReopenInvoice({ number: REAL_NUMBER, status: "cancelled" }, clean)).toBe(false);
   });
 });

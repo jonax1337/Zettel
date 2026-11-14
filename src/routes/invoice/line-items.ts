@@ -1,5 +1,6 @@
 import type { CatalogItem } from "$lib/db/schema";
 import { fromIsoDate, toIsoDate } from "$lib/utils/date";
+import type { TotalsItem } from "$lib/utils/totals";
 import { DEFAULT_UNIT } from "$lib/utils/units";
 import { centsToPriceText } from "../parts/entity/format";
 
@@ -12,7 +13,12 @@ export type LineItemInput = {
   longDescription: string | null;
   linePeriodStart: number | null;
   linePeriodEnd: number | null;
+  /** Set for an unchanged stored position; the storage layer then keeps it instead of computing quantity x price again. */
+  fixedLineTotal?: number;
 };
+
+/** The amount a stored position was saved with, and the quantity and price it belongs to. */
+type StoredAmount = { quantity: number; unitPrice: number; lineTotal: number };
 
 /** Editable position row: the input fields plus the text state behind the form controls. */
 export type LineItemForm = {
@@ -28,10 +34,11 @@ export type LineItemForm = {
   periodStartIso: string;
   periodEndIso: string;
   showDetail: boolean;
+  stored: StoredAmount | null;
 };
 
 /** Position as stored in the DB, shared by invoice and offer items. */
-export type StoredLineItem = LineItemInput;
+export type StoredLineItem = Omit<LineItemInput, "fixedLineTotal"> & { lineTotal?: number };
 
 let lastUid = 0;
 
@@ -48,6 +55,7 @@ export function newLineItem(vatRate = 0): LineItemForm {
     periodStartIso: "",
     periodEndIso: "",
     showDetail: false,
+    stored: null,
   };
 }
 
@@ -64,6 +72,36 @@ export function lineItemFromStored(row: StoredLineItem): LineItemForm {
     periodStartIso: row.linePeriodStart ? toIsoDate(row.linePeriodStart) : "",
     periodEndIso: row.linePeriodEnd ? toIsoDate(row.linePeriodEnd) : "",
     showDetail: !!row.longDescription,
+    stored:
+      row.lineTotal === undefined
+        ? null
+        : { quantity: row.quantity, unitPrice: row.unitPrice, lineTotal: row.lineTotal },
+  };
+}
+
+/**
+ * The editor rows of a stored document. Where the amounts are not kept, every position
+ * is computed anew, so a draft that never left the building follows the current rounding.
+ */
+export function lineItemsFromStored(rows: StoredLineItem[], keepStoredAmounts: boolean): LineItemForm[] {
+  return rows.map((row) => lineItemFromStored(keepStoredAmounts ? row : { ...row, lineTotal: undefined }));
+}
+
+/** The stored amount while quantity and price are still the stored ones; an edited position is computed again. */
+function keptLineTotal(item: LineItemForm): number | undefined {
+  const { stored } = item;
+  return stored && stored.quantity === item.quantity && stored.unitPrice === item.unitPrice
+    ? stored.lineTotal
+    : undefined;
+}
+
+/** The row as computeLineTotal and computeTotals have to see it, so the display matches what is saved. */
+export function toTotalsItem(item: LineItemForm): TotalsItem {
+  return {
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    vatRate: item.vatRate,
+    fixedLineTotal: keptLineTotal(item),
   };
 }
 
@@ -99,6 +137,7 @@ export function toLineItemInputs(items: LineItemForm[]): LineItemInput[] {
       longDescription: item.showDetail && longDescription ? longDescription : null,
       linePeriodStart: item.periodStartIso ? fromIsoDate(item.periodStartIso) : null,
       linePeriodEnd: item.periodEndIso ? fromIsoDate(item.periodEndIso) : null,
+      fixedLineTotal: keptLineTotal(item),
     };
   });
 }

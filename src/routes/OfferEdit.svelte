@@ -9,6 +9,7 @@
   } from "$lib/db/offers";
   import type { ReverseChargeType, SupplyKind } from "$lib/db/invoices";
   import type { Offer, OfferItem, Settings } from "$lib/db/schema";
+  import { offerKeepsStoredAmounts } from "./offer/offer-actions";
   import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { computeTotals } from "$lib/utils/totals";
   import {
@@ -30,17 +31,19 @@
   import SkontoFields from "./invoice/SkontoFields.svelte";
   import { createDocumentFormData } from "./invoice/document-form.svelte";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
-  import { vatRateForNewItem } from "./parts/entity/vat";
+  import { vatRateForNewItem } from "$lib/utils/vat";
   import {
     exchangeRateError,
     linePeriodError,
+    quantityError,
     reverseChargeError,
     servicePeriodError,
   } from "./invoice/form-validation";
   import {
-    lineItemFromStored,
+    lineItemsFromStored,
     newLineItem,
     toLineItemInputs,
+    toTotalsItem,
     zeroVatRates,
     type LineItemForm,
   } from "./invoice/line-items";
@@ -51,7 +54,7 @@
     skontoFormFromStored,
     skontoInput,
     type SkontoForm,
-  } from "./invoice/skonto-form";
+  } from "$lib/utils/skonto-form";
 
   type Props = {
     mode: "new" | "edit";
@@ -97,7 +100,7 @@
 
   const totals = $derived(
     settings
-      ? computeTotals(items, { isKleinunternehmer: settings.isKleinunternehmer, isReverseCharge })
+      ? computeTotals(items.map(toTotalsItem), { isKleinunternehmer: settings.isKleinunternehmer, isReverseCharge })
       : { subtotal: 0, vatAmount: 0, total: 0 },
   );
 
@@ -160,7 +163,7 @@
       servicePeriodStartIso = toIsoDate(offer.servicePeriodStart);
       servicePeriodEndIso = toIsoDate(offer.servicePeriodEnd);
     }
-    items = storedItems.map(lineItemFromStored);
+    items = lineItemsFromStored(storedItems, offerKeepsStoredAmounts(offer));
   }
 
   function formError(): string | null {
@@ -170,7 +173,8 @@
       (settings ? reverseChargeError(reverseChargeType, settings, reference.selectedCustomer, items) : null) ??
       exchangeRateError(currency, exchangeRate) ??
       (serviceMode === "period" ? servicePeriodError(servicePeriodStartIso, servicePeriodEndIso) : null) ??
-      linePeriodError(items)
+      linePeriodError(items) ??
+      quantityError(items)
     );
   }
 

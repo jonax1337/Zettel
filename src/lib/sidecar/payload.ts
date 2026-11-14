@@ -9,10 +9,14 @@ function safeFilename(s: string): string {
   return s.replace(/[\\/:*?"<>|]+/g, "_");
 }
 
-/** PDFs go below the active DB's documents root, the folder backups collect from. */
-export async function documentOutputPath(folder: DocumentFolder, number: string): Promise<string> {
+/** Documents go below the active DB's documents root, the folder backups collect from. */
+export async function documentOutputPath(
+  folder: DocumentFolder,
+  number: string,
+  extension: "pdf" | "xml" = "pdf",
+): Promise<string> {
   const root = await invoke<string>("get_documents_root");
-  return join(root, folder, `${safeFilename(number)}.pdf`);
+  return join(root, folder, `${safeFilename(number)}.${extension}`);
 }
 
 export function parseCustomerSnapshot(json: string): CustomerSnapshot {
@@ -26,16 +30,19 @@ export function parseCustomerSnapshot(json: string): CustomerSnapshot {
 export function companyContactPayload(company: Settings) {
   return {
     companyName: company.companyName,
-    ownerName: company.ownerName,
+    ownerName: company.ownerName.trim(),
     street: company.street,
     postalCode: company.postalCode,
     city: company.city,
     country: company.country,
     taxNumber: company.taxNumber,
     vatId: company.vatId,
-    email: company.email,
-    phone: company.phone,
+    email: company.email.trim(),
+    phone: company.phone?.trim() ?? null,
     website: company.website,
+    registerCourt: company.registerCourt,
+    registerNumber: company.registerNumber,
+    managingDirectors: company.managingDirectors,
     logoPath: company.logoPath,
   };
 }
@@ -63,6 +70,7 @@ export function customerPayload(customer: CustomerSnapshot) {
     postalCode: customer.postalCode,
     city: customer.city,
     country: customer.country,
+    email: customer.email?.trim() ?? null,
     vatId: customer.vatId,
   };
 }
@@ -92,5 +100,8 @@ export function skontoPayload(skonto: SkontoResult | null) {
 }
 
 export function pdfSettingsPayload(company: Settings) {
-  return { pdf_theme: company.pdfTheme ?? "classic" };
+  return {
+    pdf_theme: company.pdfTheme ?? "classic",
+    pdf_renderer: company.pdfRenderer ?? "weasyprint",
+  };
 }

@@ -1,4 +1,4 @@
-import { select } from "./client";
+import { execute, select } from "./client";
 import type { ExpenseCategory } from "./schema";
 
 type CategoryRow = {
@@ -6,6 +6,7 @@ type CategoryRow = {
   name: string;
   datev_account_skr03: string | null;
   datev_account_skr04: string | null;
+  euer_kz: string | null;
   builtin: number;
   archived: number;
   sort_order: number;
@@ -18,6 +19,7 @@ function mapCategory(r: CategoryRow): ExpenseCategory {
     name: r.name,
     datevAccountSkr03: r.datev_account_skr03,
     datevAccountSkr04: r.datev_account_skr04,
+    euerKz: r.euer_kz,
     builtin: r.builtin === 1,
     archived: r.archived === 1,
     sortOrder: r.sort_order,
@@ -40,4 +42,8 @@ export function accountForSkr(
   skr: "SKR03" | "SKR04",
 ): string | null {
   return skr === "SKR03" ? cat.datevAccountSkr03 : cat.datevAccountSkr04;
+}
+
+export async function setCategoryEuerKz(id: number, kz: string | null): Promise<void> {
+  await execute("UPDATE expense_categories SET euer_kz = ? WHERE id = ?", [kz, id]);
 }

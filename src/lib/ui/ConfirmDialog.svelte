@@ -1,6 +1,7 @@
 <script lang="ts">
   import Dialog from "./Dialog.svelte";
   import Button from "./Button.svelte";
+  import { createDismissalTracker } from "./dismissal";
 
   type Props = {
     open?: boolean;
@@ -26,11 +27,20 @@
 
   let working = $state(false);
 
+  // onCancel also covers Escape and outside clicks, not only the cancel button.
+  const dismissal = createDismissalTracker(() => onCancel?.());
+  $effect(() => dismissal.sync(open));
+
   async function handleConfirm() {
     working = true;
+    // Before onConfirm runs: it may already close the dialog (e.g. by navigating).
+    dismissal.markConfirmed();
     try {
       await onConfirm();
       open = false;
+    } catch (e) {
+      dismissal.unmarkConfirmed();
+      throw e;
     } finally {
       working = false;
     }
@@ -41,10 +51,7 @@
   {#snippet footer()}
     <Button
       variant="outline"
-      onclick={() => {
-        onCancel?.();
-        open = false;
-      }}
+      onclick={() => (open = false)}
       disabled={working}
     >
       {cancelLabel}

@@ -23,6 +23,9 @@
     backupPasswordProblem,
     defaultBackupFilename,
     isPasswordRequiredError,
+    restoreSealWarning,
+    restoreTimeEntryWarning,
+    type PartialRestoreOutcome,
   } from "./backup-form";
 
   type RestoreOutcome = "done" | "needsPassword" | "failed";
@@ -127,6 +130,7 @@
   async function onConfirmPartialRestore() {
     if (!pendingRestoreZip) return;
     let safetyBackup = "";
+    let restored = null as PartialRestoreOutcome | null;
     const outcome = await attemptRestore(async () => {
       // Staging first: it rejects a wrong or missing password before any
       // safety backup gets written.
@@ -137,13 +141,22 @@
         await invoke<void>("discard_pending_restore");
         throw new Error(`Sicherheits-Backup fehlgeschlagen, nichts wurde verändert: ${e}`);
       }
-      await invoke<void>("apply_pending_partial_restore");
+      restored = await invoke<PartialRestoreOutcome>("apply_pending_partial_restore");
     });
     if (outcome === "done") {
       toast.success(
         "Wiederherstellung abgeschlossen",
         `Die ausgewählten Bereiche wurden eingespielt. Der vorherige Stand liegt in ${safetyBackup}.`,
       );
+      const warnings = restored ? [restoreSealWarning(restored), restoreTimeEntryWarning(restored)] : [];
+      for (const warning of warnings) {
+        if (!warning) continue;
+        toast.show(warning.title, {
+          description: warning.description,
+          variant: "warning",
+          duration: PERSISTENT_TOAST,
+        });
+      }
     }
   }
 
@@ -237,7 +250,7 @@
           </label>
           <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
             <Checkbox bind:checked={restoreSections.invoices} />
-            Rechnungen + PDFs <span class="text-muted-foreground">(inkl. Zahlungen, Mahnungen, Anhänge, Angebote, wiederkehrende Rechnungen)</span>
+            Rechnungen + PDFs <span class="text-muted-foreground">(inkl. Zahlungen, Mahnungen, Anhänge, Angebote, wiederkehrende Rechnungen, Zeiterfassung)</span>
           </label>
           <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
             <Checkbox bind:checked={restoreSections.settings} />

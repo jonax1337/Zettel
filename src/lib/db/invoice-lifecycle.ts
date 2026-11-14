@@ -21,17 +21,34 @@ export function canCancelInvoice(invoice: LifecycleFacts): boolean {
 }
 
 /**
+ * Whether the editor keeps the line totals an invoice draft was saved with. A credit
+ * note mirrors its original, and an invoice that already carries a real number was
+ * issued once (it is a reopened draft); both keep their amounts as long as a position
+ * stays as it is. Only a draft that never got a number is computed anew.
+ */
+export function keepsStoredAmounts(invoice: Pick<Invoice, "number" | "isCreditNote">): boolean {
+  return invoice.isCreditNote || !isDraftNumber(invoice.number);
+}
+
+/**
  * A sent invoice may go back to draft (keeping its number) as long as nothing
- * has been booked against it; a discarded draft may be picked up again. Any
- * credit note that is not cancelled blocks it, a draft one too: it mirrors the
- * invoice's current items and would no longer match after an edit.
+ * has been booked against it. A discarded draft stays discarded: discarding
+ * frees its time entries for other invoices. Any credit note that is not
+ * cancelled blocks it, a draft one too: it mirrors the invoice's current items
+ * and would no longer match after an edit. A credit note whose original had its
+ * time entries released stays issued: edited down, it would no longer reverse the
+ * original in full while its hours are already billed elsewhere.
  */
 export function canReopenInvoice(
   invoice: LifecycleFacts,
-  facts: { paymentCount: number; hasCreditNote: boolean },
+  facts: { paymentCount: number; hasCreditNote: boolean; timeReleasedOnOriginal: boolean },
 ): boolean {
-  if (invoice.status === "cancelled") return isDraftNumber(invoice.number);
-  return invoice.status === "sent" && facts.paymentCount === 0 && !facts.hasCreditNote;
+  return (
+    invoice.status === "sent" &&
+    facts.paymentCount === 0 &&
+    !facts.hasCreditNote &&
+    !facts.timeReleasedOnOriginal
+  );
 }
 
 export function canCreateCreditNote(invoice: Pick<Invoice, "status" | "isCreditNote">): boolean {
@@ -112,4 +129,15 @@ export function settledByCreditNoteSql(alias: string): string {
 
 export function notSettledByCreditNoteSql(alias: string): string {
   return `NOT ${settledByCreditNoteSql(alias)}`;
+}
+
+/**
+ * SQL for an issued invoice whose issued credit notes (same currency) cover its whole
+ * total, for the invoice aliased `alias`. Nothing of it is owed or deliverable any more,
+ * so what was billed on it may be billed again. A partial credit note does not qualify.
+ */
+export function fullyReversedSql(alias: string): string {
+  const credited = creditedCentSql(alias);
+  return `(${alias}.is_credit_note = 0 AND ${alias}.status NOT IN ('draft','cancelled')
+     AND ${credited} > 0 AND ${credited} >= ABS(${alias}.total))`;
 }

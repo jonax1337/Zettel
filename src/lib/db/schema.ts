@@ -14,6 +14,9 @@ export const settings = sqliteTable("settings", {
   email: text("email").notNull().default(""),
   phone: text("phone"),
   website: text("website"),
+  registerCourt: text("register_court"),
+  registerNumber: text("register_number"),
+  managingDirectors: text("managing_directors"),
   bankName: text("bank_name").notNull().default(""),
   bankIban: text("bank_iban").notNull().default(""),
   bankBic: text("bank_bic").notNull().default(""),
@@ -71,6 +74,11 @@ export const settings = sqliteTable("settings", {
   })
     .notNull()
     .default("classic"),
+  pdfRenderer: text("pdf_renderer", {
+    enum: ["weasyprint", "typst"],
+  })
+    .notNull()
+    .default("weasyprint"),
   legalForm: text("legal_form", { enum: ["freelancer", "trade"] })
     .notNull()
     .default("freelancer"),
@@ -100,6 +108,12 @@ export const settings = sqliteTable("settings", {
   taxReserveExpensesGross: integer("tax_reserve_expenses_gross", { mode: "boolean" })
     .notNull()
     .default(false),
+  mailInvoiceSubject: text("mail_invoice_subject"),
+  mailInvoiceBody: text("mail_invoice_body"),
+  mailOfferSubject: text("mail_offer_subject"),
+  mailOfferBody: text("mail_offer_body"),
+  mailReminderSubject: text("mail_reminder_subject"),
+  mailReminderBody: text("mail_reminder_body"),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch())`),
@@ -120,6 +134,8 @@ export const customers = sqliteTable("customers", {
   email: text("email"),
   phone: text("phone"),
   vatId: text("vat_id"),
+  leitwegId: text("leitweg_id"),
+  receivesXrechnung: integer("receives_xrechnung", { mode: "boolean" }).notNull().default(false),
   notes: text("notes"),
   followUpDate: integer("follow_up_date"),
   createdAt: integer("created_at")
@@ -189,6 +205,7 @@ export const invoices = sqliteTable("invoices", {
   skontoDays: integer("skonto_days"),
   amountPaidCent: integer("amount_paid_cent").notNull().default(0),
   pdfLanguage: text("pdf_language", { enum: ["de", "en"] }).notNull().default("de"),
+  buyerReference: text("buyer_reference"),
 });
 
 export const invoicePayments = sqliteTable("invoice_payments", {
@@ -214,6 +231,8 @@ export const expenseCategories = sqliteTable("expense_categories", {
   name: text("name").notNull(),
   datevAccountSkr03: text("datev_account_skr03"),
   datevAccountSkr04: text("datev_account_skr04"),
+  /** Kennzahl der Anlage EÜR; NULL = Kz 183 (übrige Betriebsausgaben). */
+  euerKz: text("euer_kz"),
   builtin: integer("builtin", { mode: "boolean" }).notNull().default(false),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
@@ -526,3 +545,31 @@ export const catalogItems = sqliteTable("catalog_items", {
 
 export type CatalogItem = typeof catalogItems.$inferSelect;
 export type CatalogItemInsert = typeof catalogItems.$inferInsert;
+
+export const projects = sqliteTable("projects", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  customerId: integer("customer_id").notNull(),
+  name: text("name").notNull(),
+  hourlyRateCent: integer("hourly_rate_cent").notNull().default(0),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+});
+
+export const timeEntries = sqliteTable("time_entries", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: integer("project_id").notNull(),
+  /** Local midnight of the work day. */
+  entryDate: integer("entry_date").notNull(),
+  startedAt: integer("started_at"),
+  endedAt: integer("ended_at"),
+  /** Null only while the timer runs. */
+  durationMinutes: integer("duration_minutes"),
+  description: text("description").notNull().default(""),
+  invoiceId: integer("invoice_id"),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+});
+
+export type Project = typeof projects.$inferSelect;
+export type TimeEntry = typeof timeEntries.$inferSelect;

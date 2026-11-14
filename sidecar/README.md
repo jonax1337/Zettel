@@ -1,6 +1,6 @@
 # Zettel Sidecar
 
-Python sidecar that turns invoice JSON into a PDF via Jinja2 + WeasyPrint.
+Python sidecar that turns invoice JSON into a PDF via Jinja2 + WeasyPrint, renders the ZUGFeRD/XRechnung XML, reads incoming e-invoices and parses bank statements (CAMT.053, MT940). The commands are listed in `main.py` (`generate_invoice`, `generate_offer`, `generate_reminder`, `generate_xrechnung`, `extract_zugferd`, `extract_xml_only`, `extract_text_pdf`, `parse_bank_statement`, `ping`).
 
 ## Setup (Windows, dev)
 
@@ -66,7 +66,7 @@ whole folder into the installer; at runtime the Rust side spawns the bundled
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-pip install pyinstaller==6.11.1
+pip install pyinstaller==6.22.3
 python build.py
 ```
 

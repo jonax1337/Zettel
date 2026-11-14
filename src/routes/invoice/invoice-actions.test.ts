@@ -3,6 +3,7 @@ import type { Invoice } from "$lib/db/schema";
 import {
   canCreateCreditNote,
   canDiscardInvoice,
+  canExportXrechnung,
   canRecordPayments,
   canReopenAsDraft,
   creditNoteCoverage,
@@ -22,6 +23,28 @@ function invoice(overrides: Partial<TestInvoice> = {}): TestInvoice {
     ...overrides,
   };
 }
+
+describe("canExportXrechnung", () => {
+  it.each(["sent", "partial", "paid"] as const)("offers the export for an issued %s invoice", (status) => {
+    expect(canExportXrechnung(invoice({ status }))).toBe(true);
+  });
+
+  it("is not offered for a draft", () => {
+    expect(canExportXrechnung(invoice({ status: "draft", number: "DRAFT-1a2b3c4d" }))).toBe(false);
+  });
+
+  it("is not offered for a placeholder number, whatever the status", () => {
+    expect(canExportXrechnung(invoice({ status: "sent", number: "DRAFT-1a2b3c4d" }))).toBe(false);
+  });
+
+  it("is not offered for a discarded draft", () => {
+    expect(canExportXrechnung(invoice({ status: "cancelled" }))).toBe(false);
+  });
+
+  it("is offered for an issued credit note", () => {
+    expect(canExportXrechnung(invoice({ status: "sent", isCreditNote: true }))).toBe(true);
+  });
+});
 
 describe("canRecordPayments", () => {
   it("allows a first partial payment on a sent invoice", () => {
@@ -118,18 +141,23 @@ describe("canDiscardInvoice", () => {
 
 describe("canReopenAsDraft", () => {
   it("allows a sent invoice without payments", () => {
-    expect(canReopenAsDraft(invoice(), 0, false)).toBe(true);
+    expect(canReopenAsDraft(invoice(), 0, false, false)).toBe(true);
   });
 
   it("is hidden once payments were recorded", () => {
-    expect(canReopenAsDraft(invoice(), 1, false)).toBe(false);
-    expect(canReopenAsDraft(invoice({ amountPaidCent: 500 }), 0, false)).toBe(false);
+    expect(canReopenAsDraft(invoice(), 1, false, false)).toBe(false);
+    expect(canReopenAsDraft(invoice({ amountPaidCent: 500 }), 0, false, false)).toBe(false);
   });
 
   it("is hidden for other statuses and for invoices cancelled by a credit note", () => {
-    expect(canReopenAsDraft(invoice({ status: "partial" }), 0, false)).toBe(false);
-    expect(canReopenAsDraft(invoice({ status: "paid" }), 0, false)).toBe(false);
-    expect(canReopenAsDraft(invoice(), 0, true)).toBe(false);
+    expect(canReopenAsDraft(invoice({ status: "partial" }), 0, false, false)).toBe(false);
+    expect(canReopenAsDraft(invoice({ status: "paid" }), 0, false, false)).toBe(false);
+    expect(canReopenAsDraft(invoice(), 0, true, false)).toBe(false);
+  });
+
+  it("is hidden for a credit note whose original had its time entries released", () => {
+    expect(canReopenAsDraft(invoice({ isCreditNote: true }), 0, false, true)).toBe(false);
+    expect(canReopenAsDraft(invoice({ isCreditNote: true }), 0, false, false)).toBe(true);
   });
 });
 

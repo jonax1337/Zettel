@@ -8,6 +8,7 @@ mod backup;
 mod crypto;
 mod exchange;
 mod fs_export;
+mod mail;
 mod paths;
 mod process;
 mod sandbox;
@@ -70,6 +71,11 @@ fn build_migrations() -> Vec<Migration> {
         ),
         (27, "v0.22_tax_options", "0026_v0.22_tax_options"),
         (28, "v0.23_lifecycle", "0027_v0.23_lifecycle"),
+        (29, "v0.24_mail_xrechnung", "0028_v0.24_mail_xrechnung"),
+        (30, "v0.24_gobd_audit", "0029_v0.24_gobd_audit"),
+        (31, "v0.24_euer_mapping", "0030_v0.24_euer_mapping"),
+        (32, "v0.24_time_tracking", "0031_v0.24_time_tracking"),
+        (33, "v0.24_pdf_renderer", "0032_v0.24_pdf_renderer"),
     ]
 }
 
@@ -136,6 +142,7 @@ pub fn run() {
             sidecar::extract_zugferd,
             sidecar::extract_text_pdf,
             sidecar::generate_reminder,
+            sidecar::generate_xrechnung,
             sidecar::parse_bank_statement,
             fs_export::save_text_file,
             fs_export::import_expense_pdf,
@@ -160,6 +167,7 @@ pub fn run() {
             tenants::relocate_active_tenant,
             tenants::remove_tenant,
             exchange::fetch_ecb_exchange_rate,
+            mail::compose_mail,
             updates::check_for_update,
         ])
         .run(tauri::generate_context!())

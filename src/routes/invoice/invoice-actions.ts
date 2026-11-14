@@ -3,6 +3,7 @@ import {
   canCreateCreditNote as lifecycleAllowsCreditNote,
 } from "$lib/db/invoice-lifecycle";
 import type { Invoice } from "$lib/db/schema";
+import { isDraftNumber } from "$lib/utils/invoice-number";
 
 type ActionInvoice = Pick<Invoice, "status" | "isCreditNote" | "number" | "amountPaidCent" | "dueDate">;
 
@@ -27,6 +28,11 @@ export function showsPayments(
   if (canRecordPayments(invoice, settledByCreditNote)) return true;
   const issued = invoice.status === "sent" || invoice.status === "partial" || invoice.status === "paid";
   return issued && paymentCount > 0;
+}
+
+/** XRechnung is a bookkeeping export: only issued invoices with a real number, never drafts or discarded drafts. */
+export function canExportXrechnung(invoice: Pick<ActionInvoice, "status" | "number">): boolean {
+  return invoice.status !== "draft" && invoice.status !== "cancelled" && !isDraftNumber(invoice.number);
 }
 
 /** `hasCreditNote` counts any credit note that is not cancelled, a draft one too. */
@@ -56,12 +62,16 @@ export function canDiscardInvoice(invoice: Pick<ActionInvoice, "status" | "numbe
   return canCancelInvoice(invoice);
 }
 
-/** `hasCreditNote` counts a draft credit note too: it mirrors the current items and would no longer match. */
+/**
+ * `hasCreditNote` counts a draft credit note too: it mirrors the current items and would no longer match.
+ * `timeReleasedOnOriginal`: the time entries of the credit note's original were freed again.
+ */
 export function canReopenAsDraft(
   invoice: ActionInvoice,
   paymentCount: number,
   hasCreditNote: boolean,
+  timeReleasedOnOriginal: boolean,
 ): boolean {
-  if (invoice.status !== "sent" || hasCreditNote) return false;
+  if (invoice.status !== "sent" || hasCreditNote || timeReleasedOnOriginal) return false;
   return paymentCount === 0 && (invoice.amountPaidCent ?? 0) === 0;
 }

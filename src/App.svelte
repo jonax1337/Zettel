@@ -20,9 +20,12 @@
   import BankImport from "./routes/BankImport.svelte";
   import ExpensesList from "./routes/ExpensesList.svelte";
   import ExpenseEdit from "./routes/ExpenseEdit.svelte";
+  import TimeTracking from "./routes/TimeTracking.svelte";
+  import TimeProjects from "./routes/TimeProjects.svelte";
   import RemindersList from "./routes/RemindersList.svelte";
   import ReminderEdit from "./routes/ReminderEdit.svelte";
   import UstvaReport from "./routes/UstvaReport.svelte";
+  import EuerReport from "./routes/EuerReport.svelte";
   import TaxReport from "./routes/TaxReport.svelte";
   import Validate from "./routes/Validate.svelte";
   import Settings from "./routes/Settings.svelte";
@@ -90,12 +93,15 @@
     "/expenses": ExpensesList,
     "/expenses/new": editorRoute(ExpenseEdit, "new"),
     "/expenses/:id": editorRoute(ExpenseEdit, "edit"),
+    "/time": TimeTracking,
+    "/time/projects": TimeProjects,
     "/reminders": RemindersList,
     "/reminders/new/:invoiceId/:level": editorRoute(ReminderEdit, "new"),
     "/reminders/new/:invoiceId": editorRoute(ReminderEdit, "new"),
     "/reminders/:id": editorRoute(ReminderEdit, "edit"),
     "/bank-import": BankImport,
     "/reports/ustva": UstvaReport,
+    "/reports/euer": EuerReport,
     "/reports/taxes": TaxReport,
     "/validate": Validate,
     "/settings": Settings,

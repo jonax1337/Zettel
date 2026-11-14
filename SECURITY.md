@@ -19,7 +19,7 @@ Sicherheits-Fixes erhält ausschließlich die **neueste Release-Version** auf `m
 <https://github.com/jonax1337/zettel/security/advisories/new>
 
 Bitte enthalten:
-- Betroffene Version (`Über Zettel` → Version + Commit)
+- Betroffene Version (steht oben auf der Seite „Einstellungen“ sowie im Footer des Mandanten-Menüs links unten; einen Commit zeigt die App nicht an)
 - Reproduktions-Schritte oder Proof-of-Concept
 - Geschätzte Auswirkung (Datenzugriff, Code-Execution, Bypass)
 - Plattform (Windows/macOS/Linux) und ggf. Konfiguration
@@ -39,6 +39,9 @@ Bitte enthalten:
 - XML-Parsing eingehender ZUGFeRD-PDFs (XXE, Billion-Laughs in `sidecar/invoice/extract.py`)
 - PDF/HTML-Rendering (XSS in user-controlled fields, Jinja-Escaping)
 - Restore-Pfad (`src-tauri/src/backup.rs`, insbesondere staged `pending_restore/`)
+- Mail-Übergabe (`src-tauri/src/mail.rs`): Simple-MAPI-FFI unter Windows und die Argumente an `osascript` (macOS) bzw. `xdg-email` (Linux) — etwa Argument-Injection über Empfänger, Betreff oder Pfad, oder ein Anhang außerhalb des Dokumente-Ordners
+- E-Rechnungs-Validierung (`src-tauri/src/validator.rs`): der Java-Subprozess (KoSIT-Validator) und das Parsen seines XML-Reports
+- Änderungsprotokoll und Rechnungssiegel (`audit_log`, `invoice_seals`, Migration 0029 und `src/lib/db/seals.ts`): ein Weg, sie über die App zu ändern oder zu löschen, oder die Integritätsprüfung zu umgehen, ist ein Security-Bug
 
 ## Out of Scope
 
@@ -55,9 +58,9 @@ Wir folgen **Coordinated Disclosure**. Reporter werden — sofern gewünscht —
 
 ## Sicherheits-relevante Architektur-Entscheidungen
 
-- **Keine Telemetrie, kein Server.** Zettel sendet keine Daten nach außen. Einzige ausgehende Verbindungen: ECB-Wechselkurs-Feed (`exchange.rs`, opt-in bei Multi-Currency) und GitHub-Updater-Endpoint.
+- **Keine Telemetrie, kein Server.** Zettel sendet keine Daten nach außen. Einzige ausgehende Verbindungen: ECB-Wechselkurs-Feed (`exchange.rs`, opt-in bei Multi-Currency) und GitHub-Updater-Endpoint (Prüfung automatisch kurz nach dem Start, stabil oder Beta-Kanal). Die Mail-Übergabe öffnet das lokale Mail-Programm und baut selbst keine Verbindung auf.
 - **Keine eingebetteten Credentials.** Backup-Passwörter werden nicht gespeichert.
-- **Migration-Inhalte sind nach Shipping unveränderlich** (siehe [`CLAUDE.md`](./CLAUDE.md#migrations-sind-3-punkt-synchron)) — verhindert stille Schema-Manipulation.
+- **Migration-Inhalte sind nach Shipping unveränderlich** (siehe [`CLAUDE.md`](./CLAUDE.md#migrationen-vier-sync-punkte)) — verhindert stille Schema-Manipulation.
 - **`capabilities/default.json:windows` ist auf `["main"]` beschränkt** — kein Pop-up-Webview kann frei navigieren.
 
 Generelle Architektur-Übersicht: [`CLAUDE.md`](./CLAUDE.md). DSGVO/Datenschutz: [`PRIVACY.md`](./PRIVACY.md). Compliance-Hinweise: [`COMPLIANCE.md`](./COMPLIANCE.md).

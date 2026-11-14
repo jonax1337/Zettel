@@ -1,0 +1,207 @@
+{
+  "_comment": "Shared by src/lib/db/seals.test.ts (app) and sidecar/tests/test_cli_seal.py (cli/zettel.py). The seal format is frozen once invoices are sealed: change an expectation only with a new SEAL_FORMAT_VERSION in both places.",
+  "documents": [
+    {
+      "name": "plain euro invoice with REAL values",
+      "invoice": {
+        "number": "RE-2026-0001",
+        "customer_id": 1,
+        "customer_snapshot": "{\"name\":\"Acme GmbH\",\"city\":\"Berlin\"}",
+        "issue_date": 1767225600,
+        "delivery_date": null,
+        "due_date": 1768435200,
+        "subtotal": 15000,
+        "vat_amount": 2850,
+        "total": 17850,
+        "is_kleinunternehmer": 0,
+        "is_reverse_charge": 0,
+        "reverse_charge_type": "none",
+        "supply_kind": "services",
+        "notes": null,
+        "payment_terms": "Zahlbar innerhalb von 14 Tagen ohne Abzug.",
+        "is_credit_note": 0,
+        "corrects_invoice_id": null,
+        "currency": "EUR",
+        "exchange_rate": null,
+        "eur_total_cent": null,
+        "service_period_start": 1764547200,
+        "service_period_end": 1767139200,
+        "skonto_percent": 2.0,
+        "skonto_days": 7,
+        "pdf_language": "de",
+        "buyer_reference": null
+      },
+      "items": [
+        {
+          "position": 1,
+          "description": "Beratung",
+          "quantity": 1.0,
+          "unit": "h",
+          "unit_price": 10000,
+          "vat_rate": 19,
+          "line_total": 10000,
+          "long_description": null,
+          "line_period_start": null,
+          "line_period_end": null
+        },
+        {
+          "position": 2,
+          "description": "Entwicklung",
+          "quantity": 1.5,
+          "unit": "Std",
+          "unit_price": 3333,
+          "vat_rate": 19.0,
+          "line_total": 5000,
+          "long_description": "Zeile 1",
+          "line_period_start": 1764547200,
+          "line_period_end": 1764547200
+        }
+      ],
+      "canonical": "[\"zettel-invoice-seal\",1,[\"RE-2026-0001\",1,\"{\\\"name\\\":\\\"Acme GmbH\\\",\\\"city\\\":\\\"Berlin\\\"}\",1767225600,null,1768435200,15000,2850,17850,0,0,\"none\",\"services\",null,\"Zahlbar innerhalb von 14 Tagen ohne Abzug.\",0,null,\"EUR\",null,null,1764547200,1767139200,2,7,\"de\",null],[[1,\"Beratung\",1,\"h\",10000,19,10000,null,null,null],[2,\"Entwicklung\",1.5,\"Std\",3333,19,5000,\"Zeile 1\",1764547200,1764547200]]]",
+      "contentHash": "f83878afd95f20027999aba08afe3b65bde08c972b741939935fd71dccf0470f"
+    },
+    {
+      "name": "umlauts, emoji and characters JSON escapes",
+      "invoice": {
+        "number": "RE-2026-0002",
+        "customer_id": 2,
+        "customer_snapshot": "{\"name\":\"Müller & Söhne \\\"Größe\\\" 📦\",\"street\":\"Weg\\Nr. 5\"}",
+        "issue_date": 1767312000,
+        "delivery_date": 1767225600,
+        "due_date": 1768521600,
+        "subtotal": 100,
+        "vat_amount": 0,
+        "total": 100,
+        "is_kleinunternehmer": 1,
+        "is_reverse_charge": 0,
+        "reverse_charge_type": "none",
+        "supply_kind": "goods",
+        "notes": "Zeile 1\nZeile 2\tTab \"Zitat\" \\ Backslash \u0001 Steuerzeichen",
+        "payment_terms": null,
+        "is_credit_note": 0,
+        "corrects_invoice_id": null,
+        "currency": "EUR",
+        "exchange_rate": null,
+        "eur_total_cent": null,
+        "service_period_start": null,
+        "service_period_end": null,
+        "skonto_percent": null,
+        "skonto_days": null,
+        "pdf_language": "en",
+        "buyer_reference": "04011000-12345-34"
+      },
+      "items": [
+        {
+          "position": 1,
+          "description": "Ärmel \"Größe\" \\ 📦\r\n\u001f",
+          "quantity": 0.25,
+          "unit": "Stk",
+          "unit_price": 400,
+          "vat_rate": 0,
+          "line_total": 100,
+          "long_description": "Äußerst\ttabs",
+          "line_period_start": null,
+          "line_period_end": null
+        }
+      ],
+      "canonical": "[\"zettel-invoice-seal\",1,[\"RE-2026-0002\",2,\"{\\\"name\\\":\\\"Müller & Söhne \\\\\\\"Größe\\\\\\\" 📦\\\",\\\"street\\\":\\\"Weg\\\\Nr. 5\\\"}\",1767312000,1767225600,1768521600,100,0,100,1,0,\"none\",\"goods\",\"Zeile 1\\nZeile 2\\tTab \\\"Zitat\\\" \\\\ Backslash \\u0001 Steuerzeichen\",null,0,null,\"EUR\",null,null,null,null,null,null,\"en\",\"04011000-12345-34\"],[[1,\"Ärmel \\\"Größe\\\" \\\\ 📦\\r\\n\\u001f\",0.25,\"Stk\",400,0,100,\"Äußerst\\ttabs\",null,null]]]",
+      "contentHash": "c02062693ade884d83797c9239c010a3681a2f1fccd831644a00c8ad34e9e6eb"
+    },
+    {
+      "name": "foreign currency credit note with negative amounts",
+      "invoice": {
+        "number": "RE-2026-0003",
+        "customer_id": 1,
+        "customer_snapshot": "{\"name\":\"Acme GmbH\"}",
+        "issue_date": 1767398400,
+        "delivery_date": null,
+        "due_date": 1767398400,
+        "subtotal": -10000,
+        "vat_amount": -1900,
+        "total": -11900,
+        "is_kleinunternehmer": 0,
+        "is_reverse_charge": 1,
+        "reverse_charge_type": "intra_eu",
+        "supply_kind": "services",
+        "notes": "Storno zur Rechnung RE-2026-0001",
+        "payment_terms": null,
+        "is_credit_note": 1,
+        "corrects_invoice_id": 1,
+        "currency": "USD",
+        "exchange_rate": "1.0832",
+        "eur_total_cent": -10986,
+        "service_period_start": null,
+        "service_period_end": null,
+        "skonto_percent": null,
+        "skonto_days": null,
+        "pdf_language": "de",
+        "buyer_reference": null
+      },
+      "items": [
+        {
+          "position": 1,
+          "description": "Beratung",
+          "quantity": 1,
+          "unit": "h",
+          "unit_price": 10000,
+          "vat_rate": 19,
+          "line_total": 10000,
+          "long_description": null,
+          "line_period_start": null,
+          "line_period_end": null
+        }
+      ],
+      "canonical": "[\"zettel-invoice-seal\",1,[\"RE-2026-0003\",1,\"{\\\"name\\\":\\\"Acme GmbH\\\"}\",1767398400,null,1767398400,-10000,-1900,-11900,0,1,\"intra_eu\",\"services\",\"Storno zur Rechnung RE-2026-0001\",null,1,1,\"USD\",\"1.0832\",-10986,null,null,null,null,\"de\",null],[[1,\"Beratung\",1,\"h\",10000,19,10000,null,null,null]]]",
+      "contentHash": "075579a0da53a10630fe79ccee5648fe233e71764d831f0474d87abefe99eaa9"
+    }
+  ],
+  "chain": [
+    {
+      "invoiceId": 1,
+      "kind": "issue",
+      "sealedAt": 1767225700,
+      "document": "plain euro invoice with REAL values",
+      "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "hash": "a2d83114ee36f7de6964de75421cfc690becc54b9967ba95219964c855a4d64e"
+    },
+    {
+      "invoiceId": 2,
+      "kind": "issue",
+      "sealedAt": 1767312100,
+      "document": "umlauts, emoji and characters JSON escapes",
+      "prevHash": "a2d83114ee36f7de6964de75421cfc690becc54b9967ba95219964c855a4d64e",
+      "hash": "18100ef7657673eaffaadc19a13724f5c01d1600141981167ab5942c76567309"
+    },
+    {
+      "invoiceId": 1,
+      "kind": "reopen",
+      "sealedAt": 1767398500,
+      "document": "foreign currency credit note with negative amounts",
+      "prevHash": "18100ef7657673eaffaadc19a13724f5c01d1600141981167ab5942c76567309",
+      "hash": "640b2a877c28ae3a5f311eb6ba5df84e72211c320263ce1a88b2fdd1c5ab9a41"
+    }
+  ],
+  "numbers": [
+    { "value": 1e-7, "js": "1e-7" },
+    { "value": 0.00005, "js": "0.00005" },
+    { "value": 0.000001, "js": "0.000001" },
+    { "value": 0.000123, "js": "0.000123" },
+    { "value": 2.5e-7, "js": "2.5e-7" },
+    { "value": -1.5e-7, "js": "-1.5e-7" },
+    { "value": 0.1, "js": "0.1" },
+    { "value": 0.30000000000000004, "js": "0.30000000000000004" },
+    { "value": 1.5, "js": "1.5" },
+    { "value": 12345.678, "js": "12345.678" },
+    { "value": 123456789.125, "js": "123456789.125" },
+    { "value": 100.0, "js": "100" },
+    { "value": 1.0, "js": "1" },
+    { "value": -3.0, "js": "-3" },
+    { "value": -0.0, "js": "0" },
+    { "value": 1e20, "js": "100000000000000000000" },
+    { "value": 1.2345678901234568e20, "js": "123456789012345680000" },
+    { "value": 1e21, "js": "1e+21" },
+    { "value": 1.5e21, "js": "1.5e+21" },
+    { "value": 5e-324, "js": "5e-324" },
+    { "value": 1.7976931348623157e308, "js": "1.7976931348623157e+308" }
+  ]
+}

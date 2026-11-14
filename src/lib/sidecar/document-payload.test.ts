@@ -15,7 +15,7 @@ import type { Invoice, Offer, Reminder, Settings } from "$lib/db/schema";
 import { buildOfferPayload } from "./offer";
 import { buildReminderPayload } from "./reminder";
 
-const COMPANY = { companyName: "Firma", pdfTheme: "classic" } as Settings;
+const COMPANY = { companyName: "Firma", ownerName: "", email: "", pdfTheme: "classic" } as Settings;
 const CUSTOMER = { name: "Kunde" } as never;
 
 describe("buildOfferPayload", () => {
@@ -48,6 +48,41 @@ describe("buildOfferPayload", () => {
     });
 
     expect(payload.offer.currency).toBe("EUR");
+  });
+});
+
+describe("company register payload", () => {
+  const offer = { number: "AN-1", currency: "EUR", skontoPercent: null, skontoDays: null } as unknown as Offer;
+
+  it("sends court, number and managing directors for the footer", () => {
+    const company = {
+      ...COMPANY,
+      registerCourt: "Amtsgericht Berlin",
+      registerNumber: "HRB 1",
+      managingDirectors: "Erika Mustermann",
+    } as Settings;
+
+    const payload = buildOfferPayload({ offer, items: [], customer: CUSTOMER, company, outputPath: "o.pdf" });
+
+    expect(payload.company).toMatchObject({
+      registerCourt: "Amtsgericht Berlin",
+      registerNumber: "HRB 1",
+      managingDirectors: "Erika Mustermann",
+    });
+  });
+});
+
+describe("pdf settings payload", () => {
+  const offer = { number: "AN-1", currency: "EUR", skontoPercent: null, skontoDays: null } as unknown as Offer;
+  const settingsOf = (company: Settings) =>
+    buildOfferPayload({ offer, items: [], customer: CUSTOMER, company, outputPath: "o.pdf" }).settings;
+
+  it("defaults the renderer to weasyprint when the setting is missing", () => {
+    expect(settingsOf(COMPANY)).toEqual({ pdf_theme: "classic", pdf_renderer: "weasyprint" });
+  });
+
+  it("sends the chosen renderer", () => {
+    expect(settingsOf({ ...COMPANY, pdfRenderer: "typst" })).toMatchObject({ pdf_renderer: "typst" });
   });
 });
 

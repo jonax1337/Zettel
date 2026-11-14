@@ -10,6 +10,7 @@ vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./client")>()),
   ...db,
 }));
+vi.mock("./seals", () => ({ appendSeal: vi.fn() }));
 vi.mock("./queries", () => ({
   SETTINGS_DEFAULTS: { invoiceNumberFormat: "RE-{YYYY}-{NNNN}" },
   loadSettings: vi.fn(async () => ({ isKleinunternehmer: false, defaultPdfLanguage: "de" })),
@@ -24,6 +25,7 @@ vi.mock("./queries", () => ({
     country: "DE",
     email: null,
     vatId: null,
+    leitwegId: "04011000-1234512345-35",
   })),
 }));
 
@@ -46,6 +48,7 @@ import {
   type InvoiceFormInput,
 } from "./invoices";
 import type { InvoiceRow } from "./invoice-rows";
+import { appendSeal } from "./seals";
 import { mapInvoice, mapItem, type InvoiceItemRow } from "./invoice-rows";
 
 function invoiceRow(overrides: Partial<InvoiceRow> = {}): InvoiceRow {
@@ -88,6 +91,7 @@ function invoiceRow(overrides: Partial<InvoiceRow> = {}): InvoiceRow {
     skonto_days: null,
     amount_paid_cent: 0,
     pdf_language: "de",
+    buyer_reference: null,
     ...overrides,
   };
 }
@@ -278,6 +282,17 @@ describe("credit notes", () => {
     expect(boundInsertColumns(sql, binds)).toMatchObject({ total: -5_000, eur_total_cent: -4_630 });
   });
 
+  it("takes the frozen EUR total of the original for a full refund", async () => {
+    db.select.mockImplementation(
+      creditNoteSql(invoiceRow({ currency: "USD", exchange_rate: "1,08", eur_total_cent: 9_259 })),
+    );
+
+    await createCreditNoteFromInvoice(7);
+
+    const [sql, binds] = db.insert.mock.calls[0];
+    expect(boundInsertColumns(sql, binds)).toMatchObject({ total: -10_000, eur_total_cent: -9_259 });
+  });
+
   it("keeps the Kleinunternehmer treatment of the original although the setting changed since", async () => {
     const vatItem = { ...itemRow, vat_rate: 19 };
     db.select.mockImplementation(creditNoteSql(invoiceRow({ is_kleinunternehmer: 1 }), [vatItem]));
@@ -322,6 +337,58 @@ describe("createInvoice", () => {
   });
 });
 
+describe("buyer reference", () => {
+  const items = [mapItem(itemRow)];
+
+  function insertedBuyerReference(): unknown {
+    const [sql, binds] = db.insert.mock.calls[0];
+    return boundInsertColumns(sql, binds).buyer_reference;
+  }
+
+  it("is read from the stored row", () => {
+    expect(mapInvoice(invoiceRow({ buyer_reference: "04011000-1234512345-35" })).buyerReference).toBe(
+      "04011000-1234512345-35",
+    );
+    expect(mapInvoice(invoiceRow()).buyerReference).toBeNull();
+  });
+
+  it("is copied from the customer's Leitweg-ID when the caller sends none", async () => {
+    await createInvoice(formInput);
+
+    expect(insertedBuyerReference()).toBe("04011000-1234512345-35");
+  });
+
+  it("keeps a value the caller sends, trimmed, over the customer's", async () => {
+    await createInvoice({ ...formInput, buyerReference: "  991-0815-12  " });
+
+    expect(insertedBuyerReference()).toBe("991-0815-12");
+  });
+
+  it("stays empty when the caller clears it, whatever the customer has", async () => {
+    await createInvoice({ ...formInput, buyerReference: "" });
+
+    expect(insertedBuyerReference()).toBeNull();
+  });
+
+  it("is carried from the original into the credit note input", () => {
+    const original = mapInvoice(invoiceRow({ buyer_reference: "991-0815-12" }));
+
+    expect(creditNoteInputFor(original, items, 1_800_000_000).buyerReference).toBe("991-0815-12");
+  });
+
+  it("is not replaced by the customer's current Leitweg-ID in a stored credit note", async () => {
+    db.select.mockImplementation(async (sql: string) => {
+      if (sql.includes("FROM invoice_items")) return [itemRow];
+      if (sql.includes("corrects_invoice_id")) return [];
+      return [invoiceRow({ buyer_reference: null })];
+    });
+
+    await createCreditNoteFromInvoice(7);
+
+    expect(insertedBuyerReference()).toBeNull();
+  });
+});
+
 describe("supply kind", () => {
   it("is read from the stored row", () => {
     expect(mapInvoice(invoiceRow({ supply_kind: "services" })).supplyKind).toBe("services");
@@ -362,6 +429,21 @@ describe("updateInvoice", () => {
     const call = db.execute.mock.calls.find(([sql]) => String(sql).startsWith("UPDATE invoices"))!;
     return boundAssignments(call[0], call[1]);
   }
+
+  it("keeps the stored buyer reference the form does not send and replaces it when it does", async () => {
+    db.select.mockResolvedValue([invoiceRow({ status: "draft", buyer_reference: "991-0815-12" })]);
+
+    await updateInvoice(7, formInput);
+    expect(updateBinds()).toMatchObject({ buyer_reference: "991-0815-12" });
+
+    db.execute.mockClear();
+    await updateInvoice(7, { ...formInput, buyerReference: " 04011000-1234512345-35 " });
+    expect(updateBinds()).toMatchObject({ buyer_reference: "04011000-1234512345-35" });
+
+    db.execute.mockClear();
+    await updateInvoice(7, { ...formInput, buyerReference: null });
+    expect(updateBinds()).toMatchObject({ buyer_reference: null });
+  });
 
   it("clears the exchange rate when the invoice is switched back to EUR", async () => {
     await updateInvoice(7, { ...formInput, currency: "EUR", exchangeRate: null, eurTotalCent: 10_000 });
@@ -440,6 +522,27 @@ describe("issueInvoice", () => {
     expect(claim()[0]).toContain("WHERE id = ? AND status = 'draft'");
     const assign = db.execute.mock.calls.find(([sql]) => String(sql).includes("SET number = ?"))!;
     expect(assign[1]).toEqual(["RE-0012", 7]);
+  });
+
+  it("seals the invoice once it has its final number", async () => {
+    db.select
+      .mockResolvedValueOnce([draftRow])
+      .mockResolvedValueOnce([{ counter: 12, format: "RE-{NNNN}" }]);
+
+    await issueInvoice(7);
+
+    expect(appendSeal).toHaveBeenCalledExactlyOnceWith(7, "issue");
+    expect(vi.mocked(appendSeal).mock.invocationCallOrder[0]).toBeGreaterThan(
+      db.execute.mock.invocationCallOrder[db.execute.mock.calls.findIndex(([sql]) => String(sql).includes("SET number = ?"))],
+    );
+  });
+
+  it("stays issued when sealing fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(appendSeal).mockRejectedValueOnce(new Error("disk full"));
+    db.select.mockResolvedValueOnce([invoiceRow({ status: "draft", number: "RE-2026-0009" })]);
+
+    expect(await issueInvoice(7)).toBe("RE-2026-0009");
   });
 
   it("freezes the customer's current master data when issuing", async () => {
@@ -577,7 +680,7 @@ describe("markPaid", () => {
 });
 
 describe("deleteInvoice", () => {
-  it("removes the payments of the deleted invoice, which have no FK cascade", async () => {
+  it("removes the payments of the deleted invoice, which have no FK cascade, and frees its time entries", async () => {
     db.select.mockResolvedValue([invoiceRow({ status: "cancelled", number: "DRAFT-abc" })]);
 
     await deleteInvoice(7);
@@ -585,6 +688,7 @@ describe("deleteInvoice", () => {
     const statements = db.execute.mock.calls.map(([sql]) => String(sql));
     expect(statements).toEqual([
       "DELETE FROM invoice_payments WHERE invoice_id = ?",
+      "UPDATE time_entries SET invoice_id = NULL, updated_at = unixepoch() WHERE invoice_id = ?",
       "DELETE FROM invoices WHERE id = ?",
     ]);
   });
@@ -642,6 +746,7 @@ describe("reopenDraft", () => {
     expect(sql).toContain("SET status = 'draft'");
     expect(sql).not.toContain("number");
     expect(binds).toEqual([7, "sent"]);
+    expect(appendSeal).toHaveBeenCalledExactlyOnceWith(7, "reopen");
   });
 
   it.each([
@@ -650,6 +755,7 @@ describe("reopenDraft", () => {
     ["with a draft credit note", invoiceRow({ status: "sent" }), 0, creditNoteFor7("draft")],
     ["that is paid", invoiceRow({ status: "paid" }), 0, null],
     ["that is cancelled and numbered", invoiceRow({ status: "cancelled" }), 0, null],
+    ["that is a discarded draft", invoiceRow({ status: "cancelled", number: "DRAFT-a1b2c3d4" }), 0, null],
   ])("refuses an invoice %s", async (_label, invoice, payments, creditNote) => {
     reopenSituation(invoice, payments, creditNote);
 

@@ -40,9 +40,10 @@
   import BackLink from "./parts/entity/BackLink.svelte";
   import { fetchEditTarget, parseId } from "./parts/entity/edit-target";
   import { centsToPriceText } from "./parts/entity/format";
-  import { vatRateForNewItem } from "./parts/entity/vat";
+  import { vatRateForNewItem } from "$lib/utils/vat";
   import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
   import { paidDateWarning } from "./invoice/date-warnings";
+  import { quantityError } from "./invoice/form-validation";
   import ExpenseItemsTable from "./parts/expense/ExpenseItemsTable.svelte";
   import PdfDropZone from "./parts/expense/PdfDropZone.svelte";
   import VendorQuickCreateDialog from "./parts/expense/VendorQuickCreateDialog.svelte";
@@ -349,6 +350,11 @@
     const vendorId = parseId(form.vendorId);
     if (vendorId === null) {
       error = "Bitte Lieferant auswählen.";
+      return null;
+    }
+    const quantityProblem = quantityError(form.items);
+    if (quantityProblem) {
+      error = quantityProblem;
       return null;
     }
     saving = true;

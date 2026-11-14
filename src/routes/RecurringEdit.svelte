@@ -28,14 +28,15 @@
   import BackLink from "./parts/entity/BackLink.svelte";
   import { fetchEditTarget, parseId } from "./parts/entity/edit-target";
   import { RECURRING_INTERVAL_ITEMS } from "./parts/entity/recurring";
-  import { vatRateForNewItem } from "./parts/entity/vat";
+  import { vatRateForNewItem } from "$lib/utils/vat";
   import ReverseChargeField from "./invoice/ReverseChargeField.svelte";
   import { createDocumentFormData } from "./invoice/document-form.svelte";
-  import { reverseChargeError } from "./invoice/form-validation";
+  import { quantityError, reverseChargeError } from "./invoice/form-validation";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
   import LineItemsEditor from "./invoice/LineItemsEditor.svelte";
   import {
     lineItemFromStored,
+    lineItemsFromStored,
     newLineItem,
     toLineItemInputs,
     zeroVatRates,
@@ -117,7 +118,8 @@
       invoice.dueDate,
       loadedSettings.defaultPaymentTermsDays,
     );
-    if (source.items.length > 0) items = source.items.map(lineItemFromStored);
+    // A template computes its amounts anew for every invoice it creates.
+    if (source.items.length > 0) items = lineItemsFromStored(source.items, false);
     startDateIso = "";
   }
 
@@ -204,6 +206,7 @@
     else if (customerId === null) error = "Bitte einen Kunden auswählen.";
     else if (items.length === 0) error = "Mindestens eine Position erforderlich.";
     else if (reverseChargeFormError()) error = reverseChargeFormError();
+    else if (quantityError(items)) error = quantityError(items);
     else void save(buildInput(customerId));
   }
 

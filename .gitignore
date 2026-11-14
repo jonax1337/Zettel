@@ -17,6 +17,7 @@ sidecar/**/__pycache__/
 sidecar/.venv/
 sidecar/test-output.pdf
 sidecar/test-payloads/out-*.pdf
+sidecar/test-payloads/out-*.xml
 build.log
 
 # Editor / OS

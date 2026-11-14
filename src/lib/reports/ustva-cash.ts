@@ -120,17 +120,27 @@ export function isForeignCurrency<T extends { currency: string | null; eur_total
 }
 
 /**
- * EUR net per group settled by `paid` (cumulative). Recognising cumulative
- * amounts and taking differences keeps the rounding telescoping: all periods
- * together add up to exactly the invoice's net. Overpayments beyond the gross
- * total are not Entgelt of this invoice and are capped.
+ * EUR net per group settled by `paid` (cumulative). Overpayments beyond the
+ * gross total are not Entgelt of this invoice and are capped.
  */
 function recognisedNet(invoice: CashInvoice, paid: number): number[] {
-  if (invoice.grossTotal === 0) return invoice.groups.map(() => 0);
-  const settledRatio = Math.min(paid, invoice.grossTotal) / invoice.grossTotal;
-  return apportion(invoice.groups, Math.round(
-      eurNetTotal(invoice.groups, invoice.grossTotal, invoice.eurGrossTotal) * settledRatio,
-    ));
+  const settledRatio = invoice.grossTotal === 0 ? 0 : Math.min(paid, invoice.grossTotal) / invoice.grossTotal;
+  return recognisedEurNet(invoice.groups, invoice.grossTotal, invoice.eurGrossTotal, settledRatio);
+}
+
+/**
+ * EUR net per group for the share `settledRatio` (0..1) of the invoice that is
+ * settled. Recognising cumulative shares and taking differences keeps the
+ * rounding telescoping: all periods together add up to exactly the invoice's net.
+ */
+export function recognisedEurNet(
+  groups: RateNet[],
+  grossTotal: number,
+  eurGrossTotal: number | null,
+  settledRatio: number,
+): number[] {
+  if (grossTotal === 0) return groups.map(() => 0);
+  return apportion(groups, Math.round(eurNetTotal(groups, grossTotal, eurGrossTotal) * settledRatio));
 }
 
 /** Foreign-currency invoices convert via their frozen EUR total, like the DATEV export. */
@@ -149,7 +159,7 @@ export function eurNetTotal(
  * residual goes to the group with the largest net (first one on ties), so the
  * shares sum exactly to `target`.
  */
-export function apportion(groups: RateNet[], target: number): number[] {
+export function apportion(groups: Pick<RateNet, "net">[], target: number): number[] {
   const netTotal = sumNet(groups);
   if (netTotal === 0) return groups.map(() => 0);
 
@@ -164,6 +174,6 @@ export function apportion(groups: RateNet[], target: number): number[] {
   return shares;
 }
 
-function sumNet(groups: RateNet[]): number {
+function sumNet(groups: Pick<RateNet, "net">[]): number {
   return groups.reduce((total, g) => total + g.net, 0);
 }

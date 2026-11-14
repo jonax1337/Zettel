@@ -18,6 +18,9 @@ type SettingsRow = {
   email: string;
   phone: string | null;
   website: string | null;
+  register_court: string | null;
+  register_number: string | null;
+  managing_directors: string | null;
   bank_name: string;
   bank_iban: string;
   bank_bic: string;
@@ -32,6 +35,7 @@ type SettingsRow = {
   logo_path: string | null;
   zugferd_profile: string;
   pdf_theme: string;
+  pdf_renderer: string;
   vendor_number_format: string | null;
   vendor_number_counter: number | null;
   expense_number_format: string | null;
@@ -66,6 +70,12 @@ type SettingsRow = {
   default_pdf_language: string | null;
   vat_accounting: string | null;
   tax_reserve_expenses_gross: number | null;
+  mail_invoice_subject: string | null;
+  mail_invoice_body: string | null;
+  mail_offer_subject: string | null;
+  mail_offer_body: string | null;
+  mail_reminder_subject: string | null;
+  mail_reminder_body: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -79,6 +89,7 @@ export const SETTINGS_DEFAULTS = {
   defaultPaymentTermsDays: 14,
   zugferdProfile: "en16931",
   pdfTheme: "classic",
+  pdfRenderer: "weasyprint",
   vendorNumberFormat: "L-{NNNN}",
   expenseNumberFormat: "EX-{YYYY}-{NNNN}",
   reminderNumberFormat: "MA-{YYYY}-{NNNN}",
@@ -112,6 +123,9 @@ function mapSettings(r: SettingsRow): Settings {
     email: r.email,
     phone: r.phone,
     website: r.website,
+    registerCourt: r.register_court,
+    registerNumber: r.register_number,
+    managingDirectors: r.managing_directors,
     bankName: r.bank_name,
     bankIban: r.bank_iban && normalizeIban(r.bank_iban),
     bankBic: r.bank_bic,
@@ -126,6 +140,7 @@ function mapSettings(r: SettingsRow): Settings {
     logoPath: r.logo_path,
     zugferdProfile: (r.zugferd_profile ?? d.zugferdProfile) as Settings["zugferdProfile"],
     pdfTheme: (r.pdf_theme ?? d.pdfTheme) as Settings["pdfTheme"],
+    pdfRenderer: (r.pdf_renderer ?? d.pdfRenderer) as Settings["pdfRenderer"],
     vendorNumberFormat: r.vendor_number_format ?? d.vendorNumberFormat,
     vendorNumberCounter: r.vendor_number_counter ?? 0,
     expenseNumberFormat: r.expense_number_format ?? d.expenseNumberFormat,
@@ -160,6 +175,12 @@ function mapSettings(r: SettingsRow): Settings {
     defaultPdfLanguage: (r.default_pdf_language ?? d.defaultPdfLanguage) as Settings["defaultPdfLanguage"],
     vatAccounting: (r.vat_accounting ?? d.vatAccounting) as Settings["vatAccounting"],
     taxReserveExpensesGross: r.tax_reserve_expenses_gross === 1,
+    mailInvoiceSubject: r.mail_invoice_subject,
+    mailInvoiceBody: r.mail_invoice_body,
+    mailOfferSubject: r.mail_offer_subject,
+    mailOfferBody: r.mail_offer_body,
+    mailReminderSubject: r.mail_reminder_subject,
+    mailReminderBody: r.mail_reminder_body,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -174,6 +195,11 @@ export async function loadSettings(): Promise<Settings> {
     return loadSettings();
   }
   return mapSettings(rows[0]);
+}
+
+/** A blank mail template means "use the built-in default" and is stored as NULL. */
+function blankToNull(text: string | null | undefined): string | null {
+  return text?.trim() ? text : null;
 }
 
 /** Column/value pairs kept side by side so a new setting cannot shift the bindings. */
@@ -191,6 +217,9 @@ function settingsColumnValues(s: Partial<Settings>): Array<[column: string, valu
     ["email", s.email ?? ""],
     ["phone", s.phone ?? null],
     ["website", s.website ?? null],
+    ["register_court", s.registerCourt ?? null],
+    ["register_number", s.registerNumber ?? null],
+    ["managing_directors", s.managingDirectors ?? null],
     ["bank_name", s.bankName ?? ""],
     ["bank_iban", normalizeIban(s.bankIban ?? "")],
     ["bank_bic", s.bankBic ?? ""],
@@ -203,6 +232,7 @@ function settingsColumnValues(s: Partial<Settings>): Array<[column: string, valu
     ["logo_path", s.logoPath ?? null],
     ["zugferd_profile", s.zugferdProfile ?? d.zugferdProfile],
     ["pdf_theme", s.pdfTheme ?? d.pdfTheme],
+    ["pdf_renderer", s.pdfRenderer ?? d.pdfRenderer],
     ["vendor_number_format", s.vendorNumberFormat ?? d.vendorNumberFormat],
     ["expense_number_format", s.expenseNumberFormat ?? d.expenseNumberFormat],
     ["reminder_number_format", s.reminderNumberFormat ?? d.reminderNumberFormat],
@@ -233,6 +263,12 @@ function settingsColumnValues(s: Partial<Settings>): Array<[column: string, valu
     ["default_pdf_language", s.defaultPdfLanguage ?? d.defaultPdfLanguage],
     ["vat_accounting", s.vatAccounting ?? d.vatAccounting],
     ["tax_reserve_expenses_gross", toSqlBool(s.taxReserveExpensesGross)],
+    ["mail_invoice_subject", blankToNull(s.mailInvoiceSubject)],
+    ["mail_invoice_body", blankToNull(s.mailInvoiceBody)],
+    ["mail_offer_subject", blankToNull(s.mailOfferSubject)],
+    ["mail_offer_body", blankToNull(s.mailOfferBody)],
+    ["mail_reminder_subject", blankToNull(s.mailReminderSubject)],
+    ["mail_reminder_body", blankToNull(s.mailReminderBody)],
   ];
 }
 
@@ -328,6 +364,8 @@ type CustomerRow = {
   email: string | null;
   phone: string | null;
   vat_id: string | null;
+  leitweg_id: string | null;
+  receives_xrechnung: number;
   notes: string | null;
   follow_up_date: number | null;
   created_at: number;
@@ -347,6 +385,8 @@ function mapCustomer(r: CustomerRow): Customer {
     email: r.email,
     phone: r.phone,
     vatId: r.vat_id,
+    leitwegId: r.leitweg_id,
+    receivesXrechnung: r.receives_xrechnung === 1,
     notes: r.notes,
     followUpDate: r.follow_up_date,
     createdAt: r.created_at,
@@ -380,10 +420,12 @@ export async function getCustomer(id: number): Promise<Customer | null> {
 
 export type CustomerInput = Omit<
   Customer,
-  "id" | "customerNumber" | "createdAt" | "updatedAt" | "followUpDate"
+  "id" | "customerNumber" | "createdAt" | "updatedAt" | "followUpDate" | "leitwegId" | "receivesXrechnung"
 > & {
   customerNumber?: string;
   followUpDate?: number | null;
+  leitwegId?: string | null;
+  receivesXrechnung?: boolean;
 };
 
 export async function createCustomer(input: CustomerInput): Promise<number> {
@@ -392,8 +434,8 @@ export async function createCustomer(input: CustomerInput): Promise<number> {
   return insert(
     `INSERT INTO customers
       (customer_number, name, contact_person, street, postal_code, city, country, email, phone, vat_id, notes,
-       follow_up_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       follow_up_date, leitweg_id, receives_xrechnung)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       number,
       input.name,
@@ -407,6 +449,8 @@ export async function createCustomer(input: CustomerInput): Promise<number> {
       input.vatId ?? null,
       input.notes ?? null,
       input.followUpDate ?? null,
+      input.leitwegId ?? null,
+      input.receivesXrechnung ? 1 : 0,
     ],
   );
 }
@@ -419,7 +463,7 @@ export async function updateCustomer(
     `UPDATE customers SET
       name = ?, contact_person = ?, street = ?, postal_code = ?, city = ?,
       country = ?, email = ?, phone = ?, vat_id = ?, notes = ?,
-      follow_up_date = ?,
+      follow_up_date = ?, leitweg_id = ?, receives_xrechnung = ?,
       updated_at = unixepoch()
      WHERE id = ?`,
     [
@@ -434,6 +478,8 @@ export async function updateCustomer(
       input.vatId ?? null,
       input.notes ?? null,
       input.followUpDate ?? null,
+      input.leitwegId ?? null,
+      input.receivesXrechnung ? 1 : 0,
       id,
     ],
   );

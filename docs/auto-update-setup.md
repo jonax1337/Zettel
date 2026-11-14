@@ -43,8 +43,9 @@ git commit -m "chore(updater): wire signing pubkey"
 ## Step 4 — Tag a release
 
 ```bash
-git tag v0.4.1
-git push --tags
+pnpm version:set X.Y.Z        # on main, commit
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 CI builds signed artifacts for Windows / macOS / Linux, the `release` job assembles `latest.json` from the `.sig` files, and the draft GitHub Release ends up with both the installers and `latest.json` attached. Publishing the draft makes the feed live at:
@@ -54,6 +55,19 @@ https://github.com/jonax1337/zettel/releases/latest/download/latest.json
 ```
 
 which is the endpoint configured in `tauri.conf.json`.
+
+## Publishing the draft (release gate)
+
+`build.yml` always creates a **draft**, so nothing reaches clients until you publish it by hand. Check the draft first:
+
+1. **Assets.** A stable release has 9: `Zettel_<v>_x64_en-US.msi` + `.sig`, `Zettel_<v>_x64-setup.exe` + `.sig`, `Zettel_<v>_aarch64.dmg`, `Zettel.app.tar.gz` + `.sig`, `Zettel_<v>_amd64.deb`, `latest.json`. A release candidate has 7: the same without the MSI and its `.sig` (WiX cannot build `-rc` versions).
+2. **`latest.json`.** `version` equals the tag without the `v`; `platforms` contains `windows-x86_64` and `darwin-aarch64`, each with a non-empty `signature` and a `url` pointing at this release. There is no `linux-x86_64` entry: Linux builds only a `.deb`, which has no updater artifact.
+3. **Publish.** Stable: `gh release edit vX.Y.Z --draft=false`. Release candidate: `gh release edit vX.Y.Z-rc.N --draft=false --prerelease --latest=false` (the draft already carries the pre-release flag; this keeps it that way).
+4. **Verify.** Publishing triggers `update-feed.yml`; wait for the run to finish, then check:
+   - `gh release view --json tagName` still names the newest *stable* release (an RC must never become "Latest").
+   - `releases/download/beta-feed/latest.json` shows the new version (the feed only moves forward: a candidate that is not newer than the current feed is skipped).
+
+If a tag build fails during setup with a message like `configuration … not supported`, GitHub has retired the runner image named in the `build.yml` matrix (`runs-on`): bump it to the current image and re-run. The same applies to `ci.yml`.
 
 ## How it behaves at runtime
 

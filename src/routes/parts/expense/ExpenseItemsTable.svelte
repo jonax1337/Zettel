@@ -5,7 +5,7 @@
   import { Button, Card, Input, Select } from "$lib/ui";
   import { Package, Plus, Trash2 } from "$lib/brand-icons";
   import { commitPriceText } from "../entity/format";
-  import { VAT_RATE_ITEMS } from "../entity/vat";
+  import { VAT_RATE_ITEMS } from "$lib/utils/vat";
   import { applyCategory, type ExpenseItemRow } from "./expense-form";
 
   type Props = {
@@ -102,8 +102,7 @@
             <td class="px-1.5 @3xl:px-2 py-1.5">
               <Input
                 type="number"
-                step="0.01"
-                min="0"
+                step="any"
                 bind:value={item.quantity}
                 disabled={!editable}
                 class="px-2 @3xl:px-3 [&::-webkit-inner-spin-button]:appearance-none @3xl:[&::-webkit-inner-spin-button]:appearance-auto"

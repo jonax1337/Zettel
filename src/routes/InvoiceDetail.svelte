@@ -13,13 +13,23 @@
     reopenDraft,
   } from "$lib/db/invoices";
   import { creditedCentOf, isSettledByCreditNote, openBalanceCent } from "$lib/db/invoice-lifecycle";
+  import { hasReleasedTimeEntries } from "$lib/db/audit";
   import { listPayments } from "$lib/db/invoice-payments";
   import { listRemindersForInvoice } from "$lib/db/reminders";
+  import { countReleasableTimeEntries, releaseTimeEntriesOfReversedInvoice } from "$lib/db/time-billing";
   import type { Invoice, InvoiceItem, InvoicePayment, Reminder } from "$lib/db/schema";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate, formatDateTime, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
-  import { generateInvoicePdf, listPdfVersions, type PdfVersion } from "$lib/sidecar/invoice";
+  import {
+    exportInvoiceXrechnung,
+    generateInvoicePdf,
+    listPdfVersions,
+    type PdfVersion,
+    type XrechnungExport,
+  } from "$lib/sidecar/invoice";
+  import { COMPANY_SETTINGS_ROUTE } from "$lib/utils/company-completeness";
   import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
+  import { resolveCustomerEmail, sendDocumentByMail } from "$lib/mail/send";
   import { validatePdf, type ValidationReport } from "$lib/validator";
   import { Badge, Button, ConfirmDialog, toast } from "$lib/ui";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
@@ -27,6 +37,7 @@
   import BackLink from "./parts/entity/BackLink.svelte";
   import { createDocumentActions, type PdfPreparation } from "./parts/entity/document-actions.svelte";
   import DocumentLoadMessage from "./parts/entity/DocumentLoadMessage.svelte";
+  import MailSendButton from "./parts/entity/MailSendButton.svelte";
   import PdfLocation from "./parts/entity/PdfLocation.svelte";
   import { parseCustomerSnapshot, UNREADABLE_SNAPSHOT_MESSAGE } from "./invoice/customer-snapshot";
   import CustomerSnapshotCard from "./invoice/CustomerSnapshotCard.svelte";
@@ -35,6 +46,7 @@
   import InternalNotesCard from "./invoice/InternalNotesCard.svelte";
   import {
     canCreateCreditNote as creditNoteAllowed,
+    canExportXrechnung as xrechnungAllowed,
     canRecordPayments,
     canReopenAsDraft,
     creditNoteCoverage,
@@ -43,6 +55,7 @@
   } from "./invoice/invoice-actions";
   import InvoiceActionsMenu from "./invoice/InvoiceActionsMenu.svelte";
   import InvoiceFactsCard from "./invoice/InvoiceFactsCard.svelte";
+  import InvoiceHistory from "./invoice/InvoiceHistory.svelte";
   import InvoicePdfActions from "./invoice/InvoicePdfActions.svelte";
   import LineItemsTable from "./invoice/LineItemsTable.svelte";
   import NoticeCard from "./invoice/NoticeCard.svelte";
@@ -71,6 +84,8 @@
   const openCent = $derived(invoice ? Math.max(0, openBalanceCent({ ...invoice, creditedCent })) : 0);
   let payments = $state<InvoicePayment[]>([]);
   let reminders = $state<Reminder[]>([]);
+  let releasableTimeCount = $state(0);
+  let timeReleasedOnOriginal = $state(false);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let loadToken = 0;
@@ -78,6 +93,10 @@
   const actions = createDocumentActions({ reload: load });
 
   let lastPdfPath = $state<string | null>(null);
+  let customerEmail = $state<string | null>(null);
+  // The mail program keeps the hand-off call open until its message window is closed.
+  let mailing = $state(false);
+  let xrechnungExport = $state<XrechnungExport | null>(null);
   let pdfVersions = $state<PdfVersion[]>([]);
   // Findings only exist in memory: the DB keeps status and count, not the report.
   let validationResult = $state<{ invoiceId: number; report: ValidationReport } | null>(null);
@@ -88,6 +107,9 @@
   let confirmCancelOpen = $state(false);
   let confirmReopenOpen = $state(false);
   let confirmCreditNoteOpen = $state(false);
+  let confirmReleaseTimeOpen = $state(false);
+  // The dialog outlives the reload that follows a release, which resets releasableTimeCount.
+  let confirmReleaseTimeCount = $state(0);
   let findingsDialogOpen = $state(false);
   let sendDialogOpen = $state(false);
   let issueForPdfDialogOpen = $state(false);
@@ -115,8 +137,9 @@
   const canCreateCreditNote = $derived(
     !!invoice && creditNoteAllowed(invoice, !!creditNote),
   );
+  const canExportXrechnung = $derived(!!invoice && xrechnungAllowed(invoice));
   const canReopenDraft = $derived(
-    !!invoice && canReopenAsDraft(invoice, payments.length, !!creditNote),
+    !!invoice && canReopenAsDraft(invoice, payments.length, !!creditNote, timeReleasedOnOriginal),
   );
   const isOverdue = $derived(
     !!invoice && isInvoiceOverdue(invoice, settledByCreditNote, nowUnix()),
@@ -146,6 +169,7 @@
       loading = true;
       actions.clearPdfError();
     }
+    xrechnungExport = null;
     error = null;
     try {
       const res = await getInvoice(invoiceId);
@@ -155,21 +179,26 @@
         error = "Rechnung nicht gefunden.";
         return;
       }
-      const [versions, related, loadedPayments, loadedReminders] = await Promise.all([
+      const [versions, related, loadedPayments, loadedReminders, loadedEmail, loadedReleasableTime] = await Promise.all([
         fetchPdfVersions(res.invoice.pdfPath),
         fetchRelatedInvoices(res.invoice),
         fetchPayments(res.invoice),
         fetchReminders(res.invoice),
+        fetchCustomerEmail(res.invoice),
+        fetchReleasableTimeCount(res.invoice),
       ]);
       if (token !== loadToken) return;
       invoice = res.invoice;
       items = res.items;
       lastPdfPath = res.invoice.pdfPath;
+      customerEmail = loadedEmail;
       pdfVersions = versions;
       originalInvoice = related.original;
       creditNote = related.creditNote;
+      timeReleasedOnOriginal = related.timeReleasedOnOriginal;
       payments = loadedPayments;
       reminders = loadedReminders;
+      releasableTimeCount = loadedReleasableTime;
       void maybeAutoRevalidate();
     } catch (e) {
       if (token === loadToken) {
@@ -182,11 +211,12 @@
   }
 
   async function fetchRelatedInvoices(inv: Invoice) {
-    const [original, creditNote] = await Promise.all([
+    const [original, creditNote, timeReleasedOnOriginal] = await Promise.all([
       inv.correctsInvoiceId ? getInvoice(inv.correctsInvoiceId) : null,
       inv.isCreditNote ? null : findCreditNoteFor(inv.id),
+      inv.correctsInvoiceId ? hasReleasedTimeEntries(inv.correctsInvoiceId) : false,
     ]);
-    return { original: original?.invoice ?? null, creditNote };
+    return { original: original?.invoice ?? null, creditNote, timeReleasedOnOriginal };
   }
 
   async function fetchPayments(inv: Invoice): Promise<InvoicePayment[]> {
@@ -206,6 +236,19 @@
       toast.error("Mahnungen konnten nicht geladen werden", String(e));
       return [];
     }
+  }
+
+  async function fetchReleasableTimeCount(inv: Invoice): Promise<number> {
+    try {
+      return await countReleasableTimeEntries(inv.id);
+    } catch (e) {
+      toast.error("Abgerechnete Zeiten konnten nicht geprüft werden", String(e));
+      return 0;
+    }
+  }
+
+  function fetchCustomerEmail(inv: Invoice): Promise<string | null> {
+    return resolveCustomerEmail(inv.customerId, parseCustomerSnapshot(inv.customerSnapshot)?.email ?? null);
   }
 
   async function fetchPdfVersions(pdfPath: string | null): Promise<PdfVersion[]> {
@@ -273,6 +316,15 @@
     });
   }
 
+  function performReleaseTime() {
+    if (!invoice) return;
+    const { id } = invoice;
+    const count = confirmReleaseTimeCount;
+    return actions.run(`${count === 1 ? "1 Zeiteintrag" : `${count} Zeiteinträge`} wieder freigegeben`, () =>
+      releaseTimeEntriesOfReversedInvoice(id),
+    );
+  }
+
   function rememberValidation(invoiceId: number, report: ValidationReport) {
     validationResult = { invoiceId, report };
   }
@@ -338,14 +390,27 @@
     }
   }
 
-  function requestPdf() {
+  /** What the PDF is for: just to have it, or to attach it to an e-mail right away. */
+  type PdfPurpose = "pdf" | "mail";
+  // Read when the issue dialog is confirmed; every opening of the dialog sets it again.
+  let issuePurpose: PdfPurpose = "pdf";
+
+  function requestPdf(purpose: PdfPurpose = "pdf") {
     if (!invoice || actions.busy) return;
     if (invoice.status === "draft") {
+      issuePurpose = purpose;
       dialogDate = toIsoDate(nowUnix());
       issueForPdfDialogOpen = true;
       return;
     }
-    void generatePdf();
+    void generatePdf(purpose);
+  }
+
+  /** A draft always goes through issuing first, which also (re)creates the PDF. */
+  function requestMail() {
+    if (!invoice || actions.busy || mailing) return;
+    if (lastPdfPath && invoice.status !== "draft") void sendMail(lastPdfPath);
+    else requestPdf("mail");
   }
 
   async function confirmIssueAndGeneratePdf() {
@@ -354,10 +419,10 @@
     const sentAt = fromIsoDate(dialogDate);
     issueForPdfDialogOpen = false;
     if (!(await ensureCompanyDataComplete())) return;
-    await generatePdf({ run: () => markSent(id, sentAt), failureTitle: "Festschreiben fehlgeschlagen" });
+    await generatePdf(issuePurpose, { run: () => markSent(id, sentAt), failureTitle: "Festschreiben fehlgeschlagen" });
   }
 
-  async function generatePdf(issueFirst?: PdfPreparation) {
+  async function generatePdf(purpose: PdfPurpose, issueFirst?: PdfPreparation) {
     if (!invoice) return;
     const { id } = invoice;
     await actions.generatePdf(
@@ -366,10 +431,67 @@
         lastPdfPath = pdfPath;
         if (kositReport) rememberValidation(id, kositReport);
         await load();
-        announcePdfCreated(pdfPath, kositReport);
+        if (purpose === "pdf") {
+          announcePdfCreated(pdfPath, kositReport);
+          return;
+        }
+        announceFindingsBeforeMail(kositReport);
+        // Not awaited: the mail program holds the call open and must not keep the page busy.
+        void sendMail(pdfPath);
       },
       issueFirst,
     );
+  }
+
+  function announceFindingsBeforeMail(report: ValidationReport | null | undefined) {
+    if (report && !report.valid) {
+      toast.warning(`${report.findings.length} KoSIT-Findings`, "Versand erst nach Korrektur empfohlen.");
+    }
+  }
+
+  async function sendMail(pdfPath: string) {
+    if (!invoice || !customerEmail || mailing) return;
+    const sent = invoice;
+    mailing = true;
+    try {
+      await sendDocumentByMail(
+        sent.isCreditNote ? "creditNote" : "invoice",
+        {
+          number: displayInvoiceNumber(sent),
+          correctsInvoiceNumber: originalInvoice?.number ?? null,
+          totalCent: sent.total,
+          currency: sent.currency,
+          dueDate: sent.dueDate,
+          customer: customer?.name ?? "",
+        },
+        { to: customerEmail, attachmentPath: pdfPath },
+      );
+    } catch (e) {
+      toast.error("E-Mail konnte nicht vorbereitet werden", String(e));
+    } finally {
+      mailing = false;
+    }
+  }
+
+  async function exportXrechnung() {
+    if (!invoice) return;
+    const { id } = invoice;
+    await actions.exclusive("action", async () => {
+      try {
+        xrechnungExport = await exportInvoiceXrechnung(id);
+        if (xrechnungExport.status === "exported") toast.success("XRechnung exportiert");
+      } catch (e) {
+        toast.error("XRechnung-Export fehlgeschlagen", String(e));
+      }
+    });
+  }
+
+  async function revealXrechnung(xmlPath: string) {
+    try {
+      await revealItemInDir(xmlPath);
+    } catch (e) {
+      toast.error("Ordner konnte nicht geöffnet werden", String(e));
+    }
   }
 
   function announcePdfCreated(pdfPath: string, report: ValidationReport | null | undefined) {
@@ -489,11 +611,13 @@
         busy={actions.busy}
         generating={actions.generating}
         {revalidating}
-        onGenerate={requestPdf}
+        onGenerate={() => requestPdf()}
         onOpen={() => actions.usePdfFile(lastPdfPath, openPath)}
         onReveal={() => actions.usePdfFile(lastPdfPath, revealItemInDir)}
         {onRevalidate}
       />
+
+      <MailSendButton email={customerEmail} busy={actions.busy} sending={mailing} onSend={requestMail} />
 
       {#if invoice.status === "draft"}
         <Button disabled={actions.busy} onclick={openSendDialog}>
@@ -512,8 +636,15 @@
         {creatableReminderLevel}
         {canCreateCreditNote}
         {canReopenDraft}
+        {canExportXrechnung}
+        canReleaseTime={releasableTimeCount > 0}
         busy={actions.busy}
+        onRequestXrechnung={exportXrechnung}
         onRequestReopenDraft={() => (confirmReopenOpen = true)}
+        onRequestReleaseTime={() => {
+          confirmReleaseTimeCount = releasableTimeCount;
+          confirmReleaseTimeOpen = true;
+        }}
         onRequestCancel={() => (confirmCancelOpen = true)}
         onRequestCreditNote={() => (confirmCreditNoteOpen = true)}
         onRequestDelete={() => (confirmDeleteOpen = true)}
@@ -529,6 +660,32 @@
     {:else}
       <PdfLocation path={lastPdfPath} />
     {/if}
+  {/if}
+
+  {#if xrechnungExport?.status === "exported"}
+    {@const xmlPath = xrechnungExport.xmlPath}
+    <PdfLocation
+      label="XRechnung"
+      path={xmlPath}
+      openLabel="Ordner öffnen"
+      onOpen={() => revealXrechnung(xmlPath)}
+    />
+  {:else if xrechnungExport?.status === "incomplete"}
+    <NoticeCard tone="warning" title="XRechnung nicht möglich: Pflichtangaben fehlen">
+      <ul class="mt-1 list-disc pl-5 text-muted-foreground">
+        {#each xrechnungExport.missing as field (field)}
+          <li>{field}</li>
+        {/each}
+      </ul>
+      <p class="mt-2 text-xs text-muted-foreground">
+        Leitweg-ID und E-Mail des Kunden werden aus den aktuellen Kundendaten gelesen; die Anschrift stammt
+        aus der ausgestellten Rechnung.
+      </p>
+      <div class="mt-3 flex gap-2">
+        <Button href={COMPANY_SETTINGS_ROUTE} size="sm" variant="outline">Firmendaten</Button>
+        <Button href={`/customers/${invoice.customerId}`} size="sm" variant="outline">Kunde bearbeiten</Button>
+      </div>
+    </NoticeCard>
   {/if}
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -568,6 +725,8 @@
 
   <InternalNotesCard {invoice} onSaved={load} />
 
+  <InvoiceHistory {invoice} />
+
   <ConfirmDialog
     bind:open={confirmDeleteOpen}
     title="Rechnung löschen?"
@@ -602,6 +761,14 @@
     confirmLabel="Erstellen"
     destructive
     onConfirm={performCreateCreditNote}
+  />
+
+  <ConfirmDialog
+    bind:open={confirmReleaseTimeOpen}
+    title="Zeiten wieder freigeben?"
+    description={`${displayInvoiceNumber(invoice)} ist vollständig storniert. ${confirmReleaseTimeCount === 1 ? "1 abgerechneter Zeiteintrag wird" : `${confirmReleaseTimeCount} abgerechnete Zeiteinträge werden`} wieder offen und lässt sich erneut abrechnen. Die Freigabe wird im Änderungsverlauf protokolliert.`}
+    confirmLabel="Freigeben"
+    onConfirm={performReleaseTime}
   />
 
   <DateConfirmDialog
