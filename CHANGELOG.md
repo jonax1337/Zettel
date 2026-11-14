@@ -6,6 +6,9 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Changed
+- **Dependencies auf aktuellen Stand.** Sidecar: factur-x 7.9 (Zeitstempel in den PDF-Metadaten jetzt in UTC statt Ortszeit mit UTC-Kennung), pypdf 7.1, tzdata 2026.6. KoSIT-Validator 1.6.3 (behebt eine Sicherheitslücke beim Auflösen von Stylesheets) mit der XRechnung-Prüfkonfiguration 2026-08-31 (CEN-Schematron 1.3.16). Frontend: bits-ui 2.21, Type-Check mit TypeScript 7 (`svelte-check --tsgo`; TypeScript 6 bleibt daneben installiert, weil `svelte-check` es noch braucht). Rust: Tauri 2.12.5, ureq 3.5, zip 9.5 und die übrigen Crates im Lockfile. `rusqlite` bleibt bei 0.32, solange `tauri-plugin-sql` (sqlx 0.8) dieselbe SQLite-Bindung vorgibt.
+
 ## [0.24.0]
 
 ### Added

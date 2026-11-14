@@ -7,6 +7,8 @@ dist/
 build/
 src-tauri/target/
 src-tauri/gen/
+# svelte-check --tsgo cache
+.svelte-check/
 
 # Sidecar artifacts
 src-tauri/binaries/
