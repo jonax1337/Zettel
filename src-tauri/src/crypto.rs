@@ -10,7 +10,7 @@
 //! zeroized after KDF.
 
 use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{Aes256Gcm, Key, Nonce};
+use aes_gcm::{Aes256Gcm, Nonce};
 use argon2::{Argon2, Params};
 use rand::Rng;
 use zeroize::{Zeroize, Zeroizing};
@@ -50,10 +50,11 @@ pub fn encrypt(plaintext: &[u8], password: &mut String) -> Result<Vec<u8>, Strin
     password.zeroize();
     let key = key?;
 
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key.as_ref()));
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let cipher =
+        Aes256Gcm::new_from_slice(key.as_ref()).map_err(|e| format!("invalid key: {e}"))?;
+    let nonce = Nonce::from(nonce_bytes);
     let ct = cipher
-        .encrypt(nonce, plaintext)
+        .encrypt(&nonce, plaintext)
         .map_err(|e| format!("encrypt failed: {e}"))?;
 
     let mut out = Vec::with_capacity(HEADER_LEN + ct.len());
@@ -79,10 +80,11 @@ pub fn decrypt(blob: &[u8], password: &mut String) -> Result<Vec<u8>, String> {
     password.zeroize();
     let key = key?;
 
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key.as_ref()));
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let cipher =
+        Aes256Gcm::new_from_slice(key.as_ref()).map_err(|e| format!("invalid key: {e}"))?;
+    let nonce = Nonce::try_from(nonce_bytes).map_err(|_| "encrypted blob truncated".to_string())?;
     cipher
-        .decrypt(nonce, ct)
+        .decrypt(&nonce, ct)
         .map_err(|_| "Falsches Passwort oder beschädigtes Backup.".to_string())
 }
 
