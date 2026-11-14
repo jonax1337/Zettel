@@ -40,10 +40,14 @@ def cents_to_eur(cents: int | float | None, currency: str | None = "EUR") -> str
     return s.replace(",", "X").replace(".", ",").replace("X", ".") + f" {suffix}"
 
 
+def iban_groups(iban: str | None) -> list[str]:
+    s = "".join(ch for ch in iban or "" if ch.isalnum()).upper()
+    return [s[i : i + 4] for i in range(0, len(s), 4)]
+
+
 def fmt_iban(iban: str | None) -> Markup:
     """Groups of four as inline-blocks, so the text stays one unbroken IBAN when copied."""
-    s = "".join(ch for ch in iban or "" if ch.isalnum()).upper()
-    return Markup("").join(Markup('<span class="iban-g">{}</span>').format(s[i : i + 4]) for i in range(0, len(s), 4))
+    return Markup("").join(Markup('<span class="iban-g">{}</span>').format(g) for g in iban_groups(iban))
 
 
 def fmt_qty(q: float | int) -> str:

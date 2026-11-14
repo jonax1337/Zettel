@@ -11,6 +11,7 @@
       "total": 250000,
       "isKleinunternehmer": false,
       "isReverseCharge": true,
+      "reverseChargeType": "intra_eu",
       "notes": "Lieferung an EU-Geschäftskunden.",
       "paymentTerms": "Zahlbar innerhalb von 14 Tagen ohne Abzug."
     },
