@@ -34,6 +34,11 @@
     { value: "minimal", label: "Minimal" },
   ];
 
+  const rendererItems: Choice<Settings["pdfRenderer"]> = [
+    { value: "weasyprint", label: "WeasyPrint (Standard)" },
+    { value: "typst", label: "Typst" },
+  ];
+
   const pdfLanguageItems: Choice<Settings["defaultPdfLanguage"]> = [
     { value: "de", label: "Deutsch" },
     { value: "en", label: "Englisch" },
@@ -138,6 +143,14 @@
               <Select bind:value={s.pdfTheme} items={themeItems} />
               <span class="text-xs text-muted-foreground">
                 Beeinflusst nur die visuelle Darstellung der PDF — das eingebettete ZUGFeRD-XML bleibt unverändert.
+              </span>
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+              <Label>PDF-Engine</Label>
+              <Select bind:value={s.pdfRenderer} items={rendererItems} />
+              <span class="text-xs text-muted-foreground">
+                Typst setzt das PDF mit eigenem Layout. Inhalt und eingebettete E-Rechnungs-XML sind identisch.
               </span>
             </div>
 

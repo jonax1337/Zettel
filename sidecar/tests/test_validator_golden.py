@@ -121,7 +121,6 @@ def test_sidecar_xml_passes_kosit(payloads, payload_name, tmp_path):
 
 def test_reverse_charge_intra_eu_passes_kosit(payloads, tmp_path):
     payload = payloads("05-reverse-charge.json")
-    payload["invoice"]["reverseChargeType"] = "intra_eu"
     xml = render_zugferd_xml(payload)
     xml_file = tmp_path / "invoice.xml"
     xml_file.write_text(xml, encoding="utf-8")

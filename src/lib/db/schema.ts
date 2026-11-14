@@ -14,6 +14,9 @@ export const settings = sqliteTable("settings", {
   email: text("email").notNull().default(""),
   phone: text("phone"),
   website: text("website"),
+  registerCourt: text("register_court"),
+  registerNumber: text("register_number"),
+  managingDirectors: text("managing_directors"),
   bankName: text("bank_name").notNull().default(""),
   bankIban: text("bank_iban").notNull().default(""),
   bankBic: text("bank_bic").notNull().default(""),
@@ -71,6 +74,11 @@ export const settings = sqliteTable("settings", {
   })
     .notNull()
     .default("classic"),
+  pdfRenderer: text("pdf_renderer", {
+    enum: ["weasyprint", "typst"],
+  })
+    .notNull()
+    .default("weasyprint"),
   legalForm: text("legal_form", { enum: ["freelancer", "trade"] })
     .notNull()
     .default("freelancer"),

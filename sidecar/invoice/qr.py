@@ -23,6 +23,9 @@ from __future__ import annotations
 import base64
 import io
 from decimal import Decimal
+from typing import Any
+
+from .vat import open_balance_cent
 
 SERVICE_TAG = "BCD"
 VERSION = "002"
@@ -99,13 +102,37 @@ def should_emit_qr(
     return amount_cent > 0 and not is_credit_note
 
 
-def epc_qr_svg_data_uri(payload: str) -> str:
-    """Return an inline data: URI containing the QR as SVG."""
+def invoice_epc_payload(invoice: dict[str, Any], company: dict[str, Any]) -> str | None:
+    """EPC payload for the invoice's open balance, or None if it gets no QR."""
+    iban = (company.get("bankIban") or "").strip()
+    amount_cent = open_balance_cent(invoice)
+    if not should_emit_qr(
+        currency=invoice.get("currency") or "EUR",
+        iban=iban,
+        amount_cent=amount_cent,
+        is_credit_note=bool(invoice.get("isCreditNote")),
+    ):
+        return None
+    return build_epc_payload(
+        beneficiary_name=company.get("companyName") or company.get("ownerName") or "",
+        iban=iban,
+        amount_cent=amount_cent,
+        bic=company.get("bankBic"),
+        remittance=f"Rechnung {invoice.get('number', '')}".strip(),
+    )
+
+
+def epc_qr_svg(payload: str) -> str:
+    """The QR for `payload` as SVG markup."""
     import segno
 
     qr = segno.make(payload, error="m")
     buf = io.BytesIO()
     qr.save(buf, kind="svg", xmldecl=False, svgns=True, scale=4, border=2)
-    raw = buf.getvalue()
-    encoded = base64.b64encode(raw).decode("ascii")
+    return buf.getvalue().decode("utf-8")
+
+
+def epc_qr_svg_data_uri(payload: str) -> str:
+    """Return an inline data: URI containing the QR as SVG."""
+    encoded = base64.b64encode(epc_qr_svg(payload).encode("utf-8")).decode("ascii")
     return f"data:image/svg+xml;base64,{encoded}"

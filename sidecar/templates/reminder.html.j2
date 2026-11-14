@@ -1,5 +1,5 @@
 <!doctype html>
-{% from '_partials.j2' import masthead, addressee, meta_row %}
+{% from '_partials.j2' import letter_head, page_head, subject, meta_row, register_lines %}
 {% set currency = invoice.currency or 'EUR' %}
 <html lang="de">
 <head>
@@ -8,17 +8,23 @@
 </head>
 <body class="theme-{{ settings.pdf_theme if settings and settings.pdf_theme else 'classic' }}">
 
-  {{ masthead(company, reminder.levelLabel, reminder.number) }}
+  {#- Running page footer: it must precede the content to appear from page one. #}
+  <footer class="page-footer">
+    <div>{{ company.companyName }}{% if company.ownerName %} · {{ company.ownerName }}{% endif %}</div>
+    {{ register_lines(company, 'de') }}
+    {% if company.taxNumber %}<div>Steuernr.: {{ company.taxNumber }}</div>{% endif %}
+    {% if company.vatId %}<div>USt-IdNr.: {{ company.vatId }}</div>{% endif %}
+  </footer>
 
-  <section class="parties">
-    {{ addressee(company, customer, 'z. Hd.') }}
+  {{ page_head(company, reminder.levelLabel, reminder.number) }}
 
-    <div class="meta">
+  {% call letter_head(company, customer, 'z. Hd.') %}
       {{ meta_row(reminder.levelLabel ~ '-Nr.', reminder.number) }}
       {{ meta_row('Datum', reminder.issueDate | date_unix) }}
       {{ meta_row('Neue Frist', reminder.dueDate | date_unix) }}
-    </div>
-  </section>
+  {% endcall %}
+
+  {{ subject(reminder.levelLabel, reminder.number) }}
 
   <section class="intro">
     <p>Sehr geehrte Damen und Herren,</p>
@@ -89,12 +95,6 @@
     {% endif %}
     <p>Sollte sich diese Mahnung mit Ihrer Zahlung überschneiden, betrachten Sie dieses Schreiben bitte als gegenstandslos.</p>
   </section>
-
-  <footer class="page-footer">
-    <div>{{ company.companyName }}{% if company.ownerName %} · {{ company.ownerName }}{% endif %}</div>
-    {% if company.taxNumber %}<div>Steuernr.: {{ company.taxNumber }}</div>{% endif %}
-    {% if company.vatId %}<div>USt-IdNr.: {{ company.vatId }}</div>{% endif %}
-  </footer>
 
 </body>
 </html>
