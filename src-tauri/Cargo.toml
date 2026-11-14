@@ -28,7 +28,7 @@ walkdir = "2"
 dirs = "7"
 rusqlite = { version = "0.32", features = ["bundled"] }
 aes-gcm = "0.10"
-argon2 = "0.5"
+argon2 = "0.6"
 rand = "0.10"
 zeroize = "1.7"
 ureq = "3"
