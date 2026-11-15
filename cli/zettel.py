@@ -1374,15 +1374,17 @@ def customer_snapshot(customer: sqlite3.Row) -> dict:
     }
 
 
-def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, totals: dict, is_reverse_charge: bool) -> int:
+def payment_terms_days(args, settings: dict) -> int:
+    if args.payment_terms is not None:
+        return args.payment_terms
+    return settings["default_payment_terms_days"] or DEFAULT_PAYMENT_TERMS_DAYS
+
+
+def insert_draft_invoice(
+    con, args, customer: sqlite3.Row, settings: dict, totals: dict, is_reverse_charge: bool, *, terms_text: str | None,
+) -> int:
     issue_ts = parse_date(args.issue_date) or now_unix()
-    terms_days = (
-        args.payment_terms
-        if args.payment_terms is not None
-        else (settings["default_payment_terms_days"] or DEFAULT_PAYMENT_TERMS_DAYS)
-    )
-    due_ts = parse_date(args.due_date) or add_days_unix(issue_ts, terms_days)
-    payment_terms = payment_terms_text(terms_days)
+    due_ts = parse_date(args.due_date) or add_days_unix(issue_ts, payment_terms_days(args, settings))
     skonto_percent, skonto_days = resolve_skonto(args, settings)
     pdf_language = args.pdf_language or settings.get("default_pdf_language") or DEFAULT_PDF_LANGUAGE
     eur_total_cent = compute_eur_total_cent(args.currency, totals["total"], args.exchange_rate)
@@ -1411,7 +1413,7 @@ def insert_draft_invoice(con, args, customer: sqlite3.Row, settings: dict, total
             args.reverse_charge,
             args.supply_kind,
             args.notes,
-            payment_terms,
+            terms_text,
             args.currency,
             args.exchange_rate,
             eur_total_cent,
@@ -1467,7 +1469,10 @@ def cmd_invoice_create(args) -> None:
             customer = resolve_customer(con, args.customer)
             is_reverse_charge = args.reverse_charge != "none"
             totals = compute_totals(items, bool(settings["is_kleinunternehmer"]), is_reverse_charge)
-            invoice_id = insert_draft_invoice(con, args, customer, settings, totals, is_reverse_charge)
+            invoice_id = insert_draft_invoice(
+                con, args, customer, settings, totals, is_reverse_charge,
+                terms_text=payment_terms_text(payment_terms_days(args, settings)),
+            )
             insert_invoice_items(con, invoice_id, items)
             con.commit()
             return invoice_id
@@ -1633,7 +1638,9 @@ def create_offer(con, args, items: list[dict]) -> int:
     is_reverse_charge = args.reverse_charge != "none"
     totals = compute_totals(items, bool(settings["is_kleinunternehmer"]), is_reverse_charge)
     issue_ts = parse_date(args.issue_date) or now_unix()
-    valid_days = settings["default_offer_validity_days"] or DEFAULT_OFFER_VALIDITY_DAYS
+    valid_days = settings["default_offer_validity_days"]
+    if valid_days is None:
+        valid_days = DEFAULT_OFFER_VALIDITY_DAYS
     valid_ts = parse_date(args.valid_until) or add_days_unix(issue_ts, valid_days)
     skonto_percent, skonto_days = resolve_skonto(args, settings)
     pdf_language = args.pdf_language or settings.get("default_pdf_language") or DEFAULT_PDF_LANGUAGE
@@ -1721,22 +1728,24 @@ def cmd_offer_show(args) -> None:
 
 
 def offer_transition(status: str, stamp: str, allowed: tuple[str, ...]):
-    """Statuswechsel wie markSent/markAccepted/markRejected; gleicher Zielstatus ist ein No-op."""
+    """Statuswechsel wie markSent/markAccepted/markRejected; gleicher Zielstatus ist ein No-op.
+    Der Ausgangsstatus wird im UPDATE geprüft, damit ein Wechsel durch die App dazwischen nicht überschrieben wird."""
+    allowed_placeholders = ", ".join("?" * len(allowed))
+
     def run(args) -> None:
         with connect() as con:
-            offer = fetch_offer(con, args.id)
-            changed = offer["status"] != status
-            if changed:
-                if offer["status"] not in allowed:
-                    sys.exit(f"Angebot {offer['number']}: Übergang '{offer['status']}' -> '{status}' nicht erlaubt.")
-                con.execute(
-                    f"UPDATE offers SET status = ?, {stamp} = {SQL_NOW}, updated_at = {SQL_NOW} WHERE id = ?",
-                    (status, args.id),
-                )
-                con.commit()
+            number = fetch_offer(con, args.id)["number"]
+            changed = con.execute(
+                f"UPDATE offers SET status = ?, {stamp} = {SQL_NOW}, updated_at = {SQL_NOW} "
+                f"WHERE id = ? AND status IN ({allowed_placeholders})",
+                (status, args.id, *allowed),
+            ).rowcount == 1
+            con.commit()
             result = fetch_offer(con, args.id)
+        if not changed and result["status"] != status:
+            sys.exit(f"Angebot {number}: Übergang '{result['status']}' -> '{status}' nicht erlaubt.")
         emit({"offer": offer_dict(result), "changed": changed},
-             f"Angebot {offer['number']}: {'jetzt' if changed else 'bereits'} {status}")
+             f"Angebot {number}: {'jetzt' if changed else 'bereits'} {status}")
     return run
 
 
@@ -1769,7 +1778,8 @@ def convert_offer(con, offer_id: int, payment_terms: int | None) -> tuple[int, b
         pdf_language=offer["pdf_language"], currency=offer["currency"] or BASE_CURRENCY,
         exchange_rate=offer["exchange_rate"],
     )
-    invoice_id = insert_draft_invoice(con, args, customer, settings, totals, is_reverse_charge)
+    # Like invoiceInputFromOffer(): no payment terms text, it would contradict a Skonto taken over from the offer.
+    invoice_id = insert_draft_invoice(con, args, customer, settings, totals, is_reverse_charge, terms_text=None)
     insert_invoice_items(con, invoice_id, items)
     linked = con.execute(
         f"UPDATE offers SET status = 'accepted', accepted_at = COALESCE(accepted_at, {SQL_NOW}), "
@@ -2181,6 +2191,10 @@ def main() -> None:
 
     args = ap.parse_args()
     JSON_MODE = args.json_top or args.json_sub
+    if JSON_MODE:
+        # A redirected stdout on Windows uses the ANSI code page: umlauts would not be valid JSON for the reader,
+        # and a character outside the code page would abort the output.
+        sys.stdout.reconfigure(encoding="utf-8")
     try:
         args.func(args)
     except SystemExit as exit_:

@@ -30,7 +30,7 @@ python cli/zettel.py invoice:paid <id>               # bezahlt + Payment-Eintrag
 python cli/zettel.py offers [--status X] [--year N]
 python cli/zettel.py offer:create --customer K-0001 --items "..." [--valid-until ..] [--pdf]
 python cli/zettel.py offer:show|send|accept|reject|pdf <id>
-python cli/zettel.py offer:convert <id>              # Rechnungsentwurf; zweiter Aufruf liefert denselben
+python cli/zettel.py offer:convert <id>              # Rechnungsentwurf (ohne Zahlungsziel-Text, wie die App); zweiter Aufruf liefert denselben
 python cli/zettel.py reminders [--invoice <id>]
 python cli/zettel.py reminder:create --invoice <id> --level 1|2|3 [--fee 5,00] [--interest ..] [--pdf]
 python cli/zettel.py reminder:send|pdf <id>
@@ -42,7 +42,7 @@ python cli/zettel.py --version                       # erwartetes DB-Schema
 
 `--json` (vor oder nach dem Befehl) gibt genau ein Objekt auf stdout aus:
 `{"ok": true, ...}` bzw. `{"ok": false, "error": "..."}` mit Exit-Code 1. Beträge sind Cent-Integer
-(`*Cent`), Daten ISO `YYYY-MM-DD`.
+(`*Cent`), Daten ISO `YYYY-MM-DD`. Die JSON-Ausgabe ist immer UTF-8, auch bei umgeleitetem stdout unter Windows.
 
 Alle `*:create`-Befehle akzeptieren `--idempotency-key <String>`. Derselbe Schlüssel (pro DB und Typ) legt nichts
 neu an und liefert den vorhandenen Datensatz (`"reused": true`). Die Schlüssel stehen in

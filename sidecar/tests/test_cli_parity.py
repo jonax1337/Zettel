@@ -113,7 +113,9 @@ def create_args(**overrides):
 
 def create_draft(cli, con, settings=None, **overrides):
     settings = {"default_payment_terms_days": 14, "is_kleinunternehmer": 0, **(settings or {})}
-    invoice_id = cli.insert_draft_invoice(con, create_args(**overrides), CUSTOMER, settings, TOTALS, False)
+    invoice_id = cli.insert_draft_invoice(
+        con, create_args(**overrides), CUSTOMER, settings, TOTALS, False, terms_text=None
+    )
     return con.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
 
 

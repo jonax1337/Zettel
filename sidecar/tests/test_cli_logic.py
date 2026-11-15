@@ -550,7 +550,7 @@ class TestDraftDueDate:
         }
         settings = {"default_payment_terms_days": 14, "is_kleinunternehmer": 0}
         totals = {"subtotal": 100, "vatAmount": 19, "total": 119}
-        invoice_id = cli.insert_draft_invoice(con, args, customer, settings, totals, False)
+        invoice_id = cli.insert_draft_invoice(con, args, customer, settings, totals, False, terms_text=None)
         assert row_of(con, invoice_id)["due_date"] == local_timestamp(2026, 4, 3)
 
 
