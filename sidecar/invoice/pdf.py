@@ -4,19 +4,24 @@ from __future__ import annotations
 import base64
 import io
 import mimetypes
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from weasyprint import CSS, HTML
 
+from .document_view import invoice_view, offer_view, reminder_view
 from .templates import build_env, templates_dir
+from .typst_pdf import render_typst_pdf
 from .vat import open_balance_cent, signed_paid_cent, vat_groups
 from .zugferd import render_zugferd_xml, resolve_profile
-from .qr import build_epc_payload, epc_qr_svg_data_uri, should_emit_qr
+from .qr import epc_qr_svg_data_uri, invoice_epc_payload
 
 DEFAULT_PDF_THEME = "classic"
 STYLESHEET_FILENAME = "invoice.css"
 DEFAULT_MIME_TYPE = "image/png"
+RENDERER_WEASYPRINT = "weasyprint"
+RENDERER_TYPST = "typst"
 
 
 def _logo_data_uri(logo_path: str | None) -> str | None:
@@ -40,26 +45,8 @@ def _logo_data_uri(logo_path: str | None) -> str | None:
 
 def _maybe_epc_qr(invoice: dict[str, Any], company: dict[str, Any]) -> str | None:
     """Build the EPC-QR data URI if the invoice qualifies, else None."""
-    iban = (company.get("bankIban") or "").strip()
-    currency = invoice.get("currency") or "EUR"
-    amount_cent = open_balance_cent(invoice)
-    if not should_emit_qr(
-        currency=currency,
-        iban=iban,
-        amount_cent=amount_cent,
-        is_credit_note=bool(invoice.get("isCreditNote")),
-    ):
-        return None
-    name = company.get("companyName") or company.get("ownerName") or ""
-    remittance = f"Rechnung {invoice.get('number', '')}".strip()
-    payload = build_epc_payload(
-        beneficiary_name=name,
-        iban=iban,
-        amount_cent=amount_cent,
-        bic=company.get("bankBic"),
-        remittance=remittance,
-    )
-    return epc_qr_svg_data_uri(payload)
+    payload = invoice_epc_payload(invoice, company)
+    return epc_qr_svg_data_uri(payload) if payload else None
 
 
 def _render_html(template_name: str, payload: dict[str, Any], **context: Any) -> str:
@@ -90,6 +77,20 @@ def _html_to_pdf(html_str: str) -> bytes:
         pdf_variant="pdf/a-3b",
     )
     return buf.getvalue()
+
+
+def _render_pdf(
+    payload: dict[str, Any],
+    html_of: Callable[[dict[str, Any]], str],
+    view_of: Callable[[dict[str, Any]], dict[str, Any]],
+) -> bytes:
+    """PDF/A-3b of the document, set by the engine chosen in the settings."""
+    renderer = (payload.get("settings") or {}).get("pdf_renderer") or RENDERER_WEASYPRINT
+    if renderer == RENDERER_TYPST:
+        return render_typst_pdf(view_of(payload), payload["company"].get("logoPath"))
+    if renderer == RENDERER_WEASYPRINT:
+        return _html_to_pdf(html_of(payload))
+    raise ValueError(f"Unbekannte PDF-Engine: {renderer}")
 
 
 def _embed_xml(pdf_bytes: bytes, xml_str: str, profile: str) -> bytes:
@@ -156,12 +157,12 @@ def render_reminder_pdf(payload: dict[str, Any]) -> Path:
 
     No embedded ZUGFeRD XML — reminders aren't e-invoices per EN16931.
     """
-    return _write_output(payload, _html_to_pdf(render_reminder_html(payload)))
+    return _write_output(payload, _render_pdf(payload, render_reminder_html, reminder_view))
 
 
 def render_offer_pdf(payload: dict[str, Any]) -> Path:
     """Render an offer (Angebot) to PDF/A-3b — no ZUGFeRD XML embedded."""
-    return _write_output(payload, _html_to_pdf(render_offer_html(payload)))
+    return _write_output(payload, _render_pdf(payload, render_offer_html, offer_view))
 
 
 def render_invoice_pdf(payload: dict[str, Any]) -> Path:
@@ -169,7 +170,7 @@ def render_invoice_pdf(payload: dict[str, Any]) -> Path:
 
     payload schema — see sidecar/README.md for the full list of fields.
     """
-    pdf_bytes = _html_to_pdf(render_invoice_html(payload))
+    pdf_bytes = _render_pdf(payload, render_invoice_html, invoice_view)
     xml_str = render_zugferd_xml(payload)
     final_pdf = _embed_xml(pdf_bytes, xml_str, resolve_profile(payload))
     return _write_output(payload, final_pdf)

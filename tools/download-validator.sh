@@ -4,8 +4,8 @@
 # downloaded on first use by the app itself (see validator.rs:download_validator).
 set -euo pipefail
 
-VALIDATOR_VERSION="1.6.2"
-SCENARIO_VERSION="2026-01-31"
+VALIDATOR_VERSION="1.6.3"
+SCENARIO_VERSION="2026-08-31"
 SCENARIO_XRECHNUNG_VERSION="3.0.2"
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"

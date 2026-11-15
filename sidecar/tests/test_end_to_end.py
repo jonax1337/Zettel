@@ -107,10 +107,6 @@ def test_generate_then_validate_pdf(payload_file, tmp_path):
     pdf_path = tmp_path / "invoice.pdf"
     payload["outputPath"] = str(pdf_path)
 
-    # 05-reverse-charge needs reverseChargeType (payload only has isReverseCharge flag)
-    if payload_file == "05-reverse-charge.json":
-        payload["invoice"]["reverseChargeType"] = "intra_eu"
-
     response = _run_sidecar({"command": "generate_invoice", "payload": payload})
     assert response.get("success") is True, f"sidecar failed: {response}"
     assert pdf_path.exists(), "PDF was not written"

@@ -15,7 +15,7 @@ Offline-first invoice generator for German freelancers / Kleinunternehmer. **Tau
 |---|---|
 | Frontend | Svelte 5 (runes), TypeScript strict, Vite, Tailwind v4, Bits UI 2 (Node ≥ 22.12), `svelte-spa-router` (hash) |
 | Persistenz | `@tauri-apps/plugin-sql` (SQLite); Drizzle nur als Type-Source (`schema.ts`) |
-| PDF/XML | WeasyPrint + Jinja2, `factur-x` + `lxml` (Sidecar) |
+| PDF/XML | WeasyPrint + Jinja2 oder Typst (`typst`-Paket, Wahl `settings.pdf_renderer`), `factur-x` + `lxml` (Sidecar) |
 | E-Rechnung-Validierung | KoSIT-Validator (`validator.jar`, **Java**) auf gebundelter jlink-JRE, von Rust als CLI gespawnt |
 | Tests | Vitest (inkl. echte SQLite-DB via `src/lib/db/sqlite-test-db.ts`; Zeitzone in `vite.config.ts` auf Europe/Berlin gepinnt), Pytest (`sidecar/tests/`), `cargo test` |
 

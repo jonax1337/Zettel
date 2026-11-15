@@ -52,12 +52,14 @@ def _unece_unit(unit: str | None) -> str:
     return UNECE_UNITS.get(unit.strip(), DEFAULT_UNIT_CODE)
 
 
+BASIC_PROFILE = "basic"
 DEFAULT_PROFILE = "en16931"
+EXTENDED_PROFILE = "extended"
 
 _PROFILE_URNS = {
-    "basic": "urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:basic",
-    "en16931": "urn:cen.eu:en16931:2017",
-    "extended": "urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended",
+    BASIC_PROFILE: "urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:basic",
+    DEFAULT_PROFILE: "urn:cen.eu:en16931:2017",
+    EXTENDED_PROFILE: "urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended",
 }
 
 
@@ -72,7 +74,7 @@ def resolve_profile(payload: dict[str, Any]) -> str:
     return profile if profile in _PROFILE_URNS else DEFAULT_PROFILE
 
 
-def _render_cii(payload: dict[str, Any], guideline_urn: str, xrechnung: bool) -> str:
+def _render_cii(payload: dict[str, Any], guideline_urn: str, *, xrechnung: bool, profile: str) -> str:
     env = build_env()
     env.filters["date_xml"] = _date_xml
     env.filters["cents_xml"] = _cents_xml
@@ -98,20 +100,23 @@ def _render_cii(payload: dict[str, Any], guideline_urn: str, xrechnung: bool) ->
         guideline_urn=guideline_urn,
         xrechnung=xrechnung,
         xrechnung_business_process=XRECHNUNG_BUSINESS_PROCESS,
+        basic_profile=profile == BASIC_PROFILE,
+        # Structured discount terms exist in the EXTENDED schema only; the
+        # other profiles carry the discount as a "#SKONTO#" description line.
+        structured_skonto=profile == EXTENDED_PROFILE,
     )
 
 
 def render_zugferd_xml(payload: dict[str, Any]) -> str:
     """Render the ZUGFeRD XML for embedding in PDF/A-3.
 
-    Profile selection only swaps the ``GuidelineSpecifiedDocumentContextParameter``
-    URN — the actual field set written stays the same. BASIC is a strict subset
-    of EN 16931, so emitting EN 16931's mandatory fields is valid for BASIC too.
-    EXTENDED is a superset; the optional EXTENDED-only fields (delivery address,
-    project ID, …) are currently not modeled in Zettel and can be added later
-    without changing the URN selection.
+    All profiles share one template and field set, minus what a profile's
+    schema does not define: BASIC has no item description (BT-154) and no BIC
+    (BT-86), and only EXTENDED has structured discount terms. EXTENDED-only
+    fields (delivery address, project ID, …) are not modeled in Zettel.
     """
-    return _render_cii(payload, _PROFILE_URNS[resolve_profile(payload)], xrechnung=False)
+    profile = resolve_profile(payload)
+    return _render_cii(payload, _PROFILE_URNS[profile], xrechnung=False, profile=profile)
 
 
 def render_xrechnung_xml(payload: dict[str, Any]) -> str:
@@ -120,7 +125,7 @@ def render_xrechnung_xml(payload: dict[str, Any]) -> str:
     The caller guarantees the BR-DE mandatory fields (buyer reference, seller
     contact, payment means); the KoSIT validator rejects a file without them.
     """
-    return _render_cii(payload, XRECHNUNG_GUIDELINE_URN, xrechnung=True)
+    return _render_cii(payload, XRECHNUNG_GUIDELINE_URN, xrechnung=True, profile=DEFAULT_PROFILE)
 
 
 def write_xrechnung_xml(payload: dict[str, Any]) -> Path:

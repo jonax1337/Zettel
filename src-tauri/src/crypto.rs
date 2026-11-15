@@ -10,7 +10,7 @@
 //! zeroized after KDF.
 
 use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{Aes256Gcm, Key, Nonce};
+use aes_gcm::{Aes256Gcm, Nonce};
 use argon2::{Argon2, Params};
 use rand::Rng;
 use zeroize::{Zeroize, Zeroizing};
@@ -50,10 +50,11 @@ pub fn encrypt(plaintext: &[u8], password: &mut String) -> Result<Vec<u8>, Strin
     password.zeroize();
     let key = key?;
 
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key.as_ref()));
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let cipher =
+        Aes256Gcm::new_from_slice(key.as_ref()).map_err(|e| format!("invalid key: {e}"))?;
+    let nonce = Nonce::from(nonce_bytes);
     let ct = cipher
-        .encrypt(nonce, plaintext)
+        .encrypt(&nonce, plaintext)
         .map_err(|e| format!("encrypt failed: {e}"))?;
 
     let mut out = Vec::with_capacity(HEADER_LEN + ct.len());
@@ -79,10 +80,11 @@ pub fn decrypt(blob: &[u8], password: &mut String) -> Result<Vec<u8>, String> {
     password.zeroize();
     let key = key?;
 
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key.as_ref()));
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let cipher =
+        Aes256Gcm::new_from_slice(key.as_ref()).map_err(|e| format!("invalid key: {e}"))?;
+    let nonce = Nonce::try_from(nonce_bytes).map_err(|_| "encrypted blob truncated".to_string())?;
     cipher
-        .decrypt(nonce, ct)
+        .decrypt(&nonce, ct)
         .map_err(|_| "Falsches Passwort oder beschädigtes Backup.".to_string())
 }
 
@@ -173,5 +175,31 @@ mod tests {
         blob[last] ^= 0x01;
         let mut pw2 = String::from("password");
         assert!(decrypt(&blob, &mut pw2).is_err());
+    }
+
+    // Generated once with aes-gcm 0.10 / argon2 0.5 (fixed password, fixed plaintext).
+    // Pins the on-disk ZETTEL-ENC-1 format: dependency bumps must still open
+    // backups that users already have. Never regenerate this to make a test pass.
+    const KAT_PASSWORD: &str = "zettel-kat-passwort";
+    const KAT_PLAINTEXT: &[u8] = b"Zettel known-answer plaintext: Rechnung RE-2026-0001";
+    const KAT_BLOB_HEX: &str = "\
+        5a455454454c2d454e432d314f1a7a3b213d912804d4b6d06cd60838b1aed303\
+        8fb434fe1da21d8aaee843d2e2279366300301fb06eb16bb4d531acdbfc5c887\
+        4a1c16aed8a418c01353c902878cff4d1c6556bd2147efd42fb8a6a1c3989a32\
+        30548b9224171158c61d4529";
+
+    fn decode_hex(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn decrypts_known_answer_blob_from_earlier_release() {
+        let blob = decode_hex(KAT_BLOB_HEX);
+        let mut pw = String::from(KAT_PASSWORD);
+        let recovered = decrypt(&blob, &mut pw).unwrap();
+        assert_eq!(recovered, KAT_PLAINTEXT);
     }
 }

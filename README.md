@@ -87,7 +87,7 @@ Zettel ist das, was dabei rausgekommen ist: ein kleines Desktop-Tool, das **loka
 - **PDF auf Deutsch oder Englisch** pro Rechnung wählbar (XML bleibt sprach-neutral nach Norm)
 - **Leistungszeiträume** (BG-14 / BG-26) auf Header- und Positions-Ebene, lange Positions-Beschreibungen (BT-154)
 - **Artikel-/Leistungs-Katalog** für wiederverwendbare Positionen (DE + EN-Beschreibungen)
-- **Skonto** (Frühzahler-Rabatt) strukturiert als `ApplicableTradePaymentDiscountTerms` im XML
+- **Skonto** (Frühzahler-Rabatt) im XML als `#SKONTO#`-Zeile der Zahlungsbedingungen (BASIC, EN 16931, XRechnung), im Profil EXTENDED strukturiert als `ApplicableTradePaymentDiscountTerms`
 - **EPC-QR-Code (Girocode)** automatisch auf EUR-Rechnungen mit IBAN — Empfänger scannt mit Banking-App
 - **Angebote** als eigener Dokumententyp mit One-Click-Konvertierung zur Rechnung
 
@@ -232,10 +232,9 @@ pnpm tauri:dev
 **Release-Build** (mit gebundeltem Sidecar, KoSIT-Validator und JRE):
 
 ```bash
-cd sidecar && python build.py && cd ..
 tools/download-validator.sh   # KoSIT validator.jar + XRechnung-Scenarios
 tools/build-jre.sh            # per jlink minimierte JRE nach tools/jre/
-pnpm tauri:build
+pnpm tauri:build              # baut vorher den Sidecar neu (scripts/build-sidecar.mjs)
 ```
 
 Vollständige Plattform-Voraussetzungen (GTK3-Runtime auf Windows, Tauri-System-Deps, Python 3.12) und Konventionen: [`CONTRIBUTING.md`](./CONTRIBUTING.md).

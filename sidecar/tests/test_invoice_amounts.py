@@ -104,15 +104,15 @@ class TestEpcQrAmount:
 
     def test_qr_encodes_the_open_balance(self, payloads, monkeypatch):
         captured: dict = {}
-        import invoice.pdf as pdf
+        import invoice.qr as qr
 
-        real = pdf.build_epc_payload
+        real = qr.build_epc_payload
 
         def spy(**kwargs):
             captured.update(kwargs)
             return real(**kwargs)
 
-        monkeypatch.setattr(pdf, "build_epc_payload", spy)
+        monkeypatch.setattr(qr, "build_epc_payload", spy)
         payload = payloads("01-standard-19.json")
         total = payload["invoice"]["total"]
         payload["invoice"]["amountPaidCent"] = 4000
@@ -172,7 +172,6 @@ class TestVatBreakdown:
 
     def test_reverse_charge_shows_no_vat_line(self, payloads):
         payload = payloads("05-reverse-charge.json")
-        payload["invoice"]["reverseChargeType"] = "intra_eu"
 
         text = _text(render_invoice_html(payload))
 

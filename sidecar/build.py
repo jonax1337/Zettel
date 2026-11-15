@@ -68,6 +68,7 @@ def run_pyinstaller() -> None:
         "--collect-data", "tzdata",
         "--collect-all", "pydyf",
         "--collect-all", "fontTools",
+        "--collect-all", "typst",
         "--collect-submodules", "jinja2",
         "--hidden-import", "lxml",
         "--hidden-import", "lxml.etree",

@@ -76,6 +76,7 @@ _DE = {
 
     # Footer
     "footer_contact": "Kontakt",
+    "footer_managing_directors": "Geschäftsführung",
     "footer_tax": "Steuer",
     "footer_bank": "Bankverbindung",
     "footer_tax_no": "St-Nr.",
@@ -147,6 +148,7 @@ _EN = {
     "offer_export_hint_services": "Upon acceptance, the invoice will be issued without German VAT (place of supply outside the EU, § 3a (2) UStG).",
 
     "footer_contact": "Contact",
+    "footer_managing_directors": "Managing directors",
     "footer_tax": "Tax",
     "footer_bank": "Bank details",
     "footer_tax_no": "Tax no.",

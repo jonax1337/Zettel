@@ -1,5 +1,5 @@
 <!doctype html>
-{% from '_partials.j2' import masthead, addressee, meta_row, items_table, totals_table, notes_block, footer %}
+{% from '_partials.j2' import letter_head, page_head, subject, meta_row, items_table, totals_table, notes_block, footer %}
 {% set lang = invoice.pdfLanguage or 'de' %}
 {% set doctype = t('doctype_credit_note' if invoice.isCreditNote else 'doctype_invoice', lang) %}
 <html lang="{{ lang }}">
@@ -9,18 +9,12 @@
 </head>
 <body class="theme-{{ settings.pdf_theme if settings and settings.pdf_theme else 'classic' }}">
 
-  {{ masthead(company, doctype, invoice.number) }}
+  {#- Running page footer: it must precede the content to appear from page one. #}
+  {{ footer(company, lang, with_bank=true) }}
 
-  {% if invoice.isCreditNote and invoice.correctsInvoice %}
-  <section class="callout">
-    {{ t('credit_note_ref', lang, number=invoice.correctsInvoice.number, date=invoice.correctsInvoice.issueDate | date_unix) }}
-  </section>
-  {% endif %}
+  {{ page_head(company, doctype, invoice.number) }}
 
-  <section class="parties">
-    {{ addressee(company, customer, t('addr_attention', lang)) }}
-
-    <div class="meta">
+  {% call letter_head(company, customer, t('addr_attention', lang)) %}
       {{ meta_row(t('meta_invoice_no', lang), invoice.number) }}
       {{ meta_row(t('meta_issue_date', lang), invoice.issueDate | date_unix) }}
       {% if invoice.servicePeriodStart and invoice.servicePeriodEnd %}
@@ -34,8 +28,15 @@
       {% if customer.vatId %}
       {{ meta_row(t('meta_customer_vatid', lang), customer.vatId) }}
       {% endif %}
-    </div>
+  {% endcall %}
+
+  {{ subject(doctype, invoice.number) }}
+
+  {% if invoice.isCreditNote and invoice.correctsInvoice %}
+  <section class="callout">
+    {{ t('credit_note_ref', lang, number=invoice.correctsInvoice.number, date=invoice.correctsInvoice.issueDate | date_unix) }}
   </section>
+  {% endif %}
 
   {{ items_table(items, invoice, lang, -1 if invoice.isCreditNote else 1) }}
 
@@ -100,8 +101,6 @@
   {% if invoice.notes %}
     {{ notes_block(invoice.notes, lang) }}
   {% endif %}
-
-  {{ footer(company, lang, with_bank=true) }}
 
 </body>
 </html>

@@ -157,6 +157,31 @@
 
       <Card>
         <CardHeader>
+          <CardTitle>Handelsregister</CardTitle>
+          <CardDescription>
+            Pflichtangaben für GmbH/UG auf Rechnungen (§ 35a GmbHG). Für Einzelunternehmen leer lassen.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="flex flex-col gap-1.5">
+              <Label>Registergericht</Label>
+              <Input bind:value={s.registerCourt} placeholder="Amtsgericht Berlin-Charlottenburg" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <Label>Registernummer</Label>
+              <Input bind:value={s.registerNumber} placeholder="HRB 123456 B" />
+            </div>
+            <div class="col-span-2 flex flex-col gap-1.5">
+              <Label>Geschäftsführung</Label>
+              <Input bind:value={s.managingDirectors} placeholder="Erika Mustermann" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Steuerprofil</CardTitle>
           <CardDescription>
             Grundlage für die Steuer-Rücklage-Schätzung im Dashboard. Keine Steuerberatung — nur eine Vorhersage zur Liquiditätsplanung.

@@ -44,13 +44,14 @@ from typing import Iterator
 
 APP_IDENTIFIER = "digital.laux.zettel"
 # Must equal CURRENT_DB_SCHEMA_VERSION in src/lib/utils/schema-version.ts (a test pins that).
-EXPECTED_SCHEMA = 32
+EXPECTED_SCHEMA = 33
 DEFAULT_PAYMENT_TERMS_DAYS = 14
 DEFAULT_OFFER_VALIDITY_DAYS = 30
 SECONDS_PER_DAY = 86400
 DEFAULT_UNIT = "Std"
 DEFAULT_PDF_PROFILE = "en16931"
 DEFAULT_PDF_THEME = "classic"
+DEFAULT_PDF_RENDERER = "weasyprint"
 DEFAULT_PDF_LANGUAGE = "de"
 PAYABLE_STATUSES = ("sent", "partial")
 REMINDER_LABELS = {1: "Zahlungserinnerung", 2: "Mahnung", 3: "Letzte Mahnung"}
@@ -544,7 +545,19 @@ def company_contact_payload(company: dict) -> dict:
         "email": trimmed(company["email"]),
         "phone": trimmed(company["phone"]),
         "website": company["website"],
+        "registerCourt": company.get("register_court"),
+        "registerNumber": company.get("register_number"),
+        "managingDirectors": company.get("managing_directors"),
         "logoPath": company["logo_path"],
+    }
+
+
+def pdf_settings_payload(company: dict) -> dict:
+    """Spiegel von pdfSettingsPayload()."""
+    return {
+        "pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME,
+        # .get: the CLI may run against a database the app has not migrated yet.
+        "pdf_renderer": company.get("pdf_renderer") or DEFAULT_PDF_RENDERER,
     }
 
 
@@ -624,7 +637,7 @@ def build_offer_payload(offer: dict, items: list[dict], customer: dict, company:
         },
         "customer": customer_payload(customer),
         "outputPath": output_path,
-        "settings": {"pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME},
+        "settings": pdf_settings_payload(company),
     }
 
 
@@ -664,7 +677,7 @@ def build_reminder_payload(reminder: dict, invoice: dict, snapshot: dict, compan
             "bankBic": company["bank_bic"],
         },
         "outputPath": output_path,
-        "settings": {"pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME},
+        "settings": pdf_settings_payload(company),
     }
 
 
@@ -718,7 +731,7 @@ def build_pdf_payload(inv: dict, items: list[dict], customer: dict, company: dic
         "customer": customer_payload(customer),
         "outputPath": output_path,
         "profile": company["zugferd_profile"] or DEFAULT_PDF_PROFILE,
-        "settings": {"pdf_theme": company["pdf_theme"] or DEFAULT_PDF_THEME},
+        "settings": pdf_settings_payload(company),
     }
 
 

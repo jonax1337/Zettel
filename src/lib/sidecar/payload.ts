@@ -40,6 +40,9 @@ export function companyContactPayload(company: Settings) {
     email: company.email.trim(),
     phone: company.phone?.trim() ?? null,
     website: company.website,
+    registerCourt: company.registerCourt,
+    registerNumber: company.registerNumber,
+    managingDirectors: company.managingDirectors,
     logoPath: company.logoPath,
   };
 }
@@ -97,5 +100,8 @@ export function skontoPayload(skonto: SkontoResult | null) {
 }
 
 export function pdfSettingsPayload(company: Settings) {
-  return { pdf_theme: company.pdfTheme ?? "classic" };
+  return {
+    pdf_theme: company.pdfTheme ?? "classic",
+    pdf_renderer: company.pdfRenderer ?? "weasyprint",
+  };
 }

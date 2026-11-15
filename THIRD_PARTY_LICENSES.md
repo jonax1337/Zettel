@@ -2,7 +2,7 @@
 
 Zettel selbst steht unter der [MIT-Lizenz](./LICENSE). Diese Datei führt die direkten Abhängigkeiten und ihre Lizenzen auf. Eine vollständige, transitive Liste (inkl. Sub-Dependencies) kann jederzeit mit `pnpm licenses list`, `cargo about` bzw. `pip-licenses` erzeugt werden.
 
-Die Versionen sind die aufgelösten Versionen aus `pnpm-lock.yaml`, `Cargo.lock` bzw. `sidecar/requirements.txt`; die Lizenzangaben stammen aus den Paket-Metadaten (`package.json` der installierten npm-Pakete, `cargo metadata`, Python-Paket-Metadaten samt Lizenzdatei). Wo das nicht geprüft werden konnte, steht es dabei. Stand: v0.24-Entwicklungszweig.
+Die Versionen sind die aufgelösten Versionen aus `pnpm-lock.yaml`, `Cargo.lock` bzw. `sidecar/requirements.txt`; die Lizenzangaben stammen aus den Paket-Metadaten (`package.json` der installierten npm-Pakete, `cargo metadata`, Python-Paket-Metadaten samt Lizenzdatei). Wo das nicht geprüft werden konnte, steht es dabei. Stand: v0.25-Entwicklungszweig.
 
 Sollte eine Lizenz hier fehlerhaft oder veraltet sein: bitte ein Issue öffnen oder direkt eine PR — wir korrigieren das umgehend.
 
@@ -12,19 +12,19 @@ Sollte eine Lizenz hier fehlerhaft oder veraltet sein: bitte ein Issue öffnen o
 
 | Paket | Version | Lizenz | Verwendung |
 |---|---|---|---|
-| `bits-ui` | 2.19.3 | MIT | Headless-UI-Primitives |
+| `bits-ui` | 2.21.0 | MIT | Headless-UI-Primitives |
 | `svelte-spa-router` | 5.1.1 | MIT | Hash-Routing |
 | `@internationalized/date` | 3.12.4 | Apache-2.0 | Datums-Logik |
 | `clsx` | 2.1.1 | MIT | Class-Concat |
 | `tailwind-merge` | 3.7.0 | MIT | Tailwind-Class-Merge |
-| `tailwind-variants` | 3.3.1 | MIT | Variant-API |
-| `drizzle-orm` | 0.45.3 | Apache-2.0 | Schema-Typen (nur compile-time) |
-| `@tauri-apps/api` | 2.12.0 | Apache-2.0 OR MIT | Tauri-Bridge |
-| `@tauri-apps/plugin-dialog` | 2.8.0 | MIT OR Apache-2.0 | Datei-Dialoge |
-| `@tauri-apps/plugin-opener` | 2.7.0 | MIT OR Apache-2.0 | Dateien, Ordner und Links öffnen |
+| `tailwind-variants` | 4.0.2 | MIT | Variant-API |
+| `drizzle-orm` | 0.45.4 | Apache-2.0 | Schema-Typen (nur compile-time) |
+| `@tauri-apps/api` | 2.12.4 | Apache-2.0 OR MIT | Tauri-Bridge |
+| `@tauri-apps/plugin-dialog` | 2.8.4 | MIT OR Apache-2.0 | Datei-Dialoge |
+| `@tauri-apps/plugin-opener` | 2.7.3 | MIT OR Apache-2.0 | Dateien, Ordner und Links öffnen |
 | `@tauri-apps/plugin-process` | 2.4.0 | MIT OR Apache-2.0 | Neustart |
-| `@tauri-apps/plugin-sql` | 2.5.0 | MIT OR Apache-2.0 | SQLite-Zugriff |
-| `@tauri-apps/plugin-updater` | 2.13.1 | MIT OR Apache-2.0 | Auto-Update |
+| `@tauri-apps/plugin-sql` | 2.6.0 | MIT OR Apache-2.0 | SQLite-Zugriff |
+| `@tauri-apps/plugin-updater` | 2.14.1 | MIT OR Apache-2.0 | Auto-Update |
 
 `svelte` (MIT) steht als `devDependency` unten bei den Build-Tools; sein Laufzeitcode steckt ebenfalls im Bundle.
 
@@ -32,36 +32,37 @@ Sollte eine Lizenz hier fehlerhaft oder veraltet sein: bitte ein Issue öffnen o
 
 | Paket | Version | Lizenz | Verwendung |
 |---|---|---|---|
-| `svelte` | 5.57.1 | MIT | UI-Framework (Compiler + Laufzeit) |
+| `svelte` | 5.57.3 | MIT | UI-Framework (Compiler + Laufzeit) |
 | `@sveltejs/vite-plugin-svelte` | 7.3.1 | MIT | Build-Plugin |
-| `vite` | 8.3.1 | MIT | Dev-Server / Bundler |
-| `tailwindcss` | 4.3.3 | MIT | Styling |
-| `@tailwindcss/vite` | 4.3.3 | MIT | Tailwind-Integration |
-| `typescript` | 6.0.3 | Apache-2.0 | Compiler |
-| `svelte-check` | 4.7.6 | MIT | Type-Check |
-| `vitest` | 5.0.2 | MIT | Unit-Tests |
-| `@tauri-apps/cli` | 2.12.0 | Apache-2.0 OR MIT | Build-Tool |
+| `vite` | 8.3.8 | MIT | Dev-Server / Bundler |
+| `tailwindcss` | 4.3.5 | MIT | Styling |
+| `@tailwindcss/vite` | 4.3.5 | MIT | Tailwind-Integration |
+| `typescript` (als `@typescript/native`) | 7.0.2 | Apache-2.0 | Type-Check (`svelte-check --tsgo`) |
+| `typescript` | 6.0.3 | Apache-2.0 | Von `svelte-check` neben TypeScript 7 benötigt |
+| `svelte-check` | 4.7.8 | MIT | Type-Check |
+| `vitest` | 5.1.0 | MIT | Unit-Tests |
+| `@tauri-apps/cli` | 2.12.4 | Apache-2.0 OR MIT | Build-Tool |
 
 ## Rust (`src-tauri/Cargo.toml`)
 
 | Crate | Version | Lizenz | Verwendung |
 |---|---|---|---|
-| `tauri` | 2.12.1 | Apache-2.0 OR MIT | Application-Framework |
-| `tauri-build` (build) | 2.7.1 | Apache-2.0 OR MIT | Build-Skript |
-| `tauri-plugin-sql` | 2.5.0 | Apache-2.0 OR MIT | SQL-Plugin (Migrationen, DB-Zugriff aus dem Frontend) |
-| `tauri-plugin-dialog` | 2.8.1 | Apache-2.0 OR MIT | Datei-Dialoge |
-| `tauri-plugin-opener` | 2.7.0 | Apache-2.0 OR MIT | Dateien, Ordner und Links öffnen |
+| `tauri` | 2.12.5 | Apache-2.0 OR MIT | Application-Framework |
+| `tauri-build` (build) | 2.7.4 | Apache-2.0 OR MIT | Build-Skript |
+| `tauri-plugin-sql` | 2.6.0 | Apache-2.0 OR MIT | SQL-Plugin (Migrationen, DB-Zugriff aus dem Frontend) |
+| `tauri-plugin-dialog` | 2.8.4 | Apache-2.0 OR MIT | Datei-Dialoge |
+| `tauri-plugin-opener` | 2.7.3 | Apache-2.0 OR MIT | Dateien, Ordner und Links öffnen |
 | `tauri-plugin-process` | 2.4.0 | Apache-2.0 OR MIT | Neustart |
-| `tauri-plugin-updater` | 2.13.1 | Apache-2.0 OR MIT | Auto-Update |
+| `tauri-plugin-updater` | 2.14.1 | Apache-2.0 OR MIT | Auto-Update |
 | `tauri-plugin-window-state` | 2.5.0 | Apache-2.0 OR MIT | Fenstergröße und -position merken |
-| `serde` / `serde_json` | 1.0.229 / 1.0.151 | MIT OR Apache-2.0 | JSON-Serialisierung (Sidecar-IPC, Konfiguration) |
-| `ureq` | 3.4.2 | MIT OR Apache-2.0 | Synchroner HTTP-Client (ECB-Wechselkurs) |
+| `serde` / `serde_json` | 1.0.229 / 1.0.154 | MIT OR Apache-2.0 | JSON-Serialisierung (Sidecar-IPC, Konfiguration) |
+| `ureq` | 3.5.2 | MIT OR Apache-2.0 | Synchroner HTTP-Client (ECB-Wechselkurs) |
 | `rusqlite` | 0.32.1 | MIT | SQLite-Bindung (Backup, Restore; Feature `bundled`) |
-| `aes-gcm` | 0.10.3 | Apache-2.0 OR MIT | Backup-Verschlüsselung |
-| `argon2` | 0.5.3 | MIT OR Apache-2.0 | Key-Derivation für Backups |
+| `aes-gcm` | 0.11.1 | Apache-2.0 OR MIT | Backup-Verschlüsselung |
+| `argon2` | 0.6.0 | MIT OR Apache-2.0 | Key-Derivation für Backups |
 | `rand` | 0.10.3 | MIT OR Apache-2.0 | Zufall (u. a. Salt, Nonce) |
-| `zeroize` | 1.9.0 | Apache-2.0 OR MIT | Schlüsselmaterial aus dem Speicher löschen |
-| `zip` | 8.6.0 | MIT | Backup-Archiv |
+| `zeroize` | 1.9.1 | Apache-2.0 OR MIT | Schlüsselmaterial aus dem Speicher löschen |
+| `zip` | 9.5.1 | MIT | Backup-Archiv |
 | `walkdir` | 2.5.0 | Unlicense/MIT | Verzeichnisse durchlaufen (Backup) |
 | `dirs` | 7.0.0 | MIT OR Apache-2.0 | Dokumente-Ordner ermitteln |
 
@@ -73,12 +74,12 @@ Vollständige Auflistung inkl. transitiver Crates: `cargo tree --manifest-path s
 |---|---|---|---|
 | `weasyprint` | 70.0 | BSD-3-Clause | HTML → PDF/A-3-Rendering |
 | `Jinja2` | 3.1.6 | BSD-3-Clause | Template-Engine |
-| `factur-x` | 7.1 | BSD-3-Clause | ZUGFeRD/Factur-X-XML-Embedding und -Extraction |
+| `factur-x` | 7.9 | BSD-3-Clause | ZUGFeRD/Factur-X-XML-Embedding und -Extraction |
 | `lxml` | 6.1.3 | BSD-3-Clause (libxml2/libxslt: MIT) | XML-Verarbeitung |
-| `pypdf` | 6.19.0 | BSD-3-Clause | Text-Extraktion aus Eingangsrechnungen |
+| `pypdf` | 7.1.0 | BSD-3-Clause | Text-Extraktion aus Eingangsrechnungen |
 | `segno` | 1.6.6 | BSD-3-Clause | EPC-QR-Code (Girocode) |
-| `mt-940` | 5.1.1 | BSD-3-Clause | MT940-Kontoauszüge einlesen |
-| `tzdata` | 2025.2 | Apache-2.0 | Zeitzonen-Daten (Europe/Berlin) |
+| `mt-940` | 5.1.3 | BSD-3-Clause | MT940-Kontoauszüge einlesen |
+| `tzdata` | 2026.6 | Apache-2.0 | Zeitzonen-Daten (Europe/Berlin) |
 | `pyinstaller` (nur Build, CI-Pin) | 6.22.3 | GPL-2.0-or-later mit Bootloader-Exception ([Details](https://pyinstaller.org/en/stable/license.html)) | Sidecar-Bundling |
 
 Die Lizenzen von WeasyPrint, Jinja2, factur-x und segno wurden anhand der mitgelieferten Lizenzdatei (BSD-3-Clause-Text) geprüft, die übrigen anhand der Paket-Metadaten. Die Angabe „libxml2/libxslt: MIT" für `lxml` wurde nicht erneut geprüft.
@@ -104,8 +105,8 @@ WeasyPrint nutzt diese Libraries über die Python-Bindings `cffi` / `pycairo` / 
 
 | Tool | Version | Lizenz | Verwendung |
 |---|---|---|---|
-| [**KoSIT-Validator**](https://github.com/itplr-kosit/validator) (`validator.jar`, standalone) | 1.6.2 (`tools/download-validator.sh`) | Apache-2.0 (Lizenztext `LICENSE.validator` im Jar) | Validierung der erzeugten E-Rechnungs-XML |
-| [**XRechnung-Prüfkonfiguration**](https://github.com/itplr-kosit/validator-configuration-xrechnung) (Scenarios, Schematron, XSD) | Konfiguration 2026-01-31, XRechnung 3.0.2 | nicht lokal geprüft — siehe Lizenzangabe im Upstream-Repository | Prüfregeln für KoSIT |
+| [**KoSIT-Validator**](https://github.com/itplr-kosit/validator) (`validator.jar`, standalone) | 1.6.3 (`tools/download-validator.sh`) | Apache-2.0 (Lizenztext `LICENSE.validator` im Jar) | Validierung der erzeugten E-Rechnungs-XML |
+| [**XRechnung-Prüfkonfiguration**](https://github.com/itplr-kosit/validator-configuration-xrechnung) (Scenarios, Schematron, XSD) | Konfiguration 2026-08-31, XRechnung 3.0.2 | nicht lokal geprüft — siehe Lizenzangabe im Upstream-Repository | Prüfregeln für KoSIT |
 | **Java-Runtime** (per `jlink` minimiert, `tools/build-jre.sh`) | Java 17 (CI: `actions/setup-java`, Distribution Temurin) | GPL-2.0 mit Classpath-Exception (Lizenztexte in `jre/legal/`) | Laufzeit für den KoSIT-Validator, unter `jre/` mit Release-Builds gebündelt |
 
 Die gebündelte JRE wird unverändert verteilt; die Classpath-Exception erlaubt das Bundling mit Software unter beliebiger Lizenz.
