@@ -147,6 +147,7 @@ pub fn run() {
             fs_export::save_text_file,
             fs_export::import_expense_pdf,
             fs_export::archive_pdf_version,
+            fs_export::restore_pdf_version,
             fs_export::list_pdf_versions,
             backup::snapshot_db_path,
             backup::auto_backup_target,

@@ -431,6 +431,12 @@ SIDECAR_SEARCH_PATHS = [
 ]
 
 
+def is_standalone_sidecar(path: Path) -> bool:
+    """Alles außer einem Python-Interpreter. Die Endung taugt nicht als Merkmal:
+    python.exe trägt sie auch, ein Sidecar-Binary unter Linux und macOS trägt keine."""
+    return not path.name.lower().startswith("python")
+
+
 def resolve_sidecar() -> tuple[str | None, str | None]:
     """(exe, None) für ein Standalone-Binary (bevorzugt: installierte App)
     oder (python, main.py) für das Dev-Venv im Repo."""
@@ -438,7 +444,7 @@ def resolve_sidecar() -> tuple[str | None, str | None]:
     if env:
         p = Path(env)
         if p.is_file():
-            if p.suffix.lower() == ".exe":
+            if is_standalone_sidecar(p):
                 return str(p), None
             return str(p), str(_find_main_py())
     repo_root = Path(__file__).resolve().parent.parent
@@ -446,7 +452,7 @@ def resolve_sidecar() -> tuple[str | None, str | None]:
     for cand in SIDECAR_SEARCH_PATHS:
         if not cand.is_file():
             continue
-        if cand.suffix.lower() == ".exe":
+        if is_standalone_sidecar(cand):
             return str(cand), None
         # Dev-Venv braucht main.py daneben
         if main_py.is_file():
@@ -467,7 +473,7 @@ def call_sidecar(command: str, payload: dict) -> dict:
     if not exe:
         sys.exit(
             "Kein Sidecar verfügbar. Dev: sidecar/.venv anlegen. "
-            "Release: ZETTEL_SIDECAR auf zettel-sidecar.exe setzen."
+            "Release: ZETTEL_SIDECAR auf das Sidecar-Binary (zettel-sidecar) setzen."
         )
     cmd = [exe] if main_py is None else [exe, main_py]
     req = json.dumps({"command": command, "payload": payload})
@@ -475,7 +481,10 @@ def call_sidecar(command: str, payload: dict) -> dict:
         cmd,
         input=req,
         capture_output=True,
-        text=True,
+        # The sidecar answers in UTF-8 whatever the code page: a PDF path with an umlaut must come back intact.
+        # Its stderr (tracebacks, GTK warnings) may be in the code page and must not break reading the answer.
+        encoding="utf-8",
+        errors="replace",
         timeout=SIDECAR_TIMEOUT_SECONDS,
         cwd=str(Path(main_py).parent) if main_py else None,
     )
@@ -1183,6 +1192,13 @@ def archive_pdf_version(path: Path, previous: Path | None = None) -> str | None:
     return archived
 
 
+def restore_pdf_version(archived: str | None, path: Path) -> None:
+    """Spiegel von fs_export.rs restore_pdf_version: legt ein archiviertes PDF zurück an
+    seinen Platz und ersetzt, was ein gescheitertes Rendern dort hinterlassen hat."""
+    if archived:
+        Path(archived).replace(path)
+
+
 def _same_dir(a: Path, b: Path) -> bool:
     try:
         return a.samefile(b)
@@ -1284,20 +1300,16 @@ def generate_pdf_for(con, invoice_id: int) -> tuple[str, str]:
     out_dir = pdf_output_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / f"{safe_filename(inv['number'])}.pdf"
-    archive_pdf_version(output_path, Path(inv["pdf_path"]) if inv["pdf_path"] else None)
     payload = build_pdf_payload(inv, items, cust, settings, str(output_path))
-    resp = call_sidecar("generate_invoice", payload)
-    if not resp.get("success"):
-        err = resp.get("error", {})
-        sys.exit(f"PDF-Fehler [{err.get('code')}]: {err.get('message')}\n{err.get('details', '')[:ERROR_DETAIL_CHARS]}")
+    pdf_path = render_replacing_pdf("generate_invoice", payload, output_path, inv["pdf_path"])
     # Der CLI validiert nicht (Java/KoSIT läuft über die App); ein alter Status gehörte zum vorherigen PDF.
     con.execute(
         "UPDATE invoices SET pdf_path = ?, last_validation_status = NULL, last_validated_at = NULL, "
         f"last_validation_findings_count = NULL, updated_at = {SQL_NOW} WHERE id = ?",
-        (resp["pdfPath"], invoice_id),
+        (pdf_path, invoice_id),
     )
     con.commit()
-    return inv["number"], resp["pdfPath"]
+    return inv["number"], pdf_path
 
 
 def export_xrechnung_for(con, invoice_id: int) -> tuple[str, str]:
@@ -1955,6 +1967,17 @@ def render_pdf(command: str, payload: dict) -> str:
     return resp["pdfPath"]
 
 
+def render_replacing_pdf(command: str, payload: dict, output_path: Path, stored_pdf_path: str | None) -> str:
+    """Spiegel von renderDocumentPdf(): archiviert das bisherige PDF und rendert das neue. Scheitert das
+    Rendern, kommt das archivierte PDF zurück, damit der gespeicherte Pfad weiter auf eine Datei zeigt."""
+    archived = archive_pdf_version(output_path, Path(stored_pdf_path) if stored_pdf_path else None)
+    try:
+        return render_pdf(command, payload)
+    except BaseException:  # sys.exit after a failed render, a sidecar timeout, Ctrl+C
+        restore_pdf_version(archived, output_path)
+        raise
+
+
 def generate_document_pdf(con, kind: str, doc_id: int) -> tuple[str, str]:
     """PDF für Angebot oder Mahnung über den Sidecar; (Nummer, PDF-Pfad)."""
     table, folder = {"offer": ("offers", "Angebote"), "reminder": ("reminders", "Mahnungen")}[kind]
@@ -1974,8 +1997,7 @@ def generate_document_pdf(con, kind: str, doc_id: int) -> tuple[str, str]:
             snapshot = reminder_invoice_snapshot(invoice)
         payload = build_reminder_payload(row, invoice, snapshot, company, str(output_path))
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    archive_pdf_version(output_path, Path(row["pdf_path"]) if row["pdf_path"] else None)
-    pdf_path = render_pdf(f"generate_{kind}", payload)
+    pdf_path = render_replacing_pdf(f"generate_{kind}", payload, output_path, row["pdf_path"])
     con.execute(f"UPDATE {table} SET pdf_path = ?, updated_at = {SQL_NOW} WHERE id = ?", (pdf_path, doc_id))
     con.commit()
     return row["number"], pdf_path
@@ -2075,8 +2097,17 @@ DATENBANK / UMGEBUNG
 """
 
 
+def use_utf8_for_redirected_output() -> None:
+    """Eine umgeleitete Ausgabe (Pipe, Datei) ist immer UTF-8. Windows nähme sonst die ANSI-Codepage:
+    Umlaute kämen beim Leser falsch an, ein Zeichen außerhalb der Codepage bräche die Ausgabe ab."""
+    for stream in (sys.stdout, sys.stderr):
+        if not stream.isatty():
+            stream.reconfigure(encoding="utf-8")
+
+
 def main() -> None:
     global JSON_MODE
+    use_utf8_for_redirected_output()
     json_help = "Ausgabe als ein JSON-Objekt (vor oder nach dem Befehl erlaubt)"
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--json", dest="json_sub", action="store_true", help=json_help)
@@ -2191,10 +2222,6 @@ def main() -> None:
 
     args = ap.parse_args()
     JSON_MODE = args.json_top or args.json_sub
-    if JSON_MODE:
-        # A redirected stdout on Windows uses the ANSI code page: umlauts would not be valid JSON for the reader,
-        # and a character outside the code page would abort the output.
-        sys.stdout.reconfigure(encoding="utf-8")
     try:
         args.func(args)
     except SystemExit as exit_:
