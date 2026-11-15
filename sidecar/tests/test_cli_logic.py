@@ -144,6 +144,7 @@ CREATE TABLE invoice_items (
     quantity REAL, unit TEXT, unit_price INTEGER, vat_rate REAL, line_total INTEGER,
     long_description TEXT, line_period_start INTEGER, line_period_end INTEGER
 );
+CREATE TABLE reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER, level INTEGER);
 CREATE TABLE invoice_seals (
     id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, kind TEXT NOT NULL,
     sealed_at INTEGER NOT NULL, content_hash TEXT NOT NULL, prev_hash TEXT NOT NULL UNIQUE, hash TEXT NOT NULL UNIQUE
@@ -549,7 +550,7 @@ class TestDraftDueDate:
         }
         settings = {"default_payment_terms_days": 14, "is_kleinunternehmer": 0}
         totals = {"subtotal": 100, "vatAmount": 19, "total": 119}
-        invoice_id = cli.insert_draft_invoice(con, args, customer, settings, totals, False)
+        invoice_id = cli.insert_draft_invoice(con, args, customer, settings, totals, False, terms_text=None)
         assert row_of(con, invoice_id)["due_date"] == local_timestamp(2026, 4, 3)
 
 
@@ -558,7 +559,7 @@ class TestInvoiceListYear:
         shortly_after_local_new_year = local_timestamp(2026, 1, 1, hour=0) + 30 * 60
         insert_invoice(con, status="sent", number="RE-2026-0001", issue_date=shortly_after_local_new_year)
         monkeypatch.setattr(cli, "connect", lambda: SharedConnection(con))
-        cli.cmd_invoice_list(SimpleNamespace(status=None, year=2026))
+        cli.cmd_invoice_list(SimpleNamespace(status=None, year=2026, overdue=False))
         assert "RE-2026-0001" in capsys.readouterr().out
 
 

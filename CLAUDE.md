@@ -60,7 +60,7 @@ Eine neue Migration `000N_<name>.sql` heißt **immer vier Stellen gleichzeitig a
 Abrechnung legt zuerst den Rechnungsentwurf an und beansprucht die Zeiteinträge dann per **bedingtem UPDATE** (`invoice_id IS NULL`), damit ein Eintrag nicht doppelt abgerechnet wird. Einträge werden nur frei, wenn der Entwurf gelöscht bzw. verworfen wird; ein verworfener Entwurf lässt sich nicht wieder öffnen.
 
 ## CLI
-Spiegelt App-Logik aus `invoices.ts` (DRAFT-Platzhalter, lazy Numbering, Per-Line-Rundung, Payment-Protokoll, PDF-Versionierung, Siegel, XRechnung-Preflight, Sidecar-RPC). **Bei Logik-Änderungen beide Stellen anfassen.**
+Spiegelt App-Logik aus `invoices.ts` (DRAFT-Platzhalter, lazy Numbering, Per-Line-Rundung, Payment-Protokoll, PDF-Versionierung, Siegel, XRechnung-Preflight, Sidecar-RPC) sowie `offers.ts`/`reminders.ts`/`numbering.ts` (Angebote, Mahnungen). **Bei Logik-Änderungen beide Stellen anfassen.** `EXPECTED_SCHEMA` in `cli/zettel.py` bei jeder Migration mitziehen (fünfter Sync-Punkt, ein Test prüft es); die CLI bricht sonst bei jedem Befehl ab. `*:create` nimmt `--idempotency-key` (Schlüsseldatei `cli-idempotency.json` neben der DB, nicht in der DB), `--json` gibt `{ok,…}` aus.
 
 ## ZUGFeRD / EN-16931 Gotchas
 - **BR-CO-26 + Kleinunternehmer:** Fehlt `company.vatId`, emittiert `zugferd-en16931.xml.j2` `<ram:ID>{{ taxNumber }}</ram:ID>` (BT-29) als Fallback **vor** `<ram:Name>` (XSD-Reihenfolge!). Die FC-`SpecifiedTaxRegistration` bleibt zusätzlich (B2B-Portale erwarten sie). Conditional nicht entfernen.
