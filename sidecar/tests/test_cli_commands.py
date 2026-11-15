@@ -75,9 +75,12 @@ class Env:
         finally:
             con.close()
 
-    def run(self, *args, ok: bool = True) -> dict:
-        proc = subprocess.run([sys.executable, str(CLI_PATH), *args, "--json"], env=self.env,
+    def run_text(self, *args) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, str(CLI_PATH), *args], env=self.env,
                               capture_output=True, encoding="utf-8")
+
+    def run(self, *args, ok: bool = True) -> dict:
+        proc = self.run_text(*args, "--json")
         out = json.loads(proc.stdout)
         assert out["ok"] is ok, proc.stdout + proc.stderr
         assert proc.returncode == (0 if ok else 1)
@@ -131,6 +134,18 @@ def test_json_output_is_utf8_whatever_the_code_page_of_the_pipe(env):
     assert created["name"] == name_outside_windows_1252
     missing = env.run("offer:create", "--customer", "Łódź AG", "--items", "X|1|Std|100|19", ok=False)["error"]
     assert "Kunde nicht gefunden: Łódź AG" in missing
+
+
+def test_redirected_text_output_and_error_messages_are_utf8(env):
+    name_outside_windows_1252 = "Żółć → GmbH"
+
+    created = env.run_text("customer:create", "--name", name_outside_windows_1252)
+    failed = env.run_text("offer:create", "--customer", "Łódź AG", "--items", "X|1|Std|100|19")
+
+    assert name_outside_windows_1252 in created.stdout
+    assert (failed.returncode, failed.stderr.strip()) == (
+        1, "Kunde nicht gefunden: Łódź AG (siehe 'zettel-cli customers')",
+    )
 
 
 def test_converted_offer_with_skonto_gets_no_payment_terms_text(env):

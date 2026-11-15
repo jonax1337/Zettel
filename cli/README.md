@@ -42,7 +42,10 @@ python cli/zettel.py --version                       # erwartetes DB-Schema
 
 `--json` (vor oder nach dem Befehl) gibt genau ein Objekt auf stdout aus:
 `{"ok": true, ...}` bzw. `{"ok": false, "error": "..."}` mit Exit-Code 1. Beträge sind Cent-Integer
-(`*Cent`), Daten ISO `YYYY-MM-DD`. Die JSON-Ausgabe ist immer UTF-8, auch bei umgeleitetem stdout unter Windows.
+(`*Cent`), Daten ISO `YYYY-MM-DD`.
+
+Umgeleitete Ausgabe (Pipe, Datei) ist immer UTF-8, mit und ohne `--json` und auch unter Windows; das gilt
+ebenso für Fehlermeldungen auf stderr.
 
 Alle `*:create`-Befehle akzeptieren `--idempotency-key <String>`. Derselbe Schlüssel (pro DB und Typ) legt nichts
 neu an und liefert den vorhandenen Datensatz (`"reused": true`). Die Schlüssel stehen in
@@ -91,13 +94,16 @@ Der CLI repliziert bewusst die App-Logik aus `src/lib/db/{invoices,offers,remind
   Skonto-Betrag wird kaufmännisch gerundet (half-up); Jahresfilter/-statistik gruppieren nach lokalem Jahr
 - **PDF-Versionierung**: existierendes PDF wird vor Regeneration nach
   `Versionen/<stem>__<mtime>.pdf` verschoben (wie `archive_pdf_version`); ein
-  bisher in einem anderen Ordner gespeichertes PDF wandert samt Versionen mit
+  bisher in einem anderen Ordner gespeichertes PDF wandert samt Versionen mit.
+  Scheitert das Rendern, kommt das verschobene PDF zurück an seinen Platz (wie `restore_pdf_version`)
 - **PDF-Validierung**: der CLI validiert nicht (KoSIT läuft über die App); ein neu
   erzeugtes PDF setzt `last_validation_*` zurück, statt den Status des alten PDFs stehen zu lassen
 - **Parität**: `sidecar/tests/fixtures/invoice-parity.json` (Summen, Nummern, EUR-Gegenwert,
   Zahlungsziel-Text) prüfen Vitest (`src/lib/utils/invoice-parity.test.ts`) und Pytest
   (`sidecar/tests/test_cli_parity.py`) gemeinsam
-- **Sidecar**: JSON-RPC über stdin/stdout, Dev-Venv oder `ZETTEL_SIDECAR`-Binary
+- **Sidecar**: JSON-RPC über stdin/stdout (UTF-8). Gesucht wird in dieser Reihenfolge: `ZETTEL_SIDECAR`,
+  installierte App, `sidecar/.venv` im Repo. `ZETTEL_SIDECAR` nimmt das Sidecar-Binary oder einen
+  Python-Interpreter (Dateiname beginnt mit `python`), der dann `sidecar/main.py` ausführt
 
 Bei Änderungen an der App-Logik (Migrationen, Payload-Format) müssen beide
 Stellen angefasst werden.

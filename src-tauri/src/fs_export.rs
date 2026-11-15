@@ -121,6 +121,14 @@ fn archive_pdf(src: &Path) -> Result<Option<PathBuf>, String> {
     Ok(Some(destination))
 }
 
+/// Puts an archived PDF back in place after the generation that was to
+/// replace it failed, so the path the document stores keeps pointing at a
+/// file. Whatever the failed generation left at `path` is replaced.
+#[tauri::command]
+pub async fn restore_pdf_version(archived: String, path: String) -> Result<(), String> {
+    move_file(Path::new(&archived), Path::new(&path)).map_err(|e| e.to_string())
+}
+
 /// Moves `previous` and its archived versions into the `Versionen/` folder
 /// next to `target`, named after `target` and keeping their mtime suffix.
 /// Every file is attempted; the ones that fail stay where they are.
@@ -359,6 +367,26 @@ mod tests {
         let second = archive_pdf(&pdf).unwrap().unwrap();
         assert_ne!(first, second);
         assert_eq!(fs::read(&second).unwrap(), b"v2");
+    }
+
+    #[test]
+    fn restore_puts_the_archived_pdf_back_over_what_a_failed_generation_left() {
+        let dir = TempDir::new("restore");
+        let pdf = dir.path().join("RE-1.pdf");
+        fs::write(&pdf, b"issued").unwrap();
+        let archived = archive_pdf(&pdf).unwrap().unwrap();
+        fs::write(&pdf, b"half written").unwrap();
+
+        tauri::async_runtime::block_on(restore_pdf_version(
+            path_string(&archived),
+            path_string(&pdf),
+        ))
+        .unwrap();
+
+        assert_eq!(fs::read(&pdf).unwrap(), b"issued");
+        let versions = pdf_versions(&pdf).unwrap();
+        assert_eq!(versions.len(), 1);
+        assert!(versions[0].current);
     }
 
     #[test]
