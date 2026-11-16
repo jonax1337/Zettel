@@ -24,7 +24,7 @@
     "@tauri-apps/plugin-process": "^2.4.0",
     "@tauri-apps/plugin-sql": "^2.5.0",
     "@tauri-apps/plugin-updater": "^2.13.1",
-    "bits-ui": "^2.19.3",
+    "bits-ui": "^2.21.0",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.3",
     "svelte-spa-router": "^5.1.1",
