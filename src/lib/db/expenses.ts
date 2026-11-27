@@ -238,9 +238,9 @@ export async function createExpense(
 export async function updateExpense(id: number, input: ExpenseFormInput): Promise<void> {
   assertQuantities(input.items);
   const existing = await getExpense(id);
-  if (!existing) throw new Error(`Eingangsrechnung ${id} nicht gefunden.`);
+  if (!existing) throw new Error(`Ausgabe ${id} nicht gefunden.`);
   if (existing.expense.status === "paid" || existing.expense.status === "cancelled") {
-    throw new Error("Bezahlte oder stornierte Eingangsrechnungen sind unveränderlich.");
+    throw new Error("Bezahlte oder stornierte Ausgaben sind unveränderlich.");
   }
   const isReverseCharge = input.reverseChargeType !== "none";
   const totals = computeTotals(input.items, { isReverseCharge });
@@ -281,7 +281,7 @@ export async function deleteExpense(id: number): Promise<void> {
   const existing = await getExpense(id);
   if (!existing) return;
   if (existing.expense.status === "paid") {
-    throw new Error("Bezahlte Eingangsrechnungen können nicht gelöscht werden — bitte stornieren.");
+    throw new Error("Bezahlte Ausgaben können nicht gelöscht werden — bitte stornieren.");
   }
   // expense_items has no FK cascade to expenses.
   await execute("DELETE FROM expense_items WHERE expense_id = ?", [id]);

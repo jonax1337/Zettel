@@ -10,7 +10,7 @@ const CUSTOMER_REFERENCES: readonly Reference[] = [
 ];
 
 const VENDOR_REFERENCES: readonly Reference[] = [
-  { table: "expenses", column: "vendor_id", one: "Eingangsrechnung", many: "Eingangsrechnungen" },
+  { table: "expenses", column: "vendor_id", one: "Ausgabe", many: "Ausgaben" },
 ];
 
 export type ReferenceCount = { one: string; many: string; count: number };

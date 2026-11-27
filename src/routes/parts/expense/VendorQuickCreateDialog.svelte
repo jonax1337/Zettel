@@ -55,7 +55,7 @@
 <Dialog
   bind:open
   title="Lieferant anlegen"
-  description="Die Eingangsrechnung bleibt dabei unverändert; der neue Lieferant wird danach ausgewählt."
+  description="Die Ausgabe bleibt dabei unverändert; der neue Lieferant wird danach ausgewählt."
 >
   <div class="grid grid-cols-3 gap-3">
     <div class="col-span-3 flex flex-col gap-1.5">

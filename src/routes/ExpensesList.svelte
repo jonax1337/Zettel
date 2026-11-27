@@ -38,6 +38,8 @@
   import ListSummary from "./parts/list/ListSummary.svelte";
   import { expenseSummary } from "./parts/list/list-summary";
   import { EXPENSE_STATUS, EXPENSE_STATUS_FILTER_ORDER } from "./parts/expense/expense-status";
+  import PdfDropZone from "./parts/expense/PdfDropZone.svelte";
+  import { setPendingImport } from "./parts/expense/pending-import";
 
   const VENDOR_COUNTERPARTY = { label: "Lieferant", allLabel: "Alle Lieferanten" };
 
@@ -146,6 +148,15 @@
     </Button>
   {/snippet}
 </PageHeader>
+
+<PdfDropZone
+  importing={false}
+  class="mb-5"
+  onFile={(path) => {
+    setPendingImport(path);
+    push("/expenses/new");
+  }}
+/>
 
 <DocumentListFilters
   bind:status={f.status}

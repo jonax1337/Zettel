@@ -9,7 +9,7 @@ import type {
 import { nowUnix, toIsoDate } from "$lib/utils/date";
 import { computeLineTotal } from "$lib/utils/totals";
 import { DEFAULT_UNIT } from "$lib/utils/units";
-import { centsToPriceText } from "../entity/format";
+import { centsToPriceText, commitPriceText } from "../entity/format";
 import { STANDARD_VAT_RATE } from "$lib/utils/vat";
 
 type ReverseChargeType = Expense["reverseChargeType"];
@@ -52,6 +52,14 @@ export function emptyItemRow(overrides: Partial<ExpenseItemRow> = {}): ExpenseIt
     priceText: "",
     ...overrides,
   };
+}
+
+/**
+ * The price field commits on blur only; Enter submits first, so pending text must be
+ * parsed before the form is validated or saved.
+ */
+export function commitPendingPrices(items: ExpenseItemRow[]): void {
+  for (const item of items) commitPriceText(item);
 }
 
 export function itemRowFromStored(item: StoredExpenseItem): ExpenseItemRow {
@@ -195,8 +203,8 @@ export function applyTextExtract(
     ? data.totalCents
     : Math.round(data.totalCents / (1 + vatRate / 100));
   onlyItem.description = data.invoiceNumber
-    ? `Eingangsrechnung ${data.invoiceNumber}`
-    : "Eingangsrechnung (heuristisch)";
+    ? `Rechnung ${data.invoiceNumber}`
+    : "Rechnung (heuristisch)";
   onlyItem.quantity = 1;
   onlyItem.unit = LUMP_SUM_UNIT;
   onlyItem.vatRate = vatRate;

@@ -93,7 +93,7 @@ function matchByOpenBalance(booking: Booking, invoices: InvoiceListRow[]): Match
     .map((invoice): MatchCandidate => ({
       invoice,
       confidence: "medium",
-      reason: "Betrag matcht offenen Saldo exakt",
+      reason: "Betrag entspricht genau dem offenen Saldo",
     }));
 }
 
