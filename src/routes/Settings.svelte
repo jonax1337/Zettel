@@ -49,8 +49,8 @@
       href: "/settings/data",
       icon: Database,
       title: "Daten",
-      description: "Backup, Wiederherstellung und Sandbox-Modus.",
-      items: ["Backup", "Wiederherstellung", "Sandbox"],
+      description: "Backup, Wiederherstellung, Integritätsprüfung, Sandbox-Modus und Kommandozeile.",
+      items: ["Backup", "Wiederherstellung", "Integritätsprüfung", "Sandbox", "Kommandozeile"],
     },
     {
       href: "/settings/advanced",

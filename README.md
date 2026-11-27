@@ -234,7 +234,7 @@ pnpm tauri:dev
 ```bash
 tools/download-validator.sh   # KoSIT validator.jar + XRechnung-Scenarios
 tools/build-jre.sh            # per jlink minimierte JRE nach tools/jre/
-pnpm tauri:build              # baut vorher den Sidecar neu (scripts/build-sidecar.mjs)
+pnpm tauri:build              # baut vorher Sidecar und CLI neu (scripts/build-bundled-python.mjs)
 ```
 
 Vollständige Plattform-Voraussetzungen (GTK3-Runtime auf Windows, Tauri-System-Deps, Python 3.12) und Konventionen: [`CONTRIBUTING.md`](./CONTRIBUTING.md).
