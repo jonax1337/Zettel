@@ -41,6 +41,7 @@ Bitte enthalten:
 - Restore-Pfad (`src-tauri/src/backup.rs`, insbesondere staged `pending_restore/`)
 - Mail-Übergabe (`src-tauri/src/mail.rs`): Simple-MAPI-FFI unter Windows und die Argumente an `osascript` (macOS) bzw. `xdg-email` (Linux) — etwa Argument-Injection über Empfänger, Betreff oder Pfad, oder ein Anhang außerhalb des Dokumente-Ordners
 - E-Rechnungs-Validierung (`src-tauri/src/validator.rs`): der Java-Subprozess (KoSIT-Validator) und das Parsen seines XML-Reports
+- PDF-Vorschau (`src-tauri/src/fs_export.rs`): Dateien im Cache-Ordner der App, Löschen beim Start und Beenden, `open_pdf_preview` darf nur Vorschaudateien öffnen, und die Vorschau darf nichts in die Datenbank oder in den Dokumente-Root schreiben
 - Änderungsprotokoll und Rechnungssiegel (`audit_log`, `invoice_seals`, Migration 0029 und `src/lib/db/seals.ts`): ein Weg, sie über die App zu ändern oder zu löschen, oder die Integritätsprüfung zu umgehen, ist ein Security-Bug
 
 ## Out of Scope

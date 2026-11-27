@@ -43,7 +43,7 @@ Rechnungen lassen sich zusätzlich als **XRechnung 3.0 (CII)** exportieren — a
 Was Zettel dazu bietet:
 
 - **Ausgang:** ZUGFeRD/Factur-X (PDF/A-3 mit eingebettetem XML) im Profil EN 16931 sowie XRechnung (XML); beide prüft der gebündelte Validator. BASIC und EXTENDED bietet Zettel zusätzlich an, prüft sie aber nicht (siehe oben); ob sie bei deinem Empfänger als E-Rechnung gelten, klärst du mit dem Steuerberater. MINIMUM und BASIC WL bietet Zettel nicht an.
-- **Eingang:** Zettel liest eingehende ZUGFeRD-/Factur-X-PDFs aus (Eingangsrechnungen → Drop-Zone). Reine XML-Dateien (z.B. XRechnung) lassen sich mit „E-Rechnung validieren" prüfen, aber nicht als Eingangsrechnung importieren. PDFs ohne XML liest Zettel nur über eine Text-Heuristik als Vorschlag; Scans werden nicht erkannt.
+- **Eingang:** Zettel liest eingehende ZUGFeRD-/Factur-X-PDFs aus (Ausgaben → Drop-Zone). Reine XML-Dateien (z.B. XRechnung) lassen sich unter Auswertungen → „E-Rechnung prüfen" prüfen, aber nicht als Ausgabe importieren. PDFs ohne XML liest Zettel nur über eine Text-Heuristik als Vorschlag; Scans werden nicht erkannt.
 - **Ablage:** Zettel kopiert das importierte Original-PDF (mit dem eingebetteten XML) nach `Eingangsrechnungen/<Lieferant>/`; maßgeblich ist das Original, nicht die erfassten Felder. Wie lange und in welcher Form du empfangene E-Rechnungen aufbewahren musst, klärst du mit dem Steuerberater.
 
 ## GoBD — Grenzen, die du kennen musst
@@ -55,8 +55,8 @@ Die [Grundsätze zur ordnungsmäßigen Führung und Aufbewahrung von Büchern, A
 - Erzeugte Rechnungs-PDFs sind durch das eingebettete ZUGFeRD-XML inhaltlich identisch maschinen- und menschen-lesbar
 - **Änderungsprotokoll:** Datenbank-Trigger schreiben jede Änderung (Anlegen, Ändern, Löschen) an Rechnungen, Positionen, Zahlungen, Mahnungen, Ausgaben, Kunden, Lieferanten und Einstellungen mit alten und neuen Werten in die Tabelle `audit_log`. Die Tabelle ist append-only: Trigger verhindern das Ändern und Löschen von Zeilen, auch für Änderungen über die CLI. „Daten löschen" entfernt das Protokoll nicht.
 - **Rechnungssiegel:** Beim Ausstellen (und beim bewussten Zurücksetzen auf Entwurf) hängt Zettel ein Siegel an eine SHA-256-Hash-Kette über den Rechnungsinhalt (`invoice_seals`, ebenfalls append-only). Die Kette macht Änderungen sichtbar, die an ihr vorbei erfolgen; gegen gezielte Manipulation der Datenbank schützt sie nicht (siehe Tabelle unten).
-- **Integritätsprüfung:** Einstellungen → Daten → „Integritätsprüfung" vergleicht jede ausgestellte Rechnung mit ihrem Siegel und meldet unterbrochene Ketten, geänderte oder gelöschte Rechnungen. Das Änderungsprotokoll lässt sich als CSV exportieren.
-- Im normalen Ablauf lassen sich Rechnungen mit vergebener Nummer nicht löschen und nicht ohne Stornorechnung stornieren; nur Entwürfe ohne Nummer können verworfen werden. Eine Ausnahme ist „Daten löschen“ (Einstellungen → Erweitert): Es löscht auch ausgestellte Rechnungen; Änderungsprotokoll und Siegel bleiben, die Integritätsprüfung meldet die Rechnungen dann als gelöscht.
+- **Integritätsprüfung:** Einstellungen → Daten und Backup → „Integritätsprüfung (GoBD)" vergleicht jede ausgestellte Rechnung mit ihrem Siegel und meldet unterbrochene Ketten, geänderte oder gelöschte Rechnungen. Das Änderungsprotokoll lässt sich als CSV exportieren.
+- Im normalen Ablauf lassen sich Rechnungen mit vergebener Nummer nicht löschen und nicht ohne Stornorechnung stornieren; nur Entwürfe ohne Nummer können verworfen werden. Eine Ausnahme ist „Daten löschen“ (Einstellungen → Gefahrenbereich): Es löscht auch ausgestellte Rechnungen; Änderungsprotokoll und Siegel bleiben, die Integritätsprüfung meldet die Rechnungen dann als gelöscht.
 - Stornos werden als Credit Note **zusätzlich** angelegt, nicht als Löschung der Originalrechnung — die ursprüngliche Rechnungsnummer bleibt belegt
 - Rechnungs-Nummern sind lückenlos: Drafts bekommen einen `DRAFT-…`-Platzhalter, der echte Nummern-Counter wird erst beim Ausstellen gezogen (siehe `displayInvoiceNumber()`). Gelöschte Drafts erzeugen keine Lücke.
 - DATEV-Export (Format 700) erlaubt Übergabe an den Steuerberater in branchenüblichem Format
@@ -97,6 +97,8 @@ Zettel legt PDFs (`Rechnungen/`, `Angebote/`, `Mahnungen/`, `Eingangsrechnungen/
 
 `<Dokumente>` ist der Ordner „Dokumente" des Betriebssystems (unter Windows der bekannte Ordner „Dokumente", er folgt also einer Umleitung nach OneDrive). Die Datenbank liegt davon getrennt im App-Daten-Ordner (siehe [`PRIVACY.md`](./PRIVACY.md)).
 
+**PDF-Vorschau von Entwürfen:** „PDF-Vorschau“ bei Rechnungs-, Stornorechnungs- und Angebotsentwürfen erzeugt eine Datei im Cache-Ordner der App (Windows `%LOCALAPPDATA%\digital.laux.zettel\pdf-preview`, Pfade für macOS und Linux in [`PRIVACY.md`](./PRIVACY.md)), nicht im Dokumente-Root. Sie ist **kein Beleg im Sinne der GoBD**: kein eingebettetes XML, kein PDF/A, kein Zahlungs-QR-Code, jede Seite trägt „ENTWURF“, es wird keine Nummer vergeben, nichts archiviert oder versioniert, und weder das Änderungsprotokoll noch die Siegelkette erfahren davon. Zettel überschreibt die Datei je Dokument und löscht alle Vorschauen beim Start und beim Beenden der App; verschickst oder bewahrst du eine Vorschau selbst auf, ist das deine Entscheidung und kein Zettel-Beleg.
+
 ## Mail-Übergabe
 
 „Per E-Mail senden" bei Rechnungen, Angeboten und Mahnungen übergibt PDF und Empfänger an dein **lokales Mail-Programm** (Windows: Simple MAPI, macOS: Mail.app, Linux: `xdg-email`; schlägt das fehl, öffnet Zettel einen `mailto:`-Link ohne Anhang und zeigt den PDF-Ordner). Es gibt **keinen SMTP-Versand** durch Zettel und **keine Kopie der versendeten E-Mail** in Zettel.
@@ -105,7 +107,7 @@ Das hat eine Konsequenz für die Aufbewahrung: Die versendete E-Mail selbst (Ges
 
 ## § 14 UStG — Rechnungs-Pflichtangaben
 
-Zettel führt die Pflichtangaben nach § 14 Abs. 4 UStG. Du bist verantwortlich dafür, dass die Felder in den **Einstellungen → Unternehmen** korrekt befüllt sind:
+Zettel führt die Pflichtangaben nach § 14 Abs. 4 UStG. Du bist verantwortlich dafür, dass die Felder unter **Einstellungen → Unternehmen** (Name, Anschrift) und **Einstellungen → Steuern** (Steuernummer, USt-IdNr.) korrekt befüllt sind:
 
 - Vollständiger Name und Anschrift (Aussteller + Empfänger)
 - Steuernummer **oder** USt-IdNr. (für Kleinunternehmer reicht die Steuernummer)
@@ -123,7 +125,7 @@ Zettel führt die Pflichtangaben nach § 14 Abs. 4 UStG. Du bist verantwortlich 
 
 ## § 19 UStG — Kleinunternehmer
 
-Zettel unterstützt den Kleinunternehmer-Modus als First-Class-Feature. Der Schwellenwert (seit 2025: **25.000 € Vorjahr / 100.000 € lfd. Jahr** statt zuvor 22.000 / 50.000 €) wird im Dashboard angezeigt — die Beobachtung des Schwellenwerts liegt jedoch bei dir. Bei Überschreiten musst du in das Regelbesteuerungs-Verfahren wechseln und u.a. die Umsatzsteuer-Voranmeldung abgeben.
+Zettel unterstützt den Kleinunternehmer-Modus als First-Class-Feature. Der Schwellenwert (seit 2025: **25.000 € Vorjahr / 100.000 € lfd. Jahr** statt zuvor 22.000 / 50.000 €) wird von Zettel weder angezeigt noch überwacht — die Beobachtung des Schwellenwerts liegt bei dir. Bei Überschreiten musst du in das Regelbesteuerungs-Verfahren wechseln und u.a. die Umsatzsteuer-Voranmeldung abgeben.
 
 ## Umsatzsteuer-Voranmeldung (UStVA)
 
@@ -136,12 +138,12 @@ Auswertung → „Anlage EÜR" fasst Betriebseinnahmen und Betriebsausgaben eine
 - **Zahlungsdatum (Zufluss/Abfluss):** Maßgeblich ist, wann Geld fließt, nicht das Rechnungsdatum. Eine Rechnung zählt anteilig in den Jahren, in denen Zahlungen darauf erfasst sind. Stornorechnungen mindern die Einnahmen erst, wenn die Erstattung als Zahlung auf der Stornorechnung erfasst ist.
 - **Nicht enthalten:** AfA, Anlagevermögen, private Nutzung, USt-Zahlungen und -Erstattungen ans Finanzamt sowie Sonderfälle. Diese Posten trägst du selbst nach bzw. klärst sie mit dem Steuerberater.
 - **Brutto oder netto:** Ob Ausgaben brutto (Kleinunternehmer) oder netto mit Vorsteuer verbucht werden, richtet sich nach der **aktuellen** Einstellung „Kleinunternehmer", nicht nach dem Rechnungsdatum.
-- **Zeilennummern:** hinterlegt für die Formulare **2025** und **2026**; für andere Jahre zeigt Zettel das nächstliegende Formular und weist darauf hin. Welche Ausgabenkategorie in welcher Zeile erscheint, legst du unter Einstellungen → Dokumente → „Anlage EÜR: Ausgabenkategorien" fest; Ausgaben ohne Kategorie landen in „Übrige unbeschränkt abziehbare Betriebsausgaben".
+- **Zeilennummern:** hinterlegt für die Formulare **2025** und **2026**; für andere Jahre zeigt Zettel das nächstliegende Formular und weist darauf hin. Welche Ausgabenkategorie in welcher Zeile erscheint, legst du unter Einstellungen → Steuern → „Ausgabenkategorien für die Anlage EÜR" fest; Ausgaben ohne Kategorie landen in „Übrige unbeschränkt abziehbare Betriebsausgaben".
 - **Export:** nur als CSV, kein PDF.
 
 ## Steuer-Rücklage
 
-Die Berechnung im Dashboard nutzt den **§ 32a EStG-Tarif für VZ 2024, 2025 und 2026** (BMF-Bekanntmachung, hartcodiert). Sie ist eine **Schätzung**, kein Steuerbescheid:
+Die Berechnung der Steuer-Rücklage (Auswertungen → Steuer-Rücklage, Kurzfassung auf der Übersicht) nutzt den **§ 32a EStG-Tarif für VZ 2024, 2025 und 2026** (BMF-Bekanntmachung, hartcodiert). Sie ist eine **Schätzung**, kein Steuerbescheid:
 
 - Berücksichtigt: ESt, Soli (Milderungszone), Kirchensteuer 8/9 %, GewSt mit § 35-Anrechnung, Splittingtarif bei Verheirateten
 - **Nicht berücksichtigt:** Werbungskosten, Sonderausgaben, außergewöhnliche Belastungen, Verlustvorträge, individuelle Freibeträge, Kirchensteuer-Sonderausgaben-Abzug, Nebenberuf-Spezialfälle jenseits einfacher marginaler ESt

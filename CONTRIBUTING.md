@@ -39,7 +39,7 @@ Beim ersten Start wird die SQLite-DB im OS-AppData-Verzeichnis angelegt (`%APPDA
 
 ### Sandbox-Modus
 
-Zum Ausprobieren ohne Echtdaten: in Settings → Daten den Sandbox-Modus aktivieren. Eine separate DB (`zettel-sandbox.db`) wird verwendet, ein Banner ist in der App sichtbar.
+Zum Ausprobieren ohne Echtdaten: unter Einstellungen → Daten und Backup den Sandbox-Modus aktivieren. Eine separate DB (`zettel-sandbox.db`) wird verwendet, ein Banner ist in der App sichtbar.
 
 ## Architektur in 60 Sekunden
 

@@ -38,12 +38,12 @@ ZUGFeRD- / Factur-X-konforme PDF/A-3 mit eingebettetem EN-16931-XML und XRechnun
 -->
 
 <p align="center">
-  <img src="./docs/screenshots/zettel-demo.gif" alt="Rundgang durch Zettel: Dashboard, Rechnungen, ZUGFeRD-Validierung, PDF, Eingangsrechnungen und UStVA" width="960" />
+  <img src="./docs/screenshots/zettel-demo.gif" alt="Rundgang durch Zettel: Übersicht, Rechnungen, ZUGFeRD-Validierung, PDF, Ausgaben und UStVA" width="960" />
 </p>
 
 <table>
   <tr>
-    <td align="center"><a href="./docs/screenshots/dashboard.png"><img src="./docs/screenshots/dashboard.png" alt="Dashboard mit Umsatz, Aufwand, offenen Posten und Top-Kunden" /></a><br /><sub>Dashboard</sub></td>
+    <td align="center"><a href="./docs/screenshots/dashboard.png"><img src="./docs/screenshots/dashboard.png" alt="Übersicht mit Umsatz, Aufwand, offenen Posten und Top-Kunden" /></a><br /><sub>Übersicht</sub></td>
     <td align="center"><a href="./docs/screenshots/invoices.png"><img src="./docs/screenshots/invoices.png" alt="Rechnungsliste mit Status und Filtern" /></a><br /><sub>Rechnungen</sub></td>
   </tr>
   <tr>
@@ -51,7 +51,7 @@ ZUGFeRD- / Factur-X-konforme PDF/A-3 mit eingebettetem EN-16931-XML und XRechnun
     <td align="center"><a href="./docs/screenshots/pdf-preview.png"><img src="./docs/screenshots/pdf-preview.png" alt="Erzeugtes PDF/A-3 mit Girocode, Factur-X-XML eingebettet" /></a><br /><sub>PDF/A-3 + ZUGFeRD</sub></td>
   </tr>
   <tr>
-    <td align="center"><a href="./docs/screenshots/expenses.png"><img src="./docs/screenshots/expenses.png" alt="Eingangsrechnungen mit Lieferanten und Status" /></a><br /><sub>Eingangsrechnungen</sub></td>
+    <td align="center"><a href="./docs/screenshots/expenses.png"><img src="./docs/screenshots/expenses.png" alt="Ausgaben mit Lieferanten und Status" /></a><br /><sub>Ausgaben</sub></td>
     <td align="center"><a href="./docs/screenshots/ustva.png"><img src="./docs/screenshots/ustva.png" alt="UStVA-Vorbereitung mit Kennzahlen pro Quartal" /></a><br /><sub>UStVA-Vorbereitung</sub></td>
   </tr>
 </table>
@@ -79,8 +79,8 @@ Zettel ist das, was dabei rausgekommen ist: ein kleines Desktop-Tool, das **loka
 - **Reverse-Charge** intra-EU (CategoryCode K) und Drittland (CategoryCode G) inkl. Pflicht-Hinweistexte
 - **Stornorechnungen** als first-class Credit-Notes mit korrektem CII-Schema
 - **XRechnung 3.0 (CII)** als eigene `.xml` für öffentliche Auftraggeber, mit **Leitweg-ID** am Kunden (als Käuferreferenz in die Rechnung übernommen) und Pflichtangaben-Prüfung vor dem Export; auch per CLI (`invoice:xrechnung`)
-- **E-Rechnung prüfen** (Sidebar „E-Rechnung validieren“): eingebauter KoSIT-Validator — erzeugte und eingehende Rechnungen (PDF oder XML) direkt in der App gegen die offiziellen XRechnung-Scenarios prüfen, mit Fundstellen-genauem Report (gebundelte JRE, kein System-Java nötig)
-- **Per E-Mail senden:** Rechnung, Angebot oder Mahnung wird samt PDF an dein Mail-Programm übergeben (Mail-Vorlagen in den Einstellungen); versendet wird dort, Zettel selbst baut keine Verbindung auf
+- **E-Rechnung prüfen** (Auswertungen → „E-Rechnung prüfen“): eingebauter KoSIT-Validator — erzeugte und eingehende Rechnungen (PDF oder XML) direkt in der App gegen die offiziellen XRechnung-Scenarios prüfen, mit Fundstellen-genauem Report (gebundelte JRE, kein System-Java nötig)
+- **Per E-Mail senden:** Rechnung, Angebot oder Mahnung wird samt PDF an dein Mail-Programm übergeben (Vorlagen unter Einstellungen → E-Mail-Vorlagen); versendet wird dort, Zettel selbst baut keine Verbindung auf
 - **IBAN-Prüfung:** IBANs werden normalisiert, in Vierergruppen angezeigt und bei ungültiger Prüfsumme markiert
 - Mehrere USt-Sätze pro Rechnung (0 %, 7 %, 19 %), Multi-Currency mit eingefrorenem EUR-Wert
 - Drei PDF-Themes (classic / modern / minimal) per CSS-Variablen
@@ -90,9 +90,11 @@ Zettel ist das, was dabei rausgekommen ist: ein kleines Desktop-Tool, das **loka
 - **Skonto** (Frühzahler-Rabatt) im XML als `#SKONTO#`-Zeile der Zahlungsbedingungen (BASIC, EN 16931, XRechnung), im Profil EXTENDED strukturiert als `ApplicableTradePaymentDiscountTerms`
 - **EPC-QR-Code (Girocode)** automatisch auf EUR-Rechnungen mit IBAN — Empfänger scannt mit Banking-App
 - **Angebote** als eigener Dokumententyp mit One-Click-Konvertierung zur Rechnung
+- **Beleg als Blatt** (mehrseitige Dokumente als ein durchgehendes Blatt; Seitenumbrüche zeigt das PDF): Rechnungs- und Angebotsseiten zeigen das Dokument selbst, aus denselben Vorlagen wie das PDF gerendert; die Editoren für Rechnungen, Angebote und wiederkehrende Rechnungen schreiben direkt auf dem Blatt
+- **PDF-Vorschau für Entwürfe:** Entwurfs-Rechnungen, Stornorechnungs- und Angebotsentwürfe lassen sich als PDF mit „ENTWURF“ auf jeder Seite ansehen, ohne dass etwas ausgestellt, nummeriert, versiegelt oder archiviert wird (kein XML, kein Zahlungs-QR-Code; die Datei liegt nur im Cache-Ordner der App)
 
 ### Buchhaltungs-Light
-- **Eingangsrechnungen** mit Drop-Zone für ZUGFeRD-PDFs (automatisches Parsing) und OCR-Light-Fallback (Text-Layer-Extraktion, kein Tesseract)
+- **Ausgaben** (Eingangsrechnungen) mit Drop-Zone für ZUGFeRD-PDFs (automatisches Parsing) und OCR-Light-Fallback (Text-Layer-Extraktion, kein Tesseract)
 - **Lieferanten-Verwaltung** mit USt-IdNr.-Matching beim Drop
 - **Kuratierte Ausgaben-Kategorien** mit SKR03- und SKR04-Konten-Mapping (Software, Hardware, Reise, …)
 - **Teilzahlungen** mit eigener Tabelle und automatischem `partial`-Status für teil-bezahlte Rechnungen
@@ -100,9 +102,9 @@ Zettel ist das, was dabei rausgekommen ist: ein kleines Desktop-Tool, das **loka
 - **DATEV-Export** (Format 700, SKR03/SKR04) — Erlöse, Aufwände und Stornos in einem Buchungsstapel
 - **UStVA-Vorbereitung** (Kennzahlen 81/86/41/21/66 pro Quartal, zum Abtippen)
 - **Anlage EÜR** nach Zahlungsdatum, sortiert nach den Zeilen des amtlichen Vordrucks (Formular 2025/2026), zum Abtippen in ELSTER; Export als CSV
-- **Zeiterfassung** mit Projekten je Kunde, Timer oder Handeingabe und Abrechnung der Zeiten als Rechnungsentwurf
-- **Mahnungen** als eigene Dokumentenklasse mit Nummernkreis `MA-…`, Eskalations-Strip pro Rechnung
-- **Bulk-Aktionen** in Rechnungen-, Angebote- und Eingangsrechnungen-Listen
+- **Zeiterfassung** mit Projekten je Kunde, Timer oder Handeingabe und Abrechnung der Zeiten als Rechnungsentwurf; „Offene Zeiten abrechnen“ rechnet alle noch nicht abgerechneten Einträge der aktuellen Ansicht in einem Schritt ab
+- **Mahnungen** als eigene Dokumentenklasse mit Nummernkreis `MA-…`, Eskalations-Strip pro Rechnung; Mahnungen und wiederkehrende Rechnungen sind Reiter im Bereich Rechnungen
+- **Bulk-Aktionen** in Rechnungen-, Angebote- und Ausgaben-Listen
 
 ### Steuer-Rücklage
 - § 32a EStG-Tarif für **VZ 2024, 2025 und 2026** hartcodiert aus amtlicher BMF-Bekanntmachung, 38 Testfälle
@@ -111,24 +113,25 @@ Zettel ist das, was dabei rausgekommen ist: ein kleines Desktop-Tool, das **loka
 - YTD-Modus vs. Hochrechnung; Quartals-Vorauszahlungen werden gegengerechnet
 - Nebenberuf: marginale ESt-Berechnung wenn `other_income_annual_cent` gesetzt ist
 
-### Dashboard & Workflow
+### Übersicht & Workflow
+- **Übersicht** mit Aufgabenliste (überfällige Rechnungen, fällige wiederkehrende Rechnungen, ablaufende Angebote, Wiedervorlagen, nicht abgerechnete Zeiten, Entwürfe) und dem Gewinn des Zeitraums mit Vorjahresvergleich
 - Zeitraum-Switcher (Jahr / Quartal / Monat / Custom) mit YoY-Kontext
 - **Globale Suche** (`Cmd/Ctrl+K`) über alle Entities inkl. Item-Beschreibungen
-- **Liquiditäts-Vorschau** über die nächsten 30 Tage (offene Posten + überfällige + wiederkehrend)
+- **Erwartete Eingänge** der nächsten 30 Tage, pro Woche dargestellt (offene Posten + überfällige + wiederkehrend)
 - **Wiedervorlage**-Liste pro Kunde/Rechnung mit `follow_up_date`
 - **Onboarding-Wizard** beim ersten Start, sortierbare Tabellen in allen Listen
 - Interne Notizen (nicht auf der PDF)
 - **Wiederkehrende Rechnungen** (monatlich / quartalsweise / jährlich) — explizit per Klick erzeugen, kein stilles Background-Cron
 
 ### Daten gehören dir
-- **GoBD-Unterstützung:** unveränderliches **Änderungsprotokoll** (Datenbank-Trigger, alte und neue Werte), **Rechnungssiegel** als SHA-256-Hash-Kette und **Integritätsprüfung** unter Einstellungen → Daten; Rechnungen mit Nummer lassen sich nur per Stornorechnung korrigieren. Keine Zertifizierung und keine qualifizierte Signatur — Grenzen in [`COMPLIANCE.md`](./COMPLIANCE.md), Vorlage in [`docs/verfahrensdokumentation.md`](./docs/verfahrensdokumentation.md)
+- **GoBD-Unterstützung:** unveränderliches **Änderungsprotokoll** (Datenbank-Trigger, alte und neue Werte), **Rechnungssiegel** als SHA-256-Hash-Kette und **Integritätsprüfung** unter Einstellungen → Daten und Backup; Rechnungen mit Nummer lassen sich nur per Stornorechnung korrigieren. Keine Zertifizierung und keine qualifizierte Signatur — Grenzen in [`COMPLIANCE.md`](./COMPLIANCE.md), Vorlage in [`docs/verfahrensdokumentation.md`](./docs/verfahrensdokumentation.md)
 - **Backup** als verschlüsseltes ZIP (AES-256-GCM + Argon2id) oder unverschlüsselt
 - **Auto-Backup** mit konfigurierbarem Intervall (rotierender Wochen-Snapshot)
 - **Granularer Restore** (Kunden / Rechnungen+PDFs / Settings unabhängig)
 - **Sandbox-Modus** mit separater DB zum Ausprobieren
 - **Mandanten:** mehrere getrennte Datenbanken, wählbar unten links in der Sidebar
 - **Auto-Update** Ed25519-signiert via GitHub Releases, wahlweise im stabilen Kanal oder im **Beta-Kanal** (Release Candidates)
-- **Danger Zone** mit Auto-Backup vor jeder destruktiven Aktion
+- **Gefahrenbereich** (Einstellungen → Gefahrenbereich) mit Auto-Backup vor jeder destruktiven Aktion
 
 ## Install
 
@@ -150,19 +153,19 @@ sudo apt install libpango1.0-0 libcairo2 libgdk-pixbuf2.0-0
 brew install pango cairo gdk-pixbuf
 ```
 
-Auto-Update ist ab v0.4.3 aktiv. Ältere Installationen einmal manuell auf die aktuelle Version ziehen. Die Prüfung läuft automatisch kurz nach dem Start; in den Einstellungen wählst du zwischen stabilem Kanal und Beta-Kanal (Release Candidates). Details: [`PRIVACY.md`](./PRIVACY.md).
+Auto-Update ist ab v0.4.3 aktiv. Ältere Installationen einmal manuell auf die aktuelle Version ziehen. Die Prüfung läuft automatisch kurz nach dem Start; unter Einstellungen → Updates wählst du zwischen stabilem Kanal und Beta-Kanal (Release Candidates). Details: [`PRIVACY.md`](./PRIVACY.md).
 
 ## Quickstart
 
 Beim ersten Start führt der **Onboarding-Wizard** durch Firma, Steuer, Bank. Schließt du ihn einfach, erscheint er beim nächsten Start wieder, solange kein Firmenname gespeichert ist; „Nicht mehr anzeigen“ blendet ihn dauerhaft aus. Wer manuell loslegen will:
 
-1. **Einstellungen → Unternehmen** öffnen, Firmendaten + Steuernummer (bzw. USt-IdNr.) eintragen
-2. **Einstellungen → Steuerprofil** ausfüllen, damit das Dashboard die Steuer-Rücklage berechnen kann
+1. **Einstellungen → Unternehmen** öffnen, Firmendaten eintragen; die Steuernummer (bzw. USt-IdNr.) steht unter **Einstellungen → Steuern**
+2. **Einstellungen → Steuern** ausfüllen (Rechtsform, Kirchensteuer, Vorauszahlungen), damit die Steuer-Rücklage berechnet werden kann
 3. **Kunde** anlegen (`/customers/new`)
 4. **Neue Rechnung** → Kunde wählen → Positionen → speichern
 5. **PDF erzeugen** → `<Dokumente>/Zettel/Rechnungen/RE-2026-0001.pdf` (`<Dokumente>` ist der Ordner „Dokumente“ deines Betriebssystems; Sandbox und eigene Mandanten haben eigene Unterordner, siehe [`PRIVACY.md`](./PRIVACY.md))
 
-Für eingehende Rechnungen: `/expenses` öffnen, PDF in die Drop-Zone ziehen — ZUGFeRD-XML wird automatisch geparsed, Vendor via USt-IdNr. gematcht.
+Für eingehende Rechnungen: **Ausgaben** öffnen, PDF in die Drop-Zone ziehen — ZUGFeRD-XML wird automatisch geparsed, Vendor via USt-IdNr. gematcht.
 
 ## Was Zettel nicht ist
 
@@ -245,7 +248,7 @@ Geplant — siehe [Issues](https://github.com/jonax1337/zettel/issues) und [Disc
 
 - Englische UI (PDF auf Englisch existiert seit v0.16, die App-UI ist noch nur Deutsch)
 - AfA / Anlageverzeichnis (die Anlage EÜR enthält AfA und Anlagevermögen bislang nicht)
-- Eigene Ausgaben-Kategorien in den Settings anlegen und verwalten (Schema steht; in den Einstellungen lässt sich bisher nur die Anlage-EÜR-Zeile je Kategorie wählen)
+- Eigene Ausgaben-Kategorien in den Settings anlegen und verwalten (Schema steht; unter Einstellungen → Steuern lässt sich bisher nur die Anlage-EÜR-Zeile je Kategorie wählen)
 
 Was bereits drin ist: [`CHANGELOG.md`](./CHANGELOG.md).
 
