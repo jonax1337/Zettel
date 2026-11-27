@@ -203,9 +203,9 @@ describe("generateInvoiceFromRecurring", () => {
 
   it("releases the claim when the invoice cannot be created", async () => {
     execute.mockResolvedValue({ rowsAffected: 1 });
-    createInvoice.mockRejectedValueOnce(new Error("Customer 2 not found"));
+    createInvoice.mockRejectedValueOnce(new Error("Kunde 2 nicht gefunden."));
 
-    await expect(generateInvoiceFromRecurring(4)).rejects.toThrow("Customer 2 not found");
+    await expect(generateInvoiceFromRecurring(4)).rejects.toThrow("Kunde 2 nicht gefunden.");
 
     const [, releaseBinds] = execute.mock.calls[1];
     expect(releaseBinds.slice(0, 3)).toEqual([null, recurringRow.next_due_date, 4]);

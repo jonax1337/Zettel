@@ -96,11 +96,11 @@ export function buildInvoicePayload(opts: {
  */
 async function loadInvoiceForRendering(invoiceId: number): Promise<InvoiceWithItems> {
   let data = await getInvoice(invoiceId);
-  if (!data) throw new Error(`Invoice ${invoiceId} not found`);
+  if (!data) throw new Error(`Rechnung ${invoiceId} nicht gefunden.`);
   if (data.invoice.status === "draft" && isDraftNumber(data.invoice.number)) {
     await issueInvoice(invoiceId);
     data = await getInvoice(invoiceId);
-    if (!data) throw new Error(`Invoice ${invoiceId} not found after issue`);
+    if (!data) throw new Error(`Rechnung ${invoiceId} nach dem Ausstellen nicht gefunden.`);
   }
   return data;
 }
@@ -170,7 +170,7 @@ export async function previewInvoicePdf(invoiceId: number): Promise<SidecarRespo
   const blocked = companyIncompleteResponse(company);
   if (blocked) return blocked;
   const data = await getInvoice(invoiceId);
-  if (!data) throw new Error(`Invoice ${invoiceId} not found`);
+  if (!data) throw new Error(`Rechnung ${invoiceId} nicht gefunden.`);
   const { invoice, customer } = await invoiceAsShown(data.invoice);
   const payload = buildInvoicePayload({
     invoice,
@@ -194,7 +194,7 @@ export type XrechnungExport =
 export async function exportInvoiceXrechnung(invoiceId: number): Promise<XrechnungExport> {
   const company = await loadSettings();
   const data = await getInvoice(invoiceId);
-  if (!data) throw new Error(`Invoice ${invoiceId} not found`);
+  if (!data) throw new Error(`Rechnung ${invoiceId} nicht gefunden.`);
   const { invoice, items } = data;
   if (isDraftNumber(invoice.number)) {
     throw new Error("Entwürfe können nicht als XRechnung exportiert werden. Bitte die Rechnung erst ausstellen.");

@@ -121,7 +121,7 @@
       <FormSection title="Notiz">
         <FieldGrid>
           <PartyNotesField bind:value={form.notes} wide />
-          <Field label="Wiedervorlage am" hint="Optional, erinnert dich im Dashboard.">
+          <Field label="Wiedervorlage am" hint="Optional, erinnert dich in der Übersicht.">
             <DatePicker bind:value={followUpIso} />
           </Field>
         </FieldGrid>

@@ -74,7 +74,7 @@ export async function previewOfferPdf(offerId: number): Promise<SidecarResponse>
   const blocked = companyIncompleteResponse(company);
   if (blocked) return blocked;
   const data = await getOffer(offerId);
-  if (!data) throw new Error(`Offer ${offerId} not found`);
+  if (!data) throw new Error(`Angebot ${offerId} nicht gefunden.`);
   const payload = buildOfferPayload({
     offer: data.offer,
     items: data.items,
@@ -87,7 +87,7 @@ export async function previewOfferPdf(offerId: number): Promise<SidecarResponse>
 
 export async function generateOfferPdf(offerId: number): Promise<SidecarResponse> {
   const data = await getOffer(offerId);
-  if (!data) throw new Error(`Offer ${offerId} not found`);
+  if (!data) throw new Error(`Angebot ${offerId} nicht gefunden.`);
   const company = await loadSettings();
   const blocked = companyIncompleteResponse(company);
   if (blocked) return blocked;

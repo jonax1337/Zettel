@@ -126,7 +126,7 @@
         {#if results.length === 0}
           <div class="py-12 text-center text-sm text-muted-foreground">
             {query.trim() === ""
-              ? "Noch keine Katalog-Einträge. Lege welche unter Stammdaten → Katalog an."
+              ? "Noch keine Katalog-Einträge. Lege welche im Katalog an."
               : "Kein Treffer."}
           </div>
         {:else}
@@ -143,7 +143,7 @@
                 <div class="flex items-center gap-2">
                   <span class="font-medium truncate">{item.name}</span>
                   {#if item.tags}
-                    <span class="text-[10px] uppercase tracking-wider text-muted-foreground">{item.tags}</span>
+                    <span class="text-xs text-muted-foreground">{item.tags}</span>
                   {/if}
                 </div>
                 {#if descriptionFor(item)}

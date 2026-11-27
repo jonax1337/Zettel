@@ -319,7 +319,7 @@ export async function updateInvoice(
 ): Promise<void> {
   assertQuantities(input.items);
   const current = await findInvoice(id);
-  if (!current) throw new Error(`Invoice ${id} not found`);
+  if (!current) throw new Error(`Rechnung ${id} nicht gefunden.`);
   if (current.status !== "draft") {
     throw new Error("Nur Entwürfe können bearbeitet werden.");
   }

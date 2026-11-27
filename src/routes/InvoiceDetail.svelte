@@ -941,7 +941,7 @@
       : "Zahldatum für Statistik und DATEV-Export."}
     dateInputId="paid-date"
     dateLabel="Zahldatum"
-    hint="Standard ist heute. Bei Nacherfassung das echte Zahldatum eintragen — Dashboard und Monats-Charts hängen davon ab."
+    hint="Standard ist heute. Bei Nacherfassung das echte Zahldatum eintragen — Übersicht und Monatsdiagramme hängen davon ab."
     confirmLabel="Bestätigen"
     warning={dialogWarning}
     busy={actions.busy}

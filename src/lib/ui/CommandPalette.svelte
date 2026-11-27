@@ -279,7 +279,7 @@
           </div>
         {:else}
           {#each sections as section, si (section.key)}
-            <div class="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1.5">
+            <div class="px-2.5 pt-3 pb-1 text-xs font-bold text-muted-foreground flex items-center gap-1.5">
               {#if section.key === "recents"}
                 <History class="size-3" />
               {/if}

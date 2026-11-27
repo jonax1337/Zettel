@@ -42,7 +42,7 @@ export function restoreSealWarning({ sealsFromBackup, droppedLiveSeals }: Partia
     return {
       title: "Rechnungen ohne Siegel wiederhergestellt",
       description:
-        "Die Sicherung stammt aus einer Version ohne Rechnungssiegel, die bisherige Hash-Kette wurde durch ihren Stand ersetzt. Die wiederhergestellten Rechnungen werden beim nächsten Start neu versiegelt – bitte danach die Integritätsprüfung unter Einstellungen → Daten ausführen.",
+        "Die Sicherung stammt aus einer Version ohne Rechnungssiegel, die bisherige Hash-Kette wurde durch ihren Stand ersetzt. Die wiederhergestellten Rechnungen werden beim nächsten Start neu versiegelt – bitte danach die Integritätsprüfung unter Einstellungen → Daten und Backup ausführen.",
     };
   }
   if (droppedLiveSeals > 0) {

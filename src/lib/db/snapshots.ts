@@ -3,7 +3,7 @@ import type { CustomerSnapshot, VendorSnapshot } from "./schema";
 
 export async function buildCustomerSnapshot(customerId: number): Promise<CustomerSnapshot> {
   const c = await getCustomer(customerId);
-  if (!c) throw new Error(`Customer ${customerId} not found`);
+  if (!c) throw new Error(`Kunde ${customerId} nicht gefunden.`);
   return {
     customerNumber: c.customerNumber,
     name: c.name,
@@ -19,7 +19,7 @@ export async function buildCustomerSnapshot(customerId: number): Promise<Custome
 
 export async function buildVendorSnapshot(vendorId: number): Promise<VendorSnapshot> {
   const v = await getVendor(vendorId);
-  if (!v) throw new Error(`Vendor ${vendorId} not found`);
+  if (!v) throw new Error(`Lieferant ${vendorId} nicht gefunden.`);
   return {
     vendorNumber: v.vendorNumber,
     name: v.name,

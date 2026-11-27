@@ -208,7 +208,7 @@
   </DropdownItem>
 
   <DropdownSeparator />
-  <div class="px-2 py-1 text-[10px] text-muted-foreground">v{appVersion} · MIT</div>
+  <div class="px-2 py-1 text-xs text-muted-foreground">v{appVersion} · MIT</div>
 </DropdownMenu>
 
 <Dialog
@@ -218,23 +218,23 @@
 >
   <div class="min-w-0 space-y-4">
     {#if sandbox}
-      <p class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+      <p class="rounded-lg bg-status-warn-bg px-3 py-2 text-sm text-status-warn">
         Die Sandbox ist aktiv. Mandanten lassen sich erst wieder wechseln, verschieben, anlegen oder
-        entfernen, wenn du die Sandbox verlassen hast (Einstellungen → Daten).
+        entfernen, wenn du die Sandbox verlassen hast (Einstellungen → Daten und Backup).
       </p>
     {/if}
     <div class="space-y-1">
       {#each tenants as t (t.id)}
-        <div class="flex items-center gap-2 rounded-md border px-3 py-2">
+        <div class="flex items-center gap-2 rounded-lg bg-surface px-3 py-2">
           <div class="min-w-0 flex-1">
             <div class="truncate text-sm font-medium">
               {t.label}
               {#if t.current}
-                <span class="ml-1 text-[10px] font-normal text-primary">· aktiv</span>
+                <span class="ml-1 text-xs font-normal text-muted-foreground">· aktiv</span>
               {/if}
             </div>
             <div
-              class="truncate text-[10px] text-muted-foreground font-mono"
+              class="truncate text-xs text-muted-foreground font-mono"
               title={t.path || "Lokale Standard-Datenbank"}
             >
               {t.path || "Lokale Standard-Datenbank"}
@@ -254,7 +254,7 @@
               type="button"
               onclick={() => removeTenant(t.id)}
               disabled={actionsLocked}
-              class="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:pointer-events-none disabled:opacity-50"
+              class="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:pointer-events-none disabled:opacity-50"
               title="Mandant entfernen (Datei bleibt erhalten)"
               aria-label="Mandant entfernen"
             >
@@ -265,12 +265,12 @@
       {/each}
     </div>
 
-    <p class="text-[11px] text-muted-foreground">
+    <p class="text-xs text-muted-foreground">
       Beim Verschieben bleibt die bisherige lokale Datei als Sicherung erhalten.
     </p>
 
-    <div class="space-y-3 rounded-md border border-dashed p-3">
-      <div class="flex items-center gap-2 text-sm font-medium">
+    <div class="space-y-3 rounded-lg bg-surface p-4">
+      <div class="flex items-center gap-2 text-sm font-bold">
         <Database class="size-4" /> Neuen Mandanten hinzufügen
       </div>
       <div class="space-y-1.5">
@@ -290,7 +290,7 @@
             <FolderOpen class="size-4" /> Vorhandene wählen…
           </Button>
         </div>
-        <p class="text-[11px] text-muted-foreground">
+        <p class="text-xs text-muted-foreground">
           Der Dateiname wird aus der Bezeichnung vorgeschlagen.
         </p>
       </div>

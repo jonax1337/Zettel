@@ -140,7 +140,7 @@ describe("renderInvoiceSheet", () => {
   it("fails for an unknown invoice without calling the sidecar", async () => {
     getInvoice.mockResolvedValueOnce(null);
 
-    await expect(renderInvoiceSheet(9)).rejects.toThrow("Invoice 9 not found");
+    await expect(renderInvoiceSheet(9)).rejects.toThrow("Rechnung 9 nicht gefunden.");
     expect(invoke).not.toHaveBeenCalled();
   });
 });

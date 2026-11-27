@@ -70,8 +70,8 @@
     <kbd class="text-[10.5px] font-bold opacity-75">{searchShortcut}</kbd>
   </button>
 
-  <!-- Safety net for windows below the designed height; the footer stays pinned. The negative margin keeps the active bar, which sits outside the link, from being clipped. -->
-  <nav aria-label="Hauptnavigation" class="-mx-2.5 mt-3.5 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5">
+  <!-- Safety net for windows below the designed height; the footer stays pinned. The negative margin keeps the active bar, which sits outside the link, from being clipped; the vertical padding does the same for the focus ring. -->
+  <nav aria-label="Hauptnavigation" class="-mx-2.5 mt-2.5 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 py-1">
     {#each NAV_GROUPS as group (group.label ?? "root")}
       <div role="group" aria-label={group.label ?? undefined} class="flex flex-col">
         {#if group.label}

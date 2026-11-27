@@ -229,7 +229,7 @@ describe("previewInvoicePdf", () => {
   });
 
   it("fails for an unknown invoice", async () => {
-    await expect(previewInvoicePdf(99)).rejects.toThrow("Invoice 99 not found");
+    await expect(previewInvoicePdf(99)).rejects.toThrow("Rechnung 99 nicht gefunden.");
     expect(invoke).not.toHaveBeenCalled();
   });
 
@@ -370,7 +370,7 @@ describe("previewOfferPdf", () => {
   });
 
   it("fails for an unknown offer", async () => {
-    await expect(previewOfferPdf(99)).rejects.toThrow("Offer 99 not found");
+    await expect(previewOfferPdf(99)).rejects.toThrow("Angebot 99 nicht gefunden.");
   });
 
   it("is not a no-op check: the real offer PDF changes the database and stores its path", async () => {

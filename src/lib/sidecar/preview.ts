@@ -28,7 +28,7 @@ async function renderSheet(kind: DocumentKind, payload: object): Promise<string>
 
 export async function renderInvoiceSheet(invoiceId: number): Promise<string> {
   const data = await getInvoice(invoiceId);
-  if (!data) throw new Error(`Invoice ${invoiceId} not found`);
+  if (!data) throw new Error(`Rechnung ${invoiceId} nicht gefunden.`);
   const { invoice: shown, customer } = await invoiceAsShown(data.invoice);
   return renderSheet(
     "invoice",
@@ -45,7 +45,7 @@ export async function renderInvoiceSheet(invoiceId: number): Promise<string> {
 
 export async function renderOfferSheet(offerId: number): Promise<string> {
   const data = await getOffer(offerId);
-  if (!data) throw new Error(`Offer ${offerId} not found`);
+  if (!data) throw new Error(`Angebot ${offerId} nicht gefunden.`);
   return renderSheet(
     "offer",
     buildOfferPayload({

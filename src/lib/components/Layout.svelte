@@ -99,7 +99,7 @@
         type="button"
         onclick={() => push("/settings/data")}
         class="inline-flex h-5 items-center gap-1.5 rounded-full bg-[rgb(230_181_102/16%)] px-2 text-[11px] font-bold text-[#e6b566] transition-colors hover:bg-[rgb(230_181_102/26%)] cursor-pointer"
-        title="Sandbox aktiv – zu Einstellungen → Daten"
+        title="Sandbox aktiv – öffnet Daten und Backup"
         style="-webkit-app-region: no-drag"
       >
         <FlaskConical class="size-3" />
