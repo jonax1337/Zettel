@@ -113,7 +113,9 @@ def create_args(**overrides):
 
 def create_draft(cli, con, settings=None, **overrides):
     settings = {"default_payment_terms_days": 14, "is_kleinunternehmer": 0, **(settings or {})}
-    invoice_id = cli.insert_draft_invoice(con, create_args(**overrides), CUSTOMER, settings, TOTALS, False)
+    invoice_id = cli.insert_draft_invoice(
+        con, create_args(**overrides), CUSTOMER, settings, TOTALS, False, terms_text=None
+    )
     return con.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
 
 
@@ -336,7 +338,10 @@ class TestCurrency:
 
 class TestGeneratedPdfResetsValidation:
     def test_new_pdf_clears_the_validation_of_the_previous_one(self, cli, con, monkeypatch, tmp_path):
-        con.execute("INSERT INTO settings (id) VALUES (1)")
+        con.execute(
+            "INSERT INTO settings (id, company_name, street, postal_code, city, vat_id) "
+            "VALUES (1, 'Muster GmbH', 'Weg 1', '10115', 'Berlin', 'DE123456789')"
+        )
         con.execute(
             "INSERT INTO invoices (number, status, pdf_path, last_validation_status, last_validated_at, "
             "last_validation_findings_count) VALUES ('RE-2026-0001', 'sent', ?, 'invalid', 1700000000, 3)",

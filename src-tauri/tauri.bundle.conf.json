@@ -2,8 +2,15 @@
   "bundle": {
     "resources": {
       "../sidecar/dist/zettel-sidecar": "sidecar",
+      "../cli/dist": "cli",
       "../tools/kosit-validator": "kosit-validator",
       "../tools/jre": "jre"
+    },
+    "linux": {
+      "deb": {
+        "postInstallScript": "deb-postinst.sh",
+        "preRemoveScript": "deb-prerm.sh"
+      }
     }
   }
 }

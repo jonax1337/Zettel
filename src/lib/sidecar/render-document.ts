@@ -9,27 +9,59 @@ type PdfPathTable = "offers" | "reminders";
  * Keeps the previous PDF (if any) before the sidecar overwrites it, so every
  * generation stays available as a version (audit trail). `storedPdfPath` may
  * lie in an older documents root; its chain moves next to `outputPath`. A
- * failed archive must never block PDF generation.
+ * failed archive must never block PDF generation. Returns where the PDF at
+ * `outputPath` was archived, or null if there was none.
  */
-async function archivePreviousPdf(outputPath: string, storedPdfPath?: string | null): Promise<void> {
+async function archivePreviousPdf(
+  outputPath: string,
+  storedPdfPath?: string | null,
+): Promise<string | null> {
   try {
-    await invoke("archive_pdf_version", { path: outputPath, previous: storedPdfPath });
+    return await invoke<string | null>("archive_pdf_version", {
+      path: outputPath,
+      previous: storedPdfPath,
+    });
   } catch (error) {
     console.warn(`Could not archive previous PDF version of ${outputPath}:`, error);
+    return null;
   }
 }
 
-/** Archives the previous PDF, renders the new one and runs `onRendered` on success. */
+/**
+ * Puts the archived PDF back after a failed generation: the document still
+ * stores `outputPath`, which would otherwise point at nothing.
+ */
+async function restoreArchivedPdf(archivedPath: string | null, outputPath: string): Promise<void> {
+  if (!archivedPath) return;
+  try {
+    await invoke("restore_pdf_version", { archived: archivedPath, path: outputPath });
+  } catch (error) {
+    console.warn(`Could not restore ${outputPath} from ${archivedPath}:`, error);
+  }
+}
+
+/**
+ * Archives the previous PDF, renders the new one and runs `onRendered` on
+ * success. A failed render leaves the previous PDF in place.
+ */
 export async function renderDocumentPdf(
   command: PdfCommand,
   payload: { outputPath: string },
   onRendered: (response: SidecarSuccess) => Promise<void>,
   storedPdfPath?: string | null,
 ): Promise<SidecarResponse> {
-  await archivePreviousPdf(payload.outputPath, storedPdfPath);
-  const response = await invoke<SidecarResponse>(command, { payload });
+  const archivedPath = await archivePreviousPdf(payload.outputPath, storedPdfPath);
+  let response: SidecarResponse;
+  try {
+    response = await invoke<SidecarResponse>(command, { payload });
+  } catch (error) {
+    await restoreArchivedPdf(archivedPath, payload.outputPath);
+    throw error;
+  }
   if (response.success) {
     await onRendered(response);
+  } else {
+    await restoreArchivedPdf(archivedPath, payload.outputPath);
   }
   return response;
 }

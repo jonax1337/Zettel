@@ -2,7 +2,7 @@
 # Builds a jlink-minimized JRE into tools/jre/. This is the runtime that ships
 # alongside the KoSIT validator so users don't need a system Java.
 #
-# Module set was determined via `jdeps --print-module-deps` on validator-1.6.2,
+# Module set was determined via `jdeps --print-module-deps` on validator-1.6.3,
 # plus a few extras Saxon-HE needs at runtime (xml, scripting, naming).
 # Resulting JRE is ~50 MB uncompressed, ~35 MB after bundle compression.
 #

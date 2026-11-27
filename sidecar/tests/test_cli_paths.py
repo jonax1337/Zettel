@@ -90,6 +90,48 @@ def test_a_pdf_stored_in_a_previous_root_joins_the_new_version_chain(cli, tmp_pa
     assert (legacy_versions / "RE-2__100.pdf").exists()
 
 
+RENDER_FAILURE = {"success": False, "error": {"code": "RENDER_FAILED", "message": "x", "details": ""}}
+
+
+def test_a_failed_render_puts_the_archived_pdf_back(cli, tmp_path, monkeypatch):
+    pdf = tmp_path / "Rechnungen" / "RE-1.pdf"
+    pdf.parent.mkdir(parents=True)
+    pdf.write_bytes(b"issued")
+
+    def leave_a_broken_file_and_fail(command, payload):
+        pdf.write_bytes(b"half written")
+        return RENDER_FAILURE
+
+    monkeypatch.setattr(cli, "call_sidecar", leave_a_broken_file_and_fail)
+
+    with pytest.raises(SystemExit, match="RENDER_FAILED"):
+        cli.render_replacing_pdf("generate_invoice", {}, pdf, str(pdf))
+
+    assert pdf.read_bytes() == b"issued"
+    assert list((pdf.parent / "Versionen").iterdir()) == []
+
+
+def test_a_failed_first_render_has_nothing_to_put_back(cli, tmp_path, monkeypatch):
+    pdf = tmp_path / "Rechnungen" / "RE-1.pdf"
+    monkeypatch.setattr(cli, "call_sidecar", lambda command, payload: RENDER_FAILURE)
+
+    with pytest.raises(SystemExit, match="RENDER_FAILED"):
+        cli.render_replacing_pdf("generate_invoice", {}, pdf, None)
+
+    assert not pdf.exists()
+
+
+def test_a_successful_render_keeps_the_previous_pdf_as_a_version(cli, tmp_path, monkeypatch):
+    pdf = tmp_path / "Rechnungen" / "RE-1.pdf"
+    pdf.parent.mkdir(parents=True)
+    pdf.write_bytes(b"v1")
+    monkeypatch.setattr(cli, "call_sidecar", lambda command, payload: {"success": True, "pdfPath": str(pdf)})
+
+    assert cli.render_replacing_pdf("generate_invoice", {}, pdf, str(pdf)) == str(pdf)
+
+    assert [p.read_bytes() for p in (pdf.parent / "Versionen").iterdir()] == [b"v1"]
+
+
 def test_xdg_documents_dir_is_read_from_user_dirs(tmp_path, monkeypatch):
     (tmp_path / "user-dirs.dirs").write_text('XDG_DOCUMENTS_DIR="$HOME/Dokumente"\n', encoding="utf-8")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))

@@ -6,6 +6,20 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.25.0]
+
+### Added
+- **CLI im Installer.** Die Kommandozeile wird als `zettel-cli` mitgeliefert (Einstellungen → Daten → „Kommandozeile“ zeigt den Pfad zum Kopieren) und findet den PDF-Sidecar der Installation selbst. Das `.deb` legt zusätzlich `/usr/bin/zettel-cli` an; unter Windows und macOS gibt es keinen PATH-Eintrag, dort gilt der volle Pfad.
+- **CLI: Kunden, Angebote, Mahnungen, `--json`, Idempotenz.** `customer:create`, `offers`/`offer:create|show|send|accept|reject|convert|pdf`, `reminders`/`reminder:create|send|pdf` und `invoices --overdue` spiegeln die App-Logik (Nummern aus dem Belegdatum, Reverse Charge, Währung, Mahnbetrag = offener Rest; `offer:convert` legt einen Rechnungsentwurf an, der beim Ausstellen wie jede Rechnung versiegelt wird). `--json` liefert ein JSON-Objekt (`{"ok": …}`), `--idempotency-key` macht `*:create` wiederholbar; derselbe Schlüssel mit anderen Angaben bricht ab, statt den alten Datensatz zu liefern (#186). Jeder Befehl prüft vorher `PRAGMA user_version` und bricht bei abweichendem Schema ab; `status` zeigt Ist und Soll. PDFs aus der CLI verlangen vollständige Firmendaten wie die App.
+
+### Changed
+- **Dependencies auf aktuellen Stand.** Sidecar: factur-x 7.10 (Zeitstempel in den PDF-Metadaten jetzt in UTC statt Ortszeit mit UTC-Kennung), pypdf 7.2, tzdata 2026.6. KoSIT-Validator 1.6.3 (behebt eine Sicherheitslücke beim Auflösen von Stylesheets) mit der XRechnung-Prüfkonfiguration 2026-08-31 (CEN-Schematron 1.3.16). Frontend: Svelte 5.59, Vite 8.4, bits-ui 2.22, Type-Check mit TypeScript 7 (`svelte-check --tsgo`; TypeScript 6 bleibt daneben installiert, weil `svelte-check` es noch braucht). Rust: Tauri 2.12.7, ureq 3.5, zip 9.8 und die übrigen Crates im Lockfile. `rusqlite` bleibt bei 0.32, solange `tauri-plugin-sql` (sqlx 0.8) dieselbe SQLite-Bindung vorgibt.
+
+### Fixed
+- **Vorheriges PDF bleibt nach gescheiterter Erzeugung erhalten.** Scheitert das Erzeugen eines Rechnungs-, Angebots- oder Mahnungs-PDFs, legt Zettel das vorherige PDF zurück an seinen Platz (App und CLI). Bisher lag es danach nur noch unter `Versionen/`, und der Beleg verwies auf eine fehlende Datei.
+- **CLI findet den Sidecar des Repos unter Windows.** `sidecar/.venv` und `ZETTEL_SIDECAR=<…\python.exe>` wurden wegen der Endung `.exe` für das fertige Sidecar-Binary gehalten, PDFs scheiterten mit einem Python-Fehler. Umgekehrt startet ein Sidecar-Binary ohne Endung (Linux, macOS) in `ZETTEL_SIDECAR` nicht mehr als Python-Interpreter.
+- **CLI: umgeleitete Ausgabe ist UTF-8.** In eine Pipe oder Datei schrieb die CLI unter Windows in der ANSI-Codepage: Umlaute kamen falsch an, ein Zeichen außerhalb der Codepage (z. B. „Ł“ in einem Kundennamen) brach die Ausgabe ab. Gilt für Text, `--json` und Fehlermeldungen. Die Antwort des Sidecars liest die CLI ebenfalls als UTF-8, ein PDF-Pfad mit Umlaut wird damit richtig gespeichert.
+
 ## [0.24.0]
 
 ### Added
