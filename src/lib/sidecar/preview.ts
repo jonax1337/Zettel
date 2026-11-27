@@ -3,18 +3,15 @@ import { getInvoice } from "$lib/db/invoices";
 import { getOffer } from "$lib/db/offers";
 import { loadSettings } from "$lib/db/queries";
 import { getReminder } from "$lib/db/reminders";
-import { displayInvoiceNumber } from "$lib/utils/invoice-number";
 import { buildInvoicePayload, findCorrectedInvoice } from "./invoice";
 import { buildOfferPayload } from "./offer";
 import { parseCustomerSnapshot } from "./payload";
+import { invoiceAsShown, NO_OUTPUT_PATH } from "./shown-document";
 import { buildReminderPayload, loadReminderContext, storedSnapshotOrRebuilt } from "./reminder";
 import type { SidecarError } from "./types";
 
 type DocumentKind = "invoice" | "offer" | "reminder";
 type SheetSuccess = { success: true; html: string };
-
-// The payload builders ask for the PDF's target path; a sheet writes nothing.
-const NO_OUTPUT_PATH = "";
 
 /**
  * The sheets only read: unlike the PDF path they never issue a draft, draw a
@@ -32,17 +29,16 @@ async function renderSheet(kind: DocumentKind, payload: object): Promise<string>
 export async function renderInvoiceSheet(invoiceId: number): Promise<string> {
   const data = await getInvoice(invoiceId);
   if (!data) throw new Error(`Invoice ${invoiceId} not found`);
-  const { invoice, items } = data;
+  const { invoice: shown, customer } = await invoiceAsShown(data.invoice);
   return renderSheet(
     "invoice",
     buildInvoicePayload({
-      // A draft's DRAFT-… placeholder never appears on screen; show its draft label.
-      invoice: { ...invoice, number: displayInvoiceNumber(invoice) },
-      items,
-      customer: parseCustomerSnapshot(invoice.customerSnapshot),
+      invoice: shown,
+      items: data.items,
+      customer,
       company: await loadSettings(),
       outputPath: NO_OUTPUT_PATH,
-      correctsInvoice: await findCorrectedInvoice(invoice),
+      correctsInvoice: await findCorrectedInvoice(data.invoice),
     }),
   );
 }

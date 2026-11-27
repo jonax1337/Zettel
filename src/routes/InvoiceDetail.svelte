@@ -24,6 +24,7 @@
     exportInvoiceXrechnung,
     generateInvoicePdf,
     listPdfVersions,
+    previewInvoicePdf,
     type PdfVersion,
     type XrechnungExport,
   } from "$lib/sidecar/invoice";
@@ -34,7 +35,7 @@
   import DocumentSheet from "$lib/components/DocumentSheet.svelte";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
   import { renderInvoiceSheet } from "$lib/sidecar/preview";
-  import { Check, CheckCircle2, FileWarning, Pencil } from "$lib/brand-icons";
+  import { Check, CheckCircle2, FileSearch, FileWarning, Pencil } from "$lib/brand-icons";
   import BackLink from "./parts/entity/BackLink.svelte";
   import { createDocumentActions, type PdfPreparation } from "./parts/entity/document-actions.svelte";
   import DocumentLoadMessage from "./parts/entity/DocumentLoadMessage.svelte";
@@ -68,6 +69,8 @@
   import { deriveInvoiceStanding } from "./invoice/detail/invoice-action-state";
   import { planInvoiceActions, type InvoiceActionId } from "./invoice/detail/invoice-action-plan";
   import { invoiceMenuEntries } from "./invoice/detail/invoice-menu";
+  import { runPdfPreview } from "./invoice/detail/pdf-preview";
+  import { PREVIEW_PDF_LABEL, PREVIEWING_LABEL } from "./invoice/detail/preview-menu";
   import { daysOverdue, overdueLabel } from "./invoice/detail/overdue";
   import { progressSteps } from "./invoice/detail/progress-steps";
   import ProgressSteps from "./invoice/detail/ProgressSteps.svelte";
@@ -165,6 +168,7 @@
       busy: actions.busy,
       mail: { hasAddress: !!customerEmail, mailProgramOpen: mailing },
       settlesRemainder,
+      previewing: actions.previewing,
       onSelect: selectMenuAction,
     }),
   );
@@ -556,9 +560,18 @@
     }
   }
 
+  function previewPdf() {
+    if (!invoice) return;
+    const { id } = invoice;
+    return runPdfPreview(actions, () => previewInvoicePdf(id));
+  }
+
   function selectMenuAction(id: InvoiceActionId) {
     if (!invoice) return;
     switch (id) {
+      case "preview-pdf":
+        void previewPdf();
+        break;
       case "send-mail":
         requestMail();
         break;
@@ -661,6 +674,11 @@
           <Button variant="outline" disabled={actions.busy} onclick={() => push(`/invoices/${invoice!.id}/edit`)}>
             <Pencil />
             Bearbeiten
+          </Button>
+        {:else if id === "preview-pdf"}
+          <Button variant="outline" disabled={actions.busy} onclick={previewPdf}>
+            <FileSearch />
+            {actions.previewing ? PREVIEWING_LABEL : PREVIEW_PDF_LABEL}
           </Button>
         {:else if id === "send-mail"}
           <MailSendButton email={customerEmail} busy={actions.busy} sending={mailing} onSend={requestMail} />

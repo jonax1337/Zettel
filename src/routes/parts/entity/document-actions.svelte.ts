@@ -8,7 +8,7 @@ type DeleteOptions = {
   redirectTo: string;
 };
 
-export type DocumentTask = "action" | "pdf" | "validate" | "convert" | "credit-note";
+export type DocumentTask = "action" | "pdf" | "preview" | "validate" | "convert" | "credit-note";
 
 /** A step that must succeed before the PDF is generated, e.g. issuing a draft invoice. */
 export type PdfPreparation = {
@@ -118,6 +118,9 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
     },
     get generating() {
       return task === "pdf";
+    },
+    get previewing() {
+      return task === "preview";
     },
     get pdfError() {
       return pdfError;

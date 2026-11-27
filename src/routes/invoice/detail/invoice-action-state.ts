@@ -10,6 +10,7 @@ import {
   isOverdue,
   showsPayments,
 } from "../invoice-actions";
+import { isDraftNumber } from "$lib/utils/invoice-number";
 import { isReminderLevel, nextReminderLevel } from "../reminder-levels";
 import type { InvoiceActionState } from "./invoice-action-plan";
 
@@ -39,6 +40,7 @@ export function deriveInvoiceStanding(input: InvoiceStandingInput) {
   const actionState: InvoiceActionState = {
     status: invoice.status,
     isCreditNote: invoice.isCreditNote,
+    isNumbered: !isDraftNumber(invoice.number),
     hasPdf: input.hasPdf,
     isOverdue: overdue,
     canRecordPayment,

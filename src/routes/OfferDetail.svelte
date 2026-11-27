@@ -19,7 +19,7 @@
   import { displayInvoiceNumber, getInvoice } from "$lib/db/invoices";
   import type { Offer, OfferItem } from "$lib/db/schema";
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
-  import { generateOfferPdf } from "$lib/sidecar/offer";
+  import { generateOfferPdf, previewOfferPdf } from "$lib/sidecar/offer";
   import { renderOfferSheet } from "$lib/sidecar/preview";
   import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import { resolveCustomerEmail, sendDocumentByMail } from "$lib/mail/send";
@@ -39,6 +39,7 @@
   import { offerDateNote } from "./invoice/detail/document-note";
   import FilesPanel from "./invoice/detail/FilesPanel.svelte";
   import { offerMenuEntries } from "./invoice/detail/offer-menu";
+  import { runPdfPreview } from "./invoice/detail/pdf-preview";
   import { offerProgressSteps } from "./invoice/detail/progress-steps";
   import ProgressSteps from "./invoice/detail/ProgressSteps.svelte";
   import { offerSheetKey } from "./invoice/detail/sheet-key";
@@ -86,7 +87,11 @@
   );
   const buttonIds = $derived(buttonActions(plan));
   const menuEntries = $derived(
-    offerMenuEntries(actionsAt(plan, "menu"), { busy: actions.busy, onSelect: selectMenuAction }),
+    offerMenuEntries(actionsAt(plan, "menu"), {
+      busy: actions.busy,
+      previewing: actions.previewing,
+      onSelect: selectMenuAction,
+    }),
   );
   const steps = $derived(
     offer
@@ -281,6 +286,11 @@
   function selectMenuAction(id: OfferActionId) {
     if (!offer) return;
     switch (id) {
+      case "preview-pdf": {
+        const { id: offerId } = offer;
+        void runPdfPreview(actions, () => previewOfferPdf(offerId));
+        break;
+      }
       case "regenerate-pdf":
         void createPdf(false);
         break;

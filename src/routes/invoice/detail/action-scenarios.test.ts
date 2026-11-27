@@ -86,18 +86,18 @@ function planFor(doc: Invoice, scene: Scene = {}) {
 const OVERDUE = { dueDate: NOW - 24 * DAY };
 
 describe("invoice actions per state, from real invoices through the real predicates", () => {
-  it("never-numbered draft: issue, edit and mail; issuing without PDF, template, discard in the menu", () => {
+  it("never-numbered draft: issue, edit, preview and mail; issuing without PDF, template, discard in the menu", () => {
     const result = planFor(invoice({ status: "draft", number: NEVER_NUMBERED, pdfPath: null, sentAt: null }));
     expect(result.main).toEqual(["issue"]);
-    expect(result.header).toEqual(["edit", "send-mail"]);
+    expect(result.header).toEqual(["edit", "preview-pdf", "send-mail"]);
     expect(result.menu).toEqual(["mark-sent", "save-recurring", "cancel", "delete"]);
   });
 
-  it("reopened draft with its number and PDF: open the PDF, no discarding because the number is taken", () => {
+  it("reopened draft with its number and PDF: open the PDF, preview in the menu, no discarding because the number is taken", () => {
     const result = planFor(invoice({ status: "draft", sentAt: null }));
     expect(result.main).toEqual(["issue"]);
     expect(result.header).toEqual(["open-pdf", "edit", "send-mail"]);
-    expect(result.menu).toEqual(["mark-sent", "save-recurring"]);
+    expect(result.menu).toEqual(["preview-pdf", "mark-sent", "save-recurring"]);
   });
 
   it("sent, not due yet: record the payment; paying, reversing and reopening in the menu", () => {
@@ -155,11 +155,24 @@ describe("invoice actions per state, from real invoices through the real predica
     expect(result.menu).toEqual(["send-mail", "regenerate-pdf", "export-xrechnung", "save-recurring", "create-credit-note"]);
   });
 
-  it("cancelled draft, current behaviour: PDF creation and mail are still offered (another task changes this)", () => {
+  it("discarded draft: only the preview, no PDF with a placeholder number and no mail", () => {
     const result = planFor(invoice({ status: "cancelled", number: NEVER_NUMBERED, pdfPath: null, sentAt: null }));
     expect(result.main).toEqual([]);
+    expect(result.header).toEqual(["preview-pdf"]);
+    expect(result.menu).toEqual(["save-recurring"]);
+  });
+
+  it("cancelled invoice that carries a real number: PDF creation and mail stay as they were", () => {
+    const result = planFor(invoice({ status: "cancelled", pdfPath: null, sentAt: null }));
     expect(result.header).toEqual(["generate-pdf"]);
     expect(result.menu).toEqual(["send-mail", "save-recurring"]);
+  });
+
+  it("no state offers a preview of an issued invoice, whose PDF is the document", () => {
+    for (const doc of [invoice(), invoice(OVERDUE), invoice({ status: "partial" }), invoice({ status: "paid" })]) {
+      const result = planFor(doc);
+      expect([...result.header, ...result.menu]).not.toContain("preview-pdf");
+    }
   });
 
   it("credit note draft: issue it, no recurring template", () => {
@@ -167,7 +180,7 @@ describe("invoice actions per state, from real invoices through the real predica
       invoice({ status: "draft", isCreditNote: true, number: NEVER_NUMBERED, pdfPath: null, total: -119_000, correctsInvoiceId: 7 }),
     );
     expect(result.main).toEqual(["issue"]);
-    expect(result.header).toEqual(["edit", "send-mail"]);
+    expect(result.header).toEqual(["edit", "preview-pdf", "send-mail"]);
     expect(result.menu).toEqual(["mark-sent", "cancel", "delete"]);
   });
 
@@ -270,14 +283,14 @@ function offerPlan(doc: Offer) {
 
 describe("offer actions per state, from real offers", () => {
   it("draft without PDF: mark it sent; PDF, edit and mail around it; delete in the menu", () => {
-    expect(offerPlan(offer())).toEqual({ main: ["mark-sent"], header: ["generate-pdf", "edit", "send-mail"], menu: ["delete"] });
+    expect(offerPlan(offer())).toEqual({ main: ["mark-sent"], header: ["generate-pdf", "edit", "send-mail"], menu: ["preview-pdf", "delete"] });
   });
 
   it("draft with PDF: open it, regenerate in the menu", () => {
     expect(offerPlan(offer({ pdfPath: "C:/a.pdf" }))).toEqual({
       main: ["mark-sent"],
       header: ["open-pdf", "edit", "send-mail"],
-      menu: ["regenerate-pdf", "delete"],
+      menu: ["preview-pdf", "regenerate-pdf", "delete"],
     });
   });
 

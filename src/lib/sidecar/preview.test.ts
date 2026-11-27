@@ -33,7 +33,10 @@ const invoiceRow = vi.hoisted(() => ({
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/path", () => ({ join: async (...parts: string[]) => parts.join("/") }));
-vi.mock("$lib/db/queries", () => ({ loadSettings: vi.fn(async () => company), getCustomer: vi.fn() }));
+const getCustomer = vi.hoisted(() =>
+  vi.fn(async (_id: number): Promise<unknown> => ({ customerNumber: "K-0007", name: "Kunde AG", country: "DE" })),
+);
+vi.mock("$lib/db/queries", () => ({ loadSettings: vi.fn(async () => company), getCustomer }));
 const getInvoice = vi.hoisted(() => vi.fn(async (_id: number): Promise<unknown> => ({ invoice: invoiceRow, items: [] })));
 const issueInvoice = vi.hoisted(() => vi.fn());
 const recordGeneratedPdf = vi.hoisted(() => vi.fn());
@@ -82,6 +85,27 @@ describe("renderInvoiceSheet", () => {
     expect(html).toBe(HTML);
     expect(sentPayload()).toMatchObject({ kind: "invoice", invoice: { number: "Entwurf #0a1b" } });
     expectNothingWritten();
+  });
+
+  it("shows a draft with the current customer, as issuing would snapshot it", async () => {
+    getInvoice.mockResolvedValueOnce({
+      invoice: { ...invoiceRow, status: "draft", number: "DRAFT-0a1b2c3d4e5f6071" },
+      items: [],
+    });
+    getCustomer.mockResolvedValueOnce({ customerNumber: "K-0007", name: "Kunde AG (neu)", country: "DE" });
+
+    await renderInvoiceSheet(1);
+
+    expect(sentPayload().customer).toMatchObject({ name: "Kunde AG (neu)" });
+  });
+
+  it("keeps the stored customer of an issued invoice", async () => {
+    getCustomer.mockResolvedValue({ name: "Changed since" });
+
+    await renderInvoiceSheet(1);
+
+    expect(sentPayload().customer).toMatchObject({ name: "Kunde AG" });
+    getCustomer.mockResolvedValue({ customerNumber: "K-0007", name: "Kunde AG", country: "DE" });
   });
 
   it("keeps the real number of an issued invoice", async () => {

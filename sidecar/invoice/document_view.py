@@ -27,7 +27,7 @@ SKONTO_PERCENT_FORMAT = "%.1f"
 REMINDER_LANGUAGE = "de"
 
 
-def invoice_view(payload: dict[str, Any]) -> dict[str, Any]:
+def invoice_view(payload: dict[str, Any], *, payment_qr: bool = True) -> dict[str, Any]:
     invoice, company, customer = payload["invoice"], payload["company"], payload["customer"]
     lang = invoice.get("pdfLanguage") or DEFAULT_LANGUAGE
     is_credit_note = bool(invoice.get("isCreditNote"))
@@ -43,7 +43,7 @@ def invoice_view(payload: dict[str, Any]) -> dict[str, Any]:
         "table": _items_table(payload["items"], invoice, lang, sign),
         "totals": _totals(invoice, payload["items"], lang, sign) + _payment_rows(invoice, lang),
         "callouts": _tax_notices(invoice, company, lang),
-        "payment": _invoice_payment(invoice, company, lang),
+        "payment": _invoice_payment(invoice, company, lang, payment_qr),
         "blocks": _invoice_blocks(invoice, lang),
     }
 
@@ -338,10 +338,12 @@ def _skonto_line(invoice: dict[str, Any], lang: str) -> str | None:
              amount=cents_to_eur(invoice["skontoAmountCent"], invoice.get("currency")))
 
 
-def _invoice_payment(invoice: dict[str, Any], company: dict[str, Any], lang: str) -> dict[str, Any] | None:
+def _invoice_payment(
+    invoice: dict[str, Any], company: dict[str, Any], lang: str, payment_qr: bool
+) -> dict[str, Any] | None:
     if invoice.get("isCreditNote"):
         return None
-    epc_payload = invoice_epc_payload(invoice, company)
+    epc_payload = invoice_epc_payload(invoice, company) if payment_qr else None
     terms = invoice.get("paymentTerms")
     if not (terms or invoice.get("skontoPercent") or epc_payload):
         return None

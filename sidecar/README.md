@@ -1,6 +1,6 @@
 # Zettel Sidecar
 
-Python sidecar that turns invoice JSON into a PDF via Jinja2 + WeasyPrint, renders the ZUGFeRD/XRechnung XML, reads incoming e-invoices and parses bank statements (CAMT.053, MT940). The commands are listed in `main.py` (`generate_invoice`, `generate_offer`, `generate_reminder`, `render_document_html`, `generate_xrechnung`, `extract_zugferd`, `extract_xml_only`, `extract_text_pdf`, `parse_bank_statement`, `ping`).
+Python sidecar that turns invoice JSON into a PDF via Jinja2 + WeasyPrint, renders the ZUGFeRD/XRechnung XML, reads incoming e-invoices and parses bank statements (CAMT.053, MT940). The commands are listed in `main.py` (`generate_invoice`, `generate_offer`, `generate_reminder`, `generate_preview`, `render_document_html`, `generate_xrechnung`, `extract_zugferd`, `extract_xml_only`, `extract_text_pdf`, `parse_bank_statement`, `ping`).
 
 ## Setup (Windows, dev)
 
@@ -56,6 +56,14 @@ Error response:
 ```
 
 `ping` is for diagnostics: it loads WeasyPrint (the PDF commands import it lazily, so the build smoke test would otherwise miss a bundle that cannot render) and returns `{"success": true, "pong": true}`.
+
+`generate_preview` takes the payload of `generate_invoice` or `generate_offer` plus `kind` (`invoice` or `offer`) and a non-empty `outputPath`, and writes a draft PDF of the document there; it returns `{"success": true, "pdfPath": …}` like the other PDF commands. The PDF comes from the same templates and the engine of `settings.pdf_renderer` (WeasyPrint or Typst), but
+
+- every page carries a diagonal "ENTWURF" watermark, centred on the sheet (a page background in WeasyPrint, a page foreground in Typst), so page breaks match the issued PDF;
+- it carries no payment QR code (EPC): a banking app would turn it into a real transfer for a document that does not exist;
+- no ZUGFeRD/Factur-X XML is embedded and the file is not PDF/A: a watermarked draft must not pass for an archival or e-invoice document.
+
+The caller puts the number to show into `invoice.number`; the app passes "Entwurf #<4 hex>" for a draft that was never numbered. The only file the command leaves behind is `outputPath` (Typst also compiles in a temporary working directory, as it does for issued PDFs, which it removes afterwards). The app lets the host choose that path in its cache folder (never the documents folder) and clears the previews when it starts and exits, so a preview is never archived, versioned or recorded.
 
 `render_document_html` takes the payload of a `generate_*` command plus `kind` (`invoice`, `offer`, `reminder`) and returns `{"success": true, "html": …}`: the same template as the PDF as one self-contained HTML sheet for the app. It writes nothing to disk and does not load WeasyPrint.
 

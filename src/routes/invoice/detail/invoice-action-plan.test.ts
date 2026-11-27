@@ -6,6 +6,7 @@ function state(overrides: Partial<InvoiceActionState> = {}): InvoiceActionState 
   return {
     status: "sent",
     isCreditNote: false,
+    isNumbered: true,
     hasPdf: true,
     isOverdue: false,
     canRecordPayment: true,
@@ -21,6 +22,7 @@ function state(overrides: Partial<InvoiceActionState> = {}): InvoiceActionState 
 
 const DRAFT = {
   status: "draft",
+  isNumbered: false,
   hasPdf: false,
   canRecordPayment: false,
   canExportXrechnung: false,
@@ -44,7 +46,9 @@ describe("planInvoiceActions: the main action", () => {
   });
 
   it("issues a reopened draft that already has a number and a PDF", () => {
-    expect(mainOf(planInvoiceActions(state({ ...DRAFT, hasPdf: true, canDiscard: false })))).toEqual(["issue"]);
+    expect(mainOf(planInvoiceActions(state({ ...DRAFT, isNumbered: true, hasPdf: true, canDiscard: false })))).toEqual([
+      "issue",
+    ]);
   });
 
   it("records a payment on an open invoice that is not due yet", () => {
@@ -94,14 +98,46 @@ describe("planInvoiceActions: the main action", () => {
 
 describe("planInvoiceActions: header buttons", () => {
   it("shows PDF, edit and mail around the main action of a draft", () => {
-    const plan = planInvoiceActions(state({ ...DRAFT, hasPdf: true }));
+    const plan = planInvoiceActions(state({ ...DRAFT, isNumbered: true, hasPdf: true }));
     expect(actionsAt(plan, "header")).toEqual(["open-pdf", "edit", "send-mail"]);
   });
 
-  it("gives a draft without a PDF no separate PDF button: issuing creates it", () => {
+  it("gives a draft without a PDF the preview instead of a PDF button: issuing creates the real one", () => {
     const plan = planInvoiceActions(state(DRAFT));
-    expect(actionsAt(plan, "header")).toEqual(["edit", "send-mail"]);
+    expect(actionsAt(plan, "header")).toEqual(["edit", "preview-pdf", "send-mail"]);
     expect([...actionsAt(plan, "header"), ...actionsAt(plan, "menu")]).not.toContain("generate-pdf");
+  });
+
+  it("previews a draft credit note too", () => {
+    const plan = planInvoiceActions(state({ ...DRAFT, isCreditNote: true }));
+    expect(actionsAt(plan, "header")).toContain("preview-pdf");
+  });
+
+  it("moves the preview of a reopened draft into the menu, where its old PDF already fills the header", () => {
+    const plan = planInvoiceActions(state({ ...DRAFT, isNumbered: true, hasPdf: true, canDiscard: false }));
+    expect(actionsAt(plan, "header")).not.toContain("preview-pdf");
+    expect(actionsAt(plan, "menu")[0]).toBe("preview-pdf");
+  });
+
+  it("offers a discarded draft only the preview: no PDF with a placeholder number, no mail", () => {
+    const plan = planInvoiceActions(state({ ...DRAFT, status: "cancelled", canDiscard: false }));
+    expect(actionsAt(plan, "header")).toEqual(["preview-pdf"]);
+    expect(actionsAt(plan, "menu")).not.toContain("send-mail");
+  });
+
+  it("leaves a cancelled invoice with a real number as it was", () => {
+    const plan = planInvoiceActions(state({ status: "cancelled", hasPdf: false, canRecordPayment: false }));
+    expect(actionsAt(plan, "header")).toEqual(["generate-pdf"]);
+    expect(actionsAt(plan, "menu")).toContain("send-mail");
+  });
+
+  it.each([
+    ["sent", { status: "sent" }],
+    ["paid", { status: "paid", canRecordPayment: false }],
+    ["overdue", OVERDUE],
+  ] satisfies [string, Partial<InvoiceActionState>][])("offers no preview of an issued invoice (%s)", (_name, overrides) => {
+    const plan = planInvoiceActions(state(overrides));
+    expect(plan.map((action) => action.id)).not.toContain("preview-pdf");
   });
 
   it("keeps PDF creation reachable on an issued invoice without a PDF", () => {

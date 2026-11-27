@@ -11,8 +11,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use serde::Serialize;
-use tauri::AppHandle;
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::tenants::active_documents_root_for;
 
@@ -276,6 +277,173 @@ fn path_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
+/// The documents a draft PDF preview can be made of.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PreviewKind {
+    Invoice,
+    Offer,
+}
+
+impl PreviewKind {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Invoice => "invoice",
+            Self::Offer => "offer",
+        }
+    }
+
+    fn file_label(self) -> &'static str {
+        match self {
+            Self::Invoice => "Rechnung",
+            Self::Offer => "Angebot",
+        }
+    }
+}
+
+/// Where the previews live below the app's cache directory.
+const PREVIEW_DIR: &str = "pdf-preview";
+const PREVIEW_FILE_PREFIX: &str = "Vorschau";
+
+/// The file a preview of the document is written to, `<cache>/pdf-preview/Vorschau-Rechnung-<id>.pdf`.
+/// Never inside the documents root: a preview is not a document of the books and must not
+/// end up in the PDF folders, their versions or a backup. The previews are removed when the
+/// app starts and when it exits (`clear_pdf_previews`).
+pub(crate) fn preview_pdf_path(
+    app: &AppHandle,
+    kind: PreviewKind,
+    id: i64,
+) -> Result<PathBuf, String> {
+    let cache_dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    let dir = preview_dir(&cache_dir, &active_documents_root_for(app)?)?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(fresh_preview_path(&dir, kind, id))
+}
+
+fn preview_dir(cache_dir: &Path, documents_root: &Path) -> Result<PathBuf, String> {
+    let dir = cache_dir.join(PREVIEW_DIR);
+    if resolved(&dir).starts_with(resolved(documents_root)) {
+        return Err(format!(
+            "Die Vorschau kann nicht angelegt werden: der Cache-Ordner {} liegt im Dokumente-Ordner.",
+            cache_dir.display()
+        ));
+    }
+    Ok(dir)
+}
+
+/// `path` with symlinks and `..` resolved as far as it exists; the rest is kept as written.
+fn resolved(path: &Path) -> PathBuf {
+    let mut missing = Vec::new();
+    let mut existing = path;
+    let base = loop {
+        match fs::canonicalize(existing) {
+            Ok(canonical) => break crate::validator::simplify(canonical),
+            Err(_) => match (existing.parent(), existing.file_name()) {
+                (Some(parent), Some(name)) => {
+                    missing.push(name);
+                    existing = parent;
+                }
+                _ => return path.to_path_buf(),
+            },
+        }
+    };
+    missing.iter().rev().fold(base, |acc, name| acc.join(name))
+}
+
+/// The file of this document's preview. Its earlier previews are removed; one that a viewer
+/// still holds open (Windows locks the file) stays, and the new preview takes a free name
+/// (`…-2.pdf`), so the leftovers of a locked file go with the next preview once it is closed.
+fn fresh_preview_path(dir: &Path, kind: PreviewKind, id: i64) -> PathBuf {
+    let stem = format!("{PREVIEW_FILE_PREFIX}-{}-{id}", kind.file_label());
+    remove_previews_of(dir, &stem);
+    first_free_path(dir, &stem, DEFAULT_EXTENSION)
+}
+
+/// Removes `<stem>.pdf` and the numbered `<stem>-<n>.pdf` that locked files left behind.
+fn remove_previews_of(dir: &Path, stem: &str) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for path in entries.flatten().map(|entry| entry.path()) {
+        if is_preview_of(&path, stem) {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+fn is_preview_of(path: &Path, stem: &str) -> bool {
+    let is_pdf = path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case(DEFAULT_EXTENSION));
+    let Some(own_stem) = file_stem(path).filter(|_| is_pdf) else {
+        return false;
+    };
+    own_stem == stem
+        || own_stem
+            .strip_prefix(stem)
+            .and_then(|rest| rest.strip_prefix('-'))
+            .is_some_and(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Removes every preview. Runs when the app starts and exits, so no customer PDF stays in
+/// the cache folder; a file a viewer still holds open stays until the next start.
+pub(crate) fn clear_pdf_previews(app: &AppHandle) {
+    let Ok(cache_dir) = app.path().app_cache_dir() else {
+        return;
+    };
+    let dir = match active_documents_root_for(app) {
+        Ok(documents_root) => match preview_dir(&cache_dir, &documents_root) {
+            Ok(dir) => dir,
+            Err(_) => return,
+        },
+        Err(_) => cache_dir.join(PREVIEW_DIR),
+    };
+    clear_previews(&dir);
+}
+
+fn clear_previews(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for path in entries.flatten().map(|entry| entry.path()) {
+        if is_preview_file(&path) {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+fn is_preview_file(path: &Path) -> bool {
+    let named_like_a_preview = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with(PREVIEW_FILE_PREFIX));
+    named_like_a_preview
+        && path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case(DEFAULT_EXTENSION))
+}
+
+/// Opens a preview with the system's PDF viewer. The opener plugin's own command only
+/// reaches the documents folders, so this one opens previews and nothing else.
+#[tauri::command]
+pub async fn open_pdf_preview(app: AppHandle, path: String) -> Result<(), String> {
+    let cache_dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    let dir = preview_dir(&cache_dir, &active_documents_root_for(&app)?)?;
+    let file = checked_preview_file(&dir, Path::new(&path))?;
+    app.opener()
+        .open_path(path_string(&file), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+fn checked_preview_file(dir: &Path, path: &Path) -> Result<PathBuf, String> {
+    let file = resolved(path);
+    let in_preview_dir = file.parent() == Some(resolved(dir).as_path());
+    if !(in_preview_dir && is_preview_file(&file) && file.is_file()) {
+        return Err(format!("Das ist keine Vorschau-Datei: {}", path.display()));
+    }
+    Ok(file)
+}
+
 /// `s` made safe as a single path segment.
 pub(crate) fn sanitize_segment(s: &str) -> String {
     s.chars()
@@ -472,6 +640,208 @@ mod tests {
         assert!(pdf_versions(&dir.path().join("RE-1.pdf"))
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn previews_live_below_the_cache_dir_outside_the_documents_root() {
+        let dir = TempDir::new("preview-dir");
+        let cache = dir.path().join("cache/app");
+        let documents = dir.path().join("Documents/Zettel");
+
+        assert_eq!(
+            preview_dir(&cache, &documents).unwrap(),
+            cache.join(PREVIEW_DIR)
+        );
+    }
+
+    #[test]
+    fn a_preview_is_refused_where_it_would_land_inside_the_documents_root() {
+        let dir = TempDir::new("preview-in-root");
+        let cache = dir.path().join("cache/app");
+        fs::create_dir_all(&cache).unwrap();
+
+        for documents_root in [
+            cache.clone(),
+            cache.join(PREVIEW_DIR),
+            dir.path().join("cache"),
+            dir.path().to_path_buf(),
+            // spelled differently, same folder
+            cache.join("../app"),
+        ] {
+            let err = preview_dir(&cache, &documents_root).unwrap_err();
+            assert!(err.contains("liegt im Dokumente-Ordner"), "{err}");
+        }
+    }
+
+    #[test]
+    fn a_documents_root_next_to_the_cache_dir_is_not_mistaken_for_a_parent() {
+        let dir = TempDir::new("preview-sibling-root");
+        let cache = dir.path().join("cache/app");
+        let documents = dir.path().join("cache/app-documents");
+        fs::create_dir_all(&documents).unwrap();
+
+        assert!(preview_dir(&cache, &documents).is_ok());
+    }
+
+    #[test]
+    fn the_preview_of_a_document_replaces_its_predecessor() {
+        let dir = TempDir::new("preview-replace");
+
+        let first = fresh_preview_path(dir.path(), PreviewKind::Invoice, 7);
+        fs::write(&first, b"first").unwrap();
+        let second = fresh_preview_path(dir.path(), PreviewKind::Invoice, 7);
+
+        assert_eq!(first, dir.path().join("Vorschau-Rechnung-7.pdf"));
+        assert_eq!(second, first);
+        assert!(!second.exists());
+    }
+
+    #[test]
+    fn previews_of_an_invoice_and_an_offer_with_the_same_id_stay_apart() {
+        let dir = TempDir::new("preview-kinds");
+
+        assert_ne!(
+            fresh_preview_path(dir.path(), PreviewKind::Invoice, 1),
+            fresh_preview_path(dir.path(), PreviewKind::Offer, 1)
+        );
+    }
+
+    #[test]
+    fn a_preview_that_cannot_be_replaced_gets_a_name_of_its_own() {
+        let dir = TempDir::new("preview-locked");
+        // A directory cannot be removed as a file, like a PDF a viewer holds open.
+        fs::create_dir(dir.path().join("Vorschau-Angebot-3.pdf")).unwrap();
+
+        assert_eq!(
+            fresh_preview_path(dir.path(), PreviewKind::Offer, 3),
+            dir.path().join("Vorschau-Angebot-3-2.pdf")
+        );
+    }
+
+    #[test]
+    fn clearing_removes_previews_and_nothing_else() {
+        let dir = TempDir::new("preview-clear");
+        fs::write(dir.path().join("Vorschau-Rechnung-1.pdf"), b"x").unwrap();
+        fs::write(dir.path().join("Vorschau-Angebot-2-2.PDF"), b"x").unwrap();
+        fs::write(dir.path().join("Rechnung.pdf"), b"x").unwrap();
+        fs::write(dir.path().join("Vorschau-notes.txt"), b"x").unwrap();
+
+        clear_previews(dir.path());
+
+        let mut left: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(left, ["Rechnung.pdf", "Vorschau-notes.txt"]);
+    }
+
+    #[test]
+    fn only_a_preview_file_in_the_preview_dir_is_opened() {
+        let dir = TempDir::new("preview-open");
+        let previews = dir.path().join("cache").join(PREVIEW_DIR);
+        fs::create_dir_all(&previews).unwrap();
+        let preview = previews.join("Vorschau-Rechnung-1.pdf");
+        fs::write(&preview, b"x").unwrap();
+        let invoice = dir.path().join("Zettel/Rechnungen/RE-1.pdf");
+        fs::create_dir_all(invoice.parent().unwrap()).unwrap();
+        fs::write(&invoice, b"x").unwrap();
+        let sneaky = previews.join("../../Zettel/Rechnungen/RE-1.pdf");
+        let wrong_name = previews.join("Rechnung.pdf");
+        fs::write(&wrong_name, b"x").unwrap();
+
+        assert!(checked_preview_file(&previews, &preview).is_ok());
+        assert!(checked_preview_file(&previews, &invoice).is_err());
+        assert!(checked_preview_file(&previews, &sneaky).is_err());
+        assert!(checked_preview_file(&previews, &wrong_name).is_err());
+        assert!(
+            checked_preview_file(&previews, &previews.join("Vorschau-Rechnung-2.pdf")).is_err()
+        );
+    }
+
+    #[test]
+    fn a_file_named_like_a_preview_but_outside_the_preview_dir_is_not_opened() {
+        let dir = TempDir::new("preview-open-outside");
+        let previews = dir.path().join(PREVIEW_DIR);
+        fs::create_dir_all(&previews).unwrap();
+        fs::write(dir.path().join("Vorschau-Rechnung-1.pdf"), b"x").unwrap();
+
+        assert!(
+            checked_preview_file(&previews, &dir.path().join("Vorschau-Rechnung-1.pdf")).is_err()
+        );
+    }
+
+    #[test]
+    fn a_directory_named_like_a_preview_is_not_opened() {
+        let dir = TempDir::new("preview-open-directory");
+        let previews = dir.path().join(PREVIEW_DIR);
+        let lookalike = previews.join("Vorschau-Rechnung-1.pdf");
+        fs::create_dir_all(&lookalike).unwrap();
+
+        assert!(checked_preview_file(&previews, &lookalike).is_err());
+    }
+
+    #[test]
+    fn a_link_in_the_preview_dir_that_leads_to_another_file_is_not_opened() {
+        let dir = TempDir::new("preview-open-link");
+        let previews = dir.path().join(PREVIEW_DIR);
+        fs::create_dir_all(&previews).unwrap();
+        let invoice = dir.path().join("RE-1.pdf");
+        fs::write(&invoice, b"x").unwrap();
+        let link = previews.join("Vorschau-Rechnung-1.pdf");
+        if make_file_link(&invoice, &link).is_err() {
+            // Windows only lets a privileged user or developer mode create links.
+            eprintln!("skipped: this platform did not allow a symbolic link");
+            return;
+        }
+
+        assert!(checked_preview_file(&previews, &link).is_err());
+    }
+
+    #[cfg(unix)]
+    fn make_file_link(target: &Path, link: &Path) -> io::Result<()> {
+        std::os::unix::fs::symlink(target, link)
+    }
+
+    #[cfg(windows)]
+    fn make_file_link(target: &Path, link: &Path) -> io::Result<()> {
+        std::os::windows::fs::symlink_file(target, link)
+    }
+
+    #[test]
+    fn a_new_preview_removes_the_numbered_leftovers_of_the_same_document_only() {
+        let dir = TempDir::new("preview-leftovers");
+        for name in [
+            "Vorschau-Rechnung-1.pdf",
+            "Vorschau-Rechnung-1-2.pdf",
+            "Vorschau-Rechnung-1-3.pdf",
+            "Vorschau-Rechnung-12.pdf",
+            "Vorschau-Rechnung-12-2.pdf",
+            "Vorschau-Angebot-1-2.pdf",
+            "Vorschau-Rechnung-1-notes.pdf",
+        ] {
+            fs::write(dir.path().join(name), b"x").unwrap();
+        }
+
+        let path = fresh_preview_path(dir.path(), PreviewKind::Invoice, 1);
+
+        assert_eq!(path, dir.path().join("Vorschau-Rechnung-1.pdf"));
+        let mut left: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(
+            left,
+            [
+                "Vorschau-Angebot-1-2.pdf",
+                "Vorschau-Rechnung-1-notes.pdf",
+                "Vorschau-Rechnung-12-2.pdf",
+                "Vorschau-Rechnung-12.pdf",
+            ]
+        );
     }
 
     #[test]

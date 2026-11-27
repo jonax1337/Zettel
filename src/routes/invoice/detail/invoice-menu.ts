@@ -1,6 +1,7 @@
 import { Ban, Check, CheckCircle2, Clock, FileDown, RefreshCw, Repeat, Send, Trash2, Undo2 } from "$lib/brand-icons";
 import type { InvoiceActionId } from "./invoice-action-plan";
 import type { MenuEntry } from "./menu-entry";
+import { PREVIEW_PDF_MENU, PREVIEWING_LABEL } from "./preview-menu";
 
 type MenuDefinition = Pick<MenuEntry, "label" | "icon" | "group" | "destructive">;
 
@@ -9,6 +10,7 @@ const REVERSING = 1;
 const REMOVING = 2;
 
 const INVOICE_MENU: Partial<Record<InvoiceActionId, MenuDefinition>> = {
+  "preview-pdf": PREVIEW_PDF_MENU,
   "send-mail": { label: "Per E-Mail senden", icon: Send, group: EVERYDAY },
   "mark-sent": { label: "Als versendet markieren", icon: Check, group: EVERYDAY },
   "mark-paid": { label: "Als bezahlt markieren", icon: CheckCircle2, group: EVERYDAY },
@@ -28,6 +30,8 @@ type MenuContext = {
   mail: { hasAddress: boolean; mailProgramOpen: boolean };
   /** Marking it paid books the remainder: some of it was paid or credited already. */
   settlesRemainder: boolean;
+  /** The draft PDF is being made. */
+  previewing: boolean;
   onSelect: (id: InvoiceActionId) => void;
 };
 
@@ -45,6 +49,7 @@ export function invoiceMenuEntries(ids: InvoiceActionId[], context: MenuContext)
     if (!definition) return [];
     const entry = { ...definition, id, disabled: context.busy, onSelect: () => context.onSelect(id) };
     if (id === "mark-paid" && context.settlesRemainder) entry.label = "Restbetrag als bezahlt markieren";
+    if (id === "preview-pdf" && context.previewing) entry.label = PREVIEWING_LABEL;
     return [id === "send-mail" ? withMailState(entry, context.mail, context.busy) : entry];
   });
 }

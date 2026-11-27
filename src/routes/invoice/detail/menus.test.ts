@@ -8,6 +8,7 @@ import { planOfferActions } from "../../offer/offer-actions";
 const EVERYTHING: InvoiceActionState = {
   status: "sent",
   isCreditNote: false,
+  isNumbered: true,
   hasPdf: true,
   isOverdue: true,
   canRecordPayment: true,
@@ -23,6 +24,7 @@ const CONTEXT = {
   busy: false,
   mail: { hasAddress: true, mailProgramOpen: false },
   settlesRemainder: false,
+  previewing: false,
   onSelect: () => {},
 };
 
@@ -31,6 +33,7 @@ describe("invoiceMenuEntries", () => {
     const states: InvoiceActionState[] = [
       EVERYTHING,
       { ...draftState(), status: "draft" },
+      { ...draftState(), status: "draft", isNumbered: true, hasPdf: true },
       { ...EVERYTHING, status: "paid", canRecordPayment: false },
       { ...EVERYTHING, creatableReminderLevel: 2 },
     ];
@@ -38,6 +41,12 @@ describe("invoiceMenuEntries", () => {
       const ids = actionsAt(planInvoiceActions(state), "menu");
       expect(invoiceMenuEntries(ids, CONTEXT).map((entry) => entry.id)).toEqual(ids);
     }
+  });
+
+  it("names the preview entry and shows it busy while the draft PDF is made", () => {
+    const label = (previewing: boolean) => invoiceMenuEntries(["preview-pdf"], { ...CONTEXT, previewing })[0].label;
+    expect(label(false)).toBe("PDF-Vorschau");
+    expect(label(true)).toBe("Erstelle Vorschau…");
   });
 
   it("calls back with the id of the chosen entry", () => {
@@ -89,14 +98,30 @@ describe("invoiceMenuEntries", () => {
 });
 
 describe("offerMenuEntries", () => {
+  const context = { busy: false, previewing: false, onSelect: () => {} };
+
   it("has an entry for every action the offer plan puts into the menu", () => {
     for (const status of ["draft", "sent", "accepted", "rejected", "expired"] as const) {
       const ids = actionsAt(planOfferActions({ status, convertedInvoiceId: null, hasPdf: true }), "menu");
-      expect(offerMenuEntries(ids, { busy: false, onSelect: () => {} }).map((entry) => entry.id)).toEqual(ids);
+      expect(offerMenuEntries(ids, context).map((entry) => entry.id)).toEqual(ids);
     }
+  });
+
+  it("names the preview entry and shows it busy while the draft PDF is made", () => {
+    const label = (previewing: boolean) => offerMenuEntries(["preview-pdf"], { ...context, previewing })[0].label;
+    expect(label(false)).toBe("PDF-Vorschau");
+    expect(label(true)).toBe("Erstelle Vorschau…");
+  });
+
+  it("calls back with the id of the chosen entry and is disabled while another action runs", () => {
+    const chosen: string[] = [];
+    const [entry] = offerMenuEntries(["preview-pdf"], { ...context, onSelect: (id) => chosen.push(id) });
+    entry.onSelect();
+    expect(chosen).toEqual(["preview-pdf"]);
+    expect(offerMenuEntries(["preview-pdf"], { ...context, busy: true })[0].disabled).toBe(true);
   });
 });
 
 function draftState(): InvoiceActionState {
-  return { ...EVERYTHING, hasPdf: false, canRecordPayment: false, canExportXrechnung: false, canCreateCreditNote: false };
+  return { ...EVERYTHING, isNumbered: false, hasPdf: false, canRecordPayment: false, canExportXrechnung: false, canCreateCreditNote: false };
 }

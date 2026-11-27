@@ -21,6 +21,8 @@ import {
   pdfSettingsPayload,
   skontoPayload,
 } from "./payload";
+import { readSettingsForPreview, renderPreviewPdf } from "./pdf-preview";
+import { invoiceAsShown, NO_OUTPUT_PATH } from "./shown-document";
 import { renderDocumentPdf } from "./render-document";
 import { withLiveCustomerFallbacks } from "$lib/xrechnung/export-data";
 import { missingXrechnungFields } from "$lib/xrechnung/preflight";
@@ -155,6 +157,30 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
     (response) => validateAndRecord(response, invoiceId),
     invoice.pdfPath,
   );
+}
+
+/**
+ * The PDF of an invoice as issuing would produce it, marked as a draft. It only reads:
+ * no number is drawn, nothing is sealed, archived, versioned or logged, and the invoice
+ * keeps its status, PDF path and customer snapshot (a draft is shown with the snapshot
+ * issuing would save). For issued invoices the stored PDF is the document.
+ */
+export async function previewInvoicePdf(invoiceId: number): Promise<SidecarResponse> {
+  const company = await readSettingsForPreview();
+  const blocked = companyIncompleteResponse(company);
+  if (blocked) return blocked;
+  const data = await getInvoice(invoiceId);
+  if (!data) throw new Error(`Invoice ${invoiceId} not found`);
+  const { invoice, customer } = await invoiceAsShown(data.invoice);
+  const payload = buildInvoicePayload({
+    invoice,
+    items: data.items,
+    customer,
+    company,
+    outputPath: NO_OUTPUT_PATH,
+    correctsInvoice: await findCorrectedInvoice(data.invoice),
+  });
+  return renderPreviewPdf("invoice", invoiceId, payload);
 }
 
 export type XrechnungExport =

@@ -70,6 +70,22 @@ describe("createDocumentActions", () => {
     });
   });
 
+  describe("previewing", () => {
+    it("is its own task, so it neither looks like PDF generation nor lets another task start", async () => {
+      const actions = createDocumentActions({ reload: vi.fn() });
+      let release!: () => void;
+      const preview = actions.exclusive("preview", () => new Promise<void>((resolve) => (release = resolve)));
+
+      expect(actions.previewing).toBe(true);
+      expect(actions.generating).toBe(false);
+      expect(actions.busy).toBe(true);
+      release();
+      await preview;
+
+      expect(actions.previewing).toBe(false);
+    });
+  });
+
   describe("remove", () => {
     it("navigates to the list after deleting", async () => {
       const actions = createDocumentActions({ reload: vi.fn() });

@@ -12,6 +12,8 @@ import {
   pdfSettingsPayload,
   skontoPayload,
 } from "./payload";
+import { readSettingsForPreview, renderPreviewPdf } from "./pdf-preview";
+import { NO_OUTPUT_PATH } from "./shown-document";
 import { renderDocumentPdf, storePdfPath } from "./render-document";
 import { companyIncompleteResponse } from "./company-guard";
 import type { SidecarResponse } from "./types";
@@ -61,6 +63,26 @@ export function buildOfferPayload(opts: {
     outputPath,
     settings: pdfSettingsPayload(company),
   };
+}
+
+/**
+ * The PDF of an offer as it would be made, marked as a draft. Unlike `generateOfferPdf` it
+ * stores no PDF path, so the offer keeps editing its amounts freely (`offerKeepsStoredAmounts`).
+ */
+export async function previewOfferPdf(offerId: number): Promise<SidecarResponse> {
+  const company = await readSettingsForPreview();
+  const blocked = companyIncompleteResponse(company);
+  if (blocked) return blocked;
+  const data = await getOffer(offerId);
+  if (!data) throw new Error(`Offer ${offerId} not found`);
+  const payload = buildOfferPayload({
+    offer: data.offer,
+    items: data.items,
+    customer: parseCustomerSnapshot(data.offer.customerSnapshot),
+    company,
+    outputPath: NO_OUTPUT_PATH,
+  });
+  return renderPreviewPdf("offer", offerId, payload);
 }
 
 export async function generateOfferPdf(offerId: number): Promise<SidecarResponse> {

@@ -85,12 +85,20 @@ describe("planOfferActions", () => {
     expect(actionsAt(withoutPdf, "menu")).not.toContain("regenerate-pdf");
   });
 
+  it("previews a draft from the menu, even without a PDF, and no other offer", () => {
+    expect(actionsAt(plan({ status: "draft", hasPdf: false }), "menu")[0]).toBe("preview-pdf");
+    for (const status of ["sent", "accepted", "rejected", "expired"] as const) {
+      expect(actionsAt(plan({ status }), "menu")).not.toContain("preview-pdf");
+      expect(actionsAt(plan({ status }), "header")).not.toContain("preview-pdf");
+    }
+  });
+
   it("moves PDF regeneration into the menu once there is a PDF", () => {
     expect(actionsAt(plan(), "menu")).toContain("regenerate-pdf");
   });
 
   it("offers reopening and deleting where they are allowed today", () => {
-    expect(actionsAt(plan({ status: "draft" }), "menu")).toEqual(["regenerate-pdf", "delete"]);
+    expect(actionsAt(plan({ status: "draft" }), "menu")).toEqual(["preview-pdf", "regenerate-pdf", "delete"]);
     expect(actionsAt(plan({ status: "rejected" }), "menu")).toEqual(["regenerate-pdf", "reopen-draft", "delete"]);
     expect(actionsAt(plan({ status: "sent" }), "menu")).toEqual(["regenerate-pdf", "reopen-draft"]);
     expect(actionsAt(plan({ status: "accepted", convertedInvoiceId: 7 }), "menu")).toEqual(["regenerate-pdf"]);

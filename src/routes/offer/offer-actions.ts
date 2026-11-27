@@ -27,6 +27,7 @@ export type OfferActionId =
   | "generate-pdf"
   | "send-mail"
   | "edit"
+  | "preview-pdf"
   | "regenerate-pdf"
   | "reopen-draft"
   | "delete";
@@ -58,7 +59,9 @@ export function planOfferActions(state: OfferActionState): PlannedAction<OfferAc
   header.push("send-mail");
   if (state.status === "sent") header.push("reject");
 
+  // The header of a draft is full; a sent offer's PDF is the document, so only drafts are previewed.
   const menu: OfferActionId[] = [];
+  if (isDraft) menu.push("preview-pdf");
   if (state.hasPdf) menu.push("regenerate-pdf");
   if (canReopenOffer(state)) menu.push("reopen-draft");
   if (isDraft || state.status === "rejected" || state.status === "expired") menu.push("delete");
