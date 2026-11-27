@@ -8,7 +8,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from weasyprint import CSS, HTML
 
 from .document_view import invoice_view, offer_view, reminder_view
 from .templates import build_env, templates_dir
@@ -69,6 +68,9 @@ def _html_to_pdf(html_str: str) -> bytes:
     offers and reminders it keeps the file long-term archivable (WeasyPrint
     emits the XMP packet and sRGB OutputIntent and embeds all fonts).
     """
+    # Imported here: it takes over a second, which the HTML preview path never needs.
+    from weasyprint import CSS, HTML
+
     css_path = templates_dir() / STYLESHEET_FILENAME
     buf = io.BytesIO()
     HTML(string=html_str, base_url=str(css_path.parent)).write_pdf(

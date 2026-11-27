@@ -32,7 +32,7 @@ export type { SidecarResponse } from "./types";
 type InvoiceWithItems = { invoice: Invoice; items: InvoiceItem[] };
 type CorrectedInvoice = { number: string; issueDate: number };
 
-function buildPayload(opts: {
+export function buildInvoicePayload(opts: {
   invoice: Invoice;
   items: InvoiceItem[];
   customer: CustomerSnapshot;
@@ -103,7 +103,7 @@ async function loadInvoiceForRendering(invoiceId: number): Promise<InvoiceWithIt
   return data;
 }
 
-async function findCorrectedInvoice(invoice: Invoice): Promise<CorrectedInvoice | null> {
+export async function findCorrectedInvoice(invoice: Invoice): Promise<CorrectedInvoice | null> {
   if (!invoice.isCreditNote || !invoice.correctsInvoiceId) return null;
   const original = await getInvoice(invoice.correctsInvoiceId);
   if (!original) return null;
@@ -141,7 +141,7 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
   const customer = parseCustomerSnapshot(invoice.customerSnapshot);
   const outputPath = await documentOutputPath("Rechnungen", invoice.number);
 
-  const payload = buildPayload({
+  const payload = buildInvoicePayload({
     invoice,
     items,
     customer,
@@ -183,7 +183,7 @@ export async function exportInvoiceXrechnung(invoiceId: number): Promise<Xrechnu
   if (missing.length > 0) return { status: "incomplete", missing };
 
   const outputPath = await documentOutputPath("Rechnungen", invoice.number, "xml");
-  const payload = buildPayload({
+  const payload = buildInvoicePayload({
     invoice: exported,
     items,
     customer,

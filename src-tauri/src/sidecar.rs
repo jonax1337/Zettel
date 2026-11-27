@@ -205,6 +205,12 @@ pub async fn generate_reminder(app: AppHandle, payload: Value) -> Result<Value, 
     call_off_runtime(app, "generate_reminder", Some(payload)).await
 }
 
+/// The document as one HTML sheet for the on-screen preview; nothing is written to disk.
+#[tauri::command]
+pub async fn render_document_html(app: AppHandle, payload: Value) -> Result<Value, String> {
+    call_off_runtime(app, "render_document_html", Some(payload)).await
+}
+
 #[tauri::command]
 pub async fn generate_xrechnung(app: AppHandle, payload: Value) -> Result<Value, String> {
     call_off_runtime(app, "generate_xrechnung", Some(payload)).await

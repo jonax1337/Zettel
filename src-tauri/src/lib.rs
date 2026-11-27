@@ -142,6 +142,7 @@ pub fn run() {
             sidecar::extract_zugferd,
             sidecar::extract_text_pdf,
             sidecar::generate_reminder,
+            sidecar::render_document_html,
             sidecar::generate_xrechnung,
             sidecar::parse_bank_statement,
             sidecar::cli_path,

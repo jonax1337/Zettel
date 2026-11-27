@@ -42,7 +42,7 @@ function snapshotFromInvoice(invoice: Invoice): ReminderInvoiceSnapshot {
   };
 }
 
-function storedSnapshotOrRebuilt(reminder: Reminder, invoice: Invoice): ReminderInvoiceSnapshot {
+export function storedSnapshotOrRebuilt(reminder: Reminder, invoice: Invoice): ReminderInvoiceSnapshot {
   const stored = parseSnapshot<ReminderInvoiceSnapshot>(
     reminder.invoiceSnapshot,
     `Mahnungssnapshot ${reminder.number}`,
@@ -94,7 +94,7 @@ export function buildReminderPayload(opts: {
   };
 }
 
-export async function generateReminderPdf(reminderId: number): Promise<SidecarResponse> {
+export async function loadReminderContext(reminderId: number) {
   const reminder = await getReminder(reminderId);
   if (!reminder) throw new Error(`Mahnung ${reminderId} nicht gefunden.`);
 
@@ -102,14 +102,19 @@ export async function generateReminderPdf(reminderId: number): Promise<SidecarRe
   if (!invoiceData) {
     throw new Error("Zugehörige Rechnung ist nicht mehr verfügbar.");
   }
+  return { reminder, invoice: invoiceData.invoice };
+}
+
+export async function generateReminderPdf(reminderId: number): Promise<SidecarResponse> {
+  const { reminder, invoice } = await loadReminderContext(reminderId);
   const company = await loadSettings();
   const blocked = companyIncompleteResponse(company);
   if (blocked) return blocked;
 
   const payload = buildReminderPayload({
     reminder,
-    invoice: invoiceData.invoice,
-    snapshot: storedSnapshotOrRebuilt(reminder, invoiceData.invoice),
+    invoice,
+    snapshot: storedSnapshotOrRebuilt(reminder, invoice),
     company,
     outputPath: await documentOutputPath("Mahnungen", reminder.number),
   });

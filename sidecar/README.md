@@ -1,6 +1,6 @@
 # Zettel Sidecar
 
-Python sidecar that turns invoice JSON into a PDF via Jinja2 + WeasyPrint, renders the ZUGFeRD/XRechnung XML, reads incoming e-invoices and parses bank statements (CAMT.053, MT940). The commands are listed in `main.py` (`generate_invoice`, `generate_offer`, `generate_reminder`, `generate_xrechnung`, `extract_zugferd`, `extract_xml_only`, `extract_text_pdf`, `parse_bank_statement`, `ping`).
+Python sidecar that turns invoice JSON into a PDF via Jinja2 + WeasyPrint, renders the ZUGFeRD/XRechnung XML, reads incoming e-invoices and parses bank statements (CAMT.053, MT940). The commands are listed in `main.py` (`generate_invoice`, `generate_offer`, `generate_reminder`, `render_document_html`, `generate_xrechnung`, `extract_zugferd`, `extract_xml_only`, `extract_text_pdf`, `parse_bank_statement`, `ping`).
 
 ## Setup (Windows, dev)
 
@@ -55,7 +55,9 @@ Error response:
   "error": { "code": "RENDER_FAILED", "message": "...", "details": "..." } }
 ```
 
-`ping` is a no-op for diagnostics: returns `{"success": true, "pong": true}`.
+`ping` is for diagnostics: it loads WeasyPrint (the PDF commands import it lazily, so the build smoke test would otherwise miss a bundle that cannot render) and returns `{"success": true, "pong": true}`.
+
+`render_document_html` takes the payload of a `generate_*` command plus `kind` (`invoice`, `offer`, `reminder`) and returns `{"success": true, "html": …}`: the same template as the PDF as one self-contained HTML sheet for the app. It writes nothing to disk and does not load WeasyPrint.
 
 ## Bundling
 
