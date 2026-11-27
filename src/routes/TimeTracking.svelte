@@ -10,13 +10,14 @@
     type TimeEntryStatusFilter,
   } from "$lib/db/time-entries";
   import { summarizeEntries } from "$lib/time/summary";
-  import { formatDuration } from "$lib/time/duration";
-  import { Button, BulkActionBar, ConfirmDialog, EmptyState, Label, PageHeader, QueryBoundary, Select } from "$lib/ui";
+  import { Button, BulkActionBar, ConfirmDialog, EmptyState, PageHeader, QueryBoundary, Select } from "$lib/ui";
   import { FilePlus2, Plus } from "$lib/brand-icons";
   import { ALL, customerFilterItems, numberOrAll } from "./invoice/list-support";
   import { queryParam } from "./invoice/route-query";
   import { createRowSelection } from "./invoice/list-selection.svelte";
   import { pluralize } from "./parts/entity/format";
+  import ListSummary from "./parts/list/ListSummary.svelte";
+  import { countSummary } from "./parts/list/list-summary";
   import { createDeleteFlow } from "./parts/entity/delete-flow.svelte";
   import { createListFilters } from "./parts/entity/list-filters.svelte";
   import ListEmptyState from "./parts/entity/ListEmptyState.svelte";
@@ -27,10 +28,10 @@
   import PeriodBar from "./time/PeriodBar.svelte";
   import { periodContaining } from "./time/period";
   import { customerFilterOptions, projectFilterItems, selectableProjects } from "./time/project-options";
-  import { billingBlocker, isBillable } from "./time/selection";
+  import { BAR_REMEDY, billingBlocker, isBillable, SUMMARY_REMEDY } from "./time/selection";
   import TimeEntryDialog from "./time/TimeEntryDialog.svelte";
   import TimerCard from "./time/TimerCard.svelte";
-  import TimeSummaryCards from "./time/TimeSummaryCards.svelte";
+  import TimeSummaryRow from "./time/TimeSummaryRow.svelte";
 
   const STATUS_ITEMS: { value: TimeEntryStatusFilter; label: string }[] = [
     { value: "all", label: "Alle Status" },
@@ -76,10 +77,13 @@
     if (!projects.loading && !projectItems.some((item) => item.value === f.projectId)) f.projectId = ALL;
   });
 
+  const hasNoProjects = $derived(!projects.loading && !projects.error && projects.data.length === 0);
   const groups = $derived(groupByDay(entries.data));
   const summary = $derived(summarizeEntries(entries.data));
-  const selection = createRowSelection(() => entries.data.filter(isBillable));
-  const blocker = $derived(billingBlocker(selection.selected));
+  const openEntries = $derived(entries.data.filter(isBillable));
+  const selection = createRowSelection(() => openEntries);
+  const blocker = $derived(billingBlocker(selection.selected, BAR_REMEDY));
+  const openBlocker = $derived(billingBlocker(openEntries, SUMMARY_REMEDY));
   const selectionLabel = $derived(pluralize(selection.selected.length, "Eintrag", "Einträge"));
 
   const selectable = $derived(selectableProjects(projects.data));
@@ -91,6 +95,7 @@
   let editingEntry = $state<TimeEntryListRow | null>(null);
   let billingOpen = $state(false);
   let billingEntryIds = $state<number[]>([]);
+  let billingCustomerName = $state("");
 
   function openCreate() {
     editingEntry = null;
@@ -102,9 +107,15 @@
     entryDialogOpen = true;
   }
 
-  function openBilling() {
-    billingEntryIds = selection.selected.map((entry) => entry.id);
+  function openBilling(rows: TimeEntryListRow[]) {
+    billingEntryIds = rows.map((entry) => entry.id);
+    billingCustomerName = rows[0]?.customerName ?? "";
     billingOpen = true;
+  }
+
+  // "Offene Zeiten abrechnen": everything unbilled in the current view; the user's selection stays as it is.
+  function billOpenEntries() {
+    openBilling(openEntries);
   }
 
   async function afterBilled() {
@@ -129,22 +140,20 @@
   });
 </script>
 
-<PageHeader
-  title="Zeiterfassung"
-  subtitle="{entries.data.length} {pluralize(entries.data.length, 'Eintrag', 'Einträge')} · {formatDuration(summary.totalMinutes)} Std"
->
+<PageHeader title="Zeiten">
   {#snippet actions()}
-    <div class="flex gap-2">
-      <Button variant="outline" href="/time/projects">Projekte</Button>
+    <Button variant="outline" href="/time/projects">Projekte</Button>
+    <!-- Without a project the empty state below carries the one call to action. -->
+    {#if !hasNoProjects}
       <Button onclick={openCreate} disabled={selectable.length === 0}>
         <Plus />
         Zeit erfassen
       </Button>
-    </div>
+    {/if}
   {/snippet}
 </PageHeader>
 
-{#if !projects.loading && !projects.error && projects.data.length === 0}
+{#if hasNoProjects}
   <EmptyState
     message="Zeiten werden pro Projekt erfasst. Lege zuerst ein Projekt mit Kunde und Stundensatz an."
     actionLabel="Projekt anlegen"
@@ -155,22 +164,13 @@
 
   <PeriodBar bind:period />
 
-  <div class="mb-5 grid grid-cols-3 gap-3">
-    <div class="flex flex-col gap-1.5">
-      <Label class="text-xs text-muted-foreground">Kunde</Label>
-      <Select bind:value={f.customerId} items={customerItems} />
-    </div>
-    <div class="flex flex-col gap-1.5">
-      <Label class="text-xs text-muted-foreground">Projekt</Label>
-      <Select bind:value={f.projectId} items={projectItems} />
-    </div>
-    <div class="flex flex-col gap-1.5">
-      <Label class="text-xs text-muted-foreground">Status</Label>
-      <Select bind:value={f.status} items={STATUS_ITEMS} />
-    </div>
+  <div class="mb-5 flex flex-wrap items-center gap-2">
+    <Select class="h-8 w-48 text-[13px]" bind:value={f.customerId} items={customerItems} aria-label="Kunde filtern" />
+    <Select class="h-8 w-48 text-[13px]" bind:value={f.projectId} items={projectItems} aria-label="Projekt filtern" />
+    <Select class="h-8 w-40 text-[13px]" bind:value={f.status} items={STATUS_ITEMS} aria-label="Status filtern" />
   </div>
 
-  <TimeSummaryCards {summary} />
+  <TimeSummaryRow {period} {summary} billingBlocker={openBlocker} canBill={openEntries.length > 0} onBillOpen={billOpenEntries} />
 
   <QueryBoundary query={entries} isEmpty={entries.data.length === 0}>
     {#snippet empty()}
@@ -190,16 +190,17 @@
       onEdit={openEdit}
       onDelete={deletion.ask}
     />
+    <ListSummary segments={countSummary(entries.data.length, "Eintrag", "Einträge")} />
   </QueryBoundary>
 {/if}
 
 <BulkActionBar count={selection.selected.length} label={selectionLabel} onClear={selection.clear}>
-  <Button size="sm" onclick={openBilling} disabled={blocker !== null}>
+  <Button size="sm" variant="outline" onclick={() => openBilling(selection.selected)} disabled={blocker !== null}>
     <FilePlus2 class="size-3.5" />
     Abrechnen
   </Button>
   {#if blocker}
-    <span class="max-w-64 text-xs text-warning">{blocker}</span>
+    <span class="max-w-64 text-xs text-status-warn">{blocker}</span>
   {/if}
 </BulkActionBar>
 
@@ -214,7 +215,7 @@
 <BillingDialog
   bind:open={billingOpen}
   entryIds={billingEntryIds}
-  customerName={selection.selected[0]?.customerName ?? ""}
+  customerName={billingCustomerName}
   onBilled={afterBilled}
 />
 

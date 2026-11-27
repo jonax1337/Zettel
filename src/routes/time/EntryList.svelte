@@ -2,10 +2,12 @@
   import { link } from "svelte-spa-router";
   import type { TimeEntryListRow } from "$lib/db/time-entries";
   import { formatDuration } from "$lib/time/duration";
-  import { Badge, Card, Checkbox } from "$lib/ui";
+  import { Badge, Checkbox, StatusBadge } from "$lib/ui";
+  import { WIDE_ONLY } from "../invoice/list-support";
   import RowActionsMenu from "../parts/entity/RowActionsMenu.svelte";
   import type { DayGroup } from "./day-groups";
   import { timeRangeText } from "./entry-form";
+  import { ENTRY_STATUS, entryStatus } from "./entry-status";
   import { isBillable } from "./selection";
 
   type Props = {
@@ -16,67 +18,71 @@
     onDelete: (entry: TimeEntryListRow) => void;
   };
   let { groups, isSelected, onToggle, onEdit, onDelete }: Props = $props();
+
+  const DAY_CELL = "h-auto bg-transparent pt-5 pb-2 text-sm border-line-strong";
+  // Customer and description share the free width; below the wide breakpoint the description column is hidden.
+  const CUSTOMER_CELL = "whitespace-nowrap text-muted-foreground max-[1180px]:w-full max-[1180px]:max-w-0 max-[1180px]:truncate";
 </script>
 
-<Card class="overflow-hidden py-0">
-  <table class="w-full text-sm">
-    <tbody>
-      {#each groups as group (group.entryDate)}
-        <tr class="bg-muted/40 {group === groups[0] ? '' : 'border-t'}">
-          <th scope="colgroup" colspan="6" class="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            {group.label}
-          </th>
-          <td class="px-4 py-2 text-right font-mono text-xs tabular-nums text-muted-foreground">
-            {formatDuration(group.finishedMinutes)}
+<table class="data-list">
+  <tbody>
+    {#each groups as group (group.entryDate)}
+      <tr>
+        <th scope="rowgroup" colspan="4" class="{DAY_CELL} text-left font-display font-extrabold text-foreground">{group.label}</th>
+        <td class="{DAY_CELL} {WIDE_ONLY}"></td>
+        <td class={DAY_CELL}></td>
+        <td class="{DAY_CELL} text-right font-bold text-muted-foreground tabular-nums whitespace-nowrap">
+          {formatDuration(group.finishedMinutes)}
+        </td>
+        <td class={DAY_CELL}></td>
+      </tr>
+      {#each group.entries as entry (entry.id)}
+        {@const status = entryStatus(entry)}
+        <tr>
+          <td class="w-10">
+            {#if isBillable(entry)}
+              <Checkbox
+                checked={isSelected(entry.id)}
+                onCheckedChange={() => onToggle(entry.id)}
+                aria-label="Eintrag {entry.projectName} auswählen"
+              />
+            {/if}
           </td>
-        </tr>
-        {#each group.entries as entry (entry.id)}
-          <tr class="border-t hover:bg-muted/30 transition-colors">
-            <td class="w-10 px-4 py-3">
-              {#if isBillable(entry)}
-                <Checkbox
-                  checked={isSelected(entry.id)}
-                  onCheckedChange={() => onToggle(entry.id)}
-                  aria-label="Eintrag {entry.projectName} auswählen"
-                />
-              {/if}
-            </td>
-            <td class="px-3 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{timeRangeText(entry) ?? "—"}</td>
-            <td class="px-3 py-3 min-w-32">
-              <div class="line-clamp-1 font-medium" title="{entry.customerName} · {entry.projectName}">{entry.projectName}</div>
-              <div class="text-xs text-muted-foreground line-clamp-1">{entry.customerName}</div>
-            </td>
-            <td class="px-3 py-3 text-muted-foreground"><span class="line-clamp-2">{entry.description}</span></td>
-            <td class="px-3 py-3 text-right font-mono whitespace-nowrap">
-              {entry.durationMinutes === null ? "läuft" : formatDuration(entry.durationMinutes)}
-            </td>
-            <td class="px-3 py-3 whitespace-nowrap">
+          <td class="text-muted-foreground tabular-nums whitespace-nowrap">{timeRangeText(entry) ?? "—"}</td>
+          <td class="font-semibold whitespace-nowrap">
+            <!-- The description column is hidden on narrow windows; the tooltip carries it there. -->
+            <span title={entry.description || undefined}>{entry.projectName}</span>
+          </td>
+          <td class={CUSTOMER_CELL} title={entry.customerName}>{entry.customerName}</td>
+          <td class="{WIDE_ONLY} w-full text-muted-foreground"><span class="line-clamp-2">{entry.description}</span></td>
+          <td class="whitespace-nowrap">
+            <div class="inline-flex items-center gap-2">
+              <StatusBadge {status} table={ENTRY_STATUS} />
               {#if entry.invoiceId !== null}
                 <a
                   href="/invoices/{entry.invoiceId}"
                   use:link
-                  class="inline-flex"
+                  class="text-[13px] text-muted-foreground tabular-nums hover:text-foreground hover:underline"
                   title="Rechnung {entry.invoiceNumber ?? ''} öffnen"
                 >
-                  <Badge variant="success">abgerechnet · {entry.invoiceNumber}</Badge>
+                  {entry.invoiceNumber}
                 </a>
                 {#if entry.invoiceReversed}
-                  <Badge variant="warning" class="ml-1">Rechnung storniert</Badge>
+                  <Badge variant="late">Rechnung storniert</Badge>
                 {/if}
-              {:else if entry.durationMinutes === null}
-                <Badge variant="warning">läuft</Badge>
-              {:else}
-                <Badge variant="outline">offen</Badge>
               {/if}
-            </td>
-            <td class="w-12 px-4 py-3 text-right">
-              {#if isBillable(entry)}
-                <RowActionsMenu onEdit={() => onEdit(entry)} onDelete={() => onDelete(entry)} />
-              {/if}
-            </td>
-          </tr>
-        {/each}
+            </div>
+          </td>
+          <td class="text-right font-bold tabular-nums whitespace-nowrap">
+            {entry.durationMinutes === null ? "läuft" : formatDuration(entry.durationMinutes)}
+          </td>
+          <td class="w-12 text-right">
+            {#if isBillable(entry)}
+              <RowActionsMenu onEdit={() => onEdit(entry)} onDelete={() => onDelete(entry)} />
+            {/if}
+          </td>
+        </tr>
       {/each}
-    </tbody>
-  </table>
-</Card>
+    {/each}
+  </tbody>
+</table>

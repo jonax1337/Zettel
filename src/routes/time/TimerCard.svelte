@@ -3,7 +3,7 @@
   import type { ProjectListRow } from "$lib/db/projects";
   import { formatDuration, formatElapsed } from "$lib/time/duration";
   import { nowUnix } from "$lib/utils/date";
-  import { Button, Card, CardContent, Input, Label, Select, toast } from "$lib/ui";
+  import { Button, Input, Select, toast } from "$lib/ui";
   import { Clock, Square } from "$lib/brand-icons";
   import { projectSelectItems, selectableProjects } from "./project-options";
 
@@ -60,46 +60,37 @@
   }
 </script>
 
-<Card class="mb-6">
-  <CardContent>
-    {#if running}
-      <div class="flex flex-wrap items-center gap-4">
-        <div class="font-mono text-3xl font-semibold tabular-nums" aria-live="off">{elapsed}</div>
-        <div class="min-w-0 flex-1">
-          <div class="font-medium truncate">{running.customerName} · {running.projectName}</div>
-          {#if running.description}
-            <div class="text-sm text-muted-foreground truncate">{running.description}</div>
-          {/if}
-        </div>
-        <Button variant="destructive" onclick={stop} disabled={busy}>
-          <Square class="size-3.5" />
-          Stopp
-        </Button>
-      </div>
-    {:else if projectItems.length === 0}
-      <p class="text-sm text-muted-foreground">
-        Alle Projekte sind archiviert. Unter „Projekte“ ein Projekt anlegen oder wieder aktivieren, um einen Timer zu starten.
-      </p>
-    {:else}
-      <div class="grid grid-cols-1 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto] items-end gap-3">
-        <div class="flex flex-col gap-1.5">
-          <Label for="timer-project" class="text-xs text-muted-foreground">Projekt</Label>
-          <Select id="timer-project" bind:value={projectId} items={projectItems} />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <Label for="timer-description" class="text-xs text-muted-foreground">Woran arbeitest du?</Label>
-          <Input
-            id="timer-description"
-            bind:value={description}
-            placeholder="Beschreibung (optional)"
-            onkeydown={(e) => e.key === "Enter" && !busy && start()}
-          />
-        </div>
-        <Button onclick={start} disabled={busy || projectId === ""}>
-          <Clock class="size-4" />
-          Timer starten
-        </Button>
-      </div>
-    {/if}
-  </CardContent>
-</Card>
+<div class="mb-5 flex flex-wrap items-center gap-3 rounded-xl bg-surface py-3 pr-3 pl-[18px]">
+  {#if running}
+    <span class="size-2.5 shrink-0 animate-pulse rounded-full bg-primary" aria-hidden="true"></span>
+    <div class="min-w-24 font-display text-[22px] font-extrabold tabular-nums" aria-live="off">{elapsed}</div>
+    <div class="min-w-0 flex-1">
+      <div class="truncate font-semibold">{running.customerName} · {running.projectName}</div>
+      {#if running.description}
+        <div class="truncate text-sm text-muted-foreground">{running.description}</div>
+      {/if}
+    </div>
+    <Button variant="outline" onclick={stop} disabled={busy}>
+      <Square class="size-3.5" />
+      Stopp
+    </Button>
+  {:else if projectItems.length === 0}
+    <p class="py-1 text-sm text-muted-foreground">
+      Alle Projekte sind archiviert. Unter „Projekte“ ein Projekt anlegen oder wieder aktivieren, um einen Timer zu starten.
+    </p>
+  {:else}
+    <span class="min-w-24 font-display text-[22px] font-extrabold text-muted-foreground tabular-nums" aria-hidden="true">0:00:00</span>
+    <Select class="w-full min-w-48 flex-[1_1_220px] sm:w-72 sm:flex-none" bind:value={projectId} items={projectItems} aria-label="Projekt für den Timer" />
+    <Input
+      class="min-w-48 flex-[2_1_220px]"
+      bind:value={description}
+      placeholder="Woran arbeitest du?"
+      aria-label="Woran arbeitest du?"
+      onkeydown={(e) => e.key === "Enter" && !busy && start()}
+    />
+    <Button variant="outline" onclick={start} disabled={busy || projectId === ""}>
+      <Clock class="size-4" />
+      Timer starten
+    </Button>
+  {/if}
+</div>

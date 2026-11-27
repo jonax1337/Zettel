@@ -44,6 +44,13 @@ export function periodContaining(unit: PeriodUnit, date: Date): TimePeriod {
   return unit === "week" ? weekContaining(date) : monthContaining(date);
 }
 
+/** Names the first summary figure: the current period reads "Diese Woche", any other one says what it spans. */
+export function periodTotalLabel(period: TimePeriod, now: Date): string {
+  const current = periodContaining(period.unit, now).start === period.start;
+  if (period.unit === "week") return current ? "Diese Woche" : "Woche gesamt";
+  return current ? "Dieser Monat" : "Monat gesamt";
+}
+
 export function shiftPeriod(period: TimePeriod, direction: -1 | 1): TimePeriod {
   const first = new Date(period.start * 1000);
   if (period.unit === "week") {

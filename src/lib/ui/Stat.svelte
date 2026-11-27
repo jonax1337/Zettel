@@ -1,7 +1,9 @@
 <script lang="ts">
-  type Props = { label: string; value: string; hint?: string };
+  import type { Snippet } from "svelte";
 
-  let { label, value, hint }: Props = $props();
+  type Props = { label: string; value: string; hint?: string; action?: Snippet };
+
+  let { label, value, hint, action }: Props = $props();
 </script>
 
 <!-- Figures in a StatRow are separated by hairlines, not cards. -->
@@ -11,4 +13,5 @@
   {#if hint}
     <span class="text-xs text-muted-foreground">{hint}</span>
   {/if}
+  {@render action?.()}
 </div>

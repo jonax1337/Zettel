@@ -3,7 +3,7 @@
   import type { ProjectListRow } from "$lib/db/projects";
   import { createTimeEntry, updateTimeEntry, type TimeEntryListRow } from "$lib/db/time-entries";
   import { nowUnix, toIsoDate } from "$lib/utils/date";
-  import { Button, DatePicker, Dialog, Input, Label, Select, toast } from "$lib/ui";
+  import { Button, DatePicker, Dialog, Input, Label, Segmented, Select, toast } from "$lib/ui";
   import {
     emptyEntryForm,
     entryInputFromForm,
@@ -70,18 +70,11 @@
     </div>
     <div class="flex flex-col gap-1.5">
       <span class="text-sm font-medium">Zeit</span>
-      <div class="inline-flex gap-1" role="group" aria-label="Art der Zeiterfassung">
-        {#each MODES as mode (mode.value)}
-          <Button
-            size="sm"
-            variant={form.mode === mode.value ? "default" : "outline"}
-            aria-pressed={form.mode === mode.value}
-            onclick={() => (form.mode = mode.value)}
-          >
-            {mode.label}
-          </Button>
-        {/each}
-      </div>
+      <Segmented
+        ariaLabel="Art der Zeiterfassung"
+        items={MODES}
+        bind:value={() => form.mode, (mode) => (form.mode = mode as EntryMode)}
+      />
       {#if form.mode === "range"}
         <div class="grid grid-cols-2 gap-3">
           <div class="flex flex-col gap-1.5">
