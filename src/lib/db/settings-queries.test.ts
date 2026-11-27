@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Settings } from "./schema";
 
 const db = vi.hoisted(() => ({
   select: vi.fn(),
@@ -16,6 +17,9 @@ vi.mock("./client", async (importOriginal) => ({
 const { changedNumberCounters, saveLastAutoBackupAt, saveNumberCounters, saveSettings } =
   await import("./queries");
 
+/** The column mapping is tested field by field; the rest of the record does not matter here. */
+const settingsWith = (fields: Partial<Settings>) => fields as Settings;
+
 const COUNTERS = {
   invoiceNumberCounter: 4,
   offerNumberCounter: 2,
@@ -32,7 +36,7 @@ describe("settings writes", () => {
   beforeEach(() => db.execute.mockClear());
 
   it("saveSettings leaves the number counters and the auto-backup stamp alone", async () => {
-    await saveSettings({ ...COUNTERS, companyName: "Acme", lastAutoBackupAt: 123 });
+    await saveSettings(settingsWith({ ...COUNTERS, companyName: "Acme", lastAutoBackupAt: 123 }));
 
     expect(lastSql()).toContain("company_name = ?");
     expect(lastSql()).not.toContain("_number_counter");
@@ -40,11 +44,13 @@ describe("settings writes", () => {
   });
 
   it("saveSettings stores a blank mail template as NULL and keeps a filled one", async () => {
-    await saveSettings({
-      mailInvoiceSubject: "  ",
-      mailInvoiceBody: "Hallo {kunde},\n{nummer}",
-      mailOfferSubject: null,
-    });
+    await saveSettings(
+      settingsWith({
+        mailInvoiceSubject: "  ",
+        mailInvoiceBody: "Hallo {kunde},\n{nummer}",
+        mailOfferSubject: null,
+      }),
+    );
 
     const assignments = lastSql().replace(/^UPDATE settings SET /, "").split(", ");
     const bindings = db.execute.mock.calls.at(-1)![1]!;

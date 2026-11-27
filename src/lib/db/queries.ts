@@ -186,15 +186,19 @@ function mapSettings(r: SettingsRow): Settings {
   };
 }
 
-export async function loadSettings(): Promise<Settings> {
+/** The settings as stored, null while the row does not exist yet. Unlike loadSettings it never writes. */
+export async function readSettings(): Promise<Settings | null> {
   const rows = await select<SettingsRow>(
     "SELECT * FROM settings WHERE id = 1",
   );
-  if (rows.length === 0) {
-    await execute("INSERT INTO settings (id) VALUES (1)");
-    return loadSettings();
-  }
-  return mapSettings(rows[0]);
+  return rows.length === 0 ? null : mapSettings(rows[0]);
+}
+
+export async function loadSettings(): Promise<Settings> {
+  const settings = await readSettings();
+  if (settings) return settings;
+  await execute("INSERT INTO settings (id) VALUES (1)");
+  return loadSettings();
 }
 
 /** A blank mail template means "use the built-in default" and is stored as NULL. */
@@ -203,7 +207,7 @@ function blankToNull(text: string | null | undefined): string | null {
 }
 
 /** Column/value pairs kept side by side so a new setting cannot shift the bindings. */
-function settingsColumnValues(s: Partial<Settings>): Array<[column: string, value: unknown]> {
+function settingsColumnValues(s: Settings): Array<[column: string, value: unknown]> {
   const d = SETTINGS_DEFAULTS;
   return [
     ["company_name", s.companyName ?? ""],
@@ -277,8 +281,11 @@ function settingsColumnValues(s: Partial<Settings>): Array<[column: string, valu
  * left out on purpose: they change in the background (issuing a document,
  * auto-backup), and a form loaded earlier would write stale values back.
  * They have their own targeted updates below.
+ *
+ * Every other column is written, so this takes the whole record: a field left
+ * out would be stored empty or as its default.
  */
-export async function saveSettings(s: Partial<Settings>): Promise<void> {
+export async function saveSettings(s: Settings): Promise<void> {
   await updateSettingsColumns(settingsColumnValues(s));
 }
 
