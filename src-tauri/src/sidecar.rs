@@ -88,11 +88,12 @@ fn resolve_launch(app: &AppHandle) -> Result<SidecarLaunch, String> {
     })
 }
 
-/// Path of the bundled CLI (`<resource_dir>/cli/zettel-cli[.exe]`), or `None` in dev builds / when the
-/// bundle was built without it. Shown in Settings so users can call it from a terminal.
+/// Path of the bundled CLI (`<resource_dir>/cli/zettel-cli[.exe]`), or `None` in dev builds, in an
+/// AppImage or when the bundle was built without it. Shown in Settings so users can call it from a terminal.
 #[tauri::command]
 pub fn cli_path(app: AppHandle) -> Option<String> {
-    if cfg!(debug_assertions) {
+    // An AppImage mounts its resources under a per-run `/tmp/.mount_*` dir: the path dies with the app.
+    if cfg!(debug_assertions) || std::env::var_os("APPIMAGE").is_some() {
         return None;
     }
     let exe_name = if cfg!(windows) {

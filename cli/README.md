@@ -11,7 +11,8 @@ PDF-Sidecar der Installation selbst. Einstellungen → Daten → „Kommandozeil
 | Plattform | Aufruf |
 |---|---|
 | Linux (`.deb`) | `zettel-cli` (Symlink nach `/usr/bin`, beim Entfernen des Pakets weg) |
-| Linux (AppImage), Windows, macOS | voller Pfad aus den Einstellungen; kein PATH-Eintrag |
+| Windows, macOS | voller Pfad aus den Einstellungen; kein PATH-Eintrag |
+| Linux (AppImage) | keine Karte in den Einstellungen: das AppImage hängt sich bei jedem Start unter einem neuen `/tmp`-Pfad ein |
 
 Die Beispiele unten laufen aus dem Repo mit `python cli/zettel.py`; installiert ersetzt `zettel-cli` diesen Aufruf.
 
