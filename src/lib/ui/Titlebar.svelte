@@ -30,14 +30,14 @@
 
 <header
   data-tauri-drag-region
-  class="titlebar select-none flex items-center h-9 shrink-0 bg-card border-b text-foreground"
+  class="titlebar select-none flex items-center h-9 shrink-0 bg-sidebar border-b border-sidebar-line text-sidebar-muted"
 >
   {#if showAppMark}
     <div
       data-tauri-drag-region
       class="flex items-center gap-2 pl-3 pr-4"
     >
-      <img src={appMark} alt="" class="size-5" draggable="false" />
+      <img src={appMark} alt="" class="size-4" draggable="false" />
     </div>
   {:else}
     <div data-tauri-drag-region class="w-3"></div>
@@ -45,7 +45,7 @@
 
   <div
     data-tauri-drag-region
-    class="flex-1 flex items-center gap-3 text-xs font-medium text-muted-foreground tracking-tight"
+    class="flex-1 flex items-center gap-3 text-xs font-medium tracking-tight"
   >
     {title}
     {@render children?.()}
@@ -102,13 +102,13 @@
     justify-content: center;
     width: 46px;
     height: 100%;
-    color: var(--color-foreground);
+    color: var(--color-sidebar-foreground);
     background: transparent;
     transition: background-color 120ms ease;
     cursor: pointer;
   }
   :global(.titlebar-btn:hover) {
-    background-color: var(--color-muted);
+    background-color: var(--color-sidebar-hover);
   }
   :global(.titlebar-btn-close:hover) {
     background-color: oklch(0.577 0.245 27.325);

@@ -72,7 +72,7 @@
     class={cn(
       "flex-1 h-7 rounded-sm text-xs font-medium transition-colors cursor-pointer",
       mode === target
-        ? "bg-background shadow-sm text-foreground"
+        ? "bg-popover shadow-sm text-foreground"
         : "text-muted-foreground hover:text-foreground",
     )}
   >
@@ -86,8 +86,8 @@
     class={cn(
       "inline-flex max-w-full min-w-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-input bg-transparent px-2 h-7 text-xs",
       "text-muted-foreground transition-colors cursor-pointer",
-      "hover:bg-accent hover:text-foreground",
-      "data-[state=open]:bg-accent data-[state=open]:text-foreground",
+      "hover:bg-muted hover:text-foreground",
+      "data-[state=open]:bg-muted data-[state=open]:text-foreground",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       "disabled:cursor-not-allowed disabled:opacity-50",
       hasValue && "border-primary/40 text-foreground bg-primary/5",
@@ -116,7 +116,7 @@
         "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
       )}
     >
-      <div class="inline-flex w-full rounded-md bg-muted/50 p-0.5 mb-3">
+      <div class="inline-flex w-full rounded-md bg-muted p-0.5 mb-3">
         {@render modeButton("single", "Einzeltag", switchToSingle)}
         {@render modeButton("range", "Zeitraum", switchToRange)}
       </div>

@@ -61,13 +61,13 @@
 
   const YEARS_PER_PAGE = 12;
   const NAV_ARROW_CLASS =
-    "inline-flex items-center justify-center size-7 rounded-md hover:bg-accent transition-colors cursor-pointer";
+    "inline-flex items-center justify-center size-7 rounded-md hover:bg-muted transition-colors cursor-pointer";
   const HEADER_LABEL_CLASS =
-    "px-2 h-7 rounded-md text-sm font-medium hover:bg-accent transition-colors cursor-pointer";
+    "px-2 h-7 rounded-md text-sm font-medium hover:bg-muted transition-colors cursor-pointer";
 
   function pickCellClass(isSelected: boolean, isCurrent: boolean, extra?: string): string {
     return cn(
-      "h-10 rounded-md text-sm font-normal hover:bg-accent transition-colors cursor-pointer",
+      "h-10 rounded-md text-sm font-normal hover:bg-muted transition-colors cursor-pointer",
       extra,
       isSelected && "bg-primary text-primary-foreground hover:bg-primary font-medium",
       !isSelected && isCurrent && "ring-1 ring-primary/40 font-medium",
@@ -108,11 +108,10 @@
   <DatePicker.Input
     {id}
     class={cn(
-      "flex h-9 w-full items-center gap-0.5 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors",
-      "focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]",
+      "flex h-9 w-full items-center gap-0.5 rounded-md border border-input bg-paper px-3 py-1 text-sm transition-colors",
+      "focus-within:border-ring focus-within:ring-ring/20 focus-within:ring-[3px]",
       "data-[invalid]:border-destructive data-[invalid]:ring-destructive/30",
       "data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
-      "dark:bg-input/30",
       klass,
     )}
   >
@@ -139,7 +138,7 @@
       <DatePicker.Trigger
         class={cn(
           "ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors cursor-pointer",
-          "hover:bg-accent hover:text-accent-foreground",
+          "hover:bg-muted hover:text-foreground",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           "disabled:cursor-not-allowed disabled:opacity-50",
         )}
@@ -152,7 +151,7 @@
 
   <DatePicker.Content sideOffset={6} class="z-50">
     <DatePicker.Calendar
-      class="rounded-lg border bg-popover text-popover-foreground shadow-md p-3 select-none w-[268px]"
+      class="rounded-xl border bg-popover text-popover-foreground shadow-lg p-3 select-none w-[268px]"
     >
       {#snippet children({ months, weekdays })}
         <div class="flex items-center justify-between mb-2">
@@ -253,7 +252,7 @@
                         <DatePicker.Day
                           class={cn(
                             "size-9 inline-flex items-center justify-center rounded-md text-sm font-normal cursor-pointer transition-colors tabular-nums",
-                            "hover:bg-accent",
+                            "hover:bg-muted",
                             "data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[selected]:font-medium",
                             "data-[outside-month]:text-muted-foreground/40 data-[outside-month]:pointer-events-none",
                             "data-[unavailable]:text-muted-foreground/40 data-[unavailable]:line-through data-[unavailable]:pointer-events-none",

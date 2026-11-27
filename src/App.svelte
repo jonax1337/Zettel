@@ -35,6 +35,7 @@
   import SettingsData from "./routes/settings/Data.svelte";
   import SettingsAdvanced from "./routes/settings/Advanced.svelte";
   import Export from "./routes/Export.svelte";
+  import ReportsHub from "./routes/ReportsHub.svelte";
   import NotFound from "./routes/NotFound.svelte";
   import { onMount } from "svelte";
   import { checkForUpdate, isTauri } from "$lib/updater";
@@ -100,6 +101,7 @@
     "/reminders/new/:invoiceId": editorRoute(ReminderEdit, "new"),
     "/reminders/:id": editorRoute(ReminderEdit, "edit"),
     "/bank-import": BankImport,
+    "/reports": ReportsHub,
     "/reports/ustva": UstvaReport,
     "/reports/euer": EuerReport,
     "/reports/taxes": TaxReport,

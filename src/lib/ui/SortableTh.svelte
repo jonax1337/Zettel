@@ -45,14 +45,14 @@
 </script>
 
 <th
-  class={cn("font-medium select-none", klass)}
+  class={cn("select-none", klass)}
   aria-sort={isActive && activeDir ? (activeDir === "asc" ? "ascending" : "descending") : "none"}
 >
   <button
     type="button"
     onclick={onClick}
     class={cn(
-      "group inline-flex items-center gap-1 text-xs uppercase tracking-wider transition-colors",
+      "group inline-flex items-center gap-1 text-[12.5px] font-bold transition-colors",
       isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
       align === "right" && "flex-row-reverse",
     )}

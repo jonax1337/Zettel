@@ -24,8 +24,13 @@
   font-display: swap;
 }
 
-/* Bürofreund palette — branding/buerofreund/tokens/brand-tokens.css */
+/*
+ * Zettel 0.26 design tokens: docs/design/v0.26/styles.css. Colours are the Bürofreund
+ * palette (branding/buerofreund/tokens/brand-tokens.css); the surfaces follow the
+ * desk-and-paper concept: desk (page), surface (filled groups), paper (fields, popovers).
+ */
 :root {
+  color-scheme: light;
   --brand-coral: #f06b53;
   --brand-coral-deep: #b84332;
   --brand-blush: #ffe6e0;
@@ -35,63 +40,114 @@
   --brand-muted: #7b646c;
   --brand-green: #337357;
 
-  --background: var(--brand-cream);
+  --background: #fff9f5;
   --foreground: var(--brand-ink);
-  --card: #ffffff;
+  --surface: #f8eee9;
+  --surface-strong: #f1e4de;
+  --paper: #ffffff;
+  --card: var(--surface);
   --card-foreground: var(--brand-ink);
-  --popover: #ffffff;
+  --popover: var(--paper);
   --popover-foreground: var(--brand-ink);
   /* Cream on deep coral = 5.18:1 (kit quality report); white on light coral fails AA. */
   --primary: var(--brand-coral-deep);
+  --primary-hover: #a23a2a;
   --primary-foreground: var(--brand-cream);
-  --secondary: var(--brand-blush);
+  --secondary: var(--surface-strong);
   --secondary-foreground: var(--brand-ink);
-  --muted: #f7ece8;
+  --muted: var(--surface-strong);
   --muted-foreground: var(--brand-muted);
-  --accent: var(--brand-blush);
+  --accent: var(--surface);
   --accent-foreground: var(--brand-ink);
-  --destructive: #c0392b;
+  --destructive: #b3261e;
   --destructive-foreground: var(--brand-cream);
-  --success: var(--brand-green);
-  --warning: #b7791f;
-  --border: #e7d8d3;
-  --input: #e7d8d3;
+  --success: #2c684e;
+  --warning: #8a5a0e;
+  --border: #ecdfd9;
+  --line-strong: #d9c8c1;
+  --input: var(--line-strong);
   --ring: var(--brand-coral);
-  --radius: 12px;
+  --radius: 10px;
+
+  /* The sidebar and titlebar stay dark in both themes. */
+  --sidebar: #30272c;
+  --sidebar-foreground: #fff9f5;
+  --sidebar-muted: #c2b0b6;
+  --sidebar-line: rgb(255 249 245 / 9%);
+  --sidebar-hover: rgb(255 249 245 / 6%);
+  --sidebar-active: rgb(255 249 245 / 11%);
+
+  /* Status tones: text colour plus a tinted background each. */
+  --status-ok: #2c684e;
+  --status-ok-bg: #e2f0e9;
+  --status-warn: #8a5a0e;
+  --status-warn-bg: #fbedd3;
+  --status-bad: #b3261e;
+  --status-bad-bg: #fbe3df;
+  --status-calm: #57464d;
+  --status-calm-bg: #f1e7e2;
+
+  --series-1: #e65a41;
+  --series-2: #7a52a8;
+  --age-0: #d9c8c1;
+  --age-1: #f0c36d;
+  --age-2: #e58a3c;
+  --age-3: #c8372d;
 }
 
 [data-theme="dark"] {
-  --background: var(--brand-dark);
+  color-scheme: dark;
+  --background: #221d21;
   --foreground: var(--brand-cream);
-  --card: #2d272b;
+  --surface: #2a2428;
+  --surface-strong: #332c31;
+  --paper: #2f292d;
   --card-foreground: var(--brand-cream);
-  --popover: #2d272b;
   --popover-foreground: var(--brand-cream);
   --primary: var(--brand-coral);
+  --primary-hover: #f4826d;
   --primary-foreground: var(--brand-dark);
-  --secondary: #3a3136;
   --secondary-foreground: var(--brand-cream);
-  --muted: #352d32;
-  --muted-foreground: #c2adb4;
-  --accent: #3e3338;
+  --muted-foreground: #b5a2a9;
   --accent-foreground: var(--brand-cream);
-  --destructive: #ff7b6e;
+  --destructive: #ff8f84;
   --destructive-foreground: var(--brand-dark);
-  --success: #5fb08a;
-  --warning: #e0a84a;
-  --border: rgb(255 230 224 / 12%);
-  --input: rgb(255 230 224 / 16%);
-  --ring: var(--brand-coral);
+  --success: #7cc7a3;
+  --warning: #e6b566;
+  --border: rgb(255 230 224 / 10%);
+  --line-strong: rgb(255 230 224 / 20%);
+
+  --sidebar: #181417;
+
+  --status-ok: #7cc7a3;
+  --status-ok-bg: rgb(95 176 138 / 15%);
+  --status-warn: #e6b566;
+  --status-warn-bg: rgb(224 168 74 / 15%);
+  --status-bad: #ff8f84;
+  --status-bad-bg: rgb(255 123 110 / 15%);
+  --status-calm: #dccdd2;
+  --status-calm-bg: rgb(255 230 224 / 8%);
+
+  --series-1: #f06b53;
+  --series-2: #9b7fd6;
+  --age-0: #5a4d53;
+  --age-1: #d9a546;
+  --age-2: #e07f37;
+  --age-3: #f0564b;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-paper: var(--paper);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -104,16 +160,40 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-border: var(--border);
+  --color-line-strong: var(--line-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-coral: var(--brand-coral);
   --color-blush: var(--brand-blush);
 
-  /* Kit: 12px on controls (rounded-md), 20px on cards (rounded-xl). */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-line: var(--sidebar-line);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-active: var(--sidebar-active);
+
+  --color-status-ok: var(--status-ok);
+  --color-status-ok-bg: var(--status-ok-bg);
+  --color-status-warn: var(--status-warn);
+  --color-status-warn-bg: var(--status-warn-bg);
+  --color-status-bad: var(--status-bad);
+  --color-status-bad-bg: var(--status-bad-bg);
+  --color-status-calm: var(--status-calm);
+  --color-status-calm-bg: var(--status-calm-bg);
+
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-age-0: var(--age-0);
+  --color-age-1: var(--age-1);
+  --color-age-2: var(--age-2);
+  --color-age-3: var(--age-3);
+
+  /* 10px on controls (rounded-md), 16px on surfaces (rounded-xl). */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: var(--radius);
-  --radius-lg: calc(var(--radius) + 4px);
-  --radius-xl: calc(var(--radius) + 8px);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
 
   --font-sans:
     "Nunito Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -138,6 +218,8 @@
     color: var(--color-foreground);
     font-family: var(--font-sans);
     font-size: 14px;
+    line-height: 1.45;
+    font-variant-numeric: lining-nums;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -161,6 +243,10 @@
   ::-webkit-scrollbar-thumb:hover {
     background: var(--color-muted-foreground);
   }
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
   button {
     cursor: pointer;
   }
@@ -182,17 +268,49 @@
     letter-spacing: -0.01em;
   }
   h1 {
-    font-size: 1.75rem;
-    line-height: 2.25rem;
-    font-weight: 900;
+    font-size: 1.625rem;
+    line-height: 1.15;
   }
   h2 {
-    font-size: 1.25rem;
-    line-height: 1.75rem;
+    font-size: 1rem;
+    line-height: 1.25;
   }
   h3 {
     font-size: 1rem;
     line-height: 1.5rem;
+  }
+}
+
+@layer components {
+  /* Hairline list: rows separated by lines, no surrounding card. Put it on a <table>. */
+  .data-list {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .data-list th {
+    padding: 0 12px 8px;
+    border-bottom: 1px solid var(--line-strong);
+    color: var(--muted-foreground);
+    font-size: 12.5px;
+    font-weight: 700;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .data-list td {
+    height: 46px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-list th:first-child,
+  .data-list td:first-child {
+    padding-left: 4px;
+  }
+  .data-list th:last-child,
+  .data-list td:last-child {
+    padding-right: 4px;
+  }
+  .data-list tbody tr:hover td {
+    background-color: var(--surface);
   }
 }
 

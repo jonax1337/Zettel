@@ -49,6 +49,7 @@
   let newPath = $state("");
 
   const current = $derived(tenants.find((t) => t.current) ?? null);
+  const currentName = $derived(current ? tenantDisplayName(current) : "Standard");
 
   function slugify(s: string): string {
     const map: Record<string, string> = { ä: "ae", ö: "oe", ü: "ue", ß: "ss" };
@@ -171,40 +172,43 @@
   }
 </script>
 
-<div class="p-2">
-  <DropdownMenu
-    align="start"
-    side="top"
-    class="w-56"
-    triggerClass="flex w-full min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left hover:bg-accent transition-colors"
-  >
-    {#snippet trigger()}
-      <span class="min-w-0 flex-1 truncate text-sm font-medium" title={current?.path || "Lokale Datenbank"}>
-        {current?.label ?? "Standard"}
-      </span>
-      <ChevronsUpDown class="size-4 shrink-0 text-muted-foreground" />
-    {/snippet}
+<DropdownMenu
+  align="start"
+  side="top"
+  class="w-56"
+  triggerClass="flex min-h-10 w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sidebar-foreground transition-colors hover:bg-sidebar-hover"
+>
+  {#snippet trigger()}
+    <span
+      class="grid size-6 shrink-0 place-items-center rounded-[7px] bg-coral font-display text-[11px] font-extrabold text-[#241f23]"
+      aria-hidden="true"
+    >
+      {currentName.charAt(0).toUpperCase()}
+    </span>
+    <span class="min-w-0 flex-1" title={current?.path || "Lokale Datenbank"}>
+      <b class="line-clamp-2 block text-[13px] leading-tight font-bold break-words">{currentName}</b>
+      <small class="block text-[11px] leading-tight text-sidebar-muted">Mandant</small>
+    </span>
+    <ChevronsUpDown class="size-4 shrink-0 text-sidebar-muted" />
+  {/snippet}
 
-    <div class="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-      Mandanten
-    </div>
-    {#each tenants as t (t.id)}
-      <DropdownItem onSelect={() => switchTenant(t.id)} disabled={sandbox && !t.current}>
-        <span class="min-w-0 flex-1 truncate">{t.label}</span>
-        {#if t.current}
-          <Check class="ml-auto size-4 shrink-0 text-primary" />
-        {/if}
-      </DropdownItem>
-    {/each}
-    <DropdownItem onSelect={openManage}>
-      <Plus class="size-4" />
-      <span>Mandanten verwalten…</span>
+  <div class="px-2 py-1.5 text-[11.5px] font-bold text-muted-foreground">Mandanten</div>
+  {#each tenants as t (t.id)}
+    <DropdownItem onSelect={() => switchTenant(t.id)} disabled={sandbox && !t.current}>
+      <span class="min-w-0 flex-1 truncate">{t.label}</span>
+      {#if t.current}
+        <Check class="ml-auto size-4 shrink-0 text-primary" />
+      {/if}
     </DropdownItem>
+  {/each}
+  <DropdownItem onSelect={openManage}>
+    <Plus class="size-4" />
+    <span>Mandanten verwalten…</span>
+  </DropdownItem>
 
-    <DropdownSeparator />
-    <div class="px-2 py-1 text-[10px] text-muted-foreground">v{appVersion} · MIT</div>
-  </DropdownMenu>
-</div>
+  <DropdownSeparator />
+  <div class="px-2 py-1 text-[10px] text-muted-foreground">v{appVersion} · MIT</div>
+</DropdownMenu>
 
 <Dialog
   bind:open={manageOpen}

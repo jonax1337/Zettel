@@ -15,7 +15,7 @@
   aria-label={label}
   class={cn(
     "inline-flex items-center justify-center rounded-md transition-colors cursor-pointer",
-    variant === "outline" ? "size-9 border border-border hover:bg-accent" : "size-8 hover:bg-muted",
+    variant === "outline" ? "size-9 border border-input hover:bg-surface-strong" : "size-8 hover:bg-muted",
   )}
 >
   <MoreHorizontal class="size-4" />

@@ -18,53 +18,129 @@ import {
   Wallet,
 } from "$lib/brand-icons";
 
-export type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
+export type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  /** Further path prefixes that mark this entry active, e.g. the sub-pages shown as its tabs. */
+  match?: string[];
+  /** Extra palette search terms, e.g. the entry's former names. */
+  keywords?: string;
+};
 export type NavGroup = { label: string | null; items: NavItem[] };
 
-/** Single source for the sidebar and the command palette's "Gehe zu" entries. */
+/** The sidebar's main navigation. */
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: null,
-    items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }],
+    items: [{ href: "/", label: "Übersicht", icon: LayoutDashboard, keywords: "dashboard start" }],
   },
   {
-    label: "Stammdaten",
+    label: "Verkauf",
     items: [
-      { href: "/customers", label: "Kunden", icon: Users },
-      { href: "/vendors", label: "Lieferanten", icon: Truck },
+      { href: "/offers", label: "Angebote", icon: FileSignature },
+      {
+        href: "/invoices",
+        label: "Rechnungen",
+        icon: FileText,
+        match: ["/reminders", "/recurring"],
+      },
+      { href: "/time", label: "Zeiten", icon: Clock, keywords: "zeiterfassung stunden" },
       { href: "/catalog", label: "Katalog", icon: Package },
     ],
   },
   {
-    label: "Ausgangsbelege",
+    label: "Einkauf",
     items: [
-      { href: "/offers", label: "Angebote", icon: FileSignature },
-      { href: "/invoices", label: "Rechnungen", icon: FileText },
-      { href: "/reminders", label: "Mahnungen", icon: FileWarning },
-      { href: "/recurring", label: "Wiederkehrende Rechnungen", icon: Repeat },
-      { href: "/time", label: "Zeiterfassung", icon: Clock },
-      { href: "/bank-import", label: "Bank-Import", icon: Landmark },
+      { href: "/expenses", label: "Ausgaben", icon: FileInput, keywords: "eingangsrechnungen belege" },
     ],
   },
   {
-    label: "Eingangsbelege",
-    items: [{ href: "/expenses", label: "Eingangsrechnungen", icon: FileInput }],
-  },
-  {
-    label: "Auswertung",
+    label: "Kontakte",
     items: [
-      { href: "/reports/ustva", label: "UStVA", icon: BarChart3 },
-      { href: "/reports/euer", label: "Anlage EÜR", icon: FileSpreadsheet },
-      { href: "/reports/taxes", label: "Steuer-Rücklage", icon: Wallet },
-      { href: "/export", label: "DATEV-Export", icon: Download },
-      { href: "/validate", label: "E-Rechnung validieren", icon: ShieldCheck },
+      { href: "/customers", label: "Kunden", icon: Users },
+      { href: "/vendors", label: "Lieferanten", icon: Truck },
     ],
   },
   {
-    label: "System",
-    items: [{ href: "/settings", label: "Einstellungen", icon: SettingsIcon }],
+    label: "Finanzen",
+    items: [
+      {
+        href: "/reports",
+        label: "Auswertungen",
+        icon: BarChart3,
+        match: ["/export", "/validate"],
+      },
+      { href: "/bank-import", label: "Bank-Abgleich", icon: Landmark, keywords: "bank-import kontoauszug" },
+    ],
   },
 ];
+
+/** Settings sit in the sidebar footer, outside the groups. */
+export const SETTINGS_NAV_ITEM: NavItem = {
+  href: "/settings",
+  label: "Einstellungen",
+  icon: SettingsIcon,
+};
+
+export type ReportPage = { href: string; label: string; description: string; icon: NavItem["icon"] };
+
+/** The pages behind "Auswertungen": listed on the reports hub and reachable from the palette. */
+export const REPORT_PAGES: ReportPage[] = [
+  {
+    href: "/reports/ustva",
+    label: "UStVA",
+    description: "Umsatzsteuer-Voranmeldung für einen Zeitraum vorbereiten.",
+    icon: BarChart3,
+  },
+  {
+    href: "/reports/euer",
+    label: "Anlage EÜR",
+    description: "Einnahmen und Ausgaben des Jahres für die Einnahmenüberschussrechnung.",
+    icon: FileSpreadsheet,
+  },
+  {
+    href: "/reports/taxes",
+    label: "Steuer-Rücklage",
+    description: "Wie viel du für Steuern zurücklegen solltest.",
+    icon: Wallet,
+  },
+  {
+    href: "/export",
+    label: "DATEV-Export",
+    description: "Buchungen als DATEV-Datei für deine Steuerberatung exportieren.",
+    icon: Download,
+  },
+  {
+    href: "/validate",
+    label: "E-Rechnung validieren",
+    description: "XRechnung oder ZUGFeRD-Datei gegen den KoSIT-Validator prüfen.",
+    icon: ShieldCheck,
+  },
+];
+
+/** Pages that are tabs under "Rechnungen" and no longer have a sidebar entry of their own. */
+const INVOICE_SUBPAGES: NavItem[] = [
+  { href: "/reminders", label: "Mahnungen", icon: FileWarning },
+  { href: "/recurring", label: "Wiederkehrende Rechnungen", icon: Repeat, keywords: "serien abo" },
+];
+
+/** Every page the command palette's "Gehe zu" reaches: the sidebar plus the pages behind its entries. */
+export const PALETTE_DESTINATIONS: NavItem[] = [
+  ...NAV_GROUPS.flatMap((group) => group.items),
+  ...INVOICE_SUBPAGES,
+  ...REPORT_PAGES,
+  SETTINGS_NAV_ITEM,
+];
+
+function startsWithPath(location: string, prefix: string): boolean {
+  return location === prefix || location.startsWith(prefix + "/");
+}
+
+export function isNavItemActive(item: NavItem, location: string): boolean {
+  if (item.href === "/") return location === "/";
+  return [item.href, ...(item.match ?? [])].some((prefix) => startsWithPath(location, prefix));
+}
 
 export const SETTINGS_PAGES = [
   { href: "/settings/company", label: "Unternehmen" },

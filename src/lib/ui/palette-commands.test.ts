@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NAV_GROUPS } from "$lib/navigation";
+import { NAV_GROUPS, SETTINGS_NAV_ITEM } from "$lib/navigation";
 import { buildPaletteCommands, filterCommands } from "./palette-commands";
 
 const commands = buildPaletteCommands();
@@ -17,6 +17,27 @@ describe("palette commands", () => {
     for (const item of NAV_GROUPS.flatMap((g) => g.items)) {
       expect(routes).toContain(item.href);
     }
+  });
+
+  it("reaches the settings link of the sidebar footer", () => {
+    const routes = commands.filter((c) => c.group === "navigate").map((c) => c.route);
+    expect(routes).toContain(SETTINGS_NAV_ITEM.href);
+  });
+
+  it("still reaches every page that lost its own sidebar entry", () => {
+    const reached = new Map(
+      commands.filter((c) => c.group === "navigate").map((c) => [c.route, c.label]),
+    );
+    expect(Object.fromEntries(reached)).toMatchObject({
+      "/reminders": "Mahnungen",
+      "/recurring": "Wiederkehrende Rechnungen",
+      "/reports/ustva": "UStVA",
+      "/reports/euer": "Anlage EÜR",
+      "/reports/taxes": "Steuer-Rücklage",
+      "/export": "DATEV-Export",
+      "/validate": "E-Rechnung validieren",
+      "/settings": "Einstellungen",
+    });
   });
 
   it("reaches validation, tax and every settings category", () => {
@@ -52,6 +73,13 @@ describe("filterCommands", () => {
 
   it("matches on keywords that are not in the label", () => {
     expect(labels(filterCommands(commands, "eingangsrechnung beleg"))).toContain("Neue Ausgabe");
+  });
+
+  it("finds renamed pages under their former names", () => {
+    expect(labels(filterCommands(commands, "dashboard"))).toContain("Übersicht");
+    expect(labels(filterCommands(commands, "zeiterfassung"))).toContain("Zeiten");
+    expect(labels(filterCommands(commands, "bank-import"))).toContain("Bank-Abgleich");
+    expect(labels(filterCommands(commands, "eingangsrechnungen"))).toContain("Ausgaben");
   });
 
   it("finds the validator", () => {

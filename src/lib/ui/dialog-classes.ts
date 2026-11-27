@@ -10,6 +10,6 @@ export const DIALOG_CONTENT_ANIMATION_CLASS =
 export function pickerRowClass(active: boolean): string {
   return cn(
     "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors",
-    active ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
+    active ? "bg-foreground/10 text-foreground" : "hover:bg-foreground/5",
   );
 }
