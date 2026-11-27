@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { link, push } from "svelte-spa-router";
   import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
   import {
@@ -12,7 +13,6 @@
     markSent,
     reopenDraft,
   } from "$lib/db/invoices";
-  import { creditedCentOf, isSettledByCreditNote, openBalanceCent } from "$lib/db/invoice-lifecycle";
   import { hasReleasedTimeEntries } from "$lib/db/audit";
   import { listPayments } from "$lib/db/invoice-payments";
   import { listRemindersForInvoice } from "$lib/db/reminders";
@@ -27,49 +27,54 @@
     type PdfVersion,
     type XrechnungExport,
   } from "$lib/sidecar/invoice";
-  import { COMPANY_SETTINGS_ROUTE } from "$lib/utils/company-completeness";
   import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import { resolveCustomerEmail, sendDocumentByMail } from "$lib/mail/send";
   import { validatePdf, type ValidationReport } from "$lib/validator";
-  import { Badge, Button, ConfirmDialog, toast } from "$lib/ui";
+  import { Badge, Button, ConfirmDialog, PageHeader, StatusBadge, toast } from "$lib/ui";
+  import DocumentSheet from "$lib/components/DocumentSheet.svelte";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
-  import { CheckCircle2, Send } from "$lib/brand-icons";
+  import { renderInvoiceSheet } from "$lib/sidecar/preview";
+  import { Check, CheckCircle2, FileWarning, Pencil } from "$lib/brand-icons";
   import BackLink from "./parts/entity/BackLink.svelte";
   import { createDocumentActions, type PdfPreparation } from "./parts/entity/document-actions.svelte";
   import DocumentLoadMessage from "./parts/entity/DocumentLoadMessage.svelte";
+  import DocumentFactsCard from "./parts/entity/DocumentFactsCard.svelte";
   import MailSendButton from "./parts/entity/MailSendButton.svelte";
   import PdfLocation from "./parts/entity/PdfLocation.svelte";
   import { parseCustomerSnapshot, UNREADABLE_SNAPSHOT_MESSAGE } from "./invoice/customer-snapshot";
-  import CustomerSnapshotCard from "./invoice/CustomerSnapshotCard.svelte";
   import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
   import { paidDateWarning, sendDateWarning } from "./invoice/date-warnings";
   import InternalNotesCard from "./invoice/InternalNotesCard.svelte";
-  import {
-    canCreateCreditNote as creditNoteAllowed,
-    canExportXrechnung as xrechnungAllowed,
-    canRecordPayments,
-    canReopenAsDraft,
-    creditNoteCoverage,
-    isOverdue as isInvoiceOverdue,
-    showsPayments,
-  } from "./invoice/invoice-actions";
-  import InvoiceActionsMenu from "./invoice/InvoiceActionsMenu.svelte";
-  import InvoiceFactsCard from "./invoice/InvoiceFactsCard.svelte";
   import InvoiceHistory from "./invoice/InvoiceHistory.svelte";
   import InvoicePdfActions from "./invoice/InvoicePdfActions.svelte";
-  import LineItemsTable from "./invoice/LineItemsTable.svelte";
   import NoticeCard from "./invoice/NoticeCard.svelte";
   import PaymentsCard from "./invoice/PaymentsCard.svelte";
   import PdfErrorNotice from "./invoice/PdfErrorNotice.svelte";
-  import PdfVersionList from "./invoice/PdfVersionList.svelte";
   import ReminderLevelsCard from "./invoice/ReminderLevelsCard.svelte";
-  import { isReminderLevel, nextReminderLevel } from "./invoice/reminder-levels";
+  import { REMINDER_CREATE_LABEL } from "./invoice/reminder-levels";
   import { INVALID_ROUTE_ID_MESSAGE, parseRouteId } from "./invoice/route-id";
   import SkontoCard from "./invoice/SkontoCard.svelte";
-  import { INVOICE_STATUS_LABEL, INVOICE_STATUS_VARIANT } from "./invoice/status";
+  import { INVOICE_STATUS } from "./invoice/status";
   import TextSection from "./invoice/TextSection.svelte";
   import ValidationFindingsDialog from "./invoice/ValidationFindingsDialog.svelte";
   import { storeInvoiceValidation } from "./invoice/validation-store";
+  import { actionsAt, buttonActions } from "./invoice/detail/action-plan";
+  import DetailPanel from "./invoice/detail/DetailPanel.svelte";
+  import DocumentActionsMenu from "./invoice/detail/DocumentActionsMenu.svelte";
+  import { invoiceDateNote, invoiceTitle } from "./invoice/detail/document-note";
+  import { issueActionLabel, issueDialogDescription, issuePanelText } from "./invoice/detail/issue-wording";
+  import { invoiceFacts, invoiceSheetDates } from "./invoice/detail/document-facts";
+  import FilesPanel from "./invoice/detail/FilesPanel.svelte";
+  import { deriveInvoiceStanding } from "./invoice/detail/invoice-action-state";
+  import { planInvoiceActions, type InvoiceActionId } from "./invoice/detail/invoice-action-plan";
+  import { invoiceMenuEntries } from "./invoice/detail/invoice-menu";
+  import { daysOverdue, overdueLabel } from "./invoice/detail/overdue";
+  import { progressSteps } from "./invoice/detail/progress-steps";
+  import ProgressSteps from "./invoice/detail/ProgressSteps.svelte";
+  import { invoiceSheetKey } from "./invoice/detail/sheet-key";
+  import { createSheetLoader } from "./invoice/detail/sheet-loader.svelte";
+  import SheetFallback from "./invoice/detail/SheetFallback.svelte";
+  import XrechnungMissing from "./invoice/detail/XrechnungMissing.svelte";
 
   type Props = { params?: { id?: string } };
   let { params }: Props = $props();
@@ -78,10 +83,6 @@
   let items = $state<InvoiceItem[]>([]);
   let originalInvoice = $state<Invoice | null>(null);
   let creditNote = $state<Invoice | null>(null);
-  const creditedCent = $derived(creditedCentOf(creditNote));
-  const settledByCreditNote = $derived(!!invoice && isSettledByCreditNote({ ...invoice, creditedCent }));
-  const coverage = $derived(invoice ? creditNoteCoverage(invoice, creditedCent) : "none");
-  const openCent = $derived(invoice ? Math.max(0, openBalanceCent({ ...invoice, creditedCent })) : 0);
   let payments = $state<InvoicePayment[]>([]);
   let reminders = $state<Reminder[]>([]);
   let releasableTimeCount = $state(0);
@@ -91,6 +92,8 @@
   let loadToken = 0;
 
   const actions = createDocumentActions({ reload: load });
+  const sheet = createSheetLoader(renderInvoiceSheet);
+  let paymentsCard = $state<PaymentsCard>();
 
   let lastPdfPath = $state<string | null>(null);
   let customerEmail = $state<string | null>(null);
@@ -130,35 +133,74 @@
     return null;
   });
 
-  const paymentCardVisible = $derived(
-    !!invoice && showsPayments(invoice, payments.length, settledByCreditNote),
+  const standing = $derived(
+    invoice
+      ? deriveInvoiceStanding({
+          invoice,
+          paymentCount: payments.length,
+          creditNote,
+          reminderLevels: reminders.map((r) => r.level),
+          hasPdf: !!lastPdfPath,
+          timeReleasedOnOriginal,
+          releasableTimeCount,
+          now: nowUnix(),
+        })
+      : null,
   );
-  const canMarkPaid = $derived(!!invoice && canRecordPayments(invoice, settledByCreditNote));
-  const canCreateCreditNote = $derived(
-    !!invoice && creditNoteAllowed(invoice, !!creditNote),
-  );
-  const canExportXrechnung = $derived(!!invoice && xrechnungAllowed(invoice));
-  const canReopenDraft = $derived(
-    !!invoice && canReopenAsDraft(invoice, payments.length, !!creditNote, timeReleasedOnOriginal),
-  );
-  const isOverdue = $derived(
-    !!invoice && isInvoiceOverdue(invoice, settledByCreditNote, nowUnix()),
-  );
-  const existingReminderLevels = $derived(reminders.map((r) => r.level).filter(isReminderLevel));
-  const creatableReminderLevel = $derived(
-    isOverdue && !existingReminderLevels.includes(3) ? nextReminderLevel(existingReminderLevels) : null,
-  );
-  const settlesRemainder = $derived(invoice?.status === "partial" || creditedCent > 0);
+  const creditedCent = $derived(standing?.creditedCent ?? 0);
+  const coverage = $derived(standing?.coverage ?? "none");
+  const openCent = $derived(standing?.openCent ?? 0);
+  const isOverdue = $derived(standing?.isOverdue ?? false);
+  const creatableReminderLevel = $derived(standing?.creatableReminderLevel ?? null);
+  const settlesRemainder = $derived(standing?.settlesRemainder ?? false);
+  const paymentCardVisible = $derived(standing?.paymentCardVisible ?? false);
+  const canMarkPaid = $derived(standing?.actionState.canRecordPayment ?? false);
+  const lastPaymentAt = $derived(payments.reduce<number | null>((latest, p) => (latest === null || p.paidAt > latest ? p.paidAt : latest), null));
 
+  const plan = $derived(standing ? planInvoiceActions(standing.actionState) : []);
+  const buttonIds = $derived(buttonActions(plan));
+  const mainId = $derived(actionsAt(plan, "main")[0] ?? null);
+  const menuEntries = $derived(
+    invoiceMenuEntries(actionsAt(plan, "menu"), {
+      busy: actions.busy,
+      mail: { hasAddress: !!customerEmail, mailProgramOpen: mailing },
+      settlesRemainder,
+      onSelect: selectMenuAction,
+    }),
+  );
+  const steps = $derived(
+    invoice
+      ? progressSteps({
+          status: invoice.status,
+          isCreditNote: invoice.isCreditNote,
+          issueDate: invoice.issueDate,
+          sentAt: invoice.sentAt,
+          paidAt: invoice.paidAt,
+          lastPaymentAt,
+          reversedAt: coverage === "full" ? (creditNote?.issueDate ?? null) : null,
+        })
+      : [],
+  );
+  const showFiles = $derived(
+    !!invoice &&
+      (invoice.status !== "draft" ||
+        !!lastPdfPath ||
+        !!invoice.lastValidationStatus ||
+        !!xrechnungExport ||
+        actions.generating),
+  );
+
+  // load() reads the loaded document before its first await; tracked, every reload would retrigger itself.
   $effect(() => {
     void params?.id;
-    load();
+    untrack(load);
   });
 
   async function load() {
     const invoiceId = parseRouteId(params?.id);
     if (invoiceId === null) {
       invoice = null;
+      sheet.clear();
       error = INVALID_ROUTE_ID_MESSAGE;
       loading = false;
       return;
@@ -176,6 +218,7 @@
       if (token !== loadToken) return;
       if (!res) {
         invoice = null;
+        sheet.clear();
         error = "Rechnung nicht gefunden.";
         return;
       }
@@ -199,6 +242,12 @@
       payments = loadedPayments;
       reminders = loadedReminders;
       releasableTimeCount = loadedReleasableTime;
+      // Every change goes through load(), so the sheet follows issuing, payments and new PDFs.
+      if (parseCustomerSnapshot(res.invoice.customerSnapshot)) {
+        void sheet.load(res.invoice.id, invoiceSheetKey(res.invoice, res.items));
+      } else {
+        sheet.clear();
+      }
       void maybeAutoRevalidate();
     } catch (e) {
       if (token === loadToken) {
@@ -383,7 +432,7 @@
       toast.success("Validierung bestanden", `Szenario: ${report.scenario ?? "—"}`);
     } else {
       toast.action(
-        `${report.findings.length} Findings`,
+        `${report.findings.length} Meldungen`,
         { label: "Details", onClick: openFindingsDialog },
         { description: report.findings[0]?.message },
       );
@@ -393,7 +442,7 @@
   /** What the PDF is for: just to have it, or to attach it to an e-mail right away. */
   type PdfPurpose = "pdf" | "mail";
   // Read when the issue dialog is confirmed; every opening of the dialog sets it again.
-  let issuePurpose: PdfPurpose = "pdf";
+  let issuePurpose = $state<PdfPurpose>("pdf");
 
   function requestPdf(purpose: PdfPurpose = "pdf") {
     if (!invoice || actions.busy) return;
@@ -430,6 +479,7 @@
       async ({ pdfPath, kositReport }) => {
         lastPdfPath = pdfPath;
         if (kositReport) rememberValidation(id, kositReport);
+        sheet.invalidate();
         await load();
         if (purpose === "pdf") {
           announcePdfCreated(pdfPath, kositReport);
@@ -445,7 +495,7 @@
 
   function announceFindingsBeforeMail(report: ValidationReport | null | undefined) {
     if (report && !report.valid) {
-      toast.warning(`${report.findings.length} KoSIT-Findings`, "Versand erst nach Korrektur empfohlen.");
+      toast.warning(`${report.findings.length} KoSIT-Meldungen`, "Versand erst nach Korrektur empfohlen.");
     }
   }
 
@@ -480,6 +530,7 @@
       try {
         xrechnungExport = await exportInvoiceXrechnung(id);
         if (xrechnungExport.status === "exported") toast.success("XRechnung exportiert");
+        else toast.warning("XRechnung nicht möglich", "Pflichtangaben fehlen, Details unter Dateien.");
       } catch (e) {
         toast.error("XRechnung-Export fehlgeschlagen", String(e));
       }
@@ -497,18 +548,60 @@
   function announcePdfCreated(pdfPath: string, report: ValidationReport | null | undefined) {
     const openAction = { label: "Öffnen", onClick: () => openPath(pdfPath) };
     if (report && !report.valid) {
-      toast.action(`PDF erstellt · ${report.findings.length} KoSIT-Findings`, openAction, {
+      toast.action(`PDF erstellt · ${report.findings.length} KoSIT-Meldungen`, openAction, {
         description: "Versand erst nach Korrektur empfohlen.",
       });
     } else {
       toast.action(report?.valid ? "PDF erstellt · ZUGFeRD-konform" : "PDF erstellt", openAction);
     }
   }
+
+  function selectMenuAction(id: InvoiceActionId) {
+    if (!invoice) return;
+    switch (id) {
+      case "send-mail":
+        requestMail();
+        break;
+      case "mark-sent":
+        openSendDialog();
+        break;
+      case "mark-paid":
+        openPaidDialog();
+        break;
+      case "regenerate-pdf":
+        requestPdf();
+        break;
+      case "export-xrechnung":
+        void exportXrechnung();
+        break;
+      case "save-recurring":
+        push(`/recurring/new?fromInvoice=${invoice.id}`);
+        break;
+      case "release-time":
+        confirmReleaseTimeCount = releasableTimeCount;
+        confirmReleaseTimeOpen = true;
+        break;
+      case "create-credit-note":
+        confirmCreditNoteOpen = true;
+        break;
+      case "reopen-draft":
+        confirmReopenOpen = true;
+        break;
+      case "cancel":
+        confirmCancelOpen = true;
+        break;
+      case "delete":
+        confirmDeleteOpen = true;
+        break;
+    }
+  }
 </script>
 
-<header class="mb-6">
-  <BackLink href="/invoices">Rechnungen</BackLink>
-</header>
+{#if loading || !invoice || !customer}
+  <header class="mb-6">
+    <BackLink href="/invoices">Rechnungen</BackLink>
+  </header>
+{/if}
 
 <DocumentLoadMessage
   {loading}
@@ -519,6 +612,96 @@
 />
 
 {#if !loading && invoice && customer}
+  {#snippet headerBadges()}
+    {#if invoice}
+      <StatusBadge status={invoice.status} table={INVOICE_STATUS} />
+      {#if isOverdue}
+        <Badge variant="late">{overdueLabel(daysOverdue(invoice.dueDate, nowUnix()))}</Badge>
+      {/if}
+      {#if invoice.lastValidationStatus || lastPdfPath}
+        <button
+          type="button"
+          class="inline-flex cursor-pointer rounded-full focus-visible:outline-2 focus-visible:outline-ring"
+          aria-label="Validierungsdetails anzeigen"
+          onclick={openFindingsDialog}
+        >
+          <ValidationBadge
+            compact
+            status={invoice.lastValidationStatus}
+            findingsCount={invoice.lastValidationFindingsCount}
+          />
+        </button>
+      {/if}
+    {/if}
+  {/snippet}
+
+  {#snippet headerSubtitle()}
+    {#if invoice && customer}
+      {@const dateNote = invoiceDateNote(invoice)}
+      <a href={`/customers/${invoice.customerId}`} use:link class="hover:text-foreground hover:underline">{customer.name}</a>,
+      <span class="tabular-nums">{formatMoney(invoice.total, invoice.currency)}</span>{#if dateNote}, {dateNote}{/if}
+    {/if}
+  {/snippet}
+
+  {#snippet headerButtons()}
+    {#if invoice}
+      {#each buttonIds as id (id)}
+        {#if id === "open-pdf" || id === "generate-pdf"}
+          <InvoicePdfActions
+            hasPdf={id === "open-pdf"}
+            busy={actions.busy}
+            generating={actions.generating}
+            {revalidating}
+            onGenerate={() => requestPdf()}
+            onOpen={() => actions.usePdfFile(lastPdfPath, openPath)}
+            onReveal={() => actions.usePdfFile(lastPdfPath, revealItemInDir)}
+            {onRevalidate}
+          />
+        {:else if id === "edit"}
+          <Button variant="outline" disabled={actions.busy} onclick={() => push(`/invoices/${invoice!.id}/edit`)}>
+            <Pencil />
+            Bearbeiten
+          </Button>
+        {:else if id === "send-mail"}
+          <MailSendButton email={customerEmail} busy={actions.busy} sending={mailing} onSend={requestMail} />
+        {:else if id === "record-payment"}
+          <Button
+            variant={mainId === id ? "default" : "outline"}
+            disabled={actions.busy}
+            onclick={() => paymentsCard?.openDialog()}
+          >
+            <CheckCircle2 />
+            Zahlung erfassen
+          </Button>
+        {:else if id === "create-reminder" && creatableReminderLevel}
+          <Button disabled={actions.busy} onclick={() => push(`/reminders/new/${invoice!.id}/${creatableReminderLevel}`)}>
+            <FileWarning />
+            {REMINDER_CREATE_LABEL[creatableReminderLevel]}
+          </Button>
+        {:else if id === "issue"}
+          <Button disabled={actions.busy} onclick={() => requestPdf()}>
+            <Check />
+            {actions.generating ? "Erzeuge…" : issueActionLabel(invoice)}
+          </Button>
+        {/if}
+      {/each}
+      {#if menuEntries.length > 0}
+        <DocumentActionsMenu entries={menuEntries} />
+      {/if}
+    {/if}
+  {/snippet}
+
+  <PageHeader
+    title={invoiceTitle(invoice)}
+    back={{ href: "/invoices", label: "Rechnungen" }}
+    badges={headerBadges}
+    subtitle={headerSubtitle}
+    actions={headerButtons}
+    wrap
+  />
+
+  <ProgressSteps {steps} />
+
   {#if invoice.isCreditNote}
     <NoticeCard tone="warning" title="Stornorechnung">
       <div class="mt-0.5 text-muted-foreground">
@@ -568,164 +751,96 @@
     {/if}
   {/if}
 
-  <div class="flex flex-col @3xl:flex-row @3xl:items-start @3xl:justify-between gap-4 mb-6">
-    <div class="min-w-0">
-      <div class="flex items-center gap-3">
-        <h1 class="text-3xl font-semibold tracking-tight font-mono">
-          {invoice.isCreditNote ? "Storno " : ""}{displayInvoiceNumber(invoice)}
-        </h1>
-        {#if invoice.status !== "draft" || invoice.isCreditNote}
-          <Badge variant={invoice.isCreditNote ? "destructive" : INVOICE_STATUS_VARIANT[invoice.status]}>
-            {invoice.isCreditNote
-              ? `Storno · ${INVOICE_STATUS_LABEL[invoice.status]}`
-              : INVOICE_STATUS_LABEL[invoice.status]}
-          </Badge>
-        {/if}
-        {#if isOverdue}
-          <Badge variant="destructive">Überfällig</Badge>
-        {/if}
-        {#if invoice.lastValidationStatus || lastPdfPath}
-          <button
-            type="button"
-            class="inline-flex cursor-pointer rounded-md focus-visible:outline-2 focus-visible:outline-ring"
-            aria-label="Validierungsdetails anzeigen"
-            onclick={openFindingsDialog}
-          >
-            <ValidationBadge
-              status={invoice.lastValidationStatus}
-              findingsCount={invoice.lastValidationFindingsCount}
-            />
-          </button>
-        {/if}
-      </div>
-      <p class="text-sm text-muted-foreground mt-1.5">
-        {customer.name} · {formatDate(invoice.issueDate)}
-        {#if invoice.lastValidatedAt}
-          · validiert {formatDateTime(invoice.lastValidatedAt)}
-        {/if}
-      </p>
-    </div>
-    <div class="flex flex-wrap gap-2">
-      <InvoicePdfActions
-        hasPdf={!!lastPdfPath}
-        busy={actions.busy}
-        generating={actions.generating}
-        {revalidating}
-        onGenerate={() => requestPdf()}
-        onOpen={() => actions.usePdfFile(lastPdfPath, openPath)}
-        onReveal={() => actions.usePdfFile(lastPdfPath, revealItemInDir)}
-        {onRevalidate}
-      />
-
-      <MailSendButton email={customerEmail} busy={actions.busy} sending={mailing} onSend={requestMail} />
-
-      {#if invoice.status === "draft"}
-        <Button disabled={actions.busy} onclick={openSendDialog}>
-          <Send />
-          Als versendet markieren
-        </Button>
-      {:else if canMarkPaid}
-        <Button disabled={actions.busy} onclick={openPaidDialog}>
-          <CheckCircle2 />
-          {settlesRemainder ? "Restbetrag bezahlt" : "Bezahlt"}
-        </Button>
-      {/if}
-
-      <InvoiceActionsMenu
-        {invoice}
-        {creatableReminderLevel}
-        {canCreateCreditNote}
-        {canReopenDraft}
-        {canExportXrechnung}
-        canReleaseTime={releasableTimeCount > 0}
-        busy={actions.busy}
-        onRequestXrechnung={exportXrechnung}
-        onRequestReopenDraft={() => (confirmReopenOpen = true)}
-        onRequestReleaseTime={() => {
-          confirmReleaseTimeCount = releasableTimeCount;
-          confirmReleaseTimeOpen = true;
-        }}
-        onRequestCancel={() => (confirmCancelOpen = true)}
-        onRequestCreditNote={() => (confirmCreditNoteOpen = true)}
-        onRequestDelete={() => (confirmDeleteOpen = true)}
-      />
-    </div>
-  </div>
-
   {#if actions.pdfError}
     <PdfErrorNotice message={actions.pdfError} />
-  {:else if lastPdfPath}
-    {#if pdfVersions.length > 0}
-      <PdfVersionList versions={pdfVersions} />
-    {:else}
-      <PdfLocation path={lastPdfPath} />
-    {/if}
   {/if}
 
-  {#if xrechnungExport?.status === "exported"}
-    {@const xmlPath = xrechnungExport.xmlPath}
-    <PdfLocation
-      label="XRechnung"
-      path={xmlPath}
-      openLabel="Ordner öffnen"
-      onOpen={() => revealXrechnung(xmlPath)}
-    />
-  {:else if xrechnungExport?.status === "incomplete"}
-    <NoticeCard tone="warning" title="XRechnung nicht möglich: Pflichtangaben fehlen">
-      <ul class="mt-1 list-disc pl-5 text-muted-foreground">
-        {#each xrechnungExport.missing as field (field)}
-          <li>{field}</li>
-        {/each}
-      </ul>
-      <p class="mt-2 text-xs text-muted-foreground">
-        Leitweg-ID und E-Mail des Kunden werden aus den aktuellen Kundendaten gelesen; die Anschrift stammt
-        aus der ausgestellten Rechnung.
-      </p>
-      <div class="mt-3 flex gap-2">
-        <Button href={COMPANY_SETTINGS_ROUTE} size="sm" variant="outline">Firmendaten</Button>
-        <Button href={`/customers/${invoice.customerId}`} size="sm" variant="outline">Kunde bearbeiten</Button>
-      </div>
-    </NoticeCard>
-  {/if}
+  <div class="grid items-start gap-7 min-[1321px]:grid-cols-[minmax(0,1fr)_320px]">
+    <div class="min-w-0 space-y-3">
+      <DocumentSheet
+        html={sheet.html}
+        loading={sheet.loading}
+        error={sheet.error}
+        title={`Rechnung ${displayInvoiceNumber(invoice)}`}
+      />
+      {#if sheet.error}
+        <SheetFallback
+          {customer}
+          dates={invoiceSheetDates(invoice)}
+          {items}
+          currency={invoice.currency}
+          showVat={!invoice.isKleinunternehmer}
+          subtotal={invoice.subtotal}
+          vatAmount={invoice.vatAmount}
+          total={invoice.total}
+        >
+          {#snippet texts()}
+            {#if invoice && invoice.paymentTerms && !invoice.isCreditNote}
+              <TextSection title="Zahlungsbedingungen" text={invoice.paymentTerms} />
+            {/if}
+            {#if invoice?.notes}
+              <TextSection title="Notizen (auf der Rechnung)" text={invoice.notes} />
+            {/if}
+          {/snippet}
+        </SheetFallback>
+      {:else if sheet.html && invoice.status !== "draft"}
+        <p class="text-xs text-muted-foreground">
+          Das Blatt zeigt den Stand nach den aktuellen Vorlagen. Maßgeblich ist die archivierte PDF.
+        </p>
+      {/if}
+    </div>
 
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-    <CustomerSnapshotCard {customer} />
-    <InvoiceFactsCard {invoice} />
+    <aside aria-label="Weitere Angaben" class="grid grid-cols-2 items-start gap-3.5 min-[1321px]:grid-cols-1">
+      {#if paymentCardVisible}
+        <PaymentsCard
+          bind:this={paymentsCard}
+          {invoice}
+          {creditedCent}
+          {payments}
+          canAddPayment={canMarkPaid}
+          onChanged={load}
+        />
+      {/if}
+
+      {#if invoice.status === "draft"}
+        <DetailPanel title="Vor dem Ausstellen">
+          <p class="text-sm text-muted-foreground">{issuePanelText(invoice)}</p>
+        </DetailPanel>
+      {/if}
+
+      <SkontoCard {invoice} />
+
+      {#if showFiles}
+        <FilesPanel pdfPath={lastPdfPath} versions={pdfVersions} generating={actions.generating}>
+          {#if invoice.lastValidatedAt}
+            <p class="text-xs text-muted-foreground">Validiert am {formatDateTime(invoice.lastValidatedAt)}</p>
+          {/if}
+          {#if xrechnungExport?.status === "exported"}
+            {@const xmlPath = xrechnungExport.xmlPath}
+            <PdfLocation
+              label="XRechnung"
+              path={xmlPath}
+              openLabel="Ordner öffnen"
+              class="mb-0"
+              onOpen={() => revealXrechnung(xmlPath)}
+            />
+          {:else if xrechnungExport?.status === "incomplete"}
+            <XrechnungMissing missing={xrechnungExport.missing} customerId={invoice.customerId} />
+          {/if}
+        </FilesPanel>
+      {/if}
+
+      {#if reminders.length > 0}
+        <ReminderLevelsCard {reminders} />
+      {/if}
+
+      <DocumentFactsCard facts={invoiceFacts(invoice)} />
+
+      <InternalNotesCard {invoice} onSaved={load} />
+
+      <InvoiceHistory {invoice} />
+    </aside>
   </div>
-
-  <LineItemsTable
-    {items}
-    currency={invoice.currency}
-    showVat={!invoice.isKleinunternehmer}
-    subtotal={invoice.subtotal}
-    vatAmount={invoice.vatAmount}
-    total={invoice.total}
-  />
-
-  {#if invoice.paymentTerms && !invoice.isCreditNote}
-    <TextSection title="Zahlungsbedingungen" text={invoice.paymentTerms} />
-  {/if}
-  {#if invoice.notes}
-    <TextSection title="Notizen (auf der Rechnung)" text={invoice.notes} />
-  {/if}
-
-  {#if paymentCardVisible}
-    <PaymentsCard {invoice} {creditedCent} {payments} canAddPayment={canMarkPaid} onChanged={load} />
-  {/if}
-
-  <SkontoCard {invoice} />
-
-  {#if reminders.length > 0}
-    <ReminderLevelsCard
-      {reminders}
-      nextLevel={creatableReminderLevel}
-      onCreateNext={() => push(`/reminders/new/${invoice!.id}/${creatableReminderLevel}`)}
-    />
-  {/if}
-
-  <InternalNotesCard {invoice} onSaved={load} />
-
-  <InvoiceHistory {invoice} />
 
   <ConfirmDialog
     bind:open={confirmDeleteOpen}
@@ -775,7 +890,7 @@
     bind:open={sendDialogOpen}
     bind:date={dialogDate}
     title="Als versendet markieren"
-    description="Festschreiben unter neuer Rechnungsnummer."
+    description={issueDialogDescription(invoice, "mark")}
     dateInputId="send-date"
     dateLabel="Versendet am"
     hint="Standard ist heute. Für Nacherfassung das tatsächliche Datum eintragen."
@@ -788,12 +903,12 @@
   <DateConfirmDialog
     bind:open={issueForPdfDialogOpen}
     bind:date={dialogDate}
-    title="Rechnung festschreiben?"
-    description="Vergibt die Rechnungsnummer und setzt den Status auf Versendet. Erst danach wird die PDF erzeugt."
+    title={`${issueActionLabel(invoice)}?`}
+    description={issueDialogDescription(invoice, issuePurpose)}
     dateInputId="issue-pdf-date"
     dateLabel="Versendet am"
     hint="Standard ist heute. Für Nacherfassung das tatsächliche Datum eintragen."
-    confirmLabel="Festschreiben und PDF erzeugen"
+    confirmLabel={issueActionLabel(invoice)}
     warning={dialogWarning}
     busy={actions.busy}
     onConfirm={confirmIssueAndGeneratePdf}

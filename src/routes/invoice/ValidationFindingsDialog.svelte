@@ -25,11 +25,11 @@
     {:else if report.valid}
       <p class="text-success">Bestanden · Szenario: {report.scenario ?? "—"}</p>
     {:else}
-      <p class="font-medium">{report.findings.length} Findings · Szenario: {report.scenario ?? "—"}</p>
+      <p class="font-medium">{report.findings.length} Meldungen · Szenario: {report.scenario ?? "—"}</p>
       <ul class="flex flex-col gap-2 max-h-72 overflow-y-auto">
         {#each report.findings as finding, index (index)}
           <li class="rounded-md border border-border px-3 py-2">
-            <div class="text-xs uppercase tracking-wider text-muted-foreground">
+            <div class="text-xs font-bold text-muted-foreground">
               {finding.severity}{finding.code ? ` · ${finding.code}` : ""}
             </div>
             <div>{finding.message}</div>

@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Button, DropdownItem, DropdownMenu } from "$lib/ui";
-  import type { ButtonVariant } from "$lib/ui/Button.svelte";
   import { ChevronDown, FileDown, FileText, FolderOpen, ShieldCheck } from "$lib/brand-icons";
 
   type Props = {
@@ -9,30 +8,15 @@
     busy: boolean;
     generating: boolean;
     revalidating?: boolean;
-    generateVariant?: ButtonVariant;
+    /** Creates the first PDF; once there is one, regenerating lives in the more menu. */
     onGenerate: () => void;
     onOpen: () => void;
     onReveal: () => void;
     /** Documents without an e-invoice XML (offers) leave this out and get no "Validieren" entry. */
     onRevalidate?: () => void;
   };
-  let {
-    hasPdf,
-    busy,
-    generating,
-    revalidating = false,
-    generateVariant = "default",
-    onGenerate,
-    onOpen,
-    onReveal,
-    onRevalidate,
-  }: Props = $props();
+  let { hasPdf, busy, generating, revalidating = false, onGenerate, onOpen, onReveal, onRevalidate }: Props = $props();
 </script>
-
-<Button variant={generateVariant} disabled={busy} onclick={onGenerate}>
-  <FileDown />
-  {generating ? "Erzeuge…" : hasPdf ? "PDF neu erzeugen" : "PDF erzeugen"}
-</Button>
 
 {#if hasPdf}
   {#snippet moreTrigger()}
@@ -41,12 +25,12 @@
   <div class="inline-flex">
     <Button variant="outline" onclick={onOpen} class="rounded-r-none">
       <FileText />
-      Öffnen
+      PDF öffnen
     </Button>
     <DropdownMenu
       trigger={moreTrigger}
       triggerLabel="Weitere Dokument-Aktionen"
-      triggerClass="inline-flex items-center justify-center w-7 h-9 rounded-l-none rounded-r-md border border-l-0 border-input bg-background hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:hover:bg-input/50 transition-colors cursor-pointer shadow-xs"
+      triggerClass="inline-flex h-9 w-7 cursor-pointer items-center justify-center rounded-r-md border border-l-0 border-input text-foreground transition-colors hover:bg-surface-strong"
     >
       {#if onRevalidate}
         <DropdownItem onSelect={onRevalidate} disabled={busy}>
@@ -58,4 +42,9 @@
       </DropdownItem>
     </DropdownMenu>
   </div>
+{:else}
+  <Button variant="outline" disabled={busy} onclick={onGenerate}>
+    <FileDown />
+    {generating ? "Erzeuge…" : "PDF erzeugen"}
+  </Button>
 {/if}

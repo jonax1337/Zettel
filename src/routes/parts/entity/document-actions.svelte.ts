@@ -55,6 +55,11 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
     }
   }
 
+  /**
+   * Runs the preparation, then the PDF. The preparation changes the document (it issues
+   * it), so the page reloads once it ran, however the PDF turns out: a failed PDF must
+   * not leave a numbered, sealed invoice looking like a draft.
+   */
   async function generatePdf(
     generate: () => Promise<SidecarResponse>,
     onCreated: (created: SidecarSuccess) => Promise<void>,
@@ -67,6 +72,7 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
           await prepare.run();
         } catch (e) {
           toast.error(prepare.failureTitle, String(e));
+          await reload();
           return;
         }
       }
@@ -75,14 +81,18 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
         if (res.success) {
           await onCreated(res);
         } else {
-          pdfError = `${res.error.code}: ${res.error.message}`;
-          toast.error("PDF-Generierung fehlgeschlagen", res.error.message);
+          await failPdf(`${res.error.code}: ${res.error.message}`, res.error.message, !!prepare);
         }
       } catch (e) {
-        pdfError = String(e);
-        toast.error("PDF-Generierung fehlgeschlagen", String(e));
+        await failPdf(String(e), String(e), !!prepare);
       }
     });
+  }
+
+  async function failPdf(shown: string, toastText: string, reloadFirst: boolean) {
+    pdfError = shown;
+    toast.error("PDF-Generierung fehlgeschlagen", toastText);
+    if (reloadFirst) await reload();
   }
 
   async function usePdfFile(path: string | null, open: (path: string) => Promise<void>) {

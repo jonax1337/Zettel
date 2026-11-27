@@ -23,9 +23,9 @@
   <Badge variant="destructive" class="gap-1.5">
     <ShieldX class="size-3.5" />
     {#if compact}
-      {findingsCount ?? "?"} Findings
+      {findingsCount ?? "?"} Meldungen
     {:else}
-      Validierung fehlgeschlagen{findingsCount ? ` (${findingsCount} Findings)` : ""}
+      Validierung fehlgeschlagen{findingsCount ? ` (${findingsCount} Meldungen)` : ""}
     {/if}
   </Badge>
 {:else if status === "unavailable"}

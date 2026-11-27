@@ -148,6 +148,69 @@ describe("createDocumentActions", () => {
 
       expect(actions.pdfError).toBeNull();
     });
+
+    it("reloads after the preparation even when the PDF then fails: the document was issued", async () => {
+      const order: string[] = [];
+      const actions = createDocumentActions({ reload: async () => void order.push("reload") });
+
+      await actions.generatePdf(
+        async () => {
+          order.push("generate");
+          return failed;
+        },
+        vi.fn(),
+        { run: async () => void order.push("issue"), failureTitle: "Festschreiben fehlgeschlagen" },
+      );
+
+      expect(order).toEqual(["issue", "generate", "reload"]);
+      expect(actions.pdfError).toBe("PDF_FAILED: kaputt");
+    });
+
+    it("reloads when the PDF call throws after the preparation", async () => {
+      const reload = vi.fn().mockResolvedValue(undefined);
+      const actions = createDocumentActions({ reload });
+
+      await actions.generatePdf(() => Promise.reject(new Error("Sidecar weg")), vi.fn(), {
+        run: async () => {},
+        failureTitle: "x",
+      });
+
+      expect(reload).toHaveBeenCalledOnce();
+      expect(actions.pdfError).toBe("Error: Sidecar weg");
+    });
+
+    it("reloads when the preparation itself fails, in case it changed the document before failing", async () => {
+      const reload = vi.fn().mockResolvedValue(undefined);
+      const actions = createDocumentActions({ reload });
+
+      await actions.generatePdf(vi.fn(), vi.fn(), {
+        run: () => Promise.reject(new Error("claimed")),
+        failureTitle: "Festschreiben fehlgeschlagen",
+      });
+
+      expect(reload).toHaveBeenCalledOnce();
+    });
+
+    it("does not reload for a PDF that fails without a preparation: nothing changed", async () => {
+      const reload = vi.fn();
+      const actions = createDocumentActions({ reload });
+
+      await actions.generatePdf(async () => failed, vi.fn());
+
+      expect(reload).not.toHaveBeenCalled();
+    });
+
+    it("leaves the reload to the page when the PDF was created", async () => {
+      const reload = vi.fn();
+      const actions = createDocumentActions({ reload });
+
+      await actions.generatePdf(async () => created, vi.fn().mockResolvedValue(undefined), {
+        run: async () => {},
+        failureTitle: "x",
+      });
+
+      expect(reload).not.toHaveBeenCalled();
+    });
   });
 
   describe("usePdfFile", () => {

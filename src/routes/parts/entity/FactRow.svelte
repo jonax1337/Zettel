@@ -5,4 +5,4 @@
 </script>
 
 <dt class="text-muted-foreground">{label}</dt>
-<dd>{@render children()}</dd>
+<dd class="text-right">{@render children()}</dd>

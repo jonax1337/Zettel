@@ -1,13 +1,11 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { link, push } from "svelte-spa-router";
   import BackLink from "./parts/entity/BackLink.svelte";
   import { createDocumentActions } from "./parts/entity/document-actions.svelte";
   import DocumentFactsCard from "./parts/entity/DocumentFactsCard.svelte";
   import DocumentLoadMessage from "./parts/entity/DocumentLoadMessage.svelte";
-  import FactRow from "./parts/entity/FactRow.svelte";
   import MailSendButton from "./parts/entity/MailSendButton.svelte";
-  import PdfLocation from "./parts/entity/PdfLocation.svelte";
   import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
   import {
     convertToInvoice,
@@ -20,35 +18,35 @@
   } from "$lib/db/offers";
   import { displayInvoiceNumber, getInvoice } from "$lib/db/invoices";
   import type { Offer, OfferItem } from "$lib/db/schema";
-  import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
-  import { SUPPLY_KIND_LABEL } from "./invoice/supply-kind";
+  import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { generateOfferPdf } from "$lib/sidecar/offer";
+  import { renderOfferSheet } from "$lib/sidecar/preview";
   import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import { resolveCustomerEmail, sendDocumentByMail } from "$lib/mail/send";
-  import {
-    Badge,
-    Button,
-    Card,
-    CardContent,
-    ConfirmDialog,
-    DropdownItem,
-    DropdownMenu,
-    DropdownSeparator,
-    MoreActionsTrigger,
-    toast,
-  } from "$lib/ui";
-  import { CheckCircle2, FileSignature, Pencil, Send, Trash2, Undo2, XCircle } from "$lib/brand-icons";
+  import { Button, Card, ConfirmDialog, PageHeader, StatusBadge, toast } from "$lib/ui";
+  import DocumentSheet from "$lib/components/DocumentSheet.svelte";
+  import { Check, CheckCircle2, FileSignature, Pencil, XCircle } from "$lib/brand-icons";
   import { parseCustomerSnapshot, UNREADABLE_SNAPSHOT_MESSAGE } from "./invoice/customer-snapshot";
-  import CustomerSnapshotCard from "./invoice/CustomerSnapshotCard.svelte";
   import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
   import { sendDateWarning } from "./invoice/date-warnings";
   import InvoicePdfActions from "./invoice/InvoicePdfActions.svelte";
-  import LineItemsTable from "./invoice/LineItemsTable.svelte";
   import PdfErrorNotice from "./invoice/PdfErrorNotice.svelte";
   import { INVALID_ROUTE_ID_MESSAGE, parseRouteId } from "./invoice/route-id";
   import TextSection from "./invoice/TextSection.svelte";
-  import { canReopenOffer } from "./offer/offer-actions";
-  import { OFFER_STATUS_LABEL, OFFER_STATUS_VARIANT } from "./offer/status";
+  import { actionsAt, buttonActions } from "./invoice/detail/action-plan";
+  import DocumentActionsMenu from "./invoice/detail/DocumentActionsMenu.svelte";
+  import { offerFacts, offerSheetDates } from "./invoice/detail/document-facts";
+  import { offerDateNote } from "./invoice/detail/document-note";
+  import FilesPanel from "./invoice/detail/FilesPanel.svelte";
+  import { offerMenuEntries } from "./invoice/detail/offer-menu";
+  import { offerProgressSteps } from "./invoice/detail/progress-steps";
+  import ProgressSteps from "./invoice/detail/ProgressSteps.svelte";
+  import { offerSheetKey } from "./invoice/detail/sheet-key";
+  import { createSheetLoader } from "./invoice/detail/sheet-loader.svelte";
+  import SheetFallback from "./invoice/detail/SheetFallback.svelte";
+  import { type OfferActionId, planOfferActions } from "./offer/offer-actions";
+  import { OFFER_STATUS } from "./offer/status";
+  import { formatMoney } from "$lib/utils/currency";
 
   type Props = { params?: { id?: string } };
   let { params }: Props = $props();
@@ -73,23 +71,50 @@
   let convertedInvoiceNumber = $state<string | null>(null);
 
   const actions = createDocumentActions({ reload: load });
+  const sheet = createSheetLoader(renderOfferSheet);
   const converting = $derived(actions.task === "convert");
 
   const customer = $derived(offer ? parseCustomerSnapshot(offer.customerSnapshot) : null);
-  const awaitsConversion = $derived(offer?.status === "accepted" && !offer.convertedInvoiceId);
+  const plan = $derived(
+    offer
+      ? planOfferActions({
+          status: offer.status,
+          convertedInvoiceId: offer.convertedInvoiceId,
+          hasPdf: !!lastPdfPath,
+        })
+      : [],
+  );
+  const buttonIds = $derived(buttonActions(plan));
+  const menuEntries = $derived(
+    offerMenuEntries(actionsAt(plan, "menu"), { busy: actions.busy, onSelect: selectMenuAction }),
+  );
+  const steps = $derived(
+    offer
+      ? offerProgressSteps({
+          status: offer.status,
+          sentAt: offer.sentAt,
+          acceptedAt: offer.acceptedAt,
+          rejectedAt: offer.rejectedAt,
+          validUntil: offer.validUntil,
+          converted: !!offer.convertedInvoiceId,
+        })
+      : [],
+  );
   const sendWarning = $derived(
     offer && sendDate ? sendDateWarning(fromIsoDate(sendDate), offer.issueDate, nowUnix()) : null,
   );
 
+  // load() reads the loaded document before its first await; tracked, every reload would retrigger itself.
   $effect(() => {
     void params?.id;
-    load();
+    untrack(load);
   });
 
   async function load() {
     const offerId = parseRouteId(params?.id);
     if (offerId === null) {
       offer = null;
+      sheet.clear();
       error = INVALID_ROUTE_ID_MESSAGE;
       loading = false;
       return;
@@ -106,6 +131,7 @@
       if (token !== loadToken) return;
       if (!res) {
         offer = null;
+        sheet.clear();
         error = "Angebot nicht gefunden.";
         return;
       }
@@ -119,6 +145,12 @@
       lastPdfPath = res.offer.pdfPath;
       convertedInvoiceNumber = linkedInvoiceNumber;
       customerEmail = loadedEmail;
+      // Every change goes through load(), so the sheet follows edits, PDFs and status changes.
+      if (parseCustomerSnapshot(res.offer.customerSnapshot)) {
+        void sheet.load(res.offer.id, offerSheetKey(res.offer, res.items));
+      } else {
+        sheet.clear();
+      }
     } catch (e) {
       if (token === loadToken) {
         if (offer?.id !== offerId) offer = null;
@@ -178,6 +210,8 @@
       () => generateOfferPdf(id),
       async ({ pdfPath }) => {
         lastPdfPath = pdfPath;
+        sheet.invalidate();
+        await load();
         if (!thenMail) {
           toast.action("PDF erstellt", { label: "Öffnen", onClick: () => openPath(pdfPath) });
           return;
@@ -243,11 +277,28 @@
       }
     });
   }
+
+  function selectMenuAction(id: OfferActionId) {
+    if (!offer) return;
+    switch (id) {
+      case "regenerate-pdf":
+        void createPdf(false);
+        break;
+      case "reopen-draft":
+        void actions.run("Zurück zu Entwurf", () => reopenDraft(offer!.id));
+        break;
+      case "delete":
+        confirmDeleteOpen = true;
+        break;
+    }
+  }
 </script>
 
-<header class="mb-6">
-  <BackLink href="/offers">Angebote</BackLink>
-</header>
+{#if loading || !offer || !customer}
+  <header class="mb-6">
+    <BackLink href="/offers">Angebote</BackLink>
+  </header>
+{/if}
 
 <DocumentLoadMessage
   {loading}
@@ -258,148 +309,135 @@
 />
 
 {#if !loading && offer && customer}
-  <div class="flex flex-col @3xl:flex-row @3xl:items-start @3xl:justify-between gap-4 mb-6">
-    <div class="min-w-0">
-      <div class="flex items-center gap-3">
-        <h1 class="text-3xl font-semibold tracking-tight font-mono">{offer.number}</h1>
-        <Badge variant={OFFER_STATUS_VARIANT[offer.status]}>{OFFER_STATUS_LABEL[offer.status]}</Badge>
-      </div>
-      <p class="text-sm text-muted-foreground mt-1.5">
-        {customer.name} · {formatDate(offer.issueDate)}
-      </p>
-    </div>
-    <div class="flex flex-wrap gap-2">
-      {#if awaitsConversion}
-        <Button disabled={actions.busy} onclick={onConvert}>
-          <FileSignature />
-          {converting ? "Erzeuge…" : "In Rechnung umwandeln"}
-        </Button>
-      {/if}
+  {#snippet headerBadges()}
+    {#if offer}
+      <StatusBadge status={offer.status} table={OFFER_STATUS} />
+    {/if}
+  {/snippet}
 
-      <InvoicePdfActions
-        hasPdf={!!lastPdfPath}
-        busy={actions.busy}
-        generating={actions.generating}
-        generateVariant={awaitsConversion ? "outline" : "default"}
-        onGenerate={() => createPdf(false)}
-        onOpen={() => actions.usePdfFile(lastPdfPath, openPath)}
-        onReveal={() => actions.usePdfFile(lastPdfPath, revealItemInDir)}
-      />
+  {#snippet headerSubtitle()}
+    {#if offer && customer}
+      {@const dateNote = offerDateNote(offer)}
+      <a href={`/customers/${offer.customerId}`} use:link class="hover:text-foreground hover:underline">{customer.name}</a>,
+      <span class="tabular-nums">{formatMoney(offer.total, offer.currency)}</span>{#if dateNote}, {dateNote}{/if}
+    {/if}
+  {/snippet}
 
-      <MailSendButton email={customerEmail} busy={actions.busy} sending={mailing} onSend={requestMail} />
-
-      {#if offer.status === "draft"}
-        <Button variant="outline" onclick={() => push(`/offers/${offer!.id}/edit`)}>
-          <Pencil />
-          Bearbeiten
-        </Button>
-        <Button disabled={actions.busy} onclick={openSendDialog}>
-          <Send />
-          Als versendet markieren
-        </Button>
-      {/if}
-      {#if offer.status === "sent"}
-        <Button disabled={actions.busy} onclick={() => (confirmAcceptOpen = true)}>
-          <CheckCircle2 />
-          Angenommen
-        </Button>
-        <Button variant="outline" disabled={actions.busy} onclick={() => (confirmRejectOpen = true)}>
-          <XCircle />
-          Abgelehnt
-        </Button>
-      {/if}
-
-      <DropdownMenu>
-        {#snippet trigger()}
-          <MoreActionsTrigger />
-        {/snippet}
-
-        {#if canReopenOffer(offer)}
-          <DropdownItem
-            disabled={actions.busy}
-            onSelect={() => actions.run("Zurück zu Entwurf", () => reopenDraft(offer!.id))}
-          >
-            <Undo2 /> Zurück zu Entwurf
-          </DropdownItem>
+  {#snippet headerButtons()}
+    {#if offer}
+      {#each buttonIds as id (id)}
+        {#if id === "open-pdf" || id === "generate-pdf"}
+          <InvoicePdfActions
+            hasPdf={id === "open-pdf"}
+            busy={actions.busy}
+            generating={actions.generating}
+            onGenerate={() => createPdf(false)}
+            onOpen={() => actions.usePdfFile(lastPdfPath, openPath)}
+            onReveal={() => actions.usePdfFile(lastPdfPath, revealItemInDir)}
+          />
+        {:else if id === "edit"}
+          <Button variant="outline" disabled={actions.busy} onclick={() => push(`/offers/${offer!.id}/edit`)}>
+            <Pencil />
+            Bearbeiten
+          </Button>
+        {:else if id === "send-mail"}
+          <MailSendButton email={customerEmail} busy={actions.busy} sending={mailing} onSend={requestMail} />
+        {:else if id === "reject"}
+          <Button variant="outline" disabled={actions.busy} onclick={() => (confirmRejectOpen = true)}>
+            <XCircle />
+            Abgelehnt
+          </Button>
+        {:else if id === "mark-sent"}
+          <Button disabled={actions.busy} onclick={openSendDialog}>
+            <Check />
+            Als versendet markieren
+          </Button>
+        {:else if id === "accept"}
+          <Button disabled={actions.busy} onclick={() => (confirmAcceptOpen = true)}>
+            <CheckCircle2 />
+            Angenommen
+          </Button>
+        {:else if id === "convert"}
+          <Button disabled={actions.busy} onclick={onConvert}>
+            <FileSignature />
+            {converting ? "Erzeuge…" : "In Rechnung umwandeln"}
+          </Button>
         {/if}
-        {#if offer.status === "draft" || offer.status === "rejected" || offer.status === "expired"}
-          <DropdownSeparator />
-          <DropdownItem destructive onSelect={() => (confirmDeleteOpen = true)}>
-            <Trash2 /> Löschen
-          </DropdownItem>
-        {/if}
-      </DropdownMenu>
-    </div>
-  </div>
+      {/each}
+      {#if menuEntries.length > 0}
+        <DocumentActionsMenu entries={menuEntries} />
+      {/if}
+    {/if}
+  {/snippet}
+
+  <PageHeader
+    title={offer.number}
+    back={{ href: "/offers", label: "Angebote" }}
+    badges={headerBadges}
+    subtitle={headerSubtitle}
+    actions={headerButtons}
+    wrap
+  />
+
+  <ProgressSteps {steps} />
 
   {#if offer.status === "accepted" && offer.convertedInvoiceId}
-    <Card class="border-success/40 bg-success/5 mb-4">
-      <CardContent>
-        <div class="flex items-center gap-3 text-sm">
-          <CheckCircle2 class="size-5 text-success shrink-0" />
-          <div class="flex-1">
-            Umgewandelt in Rechnung
-            <a
-              href={`/invoices/${offer.convertedInvoiceId}`}
-              use:link
-              class="font-mono font-medium text-foreground hover:underline"
-            >
-              {convertedInvoiceNumber ?? `#${offer.convertedInvoiceId}`}
-            </a>
-          </div>
-        </div>
-      </CardContent>
+    <Card class="mb-4 flex-row items-center gap-3 border border-status-ok/40 px-4 py-3.5 text-sm">
+      <CheckCircle2 class="size-5 shrink-0 text-status-ok" />
+      <div class="flex-1">
+        Umgewandelt in Rechnung
+        <a
+          href={`/invoices/${offer.convertedInvoiceId}`}
+          use:link
+          class="font-mono font-medium text-foreground hover:underline"
+        >
+          {convertedInvoiceNumber ?? `#${offer.convertedInvoiceId}`}
+        </a>
+      </div>
     </Card>
   {/if}
 
   {#if actions.pdfError}
     <PdfErrorNotice message={actions.pdfError} />
-  {:else if lastPdfPath}
-    <PdfLocation path={lastPdfPath} />
   {/if}
 
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-    <CustomerSnapshotCard {customer} />
+  <div class="grid items-start gap-7 min-[1321px]:grid-cols-[minmax(0,1fr)_320px]">
+    <div class="min-w-0 space-y-3">
+      <DocumentSheet html={sheet.html} loading={sheet.loading} error={sheet.error} title={`Angebot ${offer.number}`} />
+      {#if sheet.error}
+        <SheetFallback
+          {customer}
+          dates={offerSheetDates(offer)}
+          {items}
+          currency={offer.currency}
+          showVat={!offer.isKleinunternehmer}
+          subtotal={offer.subtotal}
+          vatAmount={offer.vatAmount}
+          total={offer.total}
+        >
+          {#snippet texts()}
+            {#if offer?.introText}
+              <TextSection title="Einleitung" text={offer.introText} />
+            {/if}
+            {#if offer?.notes}
+              <TextSection title="Notizen" text={offer.notes} />
+            {/if}
+          {/snippet}
+        </SheetFallback>
+      {:else if sheet.html && offer.status !== "draft"}
+        <p class="text-xs text-muted-foreground">
+          Das Blatt zeigt den Stand nach den aktuellen Vorlagen. Maßgeblich ist die archivierte PDF.
+        </p>
+      {/if}
+    </div>
 
-    <DocumentFactsCard>
-      <FactRow label="Angebotsdatum">{formatDate(offer.issueDate)}</FactRow>
-      <FactRow label="Gültig bis">{formatDate(offer.validUntil)}</FactRow>
-      {#if offer.servicePeriodStart && offer.servicePeriodEnd}
-        <FactRow label="Leistungszeitraum">
-          {formatDate(offer.servicePeriodStart)} – {formatDate(offer.servicePeriodEnd)}
-        </FactRow>
+    <aside aria-label="Weitere Angaben" class="grid grid-cols-2 items-start gap-3.5 min-[1321px]:grid-cols-1">
+      {#if lastPdfPath}
+        <FilesPanel pdfPath={lastPdfPath} versions={[]} generating={actions.generating} />
       {/if}
-      {#if offer.isReverseCharge}
-        <FactRow label="Art des Umsatzes">{SUPPLY_KIND_LABEL[offer.supplyKind]}</FactRow>
-      {/if}
-      {#if offer.sentAt}
-        <FactRow label="Versendet">{formatDate(offer.sentAt)}</FactRow>
-      {/if}
-      {#if offer.acceptedAt}
-        <FactRow label="Angenommen">{formatDate(offer.acceptedAt)}</FactRow>
-      {/if}
-      {#if offer.rejectedAt}
-        <FactRow label="Abgelehnt">{formatDate(offer.rejectedAt)}</FactRow>
-      {/if}
-    </DocumentFactsCard>
+      <DocumentFactsCard facts={offerFacts(offer)} />
+    </aside>
   </div>
-
-  {#if offer.introText}
-    <TextSection title="Einleitung" text={offer.introText} />
-  {/if}
-
-  <LineItemsTable
-    {items}
-    currency={offer.currency}
-    showVat={!offer.isKleinunternehmer}
-    subtotal={offer.subtotal}
-    vatAmount={offer.vatAmount}
-    total={offer.total}
-  />
-
-  {#if offer.notes}
-    <TextSection title="Notizen" text={offer.notes} />
-  {/if}
 
   <ConfirmDialog
     bind:open={confirmDeleteOpen}
@@ -430,7 +468,7 @@
   <ConfirmDialog
     bind:open={confirmMarkSentAfterMailOpen}
     title="Als versendet markieren?"
-    description={`${offer.number} wurde an Ihr Mail-Programm übergeben. Soll das Angebot jetzt als versendet gelten?`}
+    description={`${offer.number} wurde an dein Mail-Programm übergeben. Soll das Angebot jetzt als versendet gelten?`}
     confirmLabel="Als versendet markieren"
     onConfirm={markSentAfterMail}
   />

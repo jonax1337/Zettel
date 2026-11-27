@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { Badge, Button, Card, CardContent, DatePicker, Dialog, Input, Label, toast } from "$lib/ui";
-  import { Plus, Trash2 } from "$lib/brand-icons";
+  import { Badge, Button, ConfirmDialog, DatePicker, Dialog, Input, Label, toast } from "$lib/ui";
+  import { Trash2 } from "$lib/brand-icons";
   import type { Invoice, InvoicePayment } from "$lib/db/schema";
   import { canRemovePayment, openBalanceCent } from "$lib/db/invoice-lifecycle";
   import { addPayment, deletePayment } from "$lib/db/invoice-payments";
@@ -8,6 +8,7 @@
   import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { eurStringToCents } from "$lib/utils/money";
   import { centsToPriceText } from "../parts/entity/format";
+  import DetailPanel from "./detail/DetailPanel.svelte";
 
   type Props = {
     invoice: Invoice;
@@ -25,13 +26,27 @@
   let amountText = $state("");
   let notes = $state("");
   let busy = $state(false);
+  let removeOpen = $state(false);
+  let paymentToRemove = $state<InvoicePayment | null>(null);
+  let removing = $state(false);
 
   const totalCent = $derived(Math.abs(invoice.total));
   const paidCent = $derived(invoice.amountPaidCent ?? 0);
   const remainingCent = $derived(Math.max(0, openBalanceCent({ ...invoice, creditedCent })));
+  const dueCent = $derived(Math.max(0, totalCent - creditedCent));
+  const paidShare = $derived(dueCent > 0 ? Math.min(100, Math.round((paidCent / dueCent) * 100)) : paidCent > 0 ? 100 : 0);
   const removable = $derived(canRemovePayment({ ...invoice, creditedCent }, payments.length));
+  const headline = $derived(
+    remainingCent > 0
+      ? `${formatMoney(remainingCent, invoice.currency)} offen`
+      : invoice.status === "paid"
+        ? "Vollständig bezahlt"
+        : "Nichts offen",
+  );
+  const showsFigures = $derived(paidCent > 0 || creditedCent > 0);
 
-  function openDialog() {
+  /** Opens the dialog with the open amount filled in; the header's main action calls this. */
+  export function openDialog() {
     paidAtIso = toIsoDate(nowUnix());
     amountText = centsToPriceText(remainingCent);
     notes = "";
@@ -64,82 +79,90 @@
     }
   }
 
-  async function remove(payment: InvoicePayment) {
+  function askToRemove(payment: InvoicePayment) {
+    if (removing) return;
+    paymentToRemove = payment;
+    removeOpen = true;
+  }
+
+  async function confirmRemove() {
+    const payment = paymentToRemove;
+    if (!payment || removing) return;
+    removing = true;
     try {
       await deletePayment(payment.id);
       await onChanged();
       toast.success("Zahlung entfernt");
     } catch (e) {
       toast.error("Entfernen fehlgeschlagen", String(e));
+    } finally {
+      removing = false;
     }
   }
 </script>
 
-<Card class="mb-6">
-  <CardContent>
-    <div class="flex items-center justify-between gap-3 mb-3">
-      <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Zahlungen</h3>
-      {#if canAddPayment}
-        <Button size="sm" variant="outline" onclick={openDialog}>
-          <Plus class="size-3.5" />
-          Zahlung erfassen
-        </Button>
-      {/if}
-    </div>
+<DetailPanel title="Zahlung">
+  <div class="font-display text-[22px] leading-tight font-extrabold tabular-nums">{headline}</div>
+  <div class="h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Bezahlt" aria-valuenow={paidShare} aria-valuemin={0} aria-valuemax={100}>
+    <div class="h-full rounded-full bg-status-ok" style="width: {paidShare}%"></div>
+  </div>
 
-    <div class="grid {creditedCent > 0 ? 'grid-cols-4' : 'grid-cols-3'} gap-4 mb-3 text-sm">
-      <div>
-        <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Total</div>
-        <div class="font-medium tabular-nums">{formatMoney(totalCent, invoice.currency)}</div>
-      </div>
+  {#if showsFigures}
+    <dl class="grid grid-cols-[1fr_auto] gap-y-1 text-sm tabular-nums">
+      <dt class="text-muted-foreground">Gesamt</dt>
+      <dd class="text-right">{formatMoney(totalCent, invoice.currency)}</dd>
       {#if creditedCent > 0}
-        <div>
-          <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Storniert</div>
-          <div class="font-medium tabular-nums">−{formatMoney(creditedCent, invoice.currency)}</div>
-        </div>
+        <dt class="text-muted-foreground">Storniert</dt>
+        <dd class="text-right">−{formatMoney(creditedCent, invoice.currency)}</dd>
       {/if}
-      <div>
-        <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Bezahlt</div>
-        <div class="font-medium tabular-nums text-success">{formatMoney(paidCent, invoice.currency)}</div>
-      </div>
-      <div>
-        <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Offen</div>
-        <div class="font-medium tabular-nums {remainingCent > 0 ? 'text-warning' : ''}">
-          {formatMoney(remainingCent, invoice.currency)}
-        </div>
-      </div>
-    </div>
+      <dt class="text-muted-foreground">Bezahlt</dt>
+      <dd class="text-right text-status-ok">{formatMoney(paidCent, invoice.currency)}</dd>
+    </dl>
+  {:else if canAddPayment}
+    <p class="text-sm text-muted-foreground">Noch keine Zahlung erfasst.</p>
+  {/if}
 
-    {#if payments.length > 0}
-      <div class="border-t pt-3 space-y-2">
-        {#each payments as p (p.id)}
-          <div class="flex items-center justify-between gap-3 text-sm">
-            <div class="flex items-center gap-3">
-              <span class="text-muted-foreground tabular-nums text-xs">{formatDate(p.paidAt)}</span>
-              <span class="tabular-nums font-medium">{formatMoney(p.amountCent, invoice.currency)}</span>
-              {#if p.source !== "manual"}
-                <Badge variant="secondary" class="text-[10px]">{p.source}</Badge>
-              {/if}
-              {#if p.notes}
-                <span class="text-xs text-muted-foreground truncate">{p.notes}</span>
-              {/if}
-            </div>
-            {#if removable}
-              <button
-                type="button"
-                onclick={() => remove(p)}
-                class="text-xs text-muted-foreground hover:text-destructive transition-colors"
-                aria-label="Zahlung entfernen"
-              >
-                <Trash2 class="size-3.5" />
-              </button>
+  {#if payments.length > 0}
+    <ul class="grid gap-2 border-t border-border pt-3">
+      {#each payments as p (p.id)}
+        <li class="flex items-center justify-between gap-3 text-sm">
+          <div class="flex min-w-0 items-center gap-2.5">
+            <time class="text-xs text-muted-foreground tabular-nums">{formatDate(p.paidAt)}</time>
+            <span class="font-bold tabular-nums">{formatMoney(p.amountCent, invoice.currency)}</span>
+            {#if p.source !== "manual"}
+              <Badge variant="calm" class="h-[18px] px-2 text-[11px]">{p.source}</Badge>
+            {/if}
+            {#if p.notes}
+              <span class="truncate text-xs text-muted-foreground" title={p.notes}>{p.notes}</span>
             {/if}
           </div>
-        {/each}
-      </div>
-    {/if}
-  </CardContent>
-</Card>
+          {#if removable}
+            <button
+              type="button"
+              onclick={() => askToRemove(p)}
+              disabled={removing}
+              class="cursor-pointer text-muted-foreground transition-colors hover:text-destructive disabled:pointer-events-none disabled:opacity-50"
+              aria-label="Zahlung vom {formatDate(p.paidAt)} über {formatMoney(p.amountCent, invoice.currency)} entfernen"
+            >
+              <Trash2 class="size-3.5" />
+            </button>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  {/if}
+</DetailPanel>
+
+<ConfirmDialog
+  bind:open={removeOpen}
+  title="Zahlung entfernen?"
+  description={paymentToRemove
+    ? `Die Zahlung über ${formatMoney(paymentToRemove.amountCent, invoice.currency)} vom ${formatDate(paymentToRemove.paidAt)} wird von der Rechnung entfernt. Der offene Betrag steigt entsprechend.`
+    : undefined}
+  confirmLabel="Entfernen"
+  destructive
+  onConfirm={confirmRemove}
+/>
 
 <Dialog
   bind:open={dialogOpen}
