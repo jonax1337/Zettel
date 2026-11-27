@@ -1,7 +1,9 @@
 <script lang="ts" generics="S extends string">
-  import { Label, Select } from "$lib/ui";
+  import type { Snippet } from "svelte";
+  import { Segmented, Select } from "$lib/ui";
+  import ListToolbar from "../parts/list/ListToolbar.svelte";
   import SearchInput from "../parts/entity/SearchInput.svelte";
-  import { customerFilterItems, yearFilterItems } from "./list-support";
+  import { customerFilterItems, fitsSegmentedStatus, segmentedStatusItems, yearFilterItems } from "./list-support";
 
   type Counterparty = { label: string; allLabel: string };
 
@@ -15,6 +17,8 @@
     years: number[];
     customers: { id: number; name: string }[];
     counterparty?: Counterparty;
+    /** Further toolbar controls after the selects, e.g. a filter menu. */
+    children?: Snippet;
   };
 
   const CUSTOMER: Counterparty = { label: "Kunde", allLabel: "Alle Kunden" };
@@ -28,27 +32,30 @@
     years,
     customers,
     counterparty = CUSTOMER,
+    children,
   }: Props = $props();
 
+  const segmented = $derived(fitsSegmentedStatus(statusItems));
   const yearItems = $derived(yearFilterItems(years));
   const counterpartyItems = $derived(customerFilterItems(customers, counterparty.allLabel));
 </script>
 
-<div class="grid grid-cols-2 @3xl:grid-cols-4 gap-3">
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Status</Label>
-    <Select bind:value={status} items={statusItems} />
-  </div>
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Jahr</Label>
-    <Select bind:value={year} items={yearItems} />
-  </div>
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">{counterparty.label}</Label>
-    <Select bind:value={customerId} items={counterpartyItems} />
-  </div>
-  <div class="flex flex-col gap-1.5">
-    <Label class="text-xs text-muted-foreground">Suche</Label>
-    <SearchInput bind:value={search} placeholder="Nummer oder {counterparty.label}…" />
-  </div>
-</div>
+<ListToolbar>
+  <SearchInput
+    bind:value={search}
+    placeholder="Nummer oder {counterparty.label} suchen"
+    class="min-w-[200px] flex-1 basis-[240px] max-w-[300px]"
+  />
+  {#if segmented}
+    <Segmented
+      bind:value={() => status, (value) => (status = value as S)}
+      items={segmentedStatusItems(statusItems)}
+      ariaLabel="Status"
+    />
+  {:else}
+    <Select bind:value={status} items={statusItems} aria-label="Status" class="w-[150px]" />
+  {/if}
+  <Select bind:value={year} items={yearItems} aria-label="Jahr" class="w-[120px]" />
+  <Select bind:value={customerId} items={counterpartyItems} aria-label={counterparty.label} class="w-[190px]" />
+  {@render children?.()}
+</ListToolbar>

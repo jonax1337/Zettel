@@ -6,12 +6,14 @@
   type Props = {
     value?: string;
     placeholder: string;
+    /** Accessible name; the placeholder when omitted. */
+    label?: string;
     class?: string;
   };
-  let { value = $bindable(""), placeholder, class: klass }: Props = $props();
+  let { value = $bindable(""), placeholder, label, class: klass }: Props = $props();
 </script>
 
 <div class={cn("relative", klass)}>
   <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-  <Input type="search" {placeholder} bind:value class="pl-9" />
+  <Input type="search" {placeholder} aria-label={label ?? placeholder} bind:value class="pl-9" />
 </div>

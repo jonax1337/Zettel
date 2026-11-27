@@ -15,7 +15,6 @@
   import { applySort } from "$lib/utils/sort";
   import {
     Button,
-    Card,
     Checkbox,
     BulkActionBar,
     ConfirmDialog,
@@ -29,13 +28,15 @@
   import { paidDateWarning } from "./invoice/date-warnings";
   import DocumentListFilters from "./invoice/DocumentListFilters.svelte";
   import { createRowSelection } from "./invoice/list-selection.svelte";
-  import { ALL, numberOrAll, statusFilterItems } from "./invoice/list-support";
+  import { ALL, WIDE_ONLY, numberOrAll, statusFilterItems } from "./invoice/list-support";
   import { pluralize } from "./parts/entity/format";
   import { createListFilters } from "./parts/entity/list-filters.svelte";
   import ListEmptyState from "./parts/entity/ListEmptyState.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
+  import ListSummary from "./parts/list/ListSummary.svelte";
+  import { expenseSummary } from "./parts/list/list-summary";
   import { EXPENSE_STATUS, EXPENSE_STATUS_FILTER_ORDER } from "./parts/expense/expense-status";
 
   const VENDOR_COUNTERPARTY = { label: "Lieferant", allLabel: "Alle Lieferanten" };
@@ -78,12 +79,12 @@
   const sort = createListSort<SortKey>("expenses", { key: "issueDate", dir: "desc" });
   const columns: SortColumn<SortKey>[] = [
     { key: "internalNumber", label: "Interne Nr.", class: "whitespace-nowrap" },
-    { key: "number", label: "Beleg-Nr.", class: "hidden @3xl:table-cell whitespace-nowrap" },
+    { key: "vendor", label: "Lieferant", class: "w-full" },
+    { key: "number", label: "Beleg-Nr.", class: `${WIDE_ONLY} whitespace-nowrap` },
     { key: "issueDate", label: "Datum", class: "whitespace-nowrap" },
-    { key: "vendor", label: "Lieferant", class: "min-w-32" },
-    { key: "total", label: "Brutto", align: "right", class: "text-right whitespace-nowrap" },
+    { key: "dueDate", label: "Fällig", class: `${WIDE_ONLY} whitespace-nowrap` },
     { key: "status", label: "Status", class: "whitespace-nowrap" },
-    { key: "dueDate", label: "Fällig", class: "hidden @3xl:table-cell whitespace-nowrap" },
+    { key: "total", label: "Brutto", align: "right", class: "text-right whitespace-nowrap" },
   ];
   const sortedExpenses = $derived(
     applySort(expenses.data, sort.state, {
@@ -96,6 +97,8 @@
       dueDate: (r) => r.dueDate,
     }),
   );
+
+  const summary = $derived(expenseSummary(sortedExpenses));
 
   const selection = createRowSelection(() => sortedExpenses);
   let bulkDeleteConfirmOpen = $state(false);
@@ -110,7 +113,7 @@
       selection.selected.every((e) => e.status === "draft" || e.status === "cancelled"),
   );
   const selectionLabel = $derived(
-    pluralize(selection.selected.length, "Eingangsrechnung", "Eingangsrechnungen"),
+    pluralize(selection.selected.length, "Ausgabe", "Ausgaben"),
   );
   const paidWarning = $derived.by(() => {
     if (!paidDate || selection.selected.length === 0) return null;
@@ -135,83 +138,72 @@
   }
 </script>
 
-<PageHeader
-  title="Eingangsrechnungen"
-  subtitle="{expenses.data.length} {pluralize(expenses.data.length, "Beleg", "Belege")}"
->
+<PageHeader title="Ausgaben">
   {#snippet actions()}
     <Button onclick={() => push("/expenses/new")}>
       <Plus />
-      Neue Eingangsrechnung
+      Ausgabe erfassen
     </Button>
   {/snippet}
 </PageHeader>
 
-<div class="mb-5">
-  <DocumentListFilters
-    bind:status={f.status}
-    {statusItems}
-    bind:year={f.year}
-    bind:customerId={f.vendorId}
-    bind:search={f.search}
-    {years}
-    customers={vendors}
-    counterparty={VENDOR_COUNTERPARTY}
-  />
-</div>
+<DocumentListFilters
+  bind:status={f.status}
+  {statusItems}
+  bind:year={f.year}
+  bind:customerId={f.vendorId}
+  bind:search={f.search}
+  {years}
+  customers={vendors}
+  counterparty={VENDOR_COUNTERPARTY}
+/>
 
 <QueryBoundary query={expenses} isEmpty={expenses.data.length === 0}>
   {#snippet empty()}
     <ListEmptyState
       filtered={filters.isFiltered}
       onResetFilters={filters.reset}
-      filteredMessage="Keine Eingangsrechnungen für diese Filter."
-      emptyMessage="Noch keine Eingangsrechnungen erfasst."
-      createLabel="Neue Eingangsrechnung"
+      filteredMessage="Keine Ausgaben für diese Filter."
+      emptyMessage="Noch keine Ausgaben erfasst."
+      createLabel="Ausgabe erfassen"
       onCreate={() => push("/expenses/new")}
     />
   {/snippet}
-  <Card class="overflow-hidden py-0">
-    <table class="w-full text-sm">
-      <SortableHeaderRow {sort} {columns} cellClass="px-3 @3xl:px-4 py-3" {selection} />
-      <tbody class="stagger">
-        {#each sortedExpenses as e (e.id)}
-          <tr
-            class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
-            onclick={() => push(`/expenses/${e.id}`)}
-          >
-            <td class="px-3 @3xl:px-4 py-3" onclick={(ev) => ev.stopPropagation()}>
-              <Checkbox
-                checked={selection.isSelected(e.id)}
-                onCheckedChange={() => selection.toggle(e.id)}
-                aria-label={`Eingangsrechnung ${e.internalNumber} auswählen`}
-              />
-            </td>
-            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">
-              <a
-                href={`/expenses/${e.id}`}
-                use:link
-                onclick={(ev) => ev.stopPropagation()}
-                class="hover:underline focus-visible:underline"
-              >
-                {e.internalNumber}
-              </a>
-            </td>
-            <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{e.number ?? "—"}</td>
-            <td class="px-3 @3xl:px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(e.issueDate)}</td>
-            <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={e.vendorName}>{e.vendorName}</span></td>
-            <td class="px-3 @3xl:px-4 py-3 text-right font-mono whitespace-nowrap">{centsToEur(e.total)}</td>
-            <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
-              <StatusBadge status={e.status} table={EXPENSE_STATUS} />
-            </td>
-            <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
-              {e.dueDate ? formatDate(e.dueDate) : "—"}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </Card>
+  <table class="data-list">
+    <SortableHeaderRow {sort} {columns} {selection} />
+    <tbody>
+      {#each sortedExpenses as e (e.id)}
+        <tr class="cursor-pointer" onclick={() => push(`/expenses/${e.id}`)}>
+          <td onclick={(ev) => ev.stopPropagation()}>
+            <Checkbox
+              checked={selection.isSelected(e.id)}
+              onCheckedChange={() => selection.toggle(e.id)}
+              aria-label={`Ausgabe ${e.internalNumber} auswählen`}
+            />
+          </td>
+          <td class="font-semibold whitespace-nowrap tabular-nums">
+            <a
+              href={`/expenses/${e.id}`}
+              use:link
+              onclick={(ev) => ev.stopPropagation()}
+              class="hover:underline focus-visible:underline"
+            >
+              {e.internalNumber}
+            </a>
+          </td>
+          <td class="w-full"><span class="line-clamp-2" title={e.vendorName}>{e.vendorName}</span></td>
+          <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap tabular-nums">{e.number ?? "–"}</td>
+          <td class="text-muted-foreground whitespace-nowrap tabular-nums">{formatDate(e.issueDate)}</td>
+          <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap tabular-nums">
+            {e.dueDate ? formatDate(e.dueDate) : "–"}
+          </td>
+          <td class="whitespace-nowrap"><StatusBadge status={e.status} table={EXPENSE_STATUS} /></td>
+          <td class="text-right font-semibold whitespace-nowrap tabular-nums">{centsToEur(e.total)}</td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+  <ListSummary segments={summary} />
 </QueryBoundary>
 
 <BulkActionBar count={selection.selected.length} label={selectionLabel} onClear={selection.clear}>
@@ -245,7 +237,7 @@
 <ConfirmDialog
   bind:open={bulkDeleteConfirmOpen}
   title="{selection.selected.length} {selectionLabel} löschen?"
-  description="Nur Entwürfe und stornierte Belege werden gelöscht. Offene/bezahlte bleiben unangetastet."
+  description="Nur Entwürfe und stornierte Belege werden gelöscht. Offene und bezahlte bleiben unangetastet."
   confirmLabel="Löschen"
   destructive
   onConfirm={confirmBulkDelete}

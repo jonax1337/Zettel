@@ -1,19 +1,25 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { link, push } from "svelte-spa-router";
   import { deleteCustomer, listCustomers } from "$lib/db/queries";
   import type { Customer } from "$lib/db/schema";
-  import { Button, Card, Checkbox, ConfirmDialog, DropdownItem, PageHeader, QueryBoundary } from "$lib/ui";
+  import { Button, ConfirmDialog, DropdownItem, PageHeader, QueryBoundary } from "$lib/ui";
   import { FilePlus2, Plus } from "$lib/brand-icons";
   import { applySort } from "$lib/utils/sort";
+  import { WIDE_ONLY } from "./invoice/list-support";
   import RowActionsMenu from "./parts/entity/RowActionsMenu.svelte";
   import SearchInput from "./parts/entity/SearchInput.svelte";
-  import { pluralize } from "./parts/entity/format";
   import { createDeleteFlow } from "./parts/entity/delete-flow.svelte";
   import { createListFilters } from "./parts/entity/list-filters.svelte";
   import ListEmptyState from "./parts/entity/ListEmptyState.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
+  import FilterMenu from "./parts/list/FilterMenu.svelte";
+  import ListSummary from "./parts/list/ListSummary.svelte";
+  import ListToolbar from "./parts/list/ListToolbar.svelte";
+  import { countSummary } from "./parts/list/list-summary";
+
+  const FILTER_OPTIONS = [{ key: "onlyFollowUp", label: "Nur mit Wiedervorlage" }];
 
   const filters = createListFilters<{ search: string; onlyFollowUp: boolean }>("customers", {
     search: "",
@@ -30,9 +36,9 @@
   const sort = createListSort<SortKey>("customers", { key: "name", dir: "asc" });
   const columns: SortColumn<SortKey>[] = [
     { key: "customerNumber", label: "Nr.", class: "whitespace-nowrap" },
-    { key: "name", label: "Name", class: "min-w-32" },
-    { key: "city", label: "Ort", class: "hidden @3xl:table-cell whitespace-nowrap" },
-    { key: "email", label: "E-Mail", class: "hidden @3xl:table-cell whitespace-nowrap" },
+    { key: "name", label: "Name", class: "w-full" },
+    { key: "city", label: "Ort", class: "whitespace-nowrap" },
+    { key: "email", label: "E-Mail", class: `${WIDE_ONLY} whitespace-nowrap` },
   ];
 
   const visibleCustomers = $derived.by(() => {
@@ -59,10 +65,7 @@
   }
 </script>
 
-<PageHeader
-  title="Kunden"
-  subtitle="{visibleCustomers.length} {pluralize(visibleCustomers.length, "Eintrag", "Einträge")}"
->
+<PageHeader title="Kunden">
   {#snippet actions()}
     <Button onclick={() => push("/customers/new")}>
       <Plus />
@@ -71,17 +74,15 @@
   {/snippet}
 </PageHeader>
 
-<div class="mb-4 flex flex-wrap items-end gap-3">
+<ListToolbar>
   <SearchInput
     bind:value={f.search}
-    placeholder="Suche (Name, Nummer, Ort, E-Mail)…"
-    class="max-w-md flex-1 min-w-[200px]"
+    placeholder="Name, Nummer, Ort oder E-Mail suchen"
+    label="Kunden suchen"
+    class="min-w-[200px] flex-1 basis-[240px] max-w-[300px]"
   />
-  <label class="flex items-center gap-2 text-sm pb-2 cursor-pointer">
-    <Checkbox bind:checked={f.onlyFollowUp} />
-    <span>Nur mit Wiedervorlage</span>
-  </label>
-</div>
+  <FilterMenu values={f} options={FILTER_OPTIONS} />
+</ListToolbar>
 
 <QueryBoundary query={customers} isEmpty={visibleCustomers.length === 0}>
   {#snippet empty()}
@@ -93,39 +94,40 @@
       onCreate={() => push("/customers/new")}
     />
   {/snippet}
-  <Card class="overflow-hidden py-0">
-    <table class="w-full text-sm">
-      <SortableHeaderRow {sort} {columns} actionsColumn />
-      <tbody class="stagger">
-        {#each visibleCustomers as c (c.id)}
-          <tr class="border-t hover:bg-muted/30 transition-colors">
-            <td class="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{c.customerNumber}</td>
-            <td class="px-4 py-3 min-w-32">
-              <button
-                type="button"
-                class="text-left hover:text-foreground font-medium transition-colors"
-                onclick={() => editCustomer(c)}
-              >
-                <span class="line-clamp-2" title={c.name}>{c.name}</span>
-              </button>
-            </td>
-            <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground whitespace-nowrap">{c.city}</td>
-            <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground whitespace-nowrap">{c.email ?? ""}</td>
-            <td class="px-4 py-3 text-right">
-              <RowActionsMenu onEdit={() => editCustomer(c)} onDelete={() => deletion.ask(c)}>
-                {#snippet extraItems()}
-                  <DropdownItem onSelect={() => push(`/invoices/new?customerId=${c.id}`)}>
-                    <FilePlus2 />
-                    Neue Rechnung
-                  </DropdownItem>
-                {/snippet}
-              </RowActionsMenu>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </Card>
+  <table class="data-list">
+    <SortableHeaderRow {sort} {columns} actionsColumn />
+    <tbody>
+      {#each visibleCustomers as c (c.id)}
+        <tr class="cursor-pointer" onclick={() => editCustomer(c)}>
+          <td class="text-muted-foreground whitespace-nowrap tabular-nums">{c.customerNumber}</td>
+          <td class="w-full">
+            <a
+              href={`/customers/${c.id}`}
+              use:link
+              onclick={(e) => e.stopPropagation()}
+              class="font-semibold hover:underline focus-visible:underline"
+              title={c.name}
+            >
+              <span class="line-clamp-2">{c.name}</span>
+            </a>
+          </td>
+          <td class="text-muted-foreground whitespace-nowrap">{c.city}</td>
+          <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap">{c.email ?? ""}</td>
+          <td class="text-right" onclick={(e) => e.stopPropagation()}>
+            <RowActionsMenu onEdit={() => editCustomer(c)} onDelete={() => deletion.ask(c)}>
+              {#snippet extraItems()}
+                <DropdownItem onSelect={() => push(`/invoices/new?customerId=${c.id}`)}>
+                  <FilePlus2 />
+                  Neue Rechnung
+                </DropdownItem>
+              {/snippet}
+            </RowActionsMenu>
+          </td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+  <ListSummary segments={countSummary(visibleCustomers.length, "Kunde", "Kunden")} />
 </QueryBoundary>
 
 <ConfirmDialog

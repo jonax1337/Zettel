@@ -37,7 +37,7 @@ export function createRowSelection<T extends { id: number }>(getRows: () => T[])
       toast.success(`${targets.length} ${doneLabel}`);
       clear();
     } catch (e) {
-      toast.error("Bulk-Aktion fehlgeschlagen", String(e));
+      toast.error("Aktion fehlgeschlagen", String(e));
     } finally {
       busy = false;
     }

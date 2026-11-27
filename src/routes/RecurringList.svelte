@@ -9,17 +9,21 @@
   import { formatDate, nowUnix } from "$lib/utils/date";
   import { applySort } from "$lib/utils/sort";
   import {
+    Badge,
     Button,
-    Card,
     DropdownItem,
     ConfirmDialog,
     toast,
-    EmptyState,
     PageHeader,
     QueryBoundary,
     StatusBadge,
   } from "$lib/ui";
-  import { Plus, FileText, PowerOff, Power } from "$lib/brand-icons";
+  import { Plus, PowerOff, Power } from "$lib/brand-icons";
+  import { WIDE_ONLY } from "./invoice/list-support";
+  import InvoiceTabs from "./parts/list/InvoiceTabs.svelte";
+  import ListSummary from "./parts/list/ListSummary.svelte";
+  import { countSummary } from "./parts/list/list-summary";
+  import ListEmptyState from "./parts/entity/ListEmptyState.svelte";
   import RowActionsMenu from "./parts/entity/RowActionsMenu.svelte";
   import { createDeleteFlow } from "./parts/entity/delete-flow.svelte";
   import { createListSort } from "./parts/entity/list-sort.svelte";
@@ -40,10 +44,10 @@
   type SortKey = "name" | "customer" | "interval" | "nextDueDate" | "active";
   const sort = createListSort<SortKey>("recurring", { key: "nextDueDate", dir: "asc" });
   const columns: SortColumn<SortKey>[] = [
-    { key: "name", label: "Name", class: "min-w-32" },
-    { key: "customer", label: "Kunde", class: "hidden @3xl:table-cell min-w-32" },
-    { key: "interval", label: "Intervall", class: "hidden @3xl:table-cell whitespace-nowrap" },
-    { key: "nextDueDate", label: "Nächste Fälligkeit", class: "whitespace-nowrap" },
+    { key: "name", label: "Serie", class: "whitespace-nowrap" },
+    { key: "customer", label: "Kunde", class: "w-full" },
+    { key: "interval", label: "Rhythmus", class: `${WIDE_ONLY} whitespace-nowrap` },
+    { key: "nextDueDate", label: "Nächste Rechnung", class: "whitespace-nowrap" },
     { key: "active", label: "Status", class: "whitespace-nowrap" },
   ];
   const sortedTemplates = $derived(
@@ -56,10 +60,17 @@
     }),
   );
 
+  // The series count in the tabs changes only when a series is deleted.
+  let deletions = $state(0);
+  async function reloadAfterDelete() {
+    await templates.reload();
+    deletions++;
+  }
+
   const deletion = createDeleteFlow<RecurringListRow>({
     remove: (row) => deleteRecurring(row.id),
     entityLabel: "Wiederkehrende Rechnung",
-    reload: templates.reload,
+    reload: reloadAfterDelete,
   });
 
   function isDue(row: RecurringListRow): boolean {
@@ -81,84 +92,94 @@
   }
 </script>
 
-<PageHeader
-  title="Wiederkehrende Rechnungen"
-  subtitle="Wiederkehrende Rechnungen für Retainer- oder Abo-Modelle. Erzeugung erfolgt manuell pro Fälligkeit."
->
+<PageHeader title="Rechnungen">
   {#snippet actions()}
     <Button href="/recurring/new">
       <Plus class="size-4" />
-      Neue wiederkehrende Rechnung
+      Neue Serie
     </Button>
   {/snippet}
 </PageHeader>
 
+<InvoiceTabs active="recurring" refreshKey={deletions} />
+
+<p class="mb-4 text-[13px] text-muted-foreground">
+  Serien sind Vorlagen für Retainer oder Abos. Die Rechnung erzeugst du pro Fälligkeit selbst.
+</p>
+
 <QueryBoundary query={templates} isEmpty={templates.data.length === 0}>
   {#snippet empty()}
-    <EmptyState
-      message="Noch keine wiederkehrenden Rechnungen."
-      actionLabel="Neue wiederkehrende Rechnung"
-      onAction={() => push("/recurring/new")}
+    <ListEmptyState
+      filtered={false}
+      emptyMessage="Noch keine Serien angelegt."
+      createLabel="Neue Serie"
+      onCreate={() => push("/recurring/new")}
     />
   {/snippet}
-  <Card class="overflow-hidden py-0">
-    <table class="w-full text-sm">
-      <SortableHeaderRow {sort} {columns} actionsColumn />
-      <tbody class="stagger">
-        {#each sortedTemplates as row (row.id)}
-          <tr class="border-t hover:bg-muted/30 transition-colors">
-            <td class="px-4 py-3 min-w-32">
-              <a href={`/recurring/${row.id}`} use:link class="font-medium hover:underline" title={row.name}>
-                <span class="line-clamp-2">{row.name}</span>
-              </a>
-            </td>
-            <td class="hidden @3xl:table-cell px-4 py-3 text-muted-foreground min-w-32"><span class="line-clamp-2" title={row.customerName}>{row.customerName}</span></td>
-            <td class="hidden @3xl:table-cell px-4 py-3 whitespace-nowrap">{RECURRING_INTERVAL_LABEL[row.interval]}</td>
-            <td class="px-4 py-3 whitespace-nowrap">
-              <span class={isDue(row) && row.active ? "text-warning font-medium" : ""}>
-                {formatDate(row.nextDueDate)}
-              </span>
-              {#if row.lastGeneratedAt}
-                <div class="text-xs text-muted-foreground">
-                  zuletzt: {formatDate(row.lastGeneratedAt)}
-                </div>
+  <table class="data-list">
+    <SortableHeaderRow {sort} {columns} actionsColumn />
+    <tbody>
+      {#each sortedTemplates as row (row.id)}
+        <tr class="cursor-pointer" onclick={() => editTemplate(row)}>
+          <td class="whitespace-nowrap">
+            <a
+              href={`/recurring/${row.id}`}
+              use:link
+              onclick={(e) => e.stopPropagation()}
+              class="font-semibold hover:underline focus-visible:underline"
+              title={row.name}
+            >
+              {row.name}
+            </a>
+          </td>
+          <td class="w-full text-muted-foreground"><span class="line-clamp-2" title={row.customerName}>{row.customerName}</span></td>
+          <td class="{WIDE_ONLY} whitespace-nowrap">{RECURRING_INTERVAL_LABEL[row.interval]}</td>
+          <td class="whitespace-nowrap">
+            <span class="inline-flex items-center gap-2 tabular-nums">
+              {formatDate(row.nextDueDate)}
+              {#if row.active && isDue(row)}
+                <Badge variant="open">Fällig</Badge>
               {/if}
-            </td>
-            <td class="px-4 py-3 whitespace-nowrap">
-              <StatusBadge status={recurringState(row.active)} table={RECURRING_STATE} />
-            </td>
-            <td class="px-4 py-3 text-right whitespace-nowrap">
-              <div class="inline-flex items-center gap-1">
-                {#if row.active && isDue(row)}
-                  <Button
-                    size="sm"
-                    disabled={generatingRecurringIds.has(row.id)}
-                    onclick={() => generateInvoiceAndOpen(row.id)}
-                  >
-                    <FileText class="size-3.5" />
-                    Jetzt erzeugen
-                  </Button>
-                {/if}
-                <RowActionsMenu onEdit={() => editTemplate(row)} onDelete={() => deletion.ask(row)}>
-                  {#snippet extraItems()}
-                    <DropdownItem onSelect={() => onToggle(row)}>
-                      {#if row.active}
-                        <PowerOff />
-                        Pausieren
-                      {:else}
-                        <Power />
-                        Aktivieren
-                      {/if}
-                    </DropdownItem>
-                  {/snippet}
-                </RowActionsMenu>
-              </div>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </Card>
+            </span>
+            {#if row.lastGeneratedAt}
+              <div class="text-xs text-muted-foreground tabular-nums">zuletzt: {formatDate(row.lastGeneratedAt)}</div>
+            {/if}
+          </td>
+          <td class="whitespace-nowrap">
+            <StatusBadge status={recurringState(row.active)} table={RECURRING_STATE} />
+          </td>
+          <td class="text-right whitespace-nowrap" onclick={(e) => e.stopPropagation()}>
+            <div class="inline-flex items-center gap-1">
+              {#if row.active && isDue(row)}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={generatingRecurringIds.has(row.id)}
+                  onclick={() => generateInvoiceAndOpen(row.id)}
+                >
+                  Rechnung erzeugen
+                </Button>
+              {/if}
+              <RowActionsMenu onEdit={() => editTemplate(row)} onDelete={() => deletion.ask(row)}>
+                {#snippet extraItems()}
+                  <DropdownItem onSelect={() => onToggle(row)}>
+                    {#if row.active}
+                      <PowerOff />
+                      Pausieren
+                    {:else}
+                      <Power />
+                      Aktivieren
+                    {/if}
+                  </DropdownItem>
+                {/snippet}
+              </RowActionsMenu>
+            </div>
+          </td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+  <ListSummary segments={countSummary(sortedTemplates.length, "Serie", "Serien")} />
 </QueryBoundary>
 
 <ConfirmDialog

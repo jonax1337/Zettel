@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { link, push } from "svelte-spa-router";
+  import { link, push, router } from "svelte-spa-router";
   import {
     deleteInvoice,
     displayInvoiceNumber,
@@ -18,7 +18,6 @@
   import { formatDate, nowUnix } from "$lib/utils/date";
   import {
     Button,
-    Card,
     Badge,
     Checkbox,
     BulkActionBar,
@@ -37,11 +36,21 @@
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
-  import { ALL, numberOrAll, statusFilterItems } from "./invoice/list-support";
+  import { ALL, WIDE_ONLY, numberOrAll, overdueDays, overdueLabel, statusFilterItems } from "./invoice/list-support";
   import { canRecordPayments, isOverdue as isInvoiceOverdue } from "./invoice/invoice-actions";
   import { INVOICE_STATUS } from "./invoice/status";
 
+  import FilterMenu from "./parts/list/FilterMenu.svelte";
+  import InvoiceTabs from "./parts/list/InvoiceTabs.svelte";
+  import { invoiceListTab } from "./parts/list/invoice-tabs";
+  import ListSummary from "./parts/list/ListSummary.svelte";
+  import { invoiceSummary, openInvoiceSummary } from "./parts/list/list-summary";
+
   const statusItems = statusFilterItems(INVOICE_STATUS);
+  const FILTER_OPTIONS = [
+    { key: "onlyCreditNotes", label: "Nur Stornorechnungen" },
+    { key: "onlyFollowUp", label: "Nur mit Wiedervorlage" },
+  ];
   const now = nowUnix();
 
   let customers = $state<Customer[]>([]);
@@ -54,7 +63,6 @@
     search: string;
     onlyCreditNotes: boolean;
     onlyFollowUp: boolean;
-    onlyOpen: boolean;
   };
   const filters = createListFilters<InvoiceListFilters>("invoices", {
     status: ALL,
@@ -63,9 +71,12 @@
     search: "",
     onlyCreditNotes: false,
     onlyFollowUp: false,
-    onlyOpen: false,
   });
   const f = filters.values;
+
+  // The "Offen" tab is this list restricted to open invoices. Only the URL (`?view=open`) says so,
+  // never a saved filter, so the plain `/invoices` link always shows all invoices.
+  const onlyOpen = $derived(invoiceListTab(router.querystring) === "open");
 
   const filter = $derived<InvoiceFilter>({
     status: f.status,
@@ -79,7 +90,7 @@
     invoices.data.filter(
       (i) => (!f.onlyCreditNotes || i.isCreditNote) &&
         (!f.onlyFollowUp || i.followUpDate != null) &&
-        (!f.onlyOpen || canRecordPayments(i, i.settledByCreditNote)),
+        (!onlyOpen || canRecordPayments(i, i.settledByCreditNote)),
     ),
   );
 
@@ -96,11 +107,11 @@
   const sort = createListSort<SortKey>("invoices", { key: "issueDate", dir: "desc" });
   const columns: SortColumn<SortKey>[] = [
     { key: "number", label: "Nummer", class: "whitespace-nowrap" },
-    { key: "issueDate", label: "Datum", class: "whitespace-nowrap" },
-    { key: "customer", label: "Kunde", class: "min-w-32" },
-    { key: "total", label: "Betrag", align: "right", class: "text-right whitespace-nowrap" },
+    { key: "customer", label: "Kunde", class: "w-full" },
+    { key: "issueDate", label: "Datum", class: `${WIDE_ONLY} whitespace-nowrap` },
+    { key: "dueDate", label: "Fällig", class: "whitespace-nowrap" },
     { key: "status", label: "Status", class: "whitespace-nowrap" },
-    { key: "dueDate", label: "Fällig", class: "hidden @3xl:table-cell whitespace-nowrap" },
+    { key: "total", label: "Betrag", align: "right", class: "text-right whitespace-nowrap" },
   ];
   const sortedInvoices = $derived(
     applySort(visibleInvoices, sort.state, {
@@ -112,6 +123,17 @@
       dueDate: (r) => r.dueDate,
     }),
   );
+
+  const summary = $derived(
+    onlyOpen ? openInvoiceSummary(sortedInvoices, now) : invoiceSummary(sortedInvoices, now),
+  );
+
+  // Bumped after every bulk action so the tab counts reload; typing in the search field does not.
+  let changes = $state(0);
+  async function reloadAfterChange() {
+    await invoices.reload();
+    changes++;
+  }
 
   const selection = createRowSelection(() => sortedInvoices);
   let bulkDeleteConfirmOpen = $state(false);
@@ -133,19 +155,16 @@
 
   async function bulkMarkSent() {
     if (!(await ensureCompanyDataComplete())) return;
-    await selection.runBulk("als versendet markiert", (id) => markSent(id), invoices.reload);
+    await selection.runBulk("als versendet markiert", (id) => markSent(id), reloadAfterChange);
   }
 
   async function bulkDelete() {
     bulkDeleteConfirmOpen = false;
-    await selection.runBulk("gelöscht", deleteInvoice, invoices.reload);
+    await selection.runBulk("gelöscht", deleteInvoice, reloadAfterChange);
   }
 </script>
 
-<PageHeader
-  title="Rechnungen"
-  subtitle="{visibleInvoices.length} {pluralize(visibleInvoices.length, "Rechnung", "Rechnungen")}"
->
+<PageHeader title="Rechnungen">
   {#snippet actions()}
     <Button onclick={() => push("/invoices/new")}>
       <Plus />
@@ -154,32 +173,19 @@
   {/snippet}
 </PageHeader>
 
-<div class="mb-3">
-  <DocumentListFilters
-    bind:status={f.status}
-    {statusItems}
-    bind:year={f.year}
-    bind:customerId={f.customerId}
-    bind:search={f.search}
-    {years}
-    {customers}
-  />
-</div>
+<InvoiceTabs active={onlyOpen ? "open" : "all"} refreshKey={changes} />
 
-<div class="mb-5 flex flex-wrap items-center gap-4">
-  <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-    <Checkbox bind:checked={f.onlyCreditNotes} />
-    Nur Stornorechnungen
-  </label>
-  <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-    <Checkbox bind:checked={f.onlyFollowUp} />
-    Nur mit Wiedervorlage
-  </label>
-  <label class="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-    <Checkbox bind:checked={f.onlyOpen} />
-    Nur offene Posten
-  </label>
-</div>
+<DocumentListFilters
+  bind:status={f.status}
+  {statusItems}
+  bind:year={f.year}
+  bind:customerId={f.customerId}
+  bind:search={f.search}
+  {years}
+  {customers}
+>
+  <FilterMenu values={f} options={FILTER_OPTIONS} />
+</DocumentListFilters>
 
 <QueryBoundary query={invoices} isEmpty={visibleInvoices.length === 0}>
   {#snippet empty()}
@@ -187,68 +193,69 @@
       filtered={filters.isFiltered}
       onResetFilters={filters.reset}
       filteredMessage="Keine Rechnungen für diese Filter."
-      emptyMessage="Noch keine Rechnungen angelegt."
-      createLabel="Neue Rechnung"
+      emptyMessage={onlyOpen ? "Keine offenen Rechnungen." : "Noch keine Rechnungen angelegt."}
+      createLabel={onlyOpen ? undefined : "Neue Rechnung"}
       onCreate={() => push("/invoices/new")}
     />
   {/snippet}
-  <Card class="overflow-hidden py-0">
-    <table class="w-full text-sm">
-      <SortableHeaderRow {sort} {columns} cellClass="px-3 @3xl:px-4 py-3" {selection} />
-      <tbody class="stagger">
-        {#each sortedInvoices as inv (inv.id)}
-          <tr
-            class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
-            onclick={() => push(`/invoices/${inv.id}`)}
-          >
-            <td class="px-3 @3xl:px-4 py-3" onclick={(e) => e.stopPropagation()}>
-              <Checkbox
-                checked={selection.isSelected(inv.id)}
-                onCheckedChange={() => selection.toggle(inv.id)}
-                aria-label={`Rechnung ${inv.number} auswählen`}
-              />
-            </td>
-            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">
-              <span class="inline-flex items-center gap-1.5">
-                <a
-                  href={`/invoices/${inv.id}`}
-                  use:link
-                  onclick={(e) => e.stopPropagation()}
-                  class="hover:underline focus-visible:underline"
-                >
-                  {displayInvoiceNumber(inv)}
-                </a>
-                {#if inv.isCreditNote}
-                  <Badge variant="destructive" class="text-[10px] px-1.5 py-0">Storno</Badge>
+  <table class="data-list">
+    <SortableHeaderRow {sort} {columns} {selection} />
+    <tbody>
+      {#each sortedInvoices as inv (inv.id)}
+        {@const overdue = isInvoiceOverdue(inv, inv.settledByCreditNote, now)}
+        <tr class="cursor-pointer" onclick={() => push(`/invoices/${inv.id}`)}>
+          <td onclick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={selection.isSelected(inv.id)}
+              onCheckedChange={() => selection.toggle(inv.id)}
+              aria-label={`Rechnung ${displayInvoiceNumber(inv)} auswählen`}
+            />
+          </td>
+          <td class="font-semibold whitespace-nowrap tabular-nums">
+            <span class="inline-flex items-center gap-2">
+              <a
+                href={`/invoices/${inv.id}`}
+                use:link
+                onclick={(e) => e.stopPropagation()}
+                class="hover:underline focus-visible:underline"
+              >
+                {displayInvoiceNumber(inv)}
+              </a>
+              {#if inv.isCreditNote}
+                <Badge variant="outline">Storno</Badge>
+              {/if}
+            </span>
+          </td>
+          <td class="w-full"><span class="line-clamp-2" title={inv.customerName}>{inv.customerName}</span></td>
+          <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap tabular-nums">{formatDate(inv.issueDate)}</td>
+          <td class="text-muted-foreground whitespace-nowrap tabular-nums">
+            {inv.isCreditNote ? "–" : formatDate(inv.dueDate)}
+          </td>
+          <td class="whitespace-nowrap">
+            <span class="inline-flex items-center gap-2">
+              {#if overdue}
+                <Badge variant="late">{overdueLabel(overdueDays(inv.dueDate, now))}</Badge>
+                {#if inv.status === "partial"}
+                  <span class="text-xs text-muted-foreground">teilbezahlt</span>
                 {/if}
-              </span>
-            </td>
-            <td class="px-3 @3xl:px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(inv.issueDate)}</td>
-            <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={inv.customerName}>{inv.customerName}</span></td>
-            <td class="px-3 @3xl:px-4 py-3 text-right font-mono whitespace-nowrap">
-              <span class="inline-flex items-center gap-1.5">
-                {formatMoney(inv.total, inv.currency)}
-                {#if inv.currency && inv.currency !== "EUR"}
-                  <Badge variant="outline" class="text-[10px] px-1.5 py-0">{inv.currency}</Badge>
-                {/if}
-              </span>
-            </td>
-            <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
-              <span class="inline-flex items-center gap-1.5">
+              {:else}
                 <StatusBadge status={inv.status} table={INVOICE_STATUS} />
-                {#if isInvoiceOverdue(inv, inv.settledByCreditNote, now)}
-                  <Badge variant="destructive">Überfällig</Badge>
-                {/if}
-              </span>
-            </td>
-            <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
-              {inv.isCreditNote ? "—" : formatDate(inv.dueDate)}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </Card>
+              {/if}
+            </span>
+          </td>
+          <td class="text-right font-semibold whitespace-nowrap tabular-nums">
+            <span class="inline-flex items-center gap-1.5">
+              {#if inv.currency && inv.currency !== "EUR"}
+                <span class="text-xs font-normal text-muted-foreground">{inv.currency}</span>
+              {/if}
+              {formatMoney(inv.total, inv.currency)}
+            </span>
+          </td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+  <ListSummary segments={summary} />
 </QueryBoundary>
 
 <BulkActionBar count={selection.selected.length} label={selectedLabel} onClear={selection.clear}>
@@ -267,7 +274,7 @@
     <Button
       size="sm"
       variant="outline"
-      onclick={() => selection.runBulk("als bezahlt markiert", (id) => markPaid(id), invoices.reload)}
+      onclick={() => selection.runBulk("als bezahlt markiert", (id) => markPaid(id), reloadAfterChange)}
       disabled={selection.busy}
     >
       <CheckCircle2 class="size-3.5" />

@@ -11,9 +11,11 @@
     /** Call to action such as "Neue Rechnung"; shown only together with `onAction`. */
     actionLabel?: string;
     onAction?: () => void;
+    /** "outline" where the page header already carries the one filled button. */
+    actionVariant?: "default" | "outline";
   };
 
-  let { message, variant = "empty", actionLabel, onAction }: Props = $props();
+  let { message, variant = "empty", actionLabel, onAction, actionVariant = "default" }: Props = $props();
 </script>
 
 <Card>
@@ -26,7 +28,7 @@
     />
     <p class="text-sm text-muted-foreground">{message}</p>
     {#if actionLabel && onAction}
-      <Button onclick={onAction}>{actionLabel}</Button>
+      <Button variant={actionVariant} onclick={onAction}>{actionLabel}</Button>
     {/if}
   </div>
 </Card>
