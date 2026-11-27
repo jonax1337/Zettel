@@ -35,7 +35,7 @@ describe("palette commands", () => {
       "/reports/euer": "Anlage EÜR",
       "/reports/taxes": "Steuer-Rücklage",
       "/export": "DATEV-Export",
-      "/validate": "E-Rechnung validieren",
+      "/validate": "E-Rechnung prüfen",
       "/settings": "Einstellungen",
     });
   });
@@ -95,7 +95,7 @@ describe("filterCommands", () => {
   });
 
   it("finds the validator", () => {
-    expect(labels(filterCommands(commands, "valid"))).toContain("E-Rechnung validieren");
+    expect(labels(filterCommands(commands, "valid"))).toContain("E-Rechnung prüfen");
   });
 
   it("returns nothing when no command fits", () => {

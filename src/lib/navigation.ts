@@ -83,7 +83,7 @@ export const SETTINGS_NAV_ITEM: NavItem = {
   icon: SettingsIcon,
 };
 
-export type ReportPage = { href: string; label: string; description: string; icon: NavItem["icon"] };
+export type ReportPage = { href: string; label: string; description: string; icon: NavItem["icon"]; keywords?: string };
 
 /** The pages behind "Auswertungen": listed on the reports hub and reachable from the palette. */
 export const REPORT_PAGES: ReportPage[] = [
@@ -113,9 +113,10 @@ export const REPORT_PAGES: ReportPage[] = [
   },
   {
     href: "/validate",
-    label: "E-Rechnung validieren",
+    label: "E-Rechnung prüfen",
     description: "XRechnung oder ZUGFeRD-Datei gegen den KoSIT-Validator prüfen.",
     icon: ShieldCheck,
+    keywords: "validieren validator kosit",
   },
 ];
 

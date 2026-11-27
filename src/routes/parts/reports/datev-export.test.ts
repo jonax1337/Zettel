@@ -99,12 +99,12 @@ describe("resolveItemAccounts", () => {
 
 describe("describeExportCounts", () => {
   it("names both document kinds with the right plural", () => {
-    expect(describeExportCounts(1, 2)).toBe("1 Rechnung + 2 Eingangsrechnungen");
-    expect(describeExportCounts(3, 1)).toBe("3 Rechnungen + 1 Eingangsrechnung");
+    expect(describeExportCounts(1, 2)).toBe("1 Rechnung + 2 Ausgaben");
+    expect(describeExportCounts(3, 1)).toBe("3 Rechnungen + 1 Ausgabe");
   });
 
   it("omits a kind without documents", () => {
     expect(describeExportCounts(2, 0)).toBe("2 Rechnungen");
-    expect(describeExportCounts(0, 1)).toBe("1 Eingangsrechnung");
+    expect(describeExportCounts(0, 1)).toBe("1 Ausgabe");
   });
 });
