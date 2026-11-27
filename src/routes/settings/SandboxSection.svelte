@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { Button, ConfirmDialog, toast } from "$lib/ui";
-  import FormSection from "./FormSection.svelte";
+  import { Button, ConfirmDialog, toast, FormSection } from "$lib/ui";
   import { relaunchApp } from "$lib/utils/relaunch";
 
   let sandbox = $state(false);
@@ -36,7 +35,7 @@
   }
 </script>
 
-<FormSection
+<FormSection level={3}
   title="Sandbox"
   description="Zum gefahrlosen Testen. Daten werden getrennt gespeichert, deine echte Buchhaltung bleibt unberührt. Die App startet beim Umschalten neu."
 >

@@ -1,12 +1,8 @@
 <script lang="ts">
   import SettingsFormPage from "./SettingsFormPage.svelte";
-  import FormSection from "./FormSection.svelte";
-  import FieldGrid from "./FieldGrid.svelte";
-  import Field from "./Field.svelte";
-  import CheckField from "./CheckField.svelte";
   import NumberSequenceFields from "./NumberSequenceFields.svelte";
   import { NUMBER_SEQUENCES, numberingBlockReason, numberingProblems } from "./numbering-form";
-  import { Input } from "$lib/ui";
+  import { Input, FormSection, FieldGrid, Field, CheckField } from "$lib/ui";
 </script>
 
 <SettingsFormPage
@@ -15,7 +11,7 @@
   validate={numberingBlockReason}
 >
   {#snippet children(s)}
-    <FormSection
+    <FormSection level={3}
       title="Nummernkreise"
       description="Platzhalter im Format: {'{YYYY}'} Jahr, {'{YY}'} Jahr zweistellig, {'{MM}'} Monat und {'{N}'} bis {'{NNNN}'} für die laufende Nummer mit einer bis vier Stellen ({'{NNNN}'} ergibt 0001). Ohne diesen Platzhalter wäre jede Nummer gleich."
     >
@@ -32,7 +28,7 @@
       </FieldGrid>
     </FormSection>
 
-    <FormSection
+    <FormSection level={3}
       title="Vorgaben für neue Belege"
       description="Werden bei neuen Rechnungen und Angeboten vorbelegt und lassen sich pro Beleg ändern."
     >

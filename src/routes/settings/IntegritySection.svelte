@@ -1,8 +1,7 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
-  import { Button, toast } from "$lib/ui";
+  import { Button, toast, FormSection } from "$lib/ui";
   import { AlertTriangle, CheckCircle2, FileSpreadsheet, ShieldCheck } from "$lib/brand-icons";
-  import FormSection from "./FormSection.svelte";
   import { auditLogCsv, loadAuditLogForExport } from "$lib/db/audit";
   import { verifyInvoiceChain, type IntegrityProblem, type IntegrityProblemKind, type IntegrityReport } from "$lib/db/seals";
   import { formatDateTime, toIsoDate, nowUnix } from "$lib/utils/date";
@@ -81,7 +80,7 @@
   </ul>
 {/snippet}
 
-<FormSection
+<FormSection level={3}
   title="Integritätsprüfung (GoBD)"
   description="Zettel protokolliert Änderungen an Rechnungen und versiegelt ausgestellte Rechnungen in einer Hash-Kette. Die Prüfung vergleicht jede Rechnung mit ihrem Siegel. Das ist ein technischer Nachweis, keine Zertifizierung."
 >

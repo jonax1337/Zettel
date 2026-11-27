@@ -1,7 +1,6 @@
 <script lang="ts">
   import SettingsShell from "./SettingsShell.svelte";
-  import CheckField from "./CheckField.svelte";
-  import { Button, toast, PERSISTENT_TOAST } from "$lib/ui";
+  import { Button, toast, PERSISTENT_TOAST, CheckField } from "$lib/ui";
   import { RefreshCw } from "$lib/brand-icons";
   import { version as appVersion } from "../../../package.json";
   import { checkForUpdate, getUpdateChannel, setUpdateChannel } from "$lib/updater";

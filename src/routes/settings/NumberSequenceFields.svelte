@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { Input } from "$lib/ui";
+  import { Input, Field } from "$lib/ui";
   import { formatInvoiceNumber } from "$lib/utils/invoice-number";
-  import Field from "./Field.svelte";
   import type { SequenceProblems } from "./numbering-form";
 
   type Props = {

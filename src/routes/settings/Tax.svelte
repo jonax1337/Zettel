@@ -1,14 +1,10 @@
 <script lang="ts">
   import SettingsFormPage from "./SettingsFormPage.svelte";
-  import FormSection from "./FormSection.svelte";
-  import FieldGrid from "./FieldGrid.svelte";
-  import Field from "./Field.svelte";
-  import CheckField from "./CheckField.svelte";
   import PrepaymentsEditor from "./PrepaymentsEditor.svelte";
   import PauschalReserveField from "./PauschalReserveField.svelte";
   import ExpenseCategoryEuerList from "./ExpenseCategoryEuerList.svelte";
   import type { Settings } from "$lib/db/schema";
-  import { Input, Select, Textarea } from "$lib/ui";
+  import { Input, Select, Textarea, FormSection, FieldGrid, Field, CheckField } from "$lib/ui";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
 
   type Choice<T> = { value: T; label: string }[];
@@ -37,7 +33,7 @@
   description="Grundlage für Rechnungen, die UStVA und die Schätzung der Steuer-Rücklage."
 >
   {#snippet children(s)}
-    <FormSection>
+    <FormSection level={3}>
       <FieldGrid>
         <Field label="Steuernummer" required={!s.vatId}>
           <Input bind:value={s.taxNumber} required={!s.vatId} />
@@ -70,7 +66,7 @@
       </FieldGrid>
     </FormSection>
 
-    <FormSection
+    <FormSection level={3}
       title="Für die Steuer-Rücklage"
       description="Grundlage für die Schätzung der Steuer-Rücklage. Keine Steuerberatung, nur eine Vorhersage zur Liquiditätsplanung."
     >
@@ -130,18 +126,18 @@
       </FieldGrid>
     </FormSection>
 
-    <FormSection
+    <FormSection level={3}
       title="Geleistete ESt-Vorauszahlungen"
       description="Beim Verlassen eines Feldes sofort gespeichert, nicht erst mit „Speichern“."
     >
       <PrepaymentsEditor />
     </FormSection>
 
-    <FormSection title="Pauschale Rücklage">
+    <FormSection level={3} title="Pauschale Rücklage">
       <PauschalReserveField bind:enabled={s.usePauschalTaxReserve} bind:percent={s.pauschalTaxPercent} />
     </FormSection>
 
-    <FormSection
+    <FormSection level={3}
       title="Ausgabenkategorien für die Anlage EÜR"
       description="Bestimmt, in welcher Zeile der Anlage EÜR die Ausgaben einer Kategorie erscheinen. Ausgaben ohne Kategorie landen in „Übrige unbeschränkt abziehbare Betriebsausgaben“. Änderungen gelten sofort, nicht erst mit „Speichern“."
     >

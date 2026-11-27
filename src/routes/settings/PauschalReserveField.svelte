@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { Label, Slider } from "$lib/ui";
-  import CheckField from "./CheckField.svelte";
+  import { Label, Slider, CheckField } from "$lib/ui";
 
   const MAX_PERCENT = 50;
   const SLIDER_LABELS = [0, MAX_PERCENT / 2, MAX_PERCENT];

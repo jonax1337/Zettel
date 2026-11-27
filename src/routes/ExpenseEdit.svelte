@@ -23,19 +23,22 @@
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
   import {
     Button,
-    Input,
-    Textarea,
     CatalogPicker,
-    DatePicker,
-    Select,
     Checkbox,
     ConfirmDialog,
+    DatePicker,
     DropdownItem,
     DropdownMenu,
+    Field,
+    FormSection,
+    Input,
     MoreActionsTrigger,
     PageHeader,
     SaveBar,
+    Select,
     StatusBadge,
+    Textarea,
+    focusFirstInvalid,
     toast,
   } from "$lib/ui";
   import { Check, Package, Plus, Trash2, X } from "$lib/brand-icons";
@@ -45,11 +48,8 @@
   import DateConfirmDialog from "./invoice/DateConfirmDialog.svelte";
   import { paidDateWarning } from "./invoice/date-warnings";
   import ExpenseItemsTable from "./parts/expense/ExpenseItemsTable.svelte";
-  import FormField from "./parts/expense/FormField.svelte";
-  import FormSection from "./parts/expense/FormSection.svelte";
   import PdfDropZone from "./parts/expense/PdfDropZone.svelte";
   import { hasErrors, validateExpenseForm } from "./parts/expense/form-validation";
-  import { focusFirstInvalid } from "./parts/expense/field-a11y";
   import { importWhenReady, takePendingImport } from "./parts/expense/pending-import";
   import VendorQuickCreateDialog from "./parts/expense/VendorQuickCreateDialog.svelte";
   import { findDuplicateExpense, type ComparableExpense } from "./parts/expense/duplicate-check";
@@ -578,7 +578,7 @@
 
     <FormSection title="Lieferant und Beleg">
       <div class="grid max-w-2xl grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-3">
-        <FormField
+        <Field
           label="Lieferant"
           required
           error={fieldErrors.vendor}
@@ -600,16 +600,16 @@
               </Button>
             {/if}
           </div>
-        </FormField>
-        <FormField label="Beleg-Nr. des Lieferanten">
+        </Field>
+        <Field label="Beleg-Nr. des Lieferanten">
           <Input bind:value={form.vendorNumber} placeholder="z. B. 2026-04-123" disabled={!editable} />
-        </FormField>
-        <FormField label="Rechnungsdatum" required error={fieldErrors.issueDate}>
+        </Field>
+        <Field label="Rechnungsdatum" required error={fieldErrors.issueDate}>
           <DatePicker bind:value={form.issueDateIso} disabled={!editable} />
-        </FormField>
-        <FormField label="Fällig am">
+        </Field>
+        <Field label="Fällig am">
           <DatePicker bind:value={form.dueDateIso} disabled={!editable} />
-        </FormField>
+        </Field>
       </div>
     </FormSection>
 
@@ -672,9 +672,9 @@
     {/if}
 
     <FormSection title="Notizen">
-      <FormField label="Interne Notiz" hint="Nur für dich, taucht auf keinem Beleg auf." class="max-w-2xl">
+      <Field label="Interne Notiz" hint="Nur für dich, taucht auf keinem Beleg auf." class="max-w-2xl">
         <Textarea rows={3} bind:value={form.notes} disabled={!editable} />
-      </FormField>
+      </Field>
     </FormSection>
 
     <SaveBar>

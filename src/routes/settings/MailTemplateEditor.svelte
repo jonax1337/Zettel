@@ -1,8 +1,6 @@
 <script lang="ts">
-  import { Button, Input, Textarea } from "$lib/ui";
+  import { Button, Input, Textarea, Field, FieldGrid } from "$lib/ui";
   import type { MailTemplate } from "$lib/mail/templates";
-  import Field from "./Field.svelte";
-  import FieldGrid from "./FieldGrid.svelte";
 
   type Props = {
     /** Built-in text, shown as placeholder while the field is empty. */

@@ -5,11 +5,24 @@
     updateCustomer,
     type CustomerInput,
   } from "$lib/db/queries";
+  import { tick } from "svelte";
   import { push } from "svelte-spa-router";
-  import { Button, Card, CardContent, Checkbox, DatePicker, Input, Label, PageHeader, SaveBar } from "$lib/ui";
+  import {
+    Button,
+    CheckField,
+    DatePicker,
+    Field,
+    FieldGrid,
+    FormSection,
+    Input,
+    PageHeader,
+    SaveBar,
+    focusFirstInvalid,
+  } from "$lib/ui";
   import { fromIsoDate, toIsoDate } from "$lib/utils/date";
-  import { INVALID_COUNTRY_MESSAGE, normalizeCountryCode } from "./parts/entity/country";
+  import { normalizeCountryCode } from "./parts/entity/country";
   import { createEntityForm } from "./parts/entity/entity-form.svelte";
+  import { validateParty } from "./parts/entity/entity-validation";
   import PartyAddressFields from "./parts/entity/PartyAddressFields.svelte";
   import PartyNotesField from "./parts/entity/PartyNotesField.svelte";
   import { emptyPartyFields, partyFieldsFrom } from "./parts/entity/party-form";
@@ -54,23 +67,27 @@
   const newInvoiceRoute = (customerId: number) => `/invoices/new?customerId=${customerId}`;
 
   // Back link and "Abbrechen" lead to the customer page when editing, to the list when creating.
-  // Saving opens the saved customer's page in both cases (see onSubmit).
+  // Saving opens the saved customer's page in both cases (see handleSubmit).
   const backRoute = $derived(mode === "edit" && params?.id ? customerPageRoute(params.id) : LIST_ROUTE);
   const backLabel = $derived(mode === "edit" ? customerName || "Kunde" : "Kunden");
 
-  function onSubmit(submitter: HTMLElement | null) {
-    const country = normalizeCountryCode(form.country);
-    if (!country) return entity.reject("Land ungültig", INVALID_COUNTRY_MESSAGE);
-    form.country = country;
+  let formEl = $state<HTMLFormElement | null>(null);
+  let attempted = $state(false);
+  const errors = $derived(attempted ? validateParty(form, { requireAddress: true }) : {});
+
+  async function handleSubmit(e: SubmitEvent) {
+    e.preventDefault();
+    attempted = true;
+    if (Object.keys(validateParty(form, { requireAddress: true })).length > 0) {
+      await tick();
+      if (formEl) focusFirstInvalid(formEl);
+      return;
+    }
+    form.country = normalizeCountryCode(form.country) ?? form.country;
     form.followUpDate = followUpIso ? fromIsoDate(followUpIso) : null;
     form.receivesXrechnung = receivesXrechnung;
     form.leitwegId = leitwegId.trim() || null;
-    return entity.save(submitter?.dataset.next === "invoice" ? newInvoiceRoute : customerPageRoute);
-  }
-
-  function handleSubmit(e: SubmitEvent) {
-    e.preventDefault();
-    onSubmit(e.submitter);
+    await entity.save(e.submitter?.dataset.next === "invoice" ? newInvoiceRoute : customerPageRoute);
   }
 </script>
 
@@ -79,48 +96,46 @@
 {#if entity.loading}
   <p class="text-sm text-muted-foreground">Lade…</p>
 {:else}
-  <form onsubmit={handleSubmit}>
-    <Card>
-      <CardContent class="space-y-6">
-        <PartyAddressFields bind:form requireAddress />
+  <form bind:this={formEl} onsubmit={handleSubmit} novalidate>
+    <div class="max-w-2xl">
+      <PartyAddressFields bind:form {errors} requireAddress />
 
-        <section class="flex flex-col gap-4">
-          <label class="flex items-center gap-2 text-sm cursor-pointer">
-            <Checkbox bind:checked={receivesXrechnung} />
-            <span>Empfängt XRechnung (öffentlicher Auftraggeber)</span>
-          </label>
+      <FormSection title="Steuer und E-Rechnung">
+        <FieldGrid>
+          <Field label="USt-IdNr." wide>
+            <Input bind:value={form.vatId} />
+          </Field>
+          <CheckField bind:checked={receivesXrechnung} wide label="Empfängt XRechnung (öffentlicher Auftraggeber)" />
           {#if receivesXrechnung || leitwegId}
-            <div class="flex flex-col gap-1.5">
-              <Label>Leitweg-ID</Label>
+            <Field
+              label="Leitweg-ID"
+              wide
+              hint="Wird als Käuferreferenz in neue Rechnungen übernommen und ist für XRechnungen Pflicht."
+            >
               <Input bind:value={leitwegId} placeholder="z. B. 04011000-1234512345-35" />
-              <p class="text-xs text-muted-foreground">
-                Wird als Käuferreferenz in neue Rechnungen übernommen und ist für XRechnungen Pflicht.
-              </p>
-            </div>
+            </Field>
           {/if}
-        </section>
+        </FieldGrid>
+      </FormSection>
 
-        <section class="grid grid-cols-2 gap-4">
-          <div class="col-span-2">
-            <PartyNotesField bind:value={form.notes} />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <Label>Wiedervorlage am</Label>
+      <FormSection title="Notiz">
+        <FieldGrid>
+          <PartyNotesField bind:value={form.notes} wide />
+          <Field label="Wiedervorlage am" hint="Optional, erinnert dich im Dashboard.">
             <DatePicker bind:value={followUpIso} />
-            <p class="text-xs text-muted-foreground">Optional — Erinnerung im Dashboard.</p>
-          </div>
-        </section>
-      </CardContent>
-    </Card>
+          </Field>
+        </FieldGrid>
+      </FormSection>
+    </div>
 
     <SaveBar>
       <Button type="submit" disabled={entity.saving}>{entity.saving ? "Speichere…" : "Speichern"}</Button>
       <Button type="submit" variant="outline" disabled={entity.saving} data-next="invoice">
         Speichern &amp; Rechnung erstellen
       </Button>
-      <Button type="button" variant="ghost" onclick={() => push(backRoute)}>Abbrechen</Button>
+      <Button type="button" variant="outline" onclick={() => push(backRoute)}>Abbrechen</Button>
       {#if entity.error}
-        <span class="text-sm text-destructive">{entity.error}</span>
+        <span class="min-w-0 text-sm text-destructive" role="alert">{entity.error}</span>
       {/if}
     </SaveBar>
   </form>

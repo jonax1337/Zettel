@@ -1,9 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { Button, toast } from "$lib/ui";
+  import { Button, toast, FormSection } from "$lib/ui";
   import { Copy } from "$lib/brand-icons";
-  import FormSection from "./FormSection.svelte";
 
   let cliPath = $state<string | null>(null);
 
@@ -23,7 +22,7 @@
 </script>
 
 {#if cliPath}
-  <FormSection
+  <FormSection level={3}
     title="Kommandozeile"
     description="Dieselben Daten per Terminal bedienen (Rechnungen, Angebote, Mahnungen, Kunden; --json für Skripte). Hilfe: zettel-cli -h. Nicht parallel zur laufenden App schreiben."
   >

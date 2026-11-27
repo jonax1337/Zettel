@@ -3,18 +3,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { writeBackupZip, writeSafetyBackup } from "$lib/utils/backup";
   import { relaunchApp } from "$lib/utils/relaunch";
-  import {
-    Button,
-    Input,
-    Label,
-    Card,
-    ConfirmDialog,
-    toast,
-    PERSISTENT_TOAST,
-  } from "$lib/ui";
+  import { Button, Input, Label, Card, ConfirmDialog, toast, PERSISTENT_TOAST, FormSection, CheckField } from "$lib/ui";
   import { Download, Upload } from "$lib/brand-icons";
-  import FormSection from "./FormSection.svelte";
-  import CheckField from "./CheckField.svelte";
   import {
     BACKUP_PASSWORD_MIN_LENGTH,
     backupPasswordProblem,
@@ -186,7 +176,7 @@
   }
 </script>
 
-<FormSection
+<FormSection level={3}
   title="Backup und Wiederherstellung"
   description="Sichert die Datenbank und alle PDFs (Rechnungen, Angebote, Mahnungen, Ausgaben) in eine ZIP-Datei. Wiederhergestellte Backups werden beim nächsten App-Start eingespielt."
 >

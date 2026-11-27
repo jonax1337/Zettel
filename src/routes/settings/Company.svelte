@@ -1,11 +1,8 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
   import SettingsFormPage from "./SettingsFormPage.svelte";
-  import FormSection from "./FormSection.svelte";
-  import FieldGrid from "./FieldGrid.svelte";
-  import Field from "./Field.svelte";
   import LogoField from "./LogoField.svelte";
-  import { Input, IbanInput } from "$lib/ui";
+  import { Input, IbanInput, FormSection, FieldGrid, Field } from "$lib/ui";
   import { isBlank } from "$lib/utils/company-completeness";
 </script>
 
@@ -21,7 +18,7 @@
       </p>
     {/if}
 
-    <FormSection>
+    <FormSection level={3}>
       <FieldGrid>
         <Field label="Firmenname" required wide>
           <Input bind:value={s.companyName} required />
@@ -41,7 +38,7 @@
       </FieldGrid>
     </FormSection>
 
-    <FormSection title="Anschrift">
+    <FormSection level={3} title="Anschrift">
       <FieldGrid>
         <Field label="Straße und Hausnummer" required wide>
           <Input bind:value={s.street} required />
@@ -61,7 +58,7 @@
       </FieldGrid>
     </FormSection>
 
-    <FormSection
+    <FormSection level={3}
       title="Handelsregister"
       description="Pflichtangaben für GmbH und UG auf Rechnungen (§ 35a GmbHG). Bei Einzelunternehmen leer lassen."
     >
@@ -78,7 +75,7 @@
       </FieldGrid>
     </FormSection>
 
-    <FormSection title="Bankverbindung">
+    <FormSection level={3} title="Bankverbindung">
       <FieldGrid>
         <Field label="Bank" wide>
           <Input bind:value={s.bankName} />
@@ -92,7 +89,7 @@
       </FieldGrid>
     </FormSection>
 
-    <FormSection title="Logo" description="Erscheint im Kopf der Rechnung.">
+    <FormSection level={3} title="Logo" description="Erscheint im Kopf der Rechnung.">
       <LogoField bind:path={s.logoPath} />
     </FormSection>
   {/snippet}

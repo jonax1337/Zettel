@@ -89,7 +89,6 @@ export function createEntityForm<T>(options: Options<T>) {
       return error;
     },
     loadTarget,
-    reject,
     save,
   };
 }

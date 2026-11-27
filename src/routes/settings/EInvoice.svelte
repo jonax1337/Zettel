@@ -1,10 +1,7 @@
 <script lang="ts">
   import SettingsFormPage from "./SettingsFormPage.svelte";
-  import FormSection from "./FormSection.svelte";
-  import FieldGrid from "./FieldGrid.svelte";
-  import Field from "./Field.svelte";
   import type { Settings } from "$lib/db/schema";
-  import { Select } from "$lib/ui";
+  import { Select, FormSection, FieldGrid, Field } from "$lib/ui";
 
   type Choice<T> = { value: T; label: string }[];
 
@@ -33,7 +30,7 @@
   description="Format der eingebetteten E-Rechnung und Aussehen der PDF."
 >
   {#snippet children(s)}
-    <FormSection>
+    <FormSection level={3}>
       <FieldGrid>
         <Field
           label="ZUGFeRD-Profil"

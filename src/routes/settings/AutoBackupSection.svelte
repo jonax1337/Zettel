@@ -2,8 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { join } from "@tauri-apps/api/path";
-  import { Label, Select, toast } from "$lib/ui";
-  import FormSection from "./FormSection.svelte";
+  import { Label, Select, toast, FormSection } from "$lib/ui";
   import { loadSettings, saveAutoBackupInterval } from "$lib/db/queries";
   import { formatDateTime } from "$lib/utils/date";
   import { lastAutoBackupFailure, type AutoBackupFailure } from "$lib/utils/auto-backup";
@@ -59,7 +58,7 @@
   }
 </script>
 
-<FormSection title="Auto-Backup">
+<FormSection level={3} title="Auto-Backup">
   <p class="mb-3.5 text-[13px] text-muted-foreground">
     Rotierender Wochen-Snapshot <code>auto-&lt;wochentag&gt;.zip</code> im Ordner:
     <code class="mt-1 block">
