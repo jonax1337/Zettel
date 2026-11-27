@@ -23,6 +23,13 @@ export class SettingsForm {
     () => !this.loading,
   );
 
+  /** `validate` returns why the current values must not be saved yet, or null. */
+  constructor(private readonly validate: (settings: Settings) => string | null = () => null) {}
+
+  get dirty() {
+    return this.unsaved.dirty;
+  }
+
   async load() {
     try {
       this.settings = await loadSettings();
@@ -37,8 +44,9 @@ export class SettingsForm {
   async submit(event: SubmitEvent) {
     event.preventDefault();
     if (!this.settings || !this.#loadedCounters) return;
+    this.error = this.validate(this.settings);
+    if (this.error) return;
     this.saving = true;
-    this.error = null;
     try {
       await saveSettings(this.settings);
       await saveNumberCounters(changedNumberCounters(this.#loadedCounters, this.settings));

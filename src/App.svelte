@@ -30,9 +30,13 @@
   import Validate from "./routes/Validate.svelte";
   import Settings from "./routes/Settings.svelte";
   import SettingsCompany from "./routes/settings/Company.svelte";
+  import SettingsTax from "./routes/settings/Tax.svelte";
   import SettingsDocuments from "./routes/settings/Documents.svelte";
+  import SettingsEInvoice from "./routes/settings/EInvoice.svelte";
+  import SettingsMail from "./routes/settings/Mail.svelte";
   import SettingsAppearance from "./routes/settings/Appearance.svelte";
   import SettingsData from "./routes/settings/Data.svelte";
+  import SettingsUpdates from "./routes/settings/Updates.svelte";
   import SettingsAdvanced from "./routes/settings/Advanced.svelte";
   import Export from "./routes/Export.svelte";
   import ReportsHub from "./routes/ReportsHub.svelte";
@@ -108,9 +112,13 @@
     "/validate": Validate,
     "/settings": Settings,
     "/settings/company": SettingsCompany,
+    "/settings/tax": SettingsTax,
     "/settings/documents": SettingsDocuments,
+    "/settings/einvoice": SettingsEInvoice,
+    "/settings/mail": SettingsMail,
     "/settings/appearance": SettingsAppearance,
     "/settings/data": SettingsData,
+    "/settings/updates": SettingsUpdates,
     "/settings/advanced": SettingsAdvanced,
     "/export": Export,
     "*": NotFound,

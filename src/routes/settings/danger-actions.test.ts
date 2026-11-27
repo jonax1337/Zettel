@@ -4,6 +4,7 @@ import {
   DANGER_CONFIRM_WORD,
   dangerActionDescription,
   dangerActionLabel,
+  displayTableLabels,
   isDangerConfirmed,
   tableCountLabel,
 } from "./danger-actions";
@@ -39,6 +40,17 @@ describe("dangerActionLabel", () => {
       "Nummernzähler zurücksetzen",
     );
     expect(dangerActionLabel({ kind: "wipeTables", tables: ["invoices"] })).toBe("1 Tabelle leeren");
+  });
+});
+
+describe("displayTableLabels", () => {
+  it("calls the expense table Ausgaben and leaves the other labels alone", () => {
+    const shown = displayTableLabels({
+      invoices: "Rechnungen (inkl. Positionen)",
+      expenses: "Eingangsrechnungen (inkl. Positionen)",
+    } as Record<WipeableTable, string>);
+    expect(shown.expenses).toBe("Ausgaben (inkl. Positionen)");
+    expect(shown.invoices).toBe("Rechnungen (inkl. Positionen)");
   });
 });
 

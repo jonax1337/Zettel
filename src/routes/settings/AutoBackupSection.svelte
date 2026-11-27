@@ -2,17 +2,8 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { join } from "@tauri-apps/api/path";
-  import {
-    Label,
-    Card,
-    CardHeader,
-    CardTitle,
-    CardDescription,
-    CardContent,
-    Select,
-    toast,
-  } from "$lib/ui";
-  import { History } from "$lib/brand-icons";
+  import { Label, Select, toast } from "$lib/ui";
+  import FormSection from "./FormSection.svelte";
   import { loadSettings, saveAutoBackupInterval } from "$lib/db/queries";
   import { formatDateTime } from "$lib/utils/date";
   import { lastAutoBackupFailure, type AutoBackupFailure } from "$lib/utils/auto-backup";
@@ -68,37 +59,31 @@
   }
 </script>
 
-<Card>
-  <CardHeader>
-    <CardTitle class="flex items-center gap-2">
-      <History class="size-5" />
-      Auto-Backup
-    </CardTitle>
-    <CardDescription>
-      Rotierender Wochen-Snapshot <code>auto-&lt;wochentag&gt;.zip</code> im Ordner
-      <code class="break-all">{backupDir ?? "Zettel/Backups"}</code>.
-      Unverschlüsselt, läuft beim App-Start. Im Sandbox-Modus deaktiviert.
-    </CardDescription>
-  </CardHeader>
-  <CardContent class="space-y-3">
-    <div class="flex flex-col gap-1.5 max-w-md">
-      <Label>Intervall</Label>
-      <Select
-        items={intervalOptions}
-        value={intervalDays}
-        onValueChange={saveInterval}
-        disabled={saving}
-      />
-    </div>
-    <p class="text-xs text-muted-foreground">
-      Letzte Ausführung: <strong>{formatTimestamp(lastBackupAt)}</strong>.
-      Maximal 7 Slots (ein Slot pro Wochentag) — älteste werden zyklisch
-      überschrieben. Für verschlüsselte oder externe Backups nutze „Backup erstellen" oben.
+<FormSection title="Auto-Backup">
+  <p class="mb-3.5 text-[13px] text-muted-foreground">
+    Rotierender Wochen-Snapshot <code>auto-&lt;wochentag&gt;.zip</code> im Ordner:
+    <code class="mt-1 block">
+      {#each (backupDir ?? "Zettel/Backups").split(/(?<=[\\/])/) as part, index (index)}{part}<wbr />{/each}
+    </code>
+    Unverschlüsselt, läuft beim App-Start. Im Sandbox-Modus deaktiviert.
+  </p>
+  <div class="flex max-w-md flex-col gap-1.5">
+    <Label class="font-bold">Intervall</Label>
+    <Select
+      items={intervalOptions}
+      value={intervalDays}
+      onValueChange={saveInterval}
+      disabled={saving}
+    />
+  </div>
+  <p class="mt-2.5 text-[12.5px] text-muted-foreground">
+    Letzte Ausführung: <strong>{formatTimestamp(lastBackupAt)}</strong>.
+    Maximal 7 Slots (ein Slot pro Wochentag), die ältesten werden zyklisch
+    überschrieben. Für verschlüsselte oder externe Backups nutze „Backup erstellen“ oben.
+  </p>
+  {#if lastFailure}
+    <p class="mt-2 text-[12.5px] break-words text-destructive">
+      Letzter Fehlversuch am {formatTimestamp(lastFailure.at)}: {lastFailure.message}
     </p>
-    {#if lastFailure}
-      <p class="text-xs text-destructive break-words">
-        Letzter Fehlversuch am {formatTimestamp(lastFailure.at)}: {lastFailure.message}
-      </p>
-    {/if}
-  </CardContent>
-</Card>
+  {/if}
+</FormSection>

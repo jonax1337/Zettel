@@ -5,7 +5,7 @@
 
 <button
   type="button"
-  onclick={() => push("/settings")}
+  onclick={() => push("/settings/data")}
   class="group mb-5 flex w-full cursor-pointer items-center gap-3 rounded-xl bg-status-warn-bg px-4 py-3 text-left text-status-warn outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
 >
   <FlaskConical class="size-5 shrink-0" />

@@ -20,7 +20,7 @@
 </script>
 
 <div class="flex flex-col gap-1.5">
-  <Label>Logo-Datei</Label>
+  <Label class="font-bold">Logo-Datei</Label>
   <div class="flex items-center gap-2">
     <Input bind:value={path} placeholder="Kein Logo ausgewählt" class="flex-1" />
     <Button type="button" variant="outline" onclick={pickLogo}>
@@ -39,4 +39,5 @@
       </Button>
     {/if}
   </div>
+  <p class="text-[12.5px] text-muted-foreground">PNG, JPG oder SVG.</p>
 </div>

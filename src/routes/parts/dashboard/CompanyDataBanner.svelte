@@ -1,7 +1,7 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
   import { AlertTriangle, ArrowRight } from "$lib/brand-icons";
-  import { COMPANY_SETTINGS_ROUTE } from "$lib/utils/company-completeness";
+  import { companySettingsRoute } from "$lib/utils/company-completeness";
 
   type Props = { missing: string[] };
   let { missing }: Props = $props();
@@ -17,7 +17,7 @@
     </p>
   </div>
   <a
-    href={COMPANY_SETTINGS_ROUTE}
+    href={companySettingsRoute(missing)}
     use:link
     class="group inline-flex items-center gap-1 text-[13px] font-semibold hover:underline"
   >

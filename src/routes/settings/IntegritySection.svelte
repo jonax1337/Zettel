@@ -1,7 +1,8 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
-  import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, toast } from "$lib/ui";
+  import { Button, toast } from "$lib/ui";
   import { AlertTriangle, CheckCircle2, FileSpreadsheet, ShieldCheck } from "$lib/brand-icons";
+  import FormSection from "./FormSection.svelte";
   import { auditLogCsv, loadAuditLogForExport } from "$lib/db/audit";
   import { verifyInvoiceChain, type IntegrityProblem, type IntegrityProblemKind, type IntegrityReport } from "$lib/db/seals";
   import { formatDateTime, toIsoDate, nowUnix } from "$lib/utils/date";
@@ -80,19 +81,11 @@
   </ul>
 {/snippet}
 
-<Card>
-  <CardHeader>
-    <CardTitle class="flex items-center gap-2">
-      <ShieldCheck class="size-5" />
-      Integritätsprüfung (GoBD)
-    </CardTitle>
-    <CardDescription>
-      Zettel protokolliert Änderungen an Rechnungen und versiegelt ausgestellte Rechnungen in einer
-      Hash-Kette. Die Prüfung vergleicht jede Rechnung mit ihrem Siegel. Das ist ein technischer
-      Nachweis, keine Zertifizierung.
-    </CardDescription>
-  </CardHeader>
-  <CardContent class="space-y-4">
+<FormSection
+  title="Integritätsprüfung (GoBD)"
+  description="Zettel protokolliert Änderungen an Rechnungen und versiegelt ausgestellte Rechnungen in einer Hash-Kette. Die Prüfung vergleicht jede Rechnung mit ihrem Siegel. Das ist ein technischer Nachweis, keine Zertifizierung."
+>
+  <div class="space-y-4">
     <div class="flex flex-wrap gap-2">
       <Button type="button" variant="outline" onclick={check} disabled={checking}>
         <ShieldCheck /> {checking ? "Prüfe…" : "Jetzt prüfen"}
@@ -127,7 +120,7 @@
         </div>
       {/if}
 
-      <p class="text-xs text-muted-foreground">Geprüft am {formatDateTime(report.checkedAt)}.</p>
+      <p class="text-[12.5px] text-muted-foreground">Geprüft am {formatDateTime(report.checkedAt)}.</p>
     {/if}
-  </CardContent>
-</Card>
+  </div>
+</FormSection>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NAV_GROUPS, SETTINGS_NAV_ITEM } from "$lib/navigation";
+import { NAV_GROUPS, SETTINGS_NAV_ITEM, SETTINGS_PAGES } from "$lib/navigation";
 import { buildPaletteCommands, filterCommands } from "./palette-commands";
 
 const commands = buildPaletteCommands();
@@ -40,19 +40,31 @@ describe("palette commands", () => {
     });
   });
 
-  it("reaches validation, tax and every settings category", () => {
+  it("reaches validation, tax and every settings page", () => {
     const routes = commands.map((c) => c.route);
     expect(routes).toEqual(
-      expect.arrayContaining([
-        "/validate",
-        "/reports/taxes",
-        "/settings/company",
-        "/settings/documents",
-        "/settings/appearance",
-        "/settings/data",
-        "/settings/advanced",
-      ]),
+      expect.arrayContaining(["/validate", "/reports/taxes", ...SETTINGS_PAGES.map((p) => p.href)]),
     );
+  });
+
+  it("finds each settings page by the settings on it and by its former names", () => {
+    const found = (query: string) => filterCommands(commands, query).map((c) => c.route);
+    expect(found("backup")).toContain("/settings/data");
+    expect(found("sandbox")).toContain("/settings/data");
+    expect(found("beta")).toContain("/settings/updates");
+    expect(found("kleinunternehmer")).toContain("/settings/tax");
+    expect(found("iban")).toContain("/settings/company");
+    expect(found("nummernkreis")).toContain("/settings/documents");
+    expect(found("logo")).toContain("/settings/company");
+    expect(found("dokumente")).toContain("/settings/documents");
+    expect(found("erweitert")).toContain("/settings/advanced");
+    expect(found("eür")).toContain("/settings/tax");
+  });
+
+  it("names the settings pages after the sub-navigation", () => {
+    expect(labels(filterCommands(commands, "einstellungen steuern"))).toContain("Einstellungen: Steuern");
+    expect(labels(filterCommands(commands, "gefahrenbereich"))).toContain("Einstellungen: Gefahrenbereich");
+    expect(labels(filterCommands(commands, "updates"))).toContain("Einstellungen: Updates");
   });
 
   it("has unique ids", () => {

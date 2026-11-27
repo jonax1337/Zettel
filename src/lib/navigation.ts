@@ -142,13 +142,66 @@ export function isNavItemActive(item: NavItem, location: string): boolean {
   return [item.href, ...(item.match ?? [])].some((prefix) => startsWithPath(location, prefix));
 }
 
+export type SettingsPage = {
+  href: string;
+  label: string;
+  /** Business pages come first in the settings sub-navigation, app pages after a divider. */
+  group: "business" | "app";
+  /** Extra palette search terms: the settings found on the page and the page's former names. */
+  keywords: string;
+};
+
+/** The pages of the settings area, in the order of its sub-navigation. */
 export const SETTINGS_PAGES = [
-  { href: "/settings/company", label: "Unternehmen" },
-  { href: "/settings/documents", label: "Dokumente" },
-  { href: "/settings/appearance", label: "Darstellung" },
-  { href: "/settings/data", label: "Daten" },
-  { href: "/settings/advanced", label: "Erweitert" },
-] as const;
+  {
+    href: "/settings/company",
+    label: "Unternehmen",
+    group: "business",
+    keywords: "firma firmendaten adresse anschrift bank iban bic logo handelsregister briefkopf stammdaten",
+  },
+  {
+    href: "/settings/tax",
+    label: "Steuern",
+    group: "business",
+    keywords:
+      "steuernummer ust-idnr umsatzsteuer kleinunternehmer kleinunternehmerregelung versteuerung rücklage vorauszahlung kirchensteuer anlage eür ausgabenkategorien",
+  },
+  {
+    href: "/settings/documents",
+    label: "Belege und Nummern",
+    group: "business",
+    keywords: "dokumente nummernkreis nummernkreise nummernformat zähler zahlungsfrist skonto gültigkeit angebote",
+  },
+  {
+    href: "/settings/einvoice",
+    label: "E-Rechnung und PDF",
+    group: "business",
+    keywords: "zugferd xrechnung factur-x pdf design engine typst weasyprint sprache dokumente",
+  },
+  {
+    href: "/settings/mail",
+    label: "E-Mail-Vorlagen",
+    group: "business",
+    keywords: "mail betreff text vorlage platzhalter",
+  },
+  { href: "/settings/appearance", label: "Darstellung", group: "app", keywords: "theme hell dunkel design" },
+  {
+    href: "/settings/data",
+    label: "Daten und Backup",
+    group: "app",
+    keywords:
+      "backup sicherung wiederherstellung restore auto-backup integrität gobd sandbox testmodus kommandozeile cli daten",
+  },
+  { href: "/settings/updates", label: "Updates", group: "app", keywords: "version aktualisierung beta vorabversion" },
+  {
+    href: "/settings/advanced",
+    label: "Gefahrenbereich",
+    group: "app",
+    keywords: "erweitert löschen daten zurücksetzen zähler tabellen leeren",
+  },
+] as const satisfies readonly SettingsPage[];
+
+export type SettingsPageHref = (typeof SETTINGS_PAGES)[number]["href"];
 
 export const CREATE_ACTIONS = [
   { href: "/invoices/new", label: "Neue Rechnung", keywords: "rechnung erstellen anlegen" },

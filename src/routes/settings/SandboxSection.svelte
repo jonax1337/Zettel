@@ -1,17 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import {
-    Button,
-    Card,
-    CardHeader,
-    CardTitle,
-    CardDescription,
-    CardContent,
-    ConfirmDialog,
-    toast,
-  } from "$lib/ui";
-  import { FlaskConical } from "$lib/brand-icons";
+  import { Button, ConfirmDialog, toast } from "$lib/ui";
+  import FormSection from "./FormSection.svelte";
   import { relaunchApp } from "$lib/utils/relaunch";
 
   let sandbox = $state(false);
@@ -45,27 +36,20 @@
   }
 </script>
 
-<Card>
-  <CardHeader>
-    <CardTitle class="flex items-center gap-2">
-      <FlaskConical class="size-5" />
-      Sandbox
-    </CardTitle>
-    <CardDescription>
-      Zum gefahrlosen Testen. Daten werden getrennt gespeichert, deine echte Buchhaltung bleibt unberührt. Die App startet beim Umschalten neu.
-    </CardDescription>
-  </CardHeader>
-  <CardContent>
-    <Button
-      type="button"
-      variant={sandbox ? "destructive" : "outline"}
-      disabled={busy}
-      onclick={requestToggle}
-    >
-      {sandbox ? "Sandbox verlassen" : "Sandbox aktivieren"}
-    </Button>
-  </CardContent>
-</Card>
+<FormSection
+  title="Sandbox"
+  description="Zum gefahrlosen Testen. Daten werden getrennt gespeichert, deine echte Buchhaltung bleibt unberührt. Die App startet beim Umschalten neu."
+>
+  <Button
+    type="button"
+    variant={sandbox ? "destructive" : "outline"}
+    class={sandbox ? "border-destructive/50" : ""}
+    disabled={busy}
+    onclick={requestToggle}
+  >
+    {sandbox ? "Sandbox verlassen" : "Sandbox aktivieren"}
+  </Button>
+</FormSection>
 
 <ConfirmDialog
   bind:open={confirmOpen}

@@ -21,6 +21,17 @@ describe("setup checklist", () => {
     expect(hrefs.map((s) => s.href)).toEqual(["/settings/company", "/customers/new", "/invoices/new"]);
   });
 
+  it("sends the company step to the page that holds what is missing", () => {
+    const taxOnly = buildSetupChecklist({
+      missingCompany: ["Steuernummer oder USt-IdNr."],
+      customerCount: 0,
+      hasInvoices: false,
+    });
+    expect(taxOnly[0].href).toBe("/settings/tax");
+    const nameMissing = buildSetupChecklist({ missingCompany: ["Firmenname"], customerCount: 0, hasInvoices: false });
+    expect(nameMissing[0].href).toBe("/settings/company");
+  });
+
   it("ticks steps off as data appears", () => {
     const steps = buildSetupChecklist({ missingCompany: [], customerCount: 2, hasInvoices: false });
     expect(steps.filter((s) => s.done).map((s) => s.id)).toEqual(["company", "customer"]);

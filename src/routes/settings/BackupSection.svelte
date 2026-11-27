@@ -8,16 +8,13 @@
     Input,
     Label,
     Card,
-    CardHeader,
-    CardTitle,
-    CardDescription,
-    CardContent,
     ConfirmDialog,
-    Checkbox,
     toast,
     PERSISTENT_TOAST,
   } from "$lib/ui";
   import { Download, Upload } from "$lib/brand-icons";
+  import FormSection from "./FormSection.svelte";
+  import CheckField from "./CheckField.svelte";
   import {
     BACKUP_PASSWORD_MIN_LENGTH,
     backupPasswordProblem,
@@ -189,115 +186,102 @@
   }
 </script>
 
-<Card>
-  <CardHeader>
-    <CardTitle>Backup & Wiederherstellung</CardTitle>
-    <CardDescription>
-      Sichert die Datenbank und alle PDFs (Rechnungen, Angebote, Mahnungen, Eingangsrechnungen)
-      in eine ZIP-Datei. Wiederhergestellte Backups werden beim nächsten App-Start eingespielt.
-    </CardDescription>
-  </CardHeader>
-  <CardContent>
-    {#if restartPending}
-      <div class="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
-        <span class="flex-1">Die Wiederherstellung ist vorbereitet und wird beim nächsten Start eingespielt.</span>
-        <Button type="button" onclick={restartNow}>Jetzt neu starten</Button>
+<FormSection
+  title="Backup und Wiederherstellung"
+  description="Sichert die Datenbank und alle PDFs (Rechnungen, Angebote, Mahnungen, Ausgaben) in eine ZIP-Datei. Wiederhergestellte Backups werden beim nächsten App-Start eingespielt."
+>
+  {#if restartPending}
+    <div class="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-status-warn-bg px-3.5 py-2.5 text-sm text-status-warn">
+      <span class="flex-1">Die Wiederherstellung ist vorbereitet und wird beim nächsten Start eingespielt.</span>
+      <Button type="button" onclick={restartNow}>Jetzt neu starten</Button>
+    </div>
+  {/if}
+  <div class="mb-4 space-y-3">
+    <CheckField bind:checked={backupEncrypt} label="Backup verschlüsseln (AES-256-GCM)" />
+    {#if backupEncrypt}
+      <div class="grid grid-cols-1 gap-x-4 gap-y-3 @xl:grid-cols-2">
+        <div class="flex flex-col gap-1.5">
+          <Label class="font-bold">Passwort</Label>
+          <Input type="password" bind:value={backupPassword} autocomplete="new-password" />
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <Label class="font-bold">Passwort bestätigen</Label>
+          <Input type="password" bind:value={backupPasswordConfirm} autocomplete="new-password" />
+        </div>
+        <p class="text-[12.5px] text-muted-foreground @xl:col-span-2">
+          Mindestens {BACKUP_PASSWORD_MIN_LENGTH} Zeichen. Ohne dieses Passwort lässt sich das Backup nicht wiederherstellen, es wird nirgendwo gespeichert.
+        </p>
       </div>
     {/if}
-    <div class="mb-4 space-y-3">
-      <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
-        <Checkbox bind:checked={backupEncrypt} />
-        Backup verschlüsseln (AES-256-GCM)
-      </label>
-      {#if backupEncrypt}
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1.5">
-            <Label>Passwort</Label>
-            <Input type="password" bind:value={backupPassword} autocomplete="new-password" />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <Label>Passwort bestätigen</Label>
-            <Input type="password" bind:value={backupPasswordConfirm} autocomplete="new-password" />
-          </div>
-          <span class="sm:col-span-2 text-xs text-muted-foreground">
-            Mindestens {BACKUP_PASSWORD_MIN_LENGTH} Zeichen. Ohne dieses Passwort lässt sich das Backup nicht wiederherstellen — es wird nirgendwo gespeichert.
+  </div>
+  <div class="flex flex-wrap items-center gap-2">
+    <Button type="button" variant="outline" onclick={onBackup} disabled={backupBusy}>
+      <Download class="size-4" />
+      {backupBusy ? "Sichere…" : "Backup erstellen"}
+    </Button>
+    <Button type="button" variant="outline" onclick={onPickRestore} disabled={restoreBusy}>
+      <Upload class="size-4" />
+      Backup auswählen…
+    </Button>
+  </div>
+
+  {#if pendingRestoreZip}
+    <Card class="mt-4 gap-3 p-4">
+      <div class="text-sm">
+        <span class="text-muted-foreground">Quelle:</span>
+        <code class="ml-1 break-all">{pendingRestoreZip}</code>
+      </div>
+      <div class="text-sm font-bold">Welche Bereiche wiederherstellen?</div>
+      <div class="flex flex-col gap-2">
+        <CheckField bind:checked={restoreSections.customers} label="Kunden" />
+        <CheckField
+          bind:checked={restoreSections.invoices}
+          label="Rechnungen und PDFs"
+          hint="Inklusive Zahlungen, Mahnungen, Anhängen, Angeboten, wiederkehrenden Rechnungen und Zeiterfassung."
+        />
+        <CheckField bind:checked={restoreSections.settings} label="Einstellungen" />
+      </div>
+      {#if restoreNeedsPassword}
+        <div class="flex flex-col gap-1.5">
+          <Label class="font-bold">Passwort des Backups</Label>
+          <Input type="password" bind:value={restorePassword} autocomplete="current-password" />
+          <span class="text-[12.5px] text-muted-foreground">
+            Dieses Backup ist verschlüsselt. Bitte Passwort eingeben und erneut wiederherstellen.
           </span>
         </div>
       {/if}
-    </div>
-    <div class="flex flex-wrap items-center gap-3">
-      <Button type="button" variant="outline" onclick={onBackup} disabled={backupBusy}>
-        <Download class="size-4" />
-        {backupBusy ? "Sichere…" : "Backup erstellen"}
-      </Button>
-      <Button type="button" variant="outline" onclick={onPickRestore} disabled={restoreBusy}>
-        <Upload class="size-4" />
-        Backup auswählen…
-      </Button>
-    </div>
-
-    {#if pendingRestoreZip}
-      <div class="mt-4 rounded-md border border-border bg-muted/30 p-4 space-y-3">
-        <div class="text-sm">
-          <span class="text-muted-foreground">Quelle:</span>
-          <code class="ml-1 break-all">{pendingRestoreZip}</code>
-        </div>
-        <div class="text-sm font-medium">Welche Bereiche wiederherstellen?</div>
-        <div class="flex flex-col gap-2">
-          <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
-            <Checkbox bind:checked={restoreSections.customers} />
-            Kunden
-          </label>
-          <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
-            <Checkbox bind:checked={restoreSections.invoices} />
-            Rechnungen + PDFs <span class="text-muted-foreground">(inkl. Zahlungen, Mahnungen, Anhänge, Angebote, wiederkehrende Rechnungen, Zeiterfassung)</span>
-          </label>
-          <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
-            <Checkbox bind:checked={restoreSections.settings} />
-            Einstellungen
-          </label>
-        </div>
-        {#if restoreNeedsPassword}
-          <div class="flex flex-col gap-1.5">
-            <Label>Passwort des Backups</Label>
-            <Input type="password" bind:value={restorePassword} autocomplete="current-password" />
-            <span class="text-xs text-muted-foreground">
-              Dieses Backup ist verschlüsselt. Bitte Passwort eingeben und erneut wiederherstellen.
-            </span>
-          </div>
-        {/if}
-        <div class="flex flex-wrap items-center gap-2 pt-1">
-          <Button
-            type="button"
-            onclick={onRunRestore}
-            disabled={restoreBusy || !restoreAnySelected}
-          >
-            {restoreBusy ? "Stelle wieder her…" : "Wiederherstellen"}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            onclick={() => (pendingRestoreZip = null)}
-            disabled={restoreBusy}
-          >
-            Abbrechen
-          </Button>
-          <span class="text-xs text-muted-foreground">
-            {restoreIsFull
-              ? "Volle Wiederherstellung — App-Neustart erforderlich."
-              : "Teil-Wiederherstellung — wird nach einem Sicherheits-Backup sofort eingespielt."}
-          </span>
-        </div>
+      <div class="flex flex-wrap items-center gap-2 pt-1">
+        <Button
+          type="button"
+          variant="outline"
+          onclick={onRunRestore}
+          disabled={restoreBusy || !restoreAnySelected}
+        >
+          {restoreBusy ? "Stelle wieder her…" : "Wiederherstellen"}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onclick={() => (pendingRestoreZip = null)}
+          disabled={restoreBusy}
+        >
+          Abbrechen
+        </Button>
+        <span class="text-[12.5px] text-muted-foreground">
+          {restoreIsFull
+            ? "Volle Wiederherstellung, App-Neustart erforderlich."
+            : "Teil-Wiederherstellung, wird nach einem Sicherheits-Backup sofort eingespielt."}
+        </span>
       </div>
-    {/if}
+    </Card>
+  {/if}
 
-    <p class="text-xs text-muted-foreground mt-3">
-      Bei voller Wiederherstellung wird die gesamte Datenbank ersetzt (alte DB bleibt als
-      <code>zettel.db.bak</code> erhalten); bei Teil-Wiederherstellung werden nur die
-      gewählten Bereiche aus dem Backup übernommen.
-    </p>
-  </CardContent>
-</Card>
+  <p class="mt-3 text-[12.5px] text-muted-foreground">
+    Bei voller Wiederherstellung wird die gesamte Datenbank ersetzt (die alte DB bleibt als
+    <code>zettel.db.bak</code> erhalten); bei Teil-Wiederherstellung werden nur die gewählten Bereiche
+    aus dem Backup übernommen.
+  </p>
+</FormSection>
 
 <ConfirmDialog
   bind:open={confirmFullRestoreOpen}

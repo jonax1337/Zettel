@@ -1,4 +1,4 @@
-import { COMPANY_SETTINGS_ROUTE } from "$lib/utils/company-completeness";
+import { companySettingsRoute } from "$lib/utils/company-completeness";
 
 export type SetupStep = {
   id: "company" | "customer" | "invoice";
@@ -19,7 +19,7 @@ export function buildSetupChecklist(state: SetupState): SetupStep[] {
     {
       id: "company",
       label: "Firmendaten eintragen",
-      href: COMPANY_SETTINGS_ROUTE,
+      href: companySettingsRoute(state.missingCompany),
       done: state.missingCompany.length === 0,
     },
     {

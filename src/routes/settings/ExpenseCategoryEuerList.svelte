@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Card, CardContent, CardDescription, CardHeader, CardTitle, Select, toast } from "$lib/ui";
+  import { Select, toast } from "$lib/ui";
   import { listCategories, setCategoryEuerKz } from "$lib/db/expense-categories";
   import type { ExpenseCategory } from "$lib/db/schema";
   import { EUER_CATEGORY_LINES, EUER_KZ, EUER_LINE_NUMBERS, formYearFor } from "$lib/reports/euer-form";
@@ -41,35 +41,35 @@
   }
 </script>
 
-<Card>
-  <CardHeader>
-    <CardTitle>Anlage EÜR: Ausgabenkategorien</CardTitle>
-    <CardDescription>
-      Bestimmt, in welcher Zeile der Anlage EÜR die Ausgaben einer Kategorie erscheinen. Ausgaben ohne
-      Kategorie landen in „Übrige unbeschränkt abziehbare Betriebsausgaben“. Änderungen gelten sofort.
-    </CardDescription>
-  </CardHeader>
-  <CardContent>
-    {#if loading}
-      <p class="text-sm text-muted-foreground">Lade…</p>
-    {:else if loadError}
-      <p class="text-sm text-destructive">Kategorien konnten nicht geladen werden: {loadError}</p>
-    {:else}
-      {#key reloadCount}
-        <ul class="space-y-3">
-          {#each categories as category (category.id)}
-            <li class="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-2">
-              <span class="text-sm">{category.name}</span>
+{#if loading}
+  <p class="text-sm text-muted-foreground">Lade…</p>
+{:else if loadError}
+  <p class="text-sm text-destructive">Kategorien konnten nicht geladen werden: {loadError}</p>
+{:else}
+  {#key reloadCount}
+    <table class="data-list table-fixed">
+      <thead>
+        <tr>
+          <th>Kategorie</th>
+          <th class="w-[62%]">Zeile der Anlage EÜR</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each categories as category (category.id)}
+          <tr>
+            <td class="truncate font-semibold">{category.name}</td>
+            <td>
               <Select
                 items={kzItems}
                 value={category.euerKz ?? EUER_KZ.expenseOther}
+                class="*:first:truncate"
                 aria-label="Zeile der Anlage EÜR für {category.name}"
                 onValueChange={(kz) => assign(category, kz)}
               />
-            </li>
-          {/each}
-        </ul>
-      {/key}
-    {/if}
-  </CardContent>
-</Card>
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {/key}
+{/if}

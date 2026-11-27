@@ -36,7 +36,7 @@ export function buildPaletteCommands(): PaletteCommand[] {
     label: `Einstellungen: ${page.label}`,
     route: page.href,
     group: "navigate",
-    keywords: "",
+    keywords: page.keywords,
   }));
   return [...create, ...pages, ...settings];
 }
