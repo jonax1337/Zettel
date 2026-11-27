@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Dialog as DialogPrimitive } from "bits-ui";
   import { push } from "svelte-spa-router";
+  import { invoke } from "@tauri-apps/api/core";
   import {
     Search,
     FileText,
@@ -35,6 +36,7 @@
     type PaletteCommandGroup,
   } from "./palette-commands";
   import { groupSearchResults } from "./search-groups";
+  import { loadRecents, MAX_RECENTS, saveRecents } from "./search-recents";
   import { toast } from "./toast.svelte";
 
   type Props = {
@@ -43,8 +45,6 @@
   };
   let { open = $bindable(false), onOpenChange }: Props = $props();
 
-  const RECENTS_KEY = "zettel.search.recents";
-  const MAX_RECENTS = 5;
   const MAX_COMMANDS_WHILE_SEARCHING = 6;
   const SEARCH_DEBOUNCE_MS = 150;
 
@@ -76,27 +76,23 @@
     };
   }
 
-  function loadRecents(): SearchHit[] {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? "[]");
-      return Array.isArray(parsed) ? parsed.slice(0, MAX_RECENTS) : [];
-    } catch {
-      return [];
-    }
-  }
+  // The active DB URL identifies sandbox vs. tenant, so recents never cross data contexts.
+  let recentsContext: string | null = null;
 
-  function saveRecents(list: SearchHit[]) {
+  async function refreshRecents() {
     try {
-      localStorage.setItem(RECENTS_KEY, JSON.stringify(list));
+      recentsContext = await invoke<string>("get_active_db_url");
+      recents = loadRecents(localStorage, recentsContext);
     } catch {
-      // Recents are a convenience; a blocked storage must not break navigation.
+      recentsContext = null;
+      recents = [];
     }
   }
 
   let query = $state("");
   let results = $state<SearchResults>(emptyResults());
   let activeIndex = $state(0);
-  let recents = $state<SearchHit[]>(loadRecents());
+  let recents = $state<SearchHit[]>([]);
   let inputEl = $state<HTMLInputElement | null>(null);
   let listEl = $state<HTMLDivElement | null>(null);
 
@@ -153,7 +149,7 @@
       query = "";
       results = emptyResults();
       activeIndex = 0;
-      recents = loadRecents();
+      void refreshRecents();
       queueMicrotask(() => inputEl?.focus());
     }
   });
@@ -161,7 +157,7 @@
   function pushRecent(hit: SearchHit) {
     const others = recents.filter((r) => !(r.kind === hit.kind && r.id === hit.id));
     recents = [hit, ...others].slice(0, MAX_RECENTS);
-    saveRecents(recents);
+    if (recentsContext) saveRecents(localStorage, recentsContext, recents);
   }
 
   function closeAndGo(route: string) {
