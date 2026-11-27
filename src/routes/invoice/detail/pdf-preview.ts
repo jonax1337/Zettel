@@ -1,3 +1,4 @@
+import { errorMessage } from "$lib/utils/error-message";
 import { toast } from "$lib/ui/toast.svelte";
 import { COMPANY_INCOMPLETE_CODE } from "$lib/sidecar/company-guard";
 import { openPreviewPdf } from "$lib/sidecar/pdf-preview";
@@ -20,7 +21,7 @@ export async function showPdfPreview(render: () => Promise<SidecarResponse>): Pr
   try {
     response = await render();
   } catch (e) {
-    toast.error("PDF-Vorschau fehlgeschlagen", String(e));
+    toast.error("PDF-Vorschau fehlgeschlagen", errorMessage(e));
     return;
   }
   if (!response.success) {
@@ -30,7 +31,7 @@ export async function showPdfPreview(render: () => Promise<SidecarResponse>): Pr
   try {
     await openPreviewPdf(response.pdfPath);
   } catch (e) {
-    toast.error("Die Vorschau konnte nicht geöffnet werden", String(e));
+    toast.error("Die Vorschau konnte nicht geöffnet werden", errorMessage(e));
     return;
   }
   toast.show("PDF-Vorschau geöffnet", { description: PREVIEW_NOTE });

@@ -1,10 +1,10 @@
 <script lang="ts">
+  import { Panel } from "$lib/ui";
   import type { Snippet } from "svelte";
   import PdfLocation from "../../parts/entity/PdfLocation.svelte";
   import PdfVersionList from "../PdfVersionList.svelte";
   import { Loader2 } from "$lib/brand-icons";
   import type { PdfVersion } from "$lib/sidecar/invoice";
-  import DetailPanel from "./DetailPanel.svelte";
 
   type Props = {
     pdfPath: string | null;
@@ -17,7 +17,7 @@
   let { pdfPath, versions, generating = false, children }: Props = $props();
 </script>
 
-<DetailPanel title="Dateien">
+<Panel title="Dateien">
   {#if generating}
     <p role="status" class="flex items-center gap-2 text-sm font-bold">
       <Loader2 class="size-4 animate-spin" />
@@ -32,4 +32,4 @@
     <p class="text-sm text-muted-foreground">Noch keine PDF erzeugt.</p>
   {/if}
   {@render children?.()}
-</DetailPanel>
+</Panel>

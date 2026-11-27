@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { link } from "svelte-spa-router";
   import { Button, toast, FormSection } from "$lib/ui";
   import { AlertTriangle, CheckCircle2, FileSpreadsheet, ShieldCheck } from "$lib/brand-icons";
@@ -30,7 +31,7 @@
     try {
       report = await verifyInvoiceChain();
     } catch (e) {
-      toast.error("Integritätsprüfung fehlgeschlagen", String(e));
+      toast.error("Integritätsprüfung fehlgeschlagen", errorMessage(e));
     } finally {
       checking = false;
     }
@@ -47,7 +48,7 @@
       });
       if (saved) toast.success("Änderungsprotokoll exportiert");
     } catch (e) {
-      toast.error("Export des Änderungsprotokolls fehlgeschlagen", String(e));
+      toast.error("Export des Änderungsprotokolls fehlgeschlagen", errorMessage(e));
     } finally {
       exporting = false;
     }

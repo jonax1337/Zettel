@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { link } from "svelte-spa-router";
   import { parseBankStatement } from "$lib/sidecar/bank";
   import { matchBookings, type MatchCandidate } from "$lib/bank/match";
   import { openBalanceCent } from "$lib/db/invoice-lifecycle";
   import { listInvoices, type InvoiceListRow } from "$lib/db/invoices";
+  import { refreshOverdueCount } from "$lib/overdue-count.svelte";
   import { nowUnix } from "$lib/utils/date";
   import { centsToEur } from "$lib/utils/money";
   import { formatMoney } from "$lib/utils/currency";
@@ -97,8 +99,8 @@
         `${matches.filter((m) => m.candidates.length > 0).length} mit Vorschlag`,
       );
     } catch (e) {
-      error = String(e);
-      toast.error("Parse fehlgeschlagen", String(e));
+      error = errorMessage(e);
+      toast.error("Parse fehlgeschlagen", errorMessage(e));
     } finally {
       parsing = false;
     }
@@ -151,6 +153,7 @@
       }
     } finally {
       applying = false;
+      refreshOverdueCount();
     }
   }
 </script>

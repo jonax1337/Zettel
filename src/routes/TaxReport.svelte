@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { untrack } from "svelte";
   import { link } from "svelte-spa-router";
   import { Segmented, Select, Stat, StatRow } from "$lib/ui";
@@ -41,7 +42,7 @@
       result = computed;
       error = null;
     } catch (e) {
-      if (request === latestRequest) error = String(e);
+      if (request === latestRequest) error = errorMessage(e);
     } finally {
       if (request === latestRequest) loading = false;
     }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
   import { tick, untrack } from "svelte";
   import { push, router } from "svelte-spa-router";
@@ -14,7 +15,7 @@
   import type { RecurringInterval, Settings } from "$lib/db/schema";
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { computeTotals } from "$lib/utils/totals";
-  import { CheckField, DatePicker, Field, Input, PageHeader, Select, Textarea, focusFirstInvalid, toast } from "$lib/ui";
+  import { CheckField, DatePicker, Field, Input, PageHeader, Select, Textarea, focusFirstInvalid, toast, Panel } from "$lib/ui";
   import { formatMoney } from "$lib/utils/currency";
   import { fetchEditTarget, parseId } from "./parts/entity/edit-target";
   import { RECURRING_INTERVAL_ITEMS } from "./parts/entity/recurring";
@@ -34,7 +35,6 @@
   import { createSaveError } from "./parts/editor/save-error.svelte";
   import { QUIET_FIELD } from "./parts/editor/quiet-field";
   import { vatExemptNote } from "./parts/editor/vat-note";
-  import DetailPanel from "./invoice/detail/DetailPanel.svelte";
   import NoticeCard from "./invoice/NoticeCard.svelte";
   import { vatRateForNewItem } from "$lib/utils/vat";
   import { createDocumentFormData } from "./invoice/document-form.svelte";
@@ -188,7 +188,7 @@
         }
       })
       .catch((e) => {
-        if (!stale) loadError = String(e);
+        if (!stale) loadError = errorMessage(e);
       })
       .finally(() => {
         if (stale) return;
@@ -256,8 +256,8 @@
       unsaved.markClean();
       push("/recurring");
     } catch (err) {
-      saveError.set(String(err));
-      toast.error("Speichern fehlgeschlagen", String(err));
+      saveError.set(errorMessage(err));
+      toast.error("Speichern fehlgeschlagen", errorMessage(err));
     } finally {
       saving = false;
     }
@@ -348,7 +348,7 @@
       {/snippet}
 
       {#snippet rail()}
-        <DetailPanel title="Serie">
+        <Panel title="Serie">
           <div class="grid gap-3.5">
             <Field label="Bezeichnung" required error={errors.name}>
               <Input bind:value={name} placeholder="z. B. Monatlicher Retainer Acme" />
@@ -364,9 +364,9 @@
             </Field>
             <CheckField bind:checked={active} label="Aktiv (erscheint in der Übersicht)" />
           </div>
-        </DetailPanel>
+        </Panel>
         {#if settings && (!settings.isKleinunternehmer || isReverseCharge)}
-          <DetailPanel title="Optionen">
+          <Panel title="Optionen">
             <div class="grid gap-3.5">
               <ReverseChargeField
                 bind:type={reverseChargeType}
@@ -377,7 +377,7 @@
                 error={errors.reverseCharge}
               />
             </div>
-          </DetailPanel>
+          </Panel>
         {/if}
         {#if reference.selectedCustomer}
           <CustomerPanel customer={reference.selectedCustomer} />

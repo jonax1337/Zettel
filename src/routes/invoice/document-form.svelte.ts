@@ -1,3 +1,4 @@
+import { errorMessage } from "$lib/utils/error-message";
 import { listCustomers, loadSettings } from "$lib/db/queries";
 import type { Customer, Settings } from "$lib/db/schema";
 
@@ -28,7 +29,7 @@ export function createDocumentFormData({ customerId, onLoaded, onError }: Option
         await onLoaded(loadedSettings, loadedCustomers);
         loaded = true;
       })
-      .catch((e) => onError(String(e)));
+      .catch((e) => onError(errorMessage(e)));
   });
 
   return {

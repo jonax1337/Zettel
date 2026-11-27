@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { Button, DatePicker, Label, Textarea, toast } from "$lib/ui";
+  import { errorMessage } from "$lib/utils/error-message";
+  import { Button, DatePicker, Label, Textarea, toast, Panel } from "$lib/ui";
   import { updateInvoiceInternalMeta } from "$lib/db/invoices";
   import type { Invoice } from "$lib/db/schema";
   import { fromIsoDate, toIsoDate } from "$lib/utils/date";
-  import DetailPanel from "./detail/DetailPanel.svelte";
 
   type Props = {
     invoice: Invoice;
@@ -38,14 +38,14 @@
       toast.success("Interne Notizen gespeichert");
       await onSaved();
     } catch (e) {
-      toast.error("Speichern fehlgeschlagen", String(e));
+      toast.error("Speichern fehlgeschlagen", errorMessage(e));
     } finally {
       saving = false;
     }
   }
 </script>
 
-<DetailPanel title="Notiz und Wiedervorlage">
+<Panel title="Notiz und Wiedervorlage">
   <p class="-mt-1 text-xs text-muted-foreground">Nur intern, erscheint nicht auf der Rechnung.</p>
   <div class="flex flex-col gap-1.5">
     <Label for="notes-internal">Notiz</Label>
@@ -66,4 +66,4 @@
       <span class="text-xs text-muted-foreground">Ungespeicherte Änderungen.</span>
     {/if}
   </div>
-</DetailPanel>
+</Panel>

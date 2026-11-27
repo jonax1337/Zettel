@@ -1,10 +1,10 @@
 <script lang="ts">
+  import { Panel } from "$lib/ui";
   import { link } from "svelte-spa-router";
   import type { Customer } from "$lib/db/schema";
   import { loadCustomerOverview } from "$lib/db/customer-overview";
   import { periodForYear } from "$lib/dashboard/period";
   import { formatMoney } from "$lib/utils/currency";
-  import DetailPanel from "../../invoice/detail/DetailPanel.svelte";
 
   let { customer }: { customer: Customer } = $props();
 
@@ -28,7 +28,7 @@
   });
 </script>
 
-<DetailPanel title="Kunde">
+<Panel title="Kunde">
   {#snippet aside()}
     <a href="/customers/{customer.id}" use:link class="hover:text-foreground hover:underline">Öffnen</a>
   {/snippet}
@@ -53,4 +53,4 @@
       {/if}
     </dd>
   </dl>
-</DetailPanel>
+</Panel>

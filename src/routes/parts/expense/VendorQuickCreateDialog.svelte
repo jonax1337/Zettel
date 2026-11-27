@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { createVendor, type VendorInput } from "$lib/db/queries";
   import { Button, Dialog, Input, Label, toast } from "$lib/ui";
   import {
@@ -44,8 +45,8 @@
       open = false;
       onCreated(vendorId);
     } catch (e) {
-      error = String(e);
-      toast.error("Lieferant konnte nicht angelegt werden", String(e));
+      error = errorMessage(e);
+      toast.error("Lieferant konnte nicht angelegt werden", errorMessage(e));
     } finally {
       saving = false;
     }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { Button, QueryBoundary, Select, Stat, StatRow, toast } from "$lib/ui";
   import { euerToCsv, EUER_SURPLUS_LABEL, type EuerLine, type EuerReport } from "$lib/reports/euer";
   import { EUER_KZ } from "$lib/reports/euer-form";
@@ -62,7 +63,7 @@
       });
       if (saved) toast.success("CSV gespeichert");
     } catch (e) {
-      toast.error("Speichern fehlgeschlagen", String(e));
+      toast.error("Speichern fehlgeschlagen", errorMessage(e));
     } finally {
       saving = false;
     }

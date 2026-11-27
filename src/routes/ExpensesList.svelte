@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { link, push } from "svelte-spa-router";
   import {
     deleteExpense,
@@ -69,10 +70,10 @@
   $effect(() => {
     listVendors()
       .then((v) => (vendors = v))
-      .catch((e) => toast.error("Lieferanten konnten nicht geladen werden", String(e)));
+      .catch((e) => toast.error("Lieferanten konnten nicht geladen werden", errorMessage(e)));
     getExpenseYears()
       .then((y) => (years = y))
-      .catch((e) => toast.error("Jahre konnten nicht geladen werden", String(e)));
+      .catch((e) => toast.error("Jahre konnten nicht geladen werden", errorMessage(e)));
   });
 
   const statusItems = statusFilterItems(EXPENSE_STATUS, EXPENSE_STATUS_FILTER_ORDER);

@@ -1,15 +1,14 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
-  import { Badge } from "$lib/ui";
+  import { Badge, Panel } from "$lib/ui";
   import { levelLabel } from "$lib/db/reminders";
   import type { Reminder, ReminderLevel } from "$lib/db/schema";
   import { formatDate } from "$lib/utils/date";
-  import DetailPanel from "./detail/DetailPanel.svelte";
 
   let { reminders }: { reminders: Reminder[] } = $props();
 </script>
 
-<DetailPanel title="Mahnungen">
+<Panel title="Mahnungen">
   <ul class="grid gap-1">
     {#each reminders as r (r.id)}
       <li>
@@ -27,4 +26,4 @@
       </li>
     {/each}
   </ul>
-</DetailPanel>
+</Panel>

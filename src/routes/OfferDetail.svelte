@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { onDestroy, untrack } from "svelte";
   import { link, push } from "svelte-spa-router";
   import BackLink from "./parts/entity/BackLink.svelte";
@@ -159,7 +160,7 @@
     } catch (e) {
       if (token === loadToken) {
         if (offer?.id !== offerId) offer = null;
-        error = String(e);
+        error = errorMessage(e);
       }
     } finally {
       if (token === loadToken) loading = false;
@@ -172,7 +173,7 @@
       const converted = await getInvoice(source.convertedInvoiceId);
       return converted ? displayInvoiceNumber(converted.invoice) : null;
     } catch (e) {
-      toast.error("Verknüpfte Rechnung konnte nicht geladen werden", String(e));
+      toast.error("Verknüpfte Rechnung konnte nicht geladen werden", errorMessage(e));
       return null;
     }
   }
@@ -256,7 +257,7 @@
         confirmMarkSentAfterMailOpen = true;
       }
     } catch (e) {
-      toast.error("E-Mail konnte nicht vorbereitet werden", String(e));
+      toast.error("E-Mail konnte nicht vorbereitet werden", errorMessage(e));
     } finally {
       mailing = false;
     }
@@ -278,7 +279,7 @@
         toast.success(`Rechnung ${label} erstellt — bitte Daten prüfen`);
         push(`/invoices/${newId}/edit`);
       } catch (e) {
-        toast.error("Umwandlung fehlgeschlagen", String(e));
+        toast.error("Umwandlung fehlgeschlagen", errorMessage(e));
       }
     });
   }

@@ -1,9 +1,12 @@
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
+  import { errorMessage } from "$lib/utils/error-message";
   import SettingsShell from "./SettingsShell.svelte";
   import DangerSection from "./DangerSection.svelte";
   import { Button, Input, Label, Checkbox, Dialog, toast } from "$lib/ui";
   import { writeSafetyBackup } from "$lib/utils/backup";
   import { isSandboxActive } from "$lib/db/client";
+  import { refreshOverdueCount } from "$lib/overdue-count.svelte";
   import {
     resetNumberingCounters,
     wipeAllBusinessData,
@@ -56,14 +59,25 @@
     selectedTables = next;
   }
 
+  /** Draft PDFs of the wiped invoices and offers should not stay in the cache folder; a file a viewer still holds goes at the next start. */
+  async function discardPdfPreviews() {
+    try {
+      await invoke("discard_pdf_previews");
+    } catch (e) {
+      toast.warning("Vorschau-Dateien konnten nicht entfernt werden", errorMessage(e));
+    }
+  }
+
   /** Runs the action and returns the success message to show. */
   async function performDangerAction(action: DangerAction): Promise<string> {
     switch (action.kind) {
       case "wipeAll":
         await wipeAllBusinessData();
+        await discardPdfPreviews();
         return "Alle Geschäftsdaten gelöscht.";
       case "wipeTables":
         await wipeTables(action.tables);
+        await discardPdfPreviews();
         return `Geleert: ${joinTableLabels(action.tables, tableLabels)}`;
       case "resetCounters":
         await resetNumberingCounters();
@@ -81,12 +95,13 @@
       toast.success("Sicherheits-Backup angelegt", backupPath);
       phase = action.kind;
       toast.success(await performDangerAction(action));
+      refreshOverdueCount();
       selectedTables = new Set();
       busy = false;
       cancelDanger();
     } catch (e) {
       console.error(`[danger:${phase}]`, e);
-      toast.error(`Fehlgeschlagen (Phase: ${phase})`, String(e));
+      toast.error(`Fehlgeschlagen (Phase: ${phase})`, errorMessage(e));
     } finally {
       busy = false;
     }

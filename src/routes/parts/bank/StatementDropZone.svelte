@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { onMount } from "svelte";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { Button, toast } from "$lib/ui";
@@ -39,7 +40,7 @@
       });
       if (typeof picked === "string") onFile(picked);
     } catch (e) {
-      toast.error("Datei-Dialog fehlgeschlagen", String(e));
+      toast.error("Datei-Dialog fehlgeschlagen", errorMessage(e));
     }
   }
 

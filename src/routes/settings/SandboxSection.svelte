@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { Button, ConfirmDialog, toast, FormSection } from "$lib/ui";
@@ -13,7 +14,7 @@
     try {
       sandbox = await invoke<boolean>("is_sandbox");
     } catch (e) {
-      toast.error("Sandbox-Status konnte nicht gelesen werden", String(e));
+      toast.error("Sandbox-Status konnte nicht gelesen werden", errorMessage(e));
     }
   });
 
@@ -28,7 +29,7 @@
       await invoke("set_sandbox", { enabled: pendingSandbox });
       await relaunchApp();
     } catch (e) {
-      toast.error("Sandbox konnte nicht umgeschaltet werden", String(e));
+      toast.error("Sandbox konnte nicht umgeschaltet werden", errorMessage(e));
     } finally {
       busy = false;
     }

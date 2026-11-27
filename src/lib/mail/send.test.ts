@@ -182,7 +182,7 @@ describe("resolveCustomerEmail", () => {
     expect(await resolveCustomerEmail(7, " alt@example.com ")).toBe("alt@example.com");
     expect(mocks.error).toHaveBeenCalledWith(
       "Kunden-E-Mail konnte nicht geladen werden",
-      "Error: db gesperrt",
+      "db gesperrt",
     );
   });
 

@@ -2,6 +2,7 @@
   import { link, router } from "svelte-spa-router";
   import { Search } from "$lib/brand-icons";
   import { NAV_GROUPS, SETTINGS_NAV_ITEM, isNavItemActive, type NavItem } from "$lib/navigation";
+  import { overdueInvoices, refreshOverdueCount } from "$lib/overdue-count.svelte";
   import { cn } from "$lib/utils";
   import { isMac } from "$lib/utils/platform";
   import TenantSwitcher from "./TenantSwitcher.svelte";
@@ -11,6 +12,18 @@
   let { onOpenSearch }: Props = $props();
 
   const searchShortcut = isMac ? "⌘K" : "Strg K";
+
+  // Runs at start and on every route change; actions on a page refresh the count themselves.
+  $effect(() => {
+    void router.location;
+    refreshOverdueCount();
+  });
+
+  // The count also changes without a route change: at midnight, or when the CLI writes to the database.
+  $effect(() => {
+    window.addEventListener("focus", refreshOverdueCount);
+    return () => window.removeEventListener("focus", refreshOverdueCount);
+  });
 </script>
 
 {#snippet navLink(item: NavItem)}
@@ -29,6 +42,16 @@
   >
     <item.icon class="size-4 shrink-0" />
     {item.label}
+    {#if item.showsOverdueCount && overdueInvoices.count > 0}
+      <span
+        class="ml-auto grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-status-bad-bg px-1.5 text-[11px] font-extrabold text-status-bad"
+        role="img"
+        aria-label="{overdueInvoices.count} {overdueInvoices.count === 1 ? 'überfällige Rechnung' : 'überfällige Rechnungen'}"
+        title="{overdueInvoices.count} überfällig"
+      >
+        {overdueInvoices.count}
+      </span>
+    {/if}
   </a>
 {/snippet}
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { invoke } from "@tauri-apps/api/core";
   import { Button, Field, Input, Select, toast } from "$lib/ui";
   import { SUPPORTED_CURRENCIES, computeEurTotalCent, parseExchangeRateScaled } from "$lib/utils/currency";
@@ -36,7 +37,7 @@
       exchangeRate = rate.replace(".", ",");
       toast.success("EZB-Tageskurs übernommen", `1 EUR = ${exchangeRate} ${currency}`);
     } catch (e) {
-      toast.error("Kurs konnte nicht geholt werden", String(e));
+      toast.error("Kurs konnte nicht geholt werden", errorMessage(e));
     } finally {
       fetchingRate = false;
     }

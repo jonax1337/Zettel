@@ -1,3 +1,4 @@
+import { errorMessage } from "$lib/utils/error-message";
 import { push } from "svelte-spa-router";
 import { loadSettings } from "$lib/db/queries";
 import { toast } from "$lib/ui";
@@ -18,7 +19,7 @@ export async function ensureCompanyDataComplete(): Promise<boolean> {
   try {
     missing = missingCompanyData(await loadSettings());
   } catch (e) {
-    toast.error("Firmendaten konnten nicht geprüft werden", String(e));
+    toast.error("Firmendaten konnten nicht geprüft werden", errorMessage(e));
     return false;
   }
   if (missing.length === 0) return true;

@@ -48,7 +48,7 @@ describe("createDocumentActions", () => {
 
       expect(reload).not.toHaveBeenCalled();
       expect(toast.success).not.toHaveBeenCalled();
-      expect(toast.error).toHaveBeenCalledWith("Aktion fehlgeschlagen", "Error: boom");
+      expect(toast.error).toHaveBeenCalledWith("Aktion fehlgeschlagen", "boom");
       expect(actions.busy).toBe(false);
     });
   });
@@ -106,7 +106,7 @@ describe("createDocumentActions", () => {
       });
 
       expect(push).not.toHaveBeenCalled();
-      expect(toast.error).toHaveBeenCalledWith("Löschen fehlgeschlagen", "Error: fk");
+      expect(toast.error).toHaveBeenCalledWith("Löschen fehlgeschlagen", "fk");
     });
   });
 
@@ -138,7 +138,7 @@ describe("createDocumentActions", () => {
 
       await actions.generatePdf(async () => created, () => Promise.reject(new Error("open failed")));
 
-      expect(actions.pdfError).toBe("Error: open failed");
+      expect(actions.pdfError).toBe("open failed");
       expect(actions.generating).toBe(false);
     });
 
@@ -152,7 +152,7 @@ describe("createDocumentActions", () => {
       });
 
       expect(generate).not.toHaveBeenCalled();
-      expect(toast.error).toHaveBeenCalledWith("Festschreiben fehlgeschlagen", "Error: claimed");
+      expect(toast.error).toHaveBeenCalledWith("Festschreiben fehlgeschlagen", "claimed");
       expect(actions.generating).toBe(false);
     });
 
@@ -192,7 +192,7 @@ describe("createDocumentActions", () => {
       });
 
       expect(reload).toHaveBeenCalledOnce();
-      expect(actions.pdfError).toBe("Error: Sidecar weg");
+      expect(actions.pdfError).toBe("Sidecar weg");
     });
 
     it("reloads when the preparation itself fails, in case it changed the document before failing", async () => {
@@ -248,7 +248,7 @@ describe("createDocumentActions", () => {
       expect(open).toHaveBeenCalledWith("/docs/RE-1.pdf");
       expect(toast.error).toHaveBeenCalledWith(
         "PDF konnte nicht geöffnet werden",
-        "Error: Not allowed to open path",
+        "Not allowed to open path",
       );
       expect(actions.pdfError).toBeNull();
     });

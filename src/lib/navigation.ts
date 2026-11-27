@@ -26,6 +26,8 @@ export type NavItem = {
   match?: string[];
   /** Extra palette search terms, e.g. the entry's former names. */
   keywords?: string;
+  /** Shows the number of overdue invoices next to the label in the sidebar. */
+  showsOverdueCount?: boolean;
 };
 export type NavGroup = { label: string | null; items: NavItem[] };
 
@@ -44,6 +46,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Rechnungen",
         icon: FileText,
         match: ["/reminders", "/recurring"],
+        showsOverdueCount: true,
       },
       { href: "/time", label: "Zeiten", icon: Clock, keywords: "zeiterfassung stunden" },
       { href: "/catalog", label: "Katalog", icon: Package },

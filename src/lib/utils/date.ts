@@ -45,6 +45,18 @@ export function fromIsoDate(iso: string): number {
   return toUnix(new Date(y, (m ?? 1) - 1, d ?? 1));
 }
 
+/** ISO 8601 week number (Kalenderwoche) of the local day: the week belongs to the year of its Thursday. */
+export function isoWeekNumber(date: Date): number {
+  const daysSinceMonday = (date.getDay() + 6) % 7;
+  const thursday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - daysSinceMonday + 3);
+  // UTC for the day count, so that a daylight saving change cannot shift the quotient.
+  const daysIntoYear =
+    (Date.UTC(thursday.getFullYear(), thursday.getMonth(), thursday.getDate()) -
+      Date.UTC(thursday.getFullYear(), 0, 1)) /
+    (SECONDS_PER_DAY * 1000);
+  return Math.floor(daysIntoYear / 7) + 1;
+}
+
 /** Local midnight of the given day, unix seconds. */
 export function startOfDayUnix(date: Date): number {
   return toUnix(new Date(date.getFullYear(), date.getMonth(), date.getDate()));

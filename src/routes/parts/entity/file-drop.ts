@@ -1,3 +1,4 @@
+import { errorMessage } from "$lib/utils/error-message";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { toast } from "$lib/ui";
 
@@ -27,7 +28,7 @@ export function listenForFileDrop({ onHover, onDrop }: FileDropHandlers): () => 
       if (disposed) unlisten();
       else stopListening = unlisten;
     })
-    .catch((e) => toast.warning("Drag & Drop nicht verfügbar", String(e)));
+    .catch((e) => toast.warning("Drag & Drop nicht verfügbar", errorMessage(e)));
 
   return () => {
     disposed = true;

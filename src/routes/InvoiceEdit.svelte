@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
   import { tick, untrack } from "svelte";
   import { push, router } from "svelte-spa-router";
@@ -21,7 +22,7 @@
     normalizeBuyerReference,
     type FollowedLeitweg,
   } from "$lib/xrechnung/buyer-reference";
-  import { DatePicker, Field, Input, PageHeader, Textarea, focusFirstInvalid, toast } from "$lib/ui";
+  import { DatePicker, Field, Input, PageHeader, Textarea, focusFirstInvalid, toast, Panel } from "$lib/ui";
   import { displayInvoiceNumber } from "$lib/utils/invoice-number";
   import { parseId } from "./parts/entity/edit-target";
   import AddressWindow from "./parts/editor/AddressWindow.svelte";
@@ -45,7 +46,6 @@
   import { createSaveError } from "./parts/editor/save-error.svelte";
   import { QUIET_FIELD } from "./parts/editor/quiet-field";
   import { vatExemptNote } from "./parts/editor/vat-note";
-  import DetailPanel from "./invoice/detail/DetailPanel.svelte";
   import NoticeCard from "./invoice/NoticeCard.svelte";
   import { createDocumentFormData } from "./invoice/document-form.svelte";
   import { dueDateFromIssue, followDerivedDueDate } from "./invoice/due-date";
@@ -226,7 +226,7 @@
         }
       })
       .catch((e) => {
-        if (!stale) loadError = String(e);
+        if (!stale) loadError = errorMessage(e);
       })
       .finally(() => {
         if (stale) return;
@@ -339,8 +339,8 @@
       unsaved.markClean();
       push(`/invoices/${savedId}`);
     } catch (err) {
-      saveError.set(String(err));
-      toast.error("Speichern fehlgeschlagen", String(err));
+      saveError.set(errorMessage(err));
+      toast.error("Speichern fehlgeschlagen", errorMessage(err));
     } finally {
       saving = false;
     }
@@ -445,7 +445,7 @@
       {/snippet}
 
       {#snippet rail()}
-        <DetailPanel title="Optionen">
+        <Panel title="Optionen">
           <div class="grid gap-3.5">
             <CurrencyFields
               bind:currency
@@ -481,7 +481,7 @@
               </Field>
             {/if}
           </div>
-        </DetailPanel>
+        </Panel>
         {#if reference.selectedCustomer}
           <CustomerPanel customer={reference.selectedCustomer} />
         {/if}

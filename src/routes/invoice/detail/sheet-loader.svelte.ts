@@ -1,3 +1,4 @@
+import { errorMessage } from "$lib/utils/error-message";
 /**
  * Keeps the rendered sheet of the document on screen. A reload keeps showing the old
  * sheet until the new one arrives; a different document starts blank. Only the newest
@@ -34,7 +35,7 @@ export function createSheetLoader(render: (documentId: number) => Promise<string
       shownKey = key;
       error = null;
     } catch (e) {
-      if (request === latest) error = e instanceof Error ? e.message : String(e);
+      if (request === latest) error = errorMessage(e);
     } finally {
       if (request === latest) loading = false;
     }

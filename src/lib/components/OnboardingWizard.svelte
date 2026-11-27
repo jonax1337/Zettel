@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { loadSettings, saveSettings } from "$lib/db/queries";
   import {
     Button,
@@ -52,8 +53,8 @@
       toast.success("Stammdaten gespeichert", "Du kannst jetzt loslegen.");
       onDone();
     } catch (e) {
-      error = String(e);
-      toast.error("Speichern fehlgeschlagen", String(e));
+      error = errorMessage(e);
+      toast.error("Speichern fehlgeschlagen", errorMessage(e));
     } finally {
       saving = false;
     }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { startTimer, stopTimer, type TimeEntryListRow } from "$lib/db/time-entries";
   import type { ProjectListRow } from "$lib/db/projects";
   import { formatDuration, formatElapsed } from "$lib/time/duration";
@@ -40,7 +41,7 @@
       description = "";
       await onChanged();
     } catch (e) {
-      toast.error("Timer konnte nicht gestartet werden", String(e));
+      toast.error("Timer konnte nicht gestartet werden", errorMessage(e));
     } finally {
       busy = false;
     }
@@ -53,7 +54,7 @@
       toast.success("Timer gestoppt", `${formatDuration(stopped.durationMinutes ?? 0)} Std auf ${stopped.projectName}`);
       await onChanged();
     } catch (e) {
-      toast.error("Timer konnte nicht gestoppt werden", String(e));
+      toast.error("Timer konnte nicht gestoppt werden", errorMessage(e));
     } finally {
       busy = false;
     }

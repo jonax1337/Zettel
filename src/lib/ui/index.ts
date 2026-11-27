@@ -4,6 +4,7 @@ export { default as IbanInput } from "./IbanInput.svelte";
 export { default as Textarea } from "./Textarea.svelte";
 export { default as Label } from "./Label.svelte";
 export { default as Card } from "./Card.svelte";
+export { default as Panel } from "./Panel.svelte";
 export { default as CardHeader } from "./CardHeader.svelte";
 export { default as CardTitle } from "./CardTitle.svelte";
 export { default as CardDescription } from "./CardDescription.svelte";

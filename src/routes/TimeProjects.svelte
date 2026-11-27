@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { deleteProject, listProjects, setProjectArchived, type ProjectListRow } from "$lib/db/projects";
   import { centsToEur } from "$lib/utils/money";
   import { WIDE_ONLY } from "./invoice/list-support";
@@ -48,7 +49,7 @@
       toast.success(project.archived ? "Projekt reaktiviert" : "Projekt archiviert");
       await projects.reload();
     } catch (e) {
-      toast.error("Aktion fehlgeschlagen", String(e));
+      toast.error("Aktion fehlgeschlagen", errorMessage(e));
     }
   }
 

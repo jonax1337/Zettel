@@ -1,3 +1,4 @@
+import { errorMessage } from "$lib/utils/error-message";
 import { invoke } from "@tauri-apps/api/core";
 import { Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -40,7 +41,7 @@ export function setUpdateChannel(channel: UpdateChannel): void {
   try {
     localStorage.setItem(CHANNEL_STORAGE_KEY, channel);
   } catch (e) {
-    throw new Error(`Update-Kanal konnte nicht gespeichert werden: ${String(e)}`);
+    throw new Error(`Update-Kanal konnte nicht gespeichert werden: ${errorMessage(e)}`);
   }
 }
 

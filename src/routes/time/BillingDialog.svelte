@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { untrack } from "svelte";
   import { push } from "svelte-spa-router";
   import type { BillingGrouping, BillingIncrement, BillingPreview } from "$lib/time/billing";
@@ -55,7 +56,7 @@
       (e) => {
         if (request !== latestRequest) return;
         preview = null;
-        previewError = String(e);
+        previewError = errorMessage(e);
       },
     );
   });
@@ -71,7 +72,7 @@
       await onBilled();
       push(`/invoices/${invoiceId}/edit`);
     } catch (e) {
-      toast.error("Rechnungsentwurf konnte nicht angelegt werden", String(e));
+      toast.error("Rechnungsentwurf konnte nicht angelegt werden", errorMessage(e));
     } finally {
       creating = false;
     }

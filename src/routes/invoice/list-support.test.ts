@@ -66,6 +66,7 @@ describe("overdueDays", () => {
   const DAY = 86_400;
 
   it("counts whole days after the due date", () => {
+    expect(overdueDays(1_000, 1_000 + DAY)).toBe(1);
     expect(overdueDays(1_000, 1_000 + 11 * DAY + 5)).toBe(11);
   });
 

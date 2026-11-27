@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { onMount } from "svelte";
   import { Select, toast } from "$lib/ui";
   import { listCategories, setCategoryEuerKz } from "$lib/db/expense-categories";
@@ -22,7 +23,7 @@
       categories = await listCategories();
       loadError = null;
     } catch (e) {
-      loadError = String(e);
+      loadError = errorMessage(e);
     } finally {
       loading = false;
     }
@@ -34,7 +35,7 @@
       await setCategoryEuerKz(category.id, kz);
       category.euerKz = kz;
     } catch (e) {
-      toast.error("Zuordnung konnte nicht gespeichert werden", String(e));
+      toast.error("Zuordnung konnte nicht gespeichert werden", errorMessage(e));
       await load();
       reloadCount++;
     }

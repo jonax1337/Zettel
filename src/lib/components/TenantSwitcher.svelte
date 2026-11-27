@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { open, save } from "@tauri-apps/plugin-dialog";
@@ -67,7 +68,7 @@
       tenants = await invoke<TenantEntry[]>("list_tenants");
     } catch (e) {
       tenants = [];
-      toast.error("Mandanten konnten nicht geladen werden", String(e));
+      toast.error("Mandanten konnten nicht geladen werden", errorMessage(e));
     }
   }
 
@@ -92,7 +93,7 @@
       await change();
       await relaunchApp();
     } catch (e) {
-      toast.error(failureTitle, String(e));
+      toast.error(failureTitle, errorMessage(e));
       busy = false;
     }
   }
@@ -161,7 +162,7 @@
       await loadTenants();
       toast.success("Mandant entfernt", "Die DB-Datei selbst bleibt erhalten.");
     } catch (e) {
-      toast.error("Entfernen fehlgeschlagen", String(e));
+      toast.error("Entfernen fehlgeschlagen", errorMessage(e));
     }
   }
 

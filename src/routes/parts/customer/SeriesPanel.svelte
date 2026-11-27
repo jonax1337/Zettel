@@ -1,15 +1,15 @@
 <script lang="ts">
+  import { Panel } from "$lib/ui";
   import { link } from "svelte-spa-router";
   import type { CustomerSeries } from "$lib/db/customer-overview";
   import { formatDate } from "$lib/utils/date";
   import { centsToEur } from "$lib/utils/money";
   import { RECURRING_INTERVAL_LABEL } from "../entity/recurring";
-  import CustomerPanel from "./CustomerPanel.svelte";
 
   let { series }: { series: CustomerSeries[] } = $props();
 </script>
 
-<CustomerPanel title="Serie">
+<Panel title="Serie">
   <ul class="grid gap-3 text-sm">
     {#each series as entry (entry.id)}
       <li>
@@ -25,4 +25,4 @@
       </li>
     {/each}
   </ul>
-</CustomerPanel>
+</Panel>

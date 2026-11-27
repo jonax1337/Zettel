@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { Download } from "$lib/brand-icons";
   import { Button, Input, Label, Select, Checkbox, DatePicker, toast } from "$lib/ui";
   import { loadInvoicesForExport } from "$lib/db/invoices";
@@ -143,7 +144,7 @@
         );
       }
     } catch (e) {
-      toast.error("Export fehlgeschlagen", String(e));
+      toast.error("Export fehlgeschlagen", errorMessage(e));
     } finally {
       busy = false;
     }

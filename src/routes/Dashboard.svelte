@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { push } from "svelte-spa-router";
   import { Button, DropdownItem, DropdownMenu, MoreActionsTrigger, PageHeader, toast } from "$lib/ui";
   import { Plus, UserPlus } from "$lib/brand-icons";
@@ -74,7 +75,7 @@
   $effect(() => {
     isSandboxActive()
       .then((active) => (sandbox = active))
-      .catch((e) => toast.error("Sandbox-Status unbekannt", String(e)));
+      .catch((e) => toast.error("Sandbox-Status unbekannt", errorMessage(e)));
   });
 
   const now = nowUnix();

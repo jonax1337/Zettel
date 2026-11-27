@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { onDestroy, tick, untrack } from "svelte";
   import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
   import { link, push, replace } from "svelte-spa-router";
@@ -140,7 +141,7 @@
         unsaved.markClean();
       }
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       loading = false;
       loadedOnce = true;
@@ -228,7 +229,7 @@
       unsaved.markClean();
       return reminderId;
     } catch (e) {
-      toast.error("Mahnung konnte nicht gespeichert werden", String(e));
+      toast.error("Mahnung konnte nicht gespeichert werden", errorMessage(e));
       return null;
     } finally {
       saving = false;
@@ -250,7 +251,7 @@
     try {
       await openPath(path);
     } catch (e) {
-      toast.error("PDF konnte nicht geöffnet werden", String(e));
+      toast.error("PDF konnte nicht geöffnet werden", errorMessage(e));
     }
   }
 
@@ -266,7 +267,7 @@
       if (res.error.code === COMPANY_INCOMPLETE_CODE) notifyCompanyIncomplete(res.error.message);
       else toast.error("PDF konnte nicht erstellt werden", res.error.message);
     } catch (e) {
-      toast.error("PDF konnte nicht erstellt werden", String(e));
+      toast.error("PDF konnte nicht erstellt werden", errorMessage(e));
     } finally {
       generating = false;
     }
@@ -316,7 +317,7 @@
         { to: customerEmail, attachmentPath },
       );
     } catch (e) {
-      toast.error("E-Mail konnte nicht vorbereitet werden", String(e));
+      toast.error("E-Mail konnte nicht vorbereitet werden", errorMessage(e));
       return null;
     } finally {
       mailing = false;
@@ -352,7 +353,7 @@
       toast.success("Als versendet markiert");
       showSavedReminder(savedId);
     } catch (e) {
-      toast.error("Mahnung konnte nicht als versendet markiert werden", String(e));
+      toast.error("Mahnung konnte nicht als versendet markiert werden", errorMessage(e));
     }
   }
 
@@ -364,7 +365,7 @@
       toast.success("Mahnung gelöscht");
       push("/reminders");
     } catch (e) {
-      toast.error("Mahnung konnte nicht gelöscht werden", String(e));
+      toast.error("Mahnung konnte nicht gelöscht werden", errorMessage(e));
     }
   }
 </script>

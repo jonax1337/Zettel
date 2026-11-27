@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { Badge, Button, ConfirmDialog, DatePicker, Dialog, Input, Label, toast } from "$lib/ui";
+  import { errorMessage } from "$lib/utils/error-message";
+  import { refreshOverdueCount } from "$lib/overdue-count.svelte";
+  import { Badge, Button, ConfirmDialog, DatePicker, Dialog, Input, Label, toast, Panel } from "$lib/ui";
   import { Trash2 } from "$lib/brand-icons";
   import type { Invoice, InvoicePayment } from "$lib/db/schema";
   import { canRemovePayment, openBalanceCent } from "$lib/db/invoice-lifecycle";
@@ -8,7 +10,6 @@
   import { formatDate, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { eurStringToCents } from "$lib/utils/money";
   import { centsToPriceText } from "../parts/entity/format";
-  import DetailPanel from "./detail/DetailPanel.svelte";
 
   type Props = {
     invoice: Invoice;
@@ -70,10 +71,11 @@
         notes: notes.trim() || null,
       });
       dialogOpen = false;
+      void refreshOverdueCount();
       await onChanged();
       toast.success("Zahlung erfasst");
     } catch (e) {
-      toast.error("Erfassen fehlgeschlagen", String(e));
+      toast.error("Erfassen fehlgeschlagen", errorMessage(e));
     } finally {
       busy = false;
     }
@@ -91,17 +93,18 @@
     removing = true;
     try {
       await deletePayment(payment.id);
+      void refreshOverdueCount();
       await onChanged();
       toast.success("Zahlung entfernt");
     } catch (e) {
-      toast.error("Entfernen fehlgeschlagen", String(e));
+      toast.error("Entfernen fehlgeschlagen", errorMessage(e));
     } finally {
       removing = false;
     }
   }
 </script>
 
-<DetailPanel title="Zahlung">
+<Panel title="Zahlung">
   <div class="font-display text-[22px] leading-tight font-extrabold tabular-nums">{headline}</div>
   <div class="h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Bezahlt" aria-valuenow={paidShare} aria-valuemin={0} aria-valuemax={100}>
     <div class="h-full rounded-full bg-status-ok" style="width: {paidShare}%"></div>
@@ -151,7 +154,7 @@
       {/each}
     </ul>
   {/if}
-</DetailPanel>
+</Panel>
 
 <ConfirmDialog
   bind:open={removeOpen}

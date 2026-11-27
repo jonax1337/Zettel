@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { link, push } from "svelte-spa-router";
   import {
     deleteOffer,
@@ -71,7 +72,7 @@
     expire: expireDueOffers,
     list: listOffers,
     onExpireError: (e) =>
-      toast.error("Abgelaufene Angebote konnten nicht aktualisiert werden", String(e)),
+      toast.error("Abgelaufene Angebote konnten nicht aktualisiert werden", errorMessage(e)),
   });
 
   // Passing `filter` synchronously lets the surrounding effect track it.

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { untrack } from "svelte";
   import type { ProjectListRow } from "$lib/db/projects";
   import { createTimeEntry, updateTimeEntry, type TimeEntryListRow } from "$lib/db/time-entries";
@@ -51,7 +52,7 @@
       open = false;
       await onSaved();
     } catch (e) {
-      toast.error("Speichern fehlgeschlagen", String(e));
+      toast.error("Speichern fehlgeschlagen", errorMessage(e));
     } finally {
       saving = false;
     }

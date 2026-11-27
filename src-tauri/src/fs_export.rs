@@ -401,6 +401,14 @@ pub(crate) fn clear_pdf_previews(app: &AppHandle) {
     clear_previews(&dir);
 }
 
+/// Removes every preview on request, for example once the business data they were made from
+/// is wiped. A switch of tenant or sandbox restarts the app, whose start clears them.
+#[tauri::command]
+pub async fn discard_pdf_previews(app: AppHandle) -> Result<(), String> {
+    clear_pdf_previews(&app);
+    Ok(())
+}
+
 fn clear_previews(dir: &Path) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;

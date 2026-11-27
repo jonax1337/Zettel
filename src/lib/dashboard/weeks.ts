@@ -1,24 +1,14 @@
-import { addDaysUnix, SECONDS_PER_DAY, startOfDayUnix, toUnix } from "$lib/utils/date";
+import { addDaysUnix, isoWeekNumber, SECONDS_PER_DAY, startOfDayUnix, toUnix } from "$lib/utils/date";
 import type { OpenInvoiceRow } from "./age-buckets";
 
 const MONDAY_BASED_OFFSET = 6;
 const DAYS_PER_WEEK = 7;
-const THURSDAY_OFFSET = 3;
 
 /** Local midnight of the Monday of the week `unixSeconds` falls into. */
 export function startOfWeekUnix(unixSeconds: number): number {
   const day = new Date(unixSeconds * 1000);
   const daysSinceMonday = (day.getDay() + MONDAY_BASED_OFFSET) % DAYS_PER_WEEK;
   return addDaysUnix(startOfDayUnix(day), -daysSinceMonday);
-}
-
-/** ISO 8601 week number (Kalenderwoche): the week with the year's first Thursday is week 1. */
-export function isoWeekNumber(weekStart: number): number {
-  const monday = new Date(weekStart * 1000);
-  const thursday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + THURSDAY_OFFSET);
-  const firstJanuary = new Date(thursday.getFullYear(), 0, 1);
-  const dayOfYear = Math.round((toUnix(thursday) - toUnix(firstJanuary)) / SECONDS_PER_DAY);
-  return Math.floor(dayOfYear / DAYS_PER_WEEK) + 1;
 }
 
 export type RecurringEstimate = { dueDate: number; grossCent: number };
@@ -55,7 +45,7 @@ export function bucketExpectedPayments(
   for (let start = startOfWeekUnix(now); start <= horizon; start = addDaysUnix(start, DAYS_PER_WEEK)) {
     weeks.push({
       weekStart: start,
-      weekNumber: isoWeekNumber(start),
+      weekNumber: isoWeekNumber(new Date(start * 1000)),
       openCent: 0,
       openCount: 0,
       estimateCent: 0,

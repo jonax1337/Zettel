@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { toUnix } from "$lib/utils/date";
-import { bucketExpectedPayments, isoWeekNumber, startOfWeekUnix } from "./weeks";
+import { bucketExpectedPayments, startOfWeekUnix } from "./weeks";
 
 const at = (year: number, month: number, day: number, hour = 12) => toUnix(new Date(year, month - 1, day, hour));
 
@@ -15,19 +15,6 @@ describe("startOfWeekUnix", () => {
 
   it("returns a Monday itself", () => {
     expect(startOfWeekUnix(at(2026, 11, 30, 0))).toBe(at(2026, 11, 30, 0));
-  });
-});
-
-describe("isoWeekNumber", () => {
-  it.each([
-    [[2026, 11, 23], 48],
-    [[2026, 1, 1], 1],
-    [[2026, 12, 28], 53],
-    [[2025, 12, 29], 1],
-    [[2027, 1, 4], 1],
-    [[2024, 12, 30], 1],
-  ])("numbers the week of the Monday %j as %i", ([year, month, day], week) => {
-    expect(isoWeekNumber(at(year, month, day, 0))).toBe(week);
   });
 });
 

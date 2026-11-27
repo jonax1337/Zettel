@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { Button, Input, Label, toast } from "$lib/ui";
   import { ChevronLeft, ChevronRight } from "$lib/brand-icons";
   import { centsToEur, eurStringToCents } from "$lib/utils/money";
@@ -21,7 +22,7 @@
       const loaded = await listPrepayments(requestedYear);
       if (requestedYear === year) prepayments = loaded;
     } catch (e) {
-      toast.error("Vorauszahlungen konnten nicht geladen werden", String(e));
+      toast.error("Vorauszahlungen konnten nicht geladen werden", errorMessage(e));
     } finally {
       if (requestedYear === year) busy = false;
     }
@@ -35,7 +36,7 @@
     try {
       await upsertPrepayment(year, quarter, eurStringToCents(input.value));
     } catch (e) {
-      toast.error("Vorauszahlung konnte nicht gespeichert werden", String(e));
+      toast.error("Vorauszahlung konnte nicht gespeichert werden", errorMessage(e));
     }
     await loadYear(year);
   }

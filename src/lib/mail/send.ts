@@ -1,3 +1,4 @@
+import { errorMessage } from "$lib/utils/error-message";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCustomer, loadSettings } from "$lib/db/queries";
@@ -33,7 +34,7 @@ export async function resolveCustomerEmail(
   try {
     return (await getCustomer(customerId))?.email?.trim() || fallback;
   } catch (e) {
-    toast.error("Kunden-E-Mail konnte nicht geladen werden", String(e));
+    toast.error("Kunden-E-Mail konnte nicht geladen werden", errorMessage(e));
     return fallback;
   }
 }
@@ -67,7 +68,7 @@ async function failureOf(action: () => Promise<void>): Promise<string | null> {
     await action();
     return null;
   } catch (e) {
-    return String(e);
+    return errorMessage(e);
   }
 }
 

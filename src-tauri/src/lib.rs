@@ -154,6 +154,7 @@ pub fn run() {
             fs_export::restore_pdf_version,
             fs_export::list_pdf_versions,
             fs_export::open_pdf_preview,
+            fs_export::discard_pdf_previews,
             backup::snapshot_db_path,
             backup::auto_backup_target,
             backup::bundle_backup,

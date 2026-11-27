@@ -1,14 +1,14 @@
 <script lang="ts">
+  import { Panel } from "$lib/ui";
   import type { Customer } from "$lib/db/schema";
   import { contactFacts } from "./contact-facts";
-  import CustomerPanel from "./CustomerPanel.svelte";
 
   let { customer }: { customer: Customer } = $props();
 
   const facts = $derived(contactFacts(customer));
 </script>
 
-<CustomerPanel title="Kontakt">
+<Panel title="Kontakt">
   {#if facts.length === 0}
     <p class="text-sm text-muted-foreground">Keine Kontaktdaten hinterlegt.</p>
   {:else}
@@ -25,4 +25,4 @@
       {/each}
     </dl>
   {/if}
-</CustomerPanel>
+</Panel>

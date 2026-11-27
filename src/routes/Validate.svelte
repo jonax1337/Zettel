@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { Button, toast } from "$lib/ui";
@@ -35,7 +36,7 @@
     try {
       status = await getValidatorStatus();
     } catch (e) {
-      toast.error("Status konnte nicht geladen werden", String(e));
+      toast.error("Status konnte nicht geladen werden", errorMessage(e));
     }
   }
 
@@ -70,7 +71,7 @@
       const path = await pickFile();
       if (path) await runValidate(path);
     } catch (e) {
-      toast.error("Datei-Dialog fehlgeschlagen", String(e));
+      toast.error("Datei-Dialog fehlgeschlagen", errorMessage(e));
     }
   }
 
@@ -83,7 +84,7 @@
         ? await validateXml(path)
         : await validatePdf(path);
     } catch (e) {
-      toast.error("Validierung fehlgeschlagen", String(e));
+      toast.error("Validierung fehlgeschlagen", errorMessage(e));
     } finally {
       loading = false;
     }

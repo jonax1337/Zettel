@@ -1,25 +1,14 @@
 import { periodForMonth, type Period } from "$lib/dashboard/period";
-import { formatDate, toUnix } from "$lib/utils/date";
+import { formatDate, isoWeekNumber, toUnix } from "$lib/utils/date";
 
 export type PeriodUnit = "week" | "month";
 
 export type TimePeriod = Period & { unit: PeriodUnit };
 
 const DAYS_PER_WEEK = 7;
-const THURSDAY_OFFSET_FROM_MONDAY = 3;
-const MS_PER_DAY = 86_400_000;
 
 /** Days since Monday: Monday 0 ... Sunday 6. */
 const weekdayIndex = (date: Date) => (date.getDay() + DAYS_PER_WEEK - 1) % DAYS_PER_WEEK;
-
-/** ISO 8601: the week belongs to the year of its Thursday. */
-function isoWeekNumber(monday: Date): number {
-  const thursday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + THURSDAY_OFFSET_FROM_MONDAY);
-  // UTC for the day count, so that a daylight saving change cannot shift the quotient.
-  const daysIntoYear = (Date.UTC(thursday.getFullYear(), thursday.getMonth(), thursday.getDate()) -
-    Date.UTC(thursday.getFullYear(), 0, 1)) / MS_PER_DAY;
-  return Math.floor(daysIntoYear / DAYS_PER_WEEK) + 1;
-}
 
 function weekContaining(date: Date): TimePeriod {
   const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - weekdayIndex(date));

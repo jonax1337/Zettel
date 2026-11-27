@@ -1,10 +1,9 @@
 <script lang="ts">
-  import { Badge } from "$lib/ui";
+  import { Badge, Panel } from "$lib/ui";
   import type { Invoice } from "$lib/db/schema";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
   import { computeSkonto } from "$lib/utils/skonto";
-  import DetailPanel from "./detail/DetailPanel.svelte";
 
   let { invoice }: { invoice: Invoice } = $props();
 
@@ -27,7 +26,7 @@
 </script>
 
 {#if skonto}
-  <DetailPanel title="Skonto">
+  <Panel title="Skonto">
     <div class="flex items-start justify-between gap-3">
       <p class="text-sm">
         {skonto.percent} % bei Zahlung bis
@@ -36,5 +35,5 @@
       </p>
       <Badge variant={stillValid ? "paid" : "calm"} class="shrink-0">{badgeLabel}</Badge>
     </div>
-  </DetailPanel>
+  </Panel>
 {/if}

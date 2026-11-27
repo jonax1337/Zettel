@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { open } from "@tauri-apps/plugin-dialog";
   import { Button, Input, Label, toast } from "$lib/ui";
   import { Image, X } from "$lib/brand-icons";
@@ -14,7 +15,7 @@
       });
       if (typeof picked === "string") path = picked;
     } catch (e) {
-      toast.error("Logo konnte nicht gewählt werden", String(e));
+      toast.error("Logo konnte nicht gewählt werden", errorMessage(e));
     }
   }
 </script>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { link, push } from "svelte-spa-router";
   import { listCatalog, deleteCatalogItem, setArchived } from "$lib/db/catalog";
   import type { CatalogItem } from "$lib/db/schema";
@@ -78,7 +79,7 @@
       await catalog.reload();
       toast.success(it.archived ? "Wieder aktiv" : "Archiviert");
     } catch (e) {
-      toast.error("Aktion fehlgeschlagen", String(e));
+      toast.error("Aktion fehlgeschlagen", errorMessage(e));
     }
   }
 </script>

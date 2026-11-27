@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
   import { push } from "svelte-spa-router";
   import { onDestroy, tick, untrack } from "svelte";
@@ -163,7 +164,7 @@
       vendors = await listVendors();
       form.vendorId = String(vendorId);
     } catch (e) {
-      toast.error("Lieferanten konnten nicht geladen werden", String(e));
+      toast.error("Lieferanten konnten nicht geladen werden", errorMessage(e));
     }
   }
 
@@ -174,7 +175,7 @@
         categorySuggestions = suggestions;
         curatedCategories = curated;
       })
-      .catch((e) => (error = String(e)))
+      .catch((e) => (error = errorMessage(e)))
       .finally(() => (vendorsLoaded = true));
     // A PDF dropped on the expense list is read once the vendors are known for matching.
     const dropped = untrack(() => queuedPdf);
@@ -219,7 +220,7 @@
         id = target.id;
         applyStoredExpense(target.value);
       })
-      .catch((e) => (error = String(e)))
+      .catch((e) => (error = errorMessage(e)))
       .finally(() => (loaded = true));
   });
 
@@ -328,7 +329,7 @@
       validation = outcome.kind === "zugferd" ? await validateImportedPdf(srcPath) : null;
       announceImport(outcome);
     } catch (e) {
-      toast.error("Import fehlgeschlagen", String(e));
+      toast.error("Import fehlgeschlagen", errorMessage(e));
     } finally {
       importing = false;
     }
@@ -377,7 +378,7 @@
     try {
       await recordExpenseValidation(expenseId, result.status, result.findingsCount);
     } catch (e) {
-      toast.warning("Validierungsstatus nicht gespeichert", String(e));
+      toast.warning("Validierungsstatus nicht gespeichert", errorMessage(e));
     }
   }
 
@@ -403,8 +404,8 @@
       if (savedId !== null && validation) await recordValidation(savedId, validation);
       return savedId;
     } catch (err) {
-      error = String(err);
-      toast.error("Speichern fehlgeschlagen", String(err));
+      error = errorMessage(err);
+      toast.error("Speichern fehlgeschlagen", errorMessage(err));
       return null;
     } finally {
       saving = false;
@@ -480,7 +481,7 @@
       unsaved.markClean();
       push("/expenses");
     } catch (e) {
-      toast.error(failureTitle, String(e));
+      toast.error(failureTitle, errorMessage(e));
     }
   }
 

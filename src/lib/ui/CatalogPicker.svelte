@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { Dialog as DialogPrimitive } from "bits-ui";
   import { Search, Package } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
@@ -42,7 +43,7 @@
       results = items;
       activeIndex = 0;
     },
-    onError: (error) => toast.error("Katalog-Suche fehlgeschlagen", String(error)),
+    onError: (error) => toast.error("Katalog-Suche fehlgeschlagen", errorMessage(error)),
     delayMs: SEARCH_DEBOUNCE_MS,
   });
 

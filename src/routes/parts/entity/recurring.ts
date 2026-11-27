@@ -1,3 +1,4 @@
+import { errorMessage } from "$lib/utils/error-message";
 import { push } from "svelte-spa-router";
 import { SvelteSet } from "svelte/reactivity";
 import { toast } from "$lib/ui";
@@ -25,7 +26,7 @@ export async function generateInvoiceAndOpen(recurringId: number): Promise<void>
     toast.success("Rechnung erzeugt");
     push(`/invoices/${invoiceId}`);
   } catch (e) {
-    toast.error("Erzeugen fehlgeschlagen", String(e));
+    toast.error("Erzeugen fehlgeschlagen", errorMessage(e));
   } finally {
     generatingRecurringIds.delete(recurringId);
   }

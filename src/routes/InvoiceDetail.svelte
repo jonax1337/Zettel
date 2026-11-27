@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { untrack } from "svelte";
   import { link, push } from "svelte-spa-router";
   import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -31,7 +32,7 @@
   import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import { resolveCustomerEmail, sendDocumentByMail } from "$lib/mail/send";
   import { validatePdf, type ValidationReport } from "$lib/validator";
-  import { Badge, Button, ConfirmDialog, PageHeader, StatusBadge, toast } from "$lib/ui";
+  import { Badge, Button, ConfirmDialog, PageHeader, StatusBadge, toast, Panel } from "$lib/ui";
   import DocumentSheet from "$lib/components/DocumentSheet.svelte";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
   import { renderInvoiceSheet } from "$lib/sidecar/preview";
@@ -60,7 +61,6 @@
   import ValidationFindingsDialog from "./invoice/ValidationFindingsDialog.svelte";
   import { storeInvoiceValidation } from "./invoice/validation-store";
   import { actionsAt, buttonActions } from "./invoice/detail/action-plan";
-  import DetailPanel from "./invoice/detail/DetailPanel.svelte";
   import DocumentActionsMenu from "./invoice/detail/DocumentActionsMenu.svelte";
   import { invoiceDateNote, invoiceTitle } from "./invoice/detail/document-note";
   import { issueActionLabel, issueDialogDescription, issuePanelText } from "./invoice/detail/issue-wording";
@@ -71,7 +71,7 @@
   import { invoiceMenuEntries } from "./invoice/detail/invoice-menu";
   import { runPdfPreview } from "./invoice/detail/pdf-preview";
   import { PREVIEW_PDF_LABEL, PREVIEWING_LABEL } from "./invoice/detail/preview-menu";
-  import { daysOverdue, overdueLabel } from "./invoice/detail/overdue";
+  import { overdueDays, overdueLabel } from "./invoice/list-support";
   import { progressSteps } from "./invoice/detail/progress-steps";
   import ProgressSteps from "./invoice/detail/ProgressSteps.svelte";
   import { invoiceSheetKey } from "./invoice/detail/sheet-key";
@@ -256,7 +256,7 @@
     } catch (e) {
       if (token === loadToken) {
         if (invoice?.id !== invoiceId) invoice = null;
-        error = String(e);
+        error = errorMessage(e);
       }
     } finally {
       if (token === loadToken) loading = false;
@@ -276,7 +276,7 @@
     try {
       return await listPayments(inv.id);
     } catch (e) {
-      toast.error("Zahlungen konnten nicht geladen werden", String(e));
+      toast.error("Zahlungen konnten nicht geladen werden", errorMessage(e));
       return [];
     }
   }
@@ -286,7 +286,7 @@
     try {
       return await listRemindersForInvoice(inv.id);
     } catch (e) {
-      toast.error("Mahnungen konnten nicht geladen werden", String(e));
+      toast.error("Mahnungen konnten nicht geladen werden", errorMessage(e));
       return [];
     }
   }
@@ -295,7 +295,7 @@
     try {
       return await countReleasableTimeEntries(inv.id);
     } catch (e) {
-      toast.error("Abgerechnete Zeiten konnten nicht geprüft werden", String(e));
+      toast.error("Abgerechnete Zeiten konnten nicht geprüft werden", errorMessage(e));
       return 0;
     }
   }
@@ -309,7 +309,7 @@
     try {
       return await listPdfVersions(pdfPath);
     } catch (e) {
-      toast.error("PDF-Versionen konnten nicht geladen werden", String(e));
+      toast.error("PDF-Versionen konnten nicht geladen werden", errorMessage(e));
       return [];
     }
   }
@@ -364,7 +364,7 @@
         toast.success(`Stornorechnung ${label} erstellt`);
         push(`/invoices/${newId}/edit`);
       } catch (e) {
-        toast.error("Stornorechnung fehlgeschlagen", String(e));
+        toast.error("Stornorechnung fehlgeschlagen", errorMessage(e));
       }
     });
   }
@@ -415,7 +415,7 @@
         await load();
         report = validated;
       } catch (e) {
-        toast.error("Validierung fehlgeschlagen", String(e));
+        toast.error("Validierung fehlgeschlagen", errorMessage(e));
       }
     });
     return report;
@@ -521,7 +521,7 @@
         { to: customerEmail, attachmentPath: pdfPath },
       );
     } catch (e) {
-      toast.error("E-Mail konnte nicht vorbereitet werden", String(e));
+      toast.error("E-Mail konnte nicht vorbereitet werden", errorMessage(e));
     } finally {
       mailing = false;
     }
@@ -536,7 +536,7 @@
         if (xrechnungExport.status === "exported") toast.success("XRechnung exportiert");
         else toast.warning("XRechnung nicht möglich", "Pflichtangaben fehlen, Details unter Dateien.");
       } catch (e) {
-        toast.error("XRechnung-Export fehlgeschlagen", String(e));
+        toast.error("XRechnung-Export fehlgeschlagen", errorMessage(e));
       }
     });
   }
@@ -545,7 +545,7 @@
     try {
       await revealItemInDir(xmlPath);
     } catch (e) {
-      toast.error("Ordner konnte nicht geöffnet werden", String(e));
+      toast.error("Ordner konnte nicht geöffnet werden", errorMessage(e));
     }
   }
 
@@ -629,7 +629,7 @@
     {#if invoice}
       <StatusBadge status={invoice.status} table={INVOICE_STATUS} />
       {#if isOverdue}
-        <Badge variant="late">{overdueLabel(daysOverdue(invoice.dueDate, nowUnix()))}</Badge>
+        <Badge variant="late">{overdueLabel(overdueDays(invoice.dueDate, nowUnix()))}</Badge>
       {/if}
       {#if invoice.lastValidationStatus || lastPdfPath}
         <button
@@ -821,9 +821,9 @@
       {/if}
 
       {#if invoice.status === "draft"}
-        <DetailPanel title="Vor dem Ausstellen">
+        <Panel title="Vor dem Ausstellen">
           <p class="text-sm text-muted-foreground">{issuePanelText(invoice)}</p>
-        </DetailPanel>
+        </Panel>
       {/if}
 
       <SkontoCard {invoice} />

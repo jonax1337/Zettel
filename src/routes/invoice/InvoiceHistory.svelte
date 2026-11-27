@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { Badge } from "$lib/ui";
+  import { errorMessage } from "$lib/utils/error-message";
+  import { Badge, Panel } from "$lib/ui";
   import { AlertTriangle, ShieldCheck } from "$lib/brand-icons";
   import { listInvoiceHistory, type AuditEntry } from "$lib/db/audit";
   import { describeAuditEntry } from "./audit-description";
   import type { Invoice } from "$lib/db/schema";
   import { checkInvoiceSeal, type InvoiceSealStatus } from "$lib/db/seals";
   import { formatDate, formatDateTime } from "$lib/utils/date";
-  import DetailPanel from "./detail/DetailPanel.svelte";
 
   type Props = { invoice: Invoice };
   let { invoice }: Props = $props();
@@ -35,7 +35,7 @@
         error = null;
       })
       .catch((e) => {
-        if (token === loadToken) error = String(e);
+        if (token === loadToken) error = errorMessage(e);
       })
       .finally(() => {
         if (token === loadToken) loading = false;
@@ -43,7 +43,7 @@
   });
 </script>
 
-<DetailPanel title="Verlauf">
+<Panel title="Verlauf">
   {#snippet aside()}
     <button
       type="button"
@@ -90,4 +90,4 @@
       </ul>
     {/if}
   {/if}
-</DetailPanel>
+</Panel>

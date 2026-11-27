@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import SettingsShell from "./SettingsShell.svelte";
   import { Button, toast, PERSISTENT_TOAST, CheckField } from "$lib/ui";
   import { RefreshCw } from "$lib/brand-icons";
@@ -24,7 +25,7 @@
       setUpdateChannel(enabled ? "beta" : "stable");
     } catch (e) {
       betaUpdates = !enabled;
-      toast.error("Einstellung nicht gespeichert", String(e));
+      toast.error("Einstellung nicht gespeichert", errorMessage(e));
       return;
     }
     if (enabled) void onCheckUpdate();
@@ -49,7 +50,7 @@
         toast.success("Bereits aktuell.", `Installierte Version: v${appVersion}`);
       }
     } catch (e) {
-      toast.error("Update-Prüfung fehlgeschlagen", String(e));
+      toast.error("Update-Prüfung fehlgeschlagen", errorMessage(e));
     } finally {
       updateChecking = false;
     }

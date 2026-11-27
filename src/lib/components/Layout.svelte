@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { push, router } from "svelte-spa-router";
   import { onMount, type Snippet } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -52,7 +53,7 @@
       }
     } catch (e) {
       console.error("Sealing issued invoices failed", e);
-      toast.error("Rechnungen konnten nicht versiegelt werden", String(e));
+      toast.error("Rechnungen konnten nicht versiegelt werden", errorMessage(e));
     }
   }
 

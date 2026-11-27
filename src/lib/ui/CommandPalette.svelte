@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { Dialog as DialogPrimitive } from "bits-ui";
   import { push } from "svelte-spa-router";
   import { invoke } from "@tauri-apps/api/core";
@@ -102,7 +103,7 @@
       results = found;
       activeIndex = 0;
     },
-    onError: (error) => toast.error("Suche fehlgeschlagen", String(error)),
+    onError: (error) => toast.error("Suche fehlgeschlagen", errorMessage(error)),
     delayMs: SEARCH_DEBOUNCE_MS,
   });
 

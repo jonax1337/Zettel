@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { join } from "@tauri-apps/api/path";
@@ -30,7 +31,7 @@
       intervalDays = String(settings.autoBackupIntervalDays);
       lastBackupAt = settings.lastAutoBackupAt;
     } catch (e) {
-      toast.error("Auto-Backup-Einstellung konnte nicht geladen werden", String(e));
+      toast.error("Auto-Backup-Einstellung konnte nicht geladen werden", errorMessage(e));
     }
     try {
       backupDir = await join(await invoke<string>("get_documents_root"), "Backups");
@@ -46,7 +47,7 @@
       intervalDays = newValue;
       toast.success("Auto-Backup gespeichert");
     } catch (e) {
-      toast.error("Speichern fehlgeschlagen", String(e));
+      toast.error("Speichern fehlgeschlagen", errorMessage(e));
     } finally {
       saving = false;
     }

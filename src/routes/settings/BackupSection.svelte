@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { open, save } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import { writeBackupZip, writeSafetyBackup } from "$lib/utils/backup";
@@ -57,7 +58,7 @@
       backupPassword = "";
       backupPasswordConfirm = "";
     } catch (e) {
-      toast.error("Backup fehlgeschlagen", String(e));
+      toast.error("Backup fehlgeschlagen", errorMessage(e));
     } finally {
       backupBusy = false;
     }
@@ -94,7 +95,7 @@
         toast.error("Passwort erforderlich", "Dieses Backup ist verschlüsselt.");
         return "needsPassword";
       }
-      toast.error("Wiederherstellung fehlgeschlagen", String(e));
+      toast.error("Wiederherstellung fehlgeschlagen", errorMessage(e));
       return "failed";
     } finally {
       restoreBusy = false;
@@ -126,7 +127,7 @@
         safetyBackup = await writeSafetyBackup(SAFETY_BACKUP_PREFIX);
       } catch (e) {
         await invoke<void>("discard_pending_restore");
-        throw new Error(`Sicherheits-Backup fehlgeschlagen, nichts wurde verändert: ${e}`);
+        throw new Error(`Sicherheits-Backup fehlgeschlagen, nichts wurde verändert: ${errorMessage(e)}`);
       }
       restored = await invoke<PartialRestoreOutcome>("apply_pending_partial_restore");
     });
@@ -171,7 +172,7 @@
     try {
       await relaunchApp();
     } catch (e) {
-      toast.error("Neustart fehlgeschlagen", `Bitte die App von Hand neu starten. ${e}`);
+      toast.error("Neustart fehlgeschlagen", `Bitte die App von Hand neu starten. ${errorMessage(e)}`);
     }
   }
 </script>

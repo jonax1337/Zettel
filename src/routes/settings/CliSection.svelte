@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { Button, toast, FormSection } from "$lib/ui";
@@ -16,7 +17,7 @@
       await navigator.clipboard.writeText(cliPath);
       toast.success("Pfad kopiert");
     } catch (e) {
-      toast.error("Pfad konnte nicht kopiert werden", String(e));
+      toast.error("Pfad konnte nicht kopiert werden", errorMessage(e));
     }
   }
 </script>

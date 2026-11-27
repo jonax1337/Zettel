@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { link, push } from "svelte-spa-router";
   import {
     listRecurring,
@@ -87,7 +88,7 @@
       await templates.reload();
       toast.success(row.active ? "Wiederkehrende Rechnung pausiert" : "Wiederkehrende Rechnung aktiviert");
     } catch (e) {
-      toast.error("Fehler", String(e));
+      toast.error("Fehler", errorMessage(e));
     }
   }
 </script>

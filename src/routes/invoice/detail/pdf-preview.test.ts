@@ -66,7 +66,7 @@ describe("showPdfPreview", () => {
       throw new Error("sidecar gone");
     });
 
-    expect(toast.error).toHaveBeenCalledWith("PDF-Vorschau fehlgeschlagen", "Error: sidecar gone");
+    expect(toast.error).toHaveBeenCalledWith("PDF-Vorschau fehlgeschlagen", "sidecar gone");
     expect(openPreviewPdf).not.toHaveBeenCalled();
   });
 
@@ -75,7 +75,7 @@ describe("showPdfPreview", () => {
 
     await showPdfPreview(rendered);
 
-    expect(toast.error).toHaveBeenCalledWith("Die Vorschau konnte nicht geöffnet werden", "Error: no viewer");
+    expect(toast.error).toHaveBeenCalledWith("Die Vorschau konnte nicht geöffnet werden", "no viewer");
     expect(toast.show).not.toHaveBeenCalled();
   });
 });

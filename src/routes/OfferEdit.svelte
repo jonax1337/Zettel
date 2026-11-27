@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
   import { tick, untrack } from "svelte";
   import { push, router } from "svelte-spa-router";
@@ -13,7 +14,7 @@
   import { offerKeepsStoredAmounts } from "./offer/offer-actions";
   import { addDaysUnix, fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { computeTotals } from "$lib/utils/totals";
-  import { DatePicker, PageHeader, Textarea, focusFirstInvalid, toast } from "$lib/ui";
+  import { DatePicker, PageHeader, Textarea, focusFirstInvalid, toast, Panel } from "$lib/ui";
   import { formatMoney } from "$lib/utils/currency";
   import { parseId } from "./parts/entity/edit-target";
   import AddressWindow from "./parts/editor/AddressWindow.svelte";
@@ -36,7 +37,6 @@
   import { createSaveError } from "./parts/editor/save-error.svelte";
   import { QUIET_FIELD } from "./parts/editor/quiet-field";
   import { vatExemptNote } from "./parts/editor/vat-note";
-  import DetailPanel from "./invoice/detail/DetailPanel.svelte";
   import NoticeCard from "./invoice/NoticeCard.svelte";
   import { createDocumentFormData } from "./invoice/document-form.svelte";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
@@ -187,7 +187,7 @@
         }
       })
       .catch((e) => {
-        if (!stale) loadError = String(e);
+        if (!stale) loadError = errorMessage(e);
       })
       .finally(() => {
         if (stale) return;
@@ -289,8 +289,8 @@
       unsaved.markClean();
       push(`/offers/${savedId}`);
     } catch (err) {
-      saveError.set(String(err));
-      toast.error("Speichern fehlgeschlagen", String(err));
+      saveError.set(errorMessage(err));
+      toast.error("Speichern fehlgeschlagen", errorMessage(err));
     } finally {
       saving = false;
     }
@@ -388,7 +388,7 @@
         {/snippet}
 
         {#snippet rail()}
-          <DetailPanel title="Optionen">
+          <Panel title="Optionen">
             <div class="grid gap-3.5">
               <CurrencyFields
                 bind:currency
@@ -412,7 +412,7 @@
                 {/snippet}
               </SkontoFields>
             </div>
-          </DetailPanel>
+          </Panel>
           {#if reference.selectedCustomer}
             <CustomerPanel customer={reference.selectedCustomer} />
           {/if}

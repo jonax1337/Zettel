@@ -1,5 +1,7 @@
+import { errorMessage } from "$lib/utils/error-message";
 import { push } from "svelte-spa-router";
 import type { SidecarResponse, SidecarSuccess } from "$lib/sidecar/types";
+import { refreshOverdueCount } from "$lib/overdue-count.svelte";
 import { toast } from "$lib/ui/toast.svelte";
 
 type DeleteOptions = {
@@ -37,10 +39,11 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
     await exclusive("action", async () => {
       try {
         await action();
+        void refreshOverdueCount();
         await reload();
         toast.success(label);
       } catch (e) {
-        toast.error("Aktion fehlgeschlagen", String(e));
+        toast.error("Aktion fehlgeschlagen", errorMessage(e));
       }
     });
   }
@@ -48,10 +51,11 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
   async function remove({ remove: deleteDocument, deletedLabel, redirectTo }: DeleteOptions) {
     try {
       await deleteDocument();
+      void refreshOverdueCount();
       toast.success(deletedLabel);
       push(redirectTo);
     } catch (e) {
-      toast.error("Löschen fehlgeschlagen", String(e));
+      toast.error("Löschen fehlgeschlagen", errorMessage(e));
     }
   }
 
@@ -70,8 +74,9 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
       if (prepare) {
         try {
           await prepare.run();
+          void refreshOverdueCount();
         } catch (e) {
-          toast.error(prepare.failureTitle, String(e));
+          toast.error(prepare.failureTitle, errorMessage(e));
           await reload();
           return;
         }
@@ -84,7 +89,7 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
           await failPdf(`${res.error.code}: ${res.error.message}`, res.error.message, !!prepare);
         }
       } catch (e) {
-        await failPdf(String(e), String(e), !!prepare);
+        await failPdf(errorMessage(e), errorMessage(e), !!prepare);
       }
     });
   }
@@ -100,7 +105,7 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
     try {
       await open(path);
     } catch (e) {
-      toast.error("PDF konnte nicht geöffnet werden", String(e));
+      toast.error("PDF konnte nicht geöffnet werden", errorMessage(e));
     }
   }
 

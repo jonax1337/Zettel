@@ -1,3 +1,4 @@
+import { errorMessage } from "$lib/utils/error-message";
 import {
   changedNumberCounters,
   loadSettings,
@@ -35,7 +36,7 @@ export class SettingsForm {
       this.settings = await loadSettings();
       this.#loadedCounters = { ...this.settings };
     } catch (e) {
-      this.error = String(e);
+      this.error = errorMessage(e);
     } finally {
       this.loading = false;
     }
@@ -54,8 +55,8 @@ export class SettingsForm {
       this.unsaved.markClean();
       toast.success("Einstellungen gespeichert");
     } catch (e) {
-      this.error = String(e);
-      toast.error("Speichern fehlgeschlagen", String(e));
+      this.error = errorMessage(e);
+      toast.error("Speichern fehlgeschlagen", errorMessage(e));
     } finally {
       this.saving = false;
     }
