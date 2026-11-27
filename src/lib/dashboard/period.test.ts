@@ -1,14 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  comparisonPeriod,
+  isRunning,
   loadDefaultPeriod,
+  monthKey,
   monthsIn,
+  oneYearEarlier,
   periodCustom,
   periodForMonth,
   periodForQuarter,
   periodForYear,
   saveDefaultPeriod,
 } from "./period";
-import { SECONDS_PER_DAY } from "$lib/utils/date";
+import { SECONDS_PER_DAY, toUnix } from "$lib/utils/date";
 
 function stubLocalStorage(initial: Record<string, string> = {}) {
   const store = new Map(Object.entries(initial));
@@ -80,5 +84,81 @@ describe("default period persistence", () => {
 
   it("falls back to the current year when storage is unavailable", () => {
     expect(loadDefaultPeriod().type).toBe("year");
+  });
+});
+
+describe("oneYearEarlier", () => {
+  const at = (year: number, month: number, day: number, hour = 0) => toUnix(new Date(year, month - 1, day, hour));
+
+  it("shifts a year and keeps its label format", () => {
+    expect(oneYearEarlier(periodForYear(2026))).toEqual(periodForYear(2025));
+  });
+
+  it("shifts a quarter and a month to the same span of the previous year", () => {
+    expect(oneYearEarlier(periodForQuarter(2026, 2))).toEqual(periodForQuarter(2025, 2));
+    expect(oneYearEarlier(periodForMonth(2026, 5))).toEqual(periodForMonth(2025, 5));
+  });
+
+  it("shifts a custom period by calendar year, not by 365 days", () => {
+    const earlier = oneYearEarlier(periodCustom(at(2025, 3, 1), at(2025, 4, 1)));
+
+    expect([earlier.start, earlier.end]).toEqual([at(2024, 3, 1), at(2024, 4, 1)]);
+  });
+
+  it("lands a Feb 29 start on Feb 28 of a year without one", () => {
+    const earlier = oneYearEarlier(periodCustom(at(2024, 2, 29), at(2024, 3, 10)));
+
+    expect(earlier.start).toBe(at(2023, 2, 28));
+  });
+
+  it("keeps 28 Feb in the earlier span when the period ends after 28 Feb of a leap year", () => {
+    // 1.-28. Feb 2024 has the exclusive end 29.02.; its comparison must include 28.02.2023.
+    const earlier = oneYearEarlier(periodCustom(at(2024, 2, 1), at(2024, 2, 29)));
+
+    expect([earlier.start, earlier.end]).toEqual([at(2023, 2, 1), at(2023, 3, 1)]);
+  });
+
+  it("keeps month i of the result aligned with month i of the period", () => {
+    const p = periodCustom(at(2025, 11, 10), at(2026, 2, 20));
+
+    expect(monthsIn(oneYearEarlier(p)).map((m) => m.month)).toEqual(monthsIn(p).map((m) => m.month));
+  });
+});
+
+describe("comparisonPeriod", () => {
+  const at = (year: number, month: number, day: number, hour = 0) => toUnix(new Date(year, month - 1, day, hour));
+
+  it("compares a finished period with the whole span one year earlier", () => {
+    expect(comparisonPeriod(periodForYear(2025), at(2026, 6, 1))).toEqual(periodForYear(2024));
+  });
+
+  it("stops a running period at the same day one year earlier, today included", () => {
+    const compared = comparisonPeriod(periodForYear(2026), at(2026, 11, 27, 15));
+
+    expect(compared.start).toBe(at(2025, 1, 1));
+    expect(compared.end).toBe(at(2025, 11, 28));
+  });
+
+  it("includes 28 Feb of the previous year when today is 28 Feb of a leap year", () => {
+    const compared = comparisonPeriod(periodForYear(2028), at(2028, 2, 28, 15));
+
+    expect(compared.end).toBe(at(2027, 3, 1));
+  });
+
+  it("does not stop a period that has not started yet", () => {
+    expect(comparisonPeriod(periodForYear(2027), at(2026, 11, 27))).toEqual(periodForYear(2026));
+  });
+});
+
+describe("isRunning and monthKey", () => {
+  it("includes the start and excludes the end", () => {
+    const p = periodForMonth(2026, 5);
+
+    expect([isRunning(p, p.start), isRunning(p, p.end - 1), isRunning(p, p.end)]).toEqual([true, true, false]);
+  });
+
+  it("writes keys like SQLite's %Y-%m", () => {
+    expect(monthKey({ year: 2026, month: 3 })).toBe("2026-03");
+    expect(monthKey({ year: 2026, month: 12 })).toBe("2026-12");
   });
 });

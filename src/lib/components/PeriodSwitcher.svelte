@@ -1,9 +1,13 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { Select, DatePicker } from "$lib/ui";
+  import { Popover } from "bits-ui";
+  import { Calendar, ChevronDown } from "$lib/brand-icons";
+  import { Button, Select, DatePicker } from "$lib/ui";
+  import { buttonVariants } from "$lib/ui/Button.svelte";
   import { type Period, type PeriodType, type Quarter, saveDefaultPeriod } from "$lib/dashboard/period";
   import { addDaysUnix, MONTHS_DE, toIsoDate } from "$lib/utils/date";
   import { periodFromSelection } from "./period-selection";
+  import { cn } from "$lib/utils";
 
   type Props = {
     period: Period;
@@ -44,6 +48,10 @@
   ];
   const monthItems = MONTHS_DE.map((label, i) => ({ value: String(i + 1), label }));
 
+  let open = $state(false);
+
+  const triggerLabel = $derived(period.type === "year" ? `Jahr ${period.label}` : period.label);
+
   function emit() {
     const selected = periodFromSelection({
       type,
@@ -56,6 +64,11 @@
     if (!selected) return;
     saveDefaultPeriod(selected);
     onChange(selected);
+  }
+
+  function applyCustom() {
+    emit();
+    open = false;
   }
 
   function onTypeChange(newType: PeriodType) {
@@ -73,43 +86,48 @@
   }
 </script>
 
-<div class="flex flex-wrap items-end gap-2">
-  <div class="w-44">
-    <Select items={typeItems} bind:value={type} onValueChange={onTypeChange} />
-  </div>
-
-  {#if type === "year"}
-    <div class="w-28">
-      <Select items={yearItems} bind:value={yearStr} onValueChange={() => emit()} />
-    </div>
-  {:else if type === "quarter"}
-    <div class="w-28">
-      <Select items={yearItems} bind:value={yearStr} onValueChange={() => emit()} />
-    </div>
-    <div class="w-40">
-      <Select items={quarterItems} bind:value={quarterStr} onValueChange={() => emit()} />
-    </div>
-  {:else if type === "month"}
-    <div class="w-28">
-      <Select items={yearItems} bind:value={yearStr} onValueChange={() => emit()} />
-    </div>
-    <div class="w-40">
-      <Select items={monthItems} bind:value={monthStr} onValueChange={() => emit()} />
-    </div>
-  {:else}
-    <div class="w-40">
-      <DatePicker bind:value={customFrom} />
-    </div>
-    <span class="text-sm text-muted-foreground pb-2">–</span>
-    <div class="w-40">
-      <DatePicker bind:value={customTo} />
-    </div>
-    <button
-      type="button"
-      onclick={emit}
-      class="h-9 px-3 rounded-md bg-primary text-primary-foreground text-sm hover:bg-primary/90 transition-colors cursor-pointer"
+<Popover.Root bind:open>
+  <Popover.Trigger class={cn(buttonVariants({ variant: "outline" }), "data-[state=open]:bg-surface-strong")} aria-label="Zeitraum wählen: {triggerLabel}">
+    <Calendar />
+    <span class="tabular-nums">{triggerLabel}</span>
+    <ChevronDown class="text-muted-foreground" />
+  </Popover.Trigger>
+  <Popover.Portal>
+    <Popover.Content
+      sideOffset={6}
+      align="end"
+      class={cn(
+        "bg-popover text-popover-foreground z-50 flex w-72 flex-col gap-3 rounded-lg border p-4 shadow-lg",
+        "data-[state=open]:animate-in data-[state=closed]:animate-out",
+        "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+        "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+      )}
     >
-      Anwenden
-    </button>
-  {/if}
-</div>
+      <Select items={typeItems} bind:value={type} onValueChange={onTypeChange} aria-label="Art des Zeitraums" />
+
+      {#if type === "year"}
+        <Select items={yearItems} bind:value={yearStr} onValueChange={() => emit()} aria-label="Jahr" />
+      {:else if type === "quarter"}
+        <div class="grid grid-cols-[6rem_1fr] gap-2">
+          <Select items={yearItems} bind:value={yearStr} onValueChange={() => emit()} aria-label="Jahr" />
+          <Select items={quarterItems} bind:value={quarterStr} onValueChange={() => emit()} aria-label="Quartal" />
+        </div>
+      {:else if type === "month"}
+        <div class="grid grid-cols-[6rem_1fr] gap-2">
+          <Select items={yearItems} bind:value={yearStr} onValueChange={() => emit()} aria-label="Jahr" />
+          <Select items={monthItems} bind:value={monthStr} onValueChange={() => emit()} aria-label="Monat" />
+        </div>
+      {:else}
+        <div class="flex flex-col gap-1">
+          <span class="text-xs text-muted-foreground">Von</span>
+          <DatePicker bind:value={customFrom} />
+        </div>
+        <div class="flex flex-col gap-1">
+          <span class="text-xs text-muted-foreground">Bis</span>
+          <DatePicker bind:value={customTo} />
+        </div>
+        <Button variant="outline" onclick={applyCustom}>Anwenden</Button>
+      {/if}
+    </Popover.Content>
+  </Popover.Portal>
+</Popover.Root>

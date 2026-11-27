@@ -89,6 +89,7 @@
 
   --series-1: #e65a41;
   --series-2: #7a52a8;
+  --series-ref: #30272c;
   --age-0: #d9c8c1;
   --age-1: #f0c36d;
   --age-2: #e58a3c;
@@ -130,6 +131,7 @@
 
   --series-1: #f06b53;
   --series-2: #9b7fd6;
+  --series-ref: #fbf3ee;
   --age-0: #5a4d53;
   --age-1: #d9a546;
   --age-2: #e07f37;
@@ -184,6 +186,7 @@
 
   --color-series-1: var(--series-1);
   --color-series-2: var(--series-2);
+  --color-series-ref: var(--series-ref);
   --color-age-0: var(--age-0);
   --color-age-1: var(--age-1);
   --color-age-2: var(--age-2);

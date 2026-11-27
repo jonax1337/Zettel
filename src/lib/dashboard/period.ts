@@ -1,4 +1,4 @@
-import { MONTHS_DE, MONTHS_DE_SHORT, toUnix } from "$lib/utils/date";
+import { addDaysUnix, MONTHS_DE, MONTHS_DE_SHORT, startOfDayUnix, toUnix } from "$lib/utils/date";
 
 export type PeriodType = "year" | "quarter" | "month" | "custom";
 
@@ -137,6 +137,64 @@ export function saveDefaultPeriod(p: Period): void {
   } catch {
     // Storage blocked: the choice just doesn't persist across sessions.
   }
+}
+
+/** The key under which SQL `strftime('%Y-%m', …)` reports a month. */
+export function monthKey(m: Pick<MonthSlice, "year" | "month">): string {
+  return `${m.year}-${String(m.month).padStart(2, "0")}`;
+}
+
+/** A Feb 29 lands on Feb 28 in a year without one. */
+function oneYearBefore(unixSeconds: number): number {
+  const d = new Date(unixSeconds * 1000);
+  const year = d.getFullYear() - 1;
+  const lastDayOfMonth = new Date(year, d.getMonth() + 1, 0).getDate();
+  return toUnix(
+    new Date(year, d.getMonth(), Math.min(d.getDate(), lastDayOfMonth), d.getHours(), d.getMinutes(), d.getSeconds()),
+  );
+}
+
+/**
+ * The exclusive end one year earlier. It follows the last included day, not the
+ * end itself: an end of 29 Feb would otherwise cut 28 Feb off the earlier span.
+ */
+function exclusiveEndOneYearBefore(exclusiveEnd: number): number {
+  return addDaysUnix(oneYearBefore(addDaysUnix(exclusiveEnd, -1)), 1);
+}
+
+function periodSpan(type: PeriodType, start: number, end: number): Period {
+  const first = new Date(start * 1000);
+  switch (type) {
+    case "year":
+      return periodForYear(first.getFullYear());
+    case "quarter":
+      return periodForQuarter(first.getFullYear(), (Math.floor(first.getMonth() / MONTHS_PER_QUARTER) + 1) as Quarter);
+    case "month":
+      return periodForMonth(first.getFullYear(), first.getMonth() + 1);
+    case "custom":
+      return periodCustom(start, end);
+  }
+}
+
+/** The same calendar span one year earlier, so month i of the result is month i of `p`. */
+export function oneYearEarlier(p: Period): Period {
+  return periodSpan(p.type, oneYearBefore(p.start), exclusiveEndOneYearBefore(p.end));
+}
+
+export function isRunning(p: Period, now: number): boolean {
+  return p.start <= now && now < p.end;
+}
+
+/**
+ * What to compare a period against: the same span one year earlier. While the
+ * period is still running, only up to today's date, so a year-to-date figure is
+ * not set against a whole year.
+ */
+export function comparisonPeriod(p: Period, now: number): Period {
+  const earlier = oneYearEarlier(p);
+  if (!isRunning(p, now)) return earlier;
+  const tomorrow = addDaysUnix(startOfDayUnix(new Date(now * 1000)), 1);
+  return { ...earlier, end: exclusiveEndOneYearBefore(tomorrow) };
 }
 
 /** Iterate months inside a period for monthly aggregation. */

@@ -1,61 +1,54 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
-  import { Card, CardContent } from "$lib/ui";
-  import { Trophy } from "$lib/brand-icons";
-  import type { TopCustomerRow } from "$lib/dashboard/queries";
+  import { link } from "svelte-spa-router";
+  import { Card } from "$lib/ui";
+  import ShareList from "$lib/components/charts/ShareList.svelte";
   import { centsToEur } from "$lib/utils/money";
+  import { pluralize } from "../entity/format";
+  import type { CustomerShare } from "./chart-data";
 
   type Props = {
     periodLabel: string;
     loading: boolean;
-    customers: TopCustomerRow[];
+    error: string | null;
+    shares: CustomerShare[];
+    customerCount: number | null;
   };
-  let { periodLabel, loading, customers }: Props = $props();
+  let { periodLabel, loading, error, shares, customerCount }: Props = $props();
 
-  const maxTotal = $derived(Math.max(1, ...customers.map((c) => c.total)));
+  const items = $derived(
+    shares.map(({ customer, percent, ratio }) => ({
+      key: customer.customerId,
+      label: customer.name,
+      value: centsToEur(customer.total),
+      share: percent === null ? null : `${percent} %`,
+      ratio,
+      tooltip: [
+        customer.name,
+        `${centsToEur(customer.total)} brutto · ${customer.invoiceCount} ${pluralize(customer.invoiceCount, "Rechnung", "Rechnungen")}`,
+        percent === null ? "" : `${percent} % des Umsatzes`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      href: `/customers/${customer.customerId}`,
+    })),
+  );
 </script>
 
-<Card>
-  <CardContent>
-    <div class="flex items-center justify-between mb-3">
-      <div>
-        <div class="text-xs text-muted-foreground uppercase tracking-wider">Top-5-Kunden</div>
-        <div class="text-xs text-muted-foreground mt-0.5">{periodLabel}</div>
-      </div>
-      <Trophy class="size-4 text-muted-foreground" />
-    </div>
-    {#if loading}
-      <div class="h-32 grid place-items-center text-sm text-muted-foreground">Lade…</div>
-    {:else if customers.length === 0}
-      <div class="h-32 grid place-items-center text-sm text-muted-foreground text-center">
-        Keine Rechnungen<br />im Zeitraum.
-      </div>
-    {:else}
-      <ul class="flex flex-col gap-2.5">
-        {#each customers as customer, i (customer.customerId)}
-          <li>
-            <button
-              type="button"
-              onclick={() => push(`/customers/${customer.customerId}`)}
-              class="w-full text-left group"
-            >
-              <div class="flex items-baseline justify-between gap-2 text-sm">
-                <span class="flex items-baseline gap-2 min-w-0">
-                  <span class="text-muted-foreground tabular-nums w-4 shrink-0 text-xs">{i + 1}.</span>
-                  <span class="truncate group-hover:text-foreground transition-colors">{customer.name}</span>
-                </span>
-                <span class="font-mono tabular-nums text-xs shrink-0">{centsToEur(customer.total)}</span>
-              </div>
-              <div class="mt-1.5 ml-6 h-1 rounded-full bg-muted overflow-hidden">
-                <div
-                  class="h-full bg-primary/70 group-hover:bg-primary transition-all"
-                  style="width: {(customer.total / maxTotal) * 100}%"
-                ></div>
-              </div>
-            </button>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </CardContent>
+<Card class="gap-0 p-5">
+  <div class="mb-1 flex items-baseline gap-2.5">
+    <h2>Stärkste Kunden</h2>
+    <a href="/customers" use:link class="ml-auto text-[13px] font-semibold text-muted-foreground hover:text-foreground">
+      {customerCount === null ? "Alle Kunden" : `Alle ${customerCount} ${pluralize(customerCount, "Kunde", "Kunden")}`}
+    </a>
+  </div>
+  <div class="mb-3.5 text-[13px] text-muted-foreground">Anteil am Umsatz {periodLabel}, brutto</div>
+  {#if error}
+    <p class="text-sm text-destructive">Konnte nicht geladen werden: {error}</p>
+  {:else if loading}
+    <p class="text-sm text-muted-foreground">Lade…</p>
+  {:else if items.length === 0}
+    <p class="text-sm text-muted-foreground">Keine Rechnungen im Zeitraum.</p>
+  {:else}
+    <ShareList {items} ariaLabel="Stärkste Kunden nach Umsatz" />
+  {/if}
 </Card>

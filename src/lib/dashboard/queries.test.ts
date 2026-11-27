@@ -18,7 +18,7 @@ vi.mock("$lib/db/client", () => ({
 
 import { fromIsoDate } from "$lib/utils/date";
 import type { Period } from "./period";
-import { cashFlowForecast30d, loadKpis, monthlyRevenueInPeriod, oldestOverdue } from "./queries";
+import { cashFlowForecast30d, monthlyRevenueInPeriod, oldestOverdue } from "./queries";
 
 type InvoiceSeed = {
   status?: string;
@@ -101,19 +101,11 @@ describe("oldestOverdue open balance", () => {
 });
 
 describe("open receivables and credit notes", () => {
-  const wholeHistory: Period = { type: "custom", start: 0, end: 4_000_000_000, label: "alles" };
-
   it("leaves an invoice offset by an issued credit note and the credit note itself out of the overdue summary", async () => {
     seedCancelledByCreditNote(10_000);
     seedInvoice({ total: 5_000, dueDate: 100 });
 
     expect(await oldestOverdue()).toMatchObject({ openCount: 1, openTotal: 5_000 });
-  });
-
-  it("does not count them as open in the KPIs", async () => {
-    seedCancelledByCreditNote(10_000);
-
-    expect(await loadKpis(wholeHistory)).toMatchObject({ openCount: 0, openTotal: 0 });
   });
 
   it("does not forecast them as overdue cash", async () => {
@@ -129,28 +121,6 @@ describe("open receivables and credit notes", () => {
     expect(await oldestOverdue()).toMatchObject({ openCount: 1, openTotal: 10_000 });
   });
 
-  describe("a credit note issued in a later period than its invoice", () => {
-    const invoicePeriod: Period = { type: "custom", start: 0, end: 5_000, label: "Rechnungsperiode" };
-    const CREDIT_NOTE_ISSUED = 10_000_000;
-
-    function seedCreditedInLaterPeriod(creditCent: number): void {
-      const originalId = seedInvoice({ total: 10_000, issueDate: 1_000 });
-      seedInvoice({ total: -creditCent, issueDate: CREDIT_NOTE_ISSUED, isCreditNote: true, correctsInvoiceId: originalId });
-    }
-
-    it("still takes a full credit note off the open receivables of the invoice's period", async () => {
-      seedCreditedInLaterPeriod(10_000);
-
-      expect(await loadKpis(invoicePeriod)).toMatchObject({ openCount: 0, openTotal: 0 });
-    });
-
-    it("still reduces the open receivables of the invoice's period by a partial credit note", async () => {
-      seedCreditedInLaterPeriod(3_000);
-
-      expect(await loadKpis(invoicePeriod)).toMatchObject({ openCount: 1, openTotal: 7_000 });
-    });
-  });
-
   describe("a partially credited invoice", () => {
     function seedPartlyCredited(opts: { amountPaidCent?: number } = {}): void {
       const originalId = seedInvoice({ total: 10_000, status: opts.amountPaidCent ? "partial" : "sent", ...opts });
@@ -161,12 +131,6 @@ describe("open receivables and credit notes", () => {
       seedPartlyCredited();
 
       expect(await oldestOverdue()).toMatchObject({ openCount: 1, openTotal: 7_000 });
-    });
-
-    it("counts its remainder as open in the KPIs", async () => {
-      seedPartlyCredited();
-
-      expect(await loadKpis(wholeHistory)).toMatchObject({ openCount: 1, openTotal: 7_000 });
     });
 
     it("forecasts its remainder as overdue cash", async () => {

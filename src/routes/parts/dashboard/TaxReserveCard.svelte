@@ -1,52 +1,63 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
-  import { Card, CardContent } from "$lib/ui";
-  import { ArrowRight } from "$lib/brand-icons";
+  import { link } from "svelte-spa-router";
+  import { Card } from "$lib/ui";
   import type { TaxRücklageResult } from "$lib/dashboard/tax";
   import { centsToEur } from "$lib/utils/money";
 
-  type Props = { reserve: TaxRücklageResult };
-  let { reserve }: Props = $props();
+  type Props = {
+    reserve: TaxRücklageResult | null;
+    loading: boolean;
+    error: string | null;
+  };
+  let { reserve, loading, error }: Props = $props();
+
+  const estimated = $derived(reserve?.projected.totalTaxBurdenCent ?? 0);
+  const prepaidPercent = $derived(
+    reserve && estimated > 0
+      ? Math.min(100, Math.max(0, Math.round((reserve.prepaymentsCent / estimated) * 100)))
+      : 0,
+  );
 </script>
 
-<button type="button" onclick={() => push("/reports/taxes")} class="block w-full text-left mb-6 group">
-  <Card class="cursor-pointer hover:bg-muted/30 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
-    <CardContent>
-      <div class="flex items-center justify-between gap-6">
-        <div class="min-w-0">
-          <div class="text-xs text-muted-foreground uppercase tracking-wider">
-            Steuer-Rücklage {reserve.year} · Tarif {reserve.projected.income.tarifYear}
-          </div>
-          <div class="flex items-baseline gap-6 mt-0.5">
-            <div>
-              <div class="text-2xl font-semibold tabular-nums">
-                {centsToEur(reserve.ytd.recommendedReserveCent)}
-              </div>
-              <div class="text-[10px] text-muted-foreground uppercase tracking-wider">YTD</div>
-            </div>
-            <div>
-              <div class="text-2xl font-semibold tabular-nums text-muted-foreground">
-                {centsToEur(reserve.projected.recommendedReserveCent)}
-              </div>
-              <div class="text-[10px] text-muted-foreground uppercase tracking-wider">Hochgerechnet</div>
-            </div>
-            {#if reserve.flags.usePauschal}
-              <div>
-                <div class="text-2xl font-semibold tabular-nums text-muted-foreground">
-                  {centsToEur(reserve.pauschalReserveCent)}
-                </div>
-                <div class="text-[10px] text-muted-foreground uppercase tracking-wider">
-                  Pauschal {reserve.flags.pauschalPercent}%
-                </div>
-              </div>
-            {/if}
-          </div>
-        </div>
-        <div class="inline-flex items-center gap-1 text-xs text-muted-foreground group-hover:text-foreground transition-colors shrink-0">
-          Details
-          <ArrowRight class="size-3.5 transition-transform group-hover:translate-x-0.5" />
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-</button>
+<Card class="gap-0 p-5">
+  <div class="mb-2.5 flex items-baseline gap-2.5">
+    <h2>Steuer-Rücklage</h2>
+    <a href="/reports/taxes" use:link class="ml-auto text-[13px] font-semibold text-muted-foreground hover:text-foreground">
+      Details
+    </a>
+  </div>
+  {#if error}
+    <p class="text-sm text-destructive">Konnte nicht berechnet werden: {error}</p>
+  {:else if loading || !reserve}
+    <p class="text-sm text-muted-foreground">Lade…</p>
+  {:else}
+    <div class="font-display text-[26px] leading-[1.15] font-extrabold tracking-tight tabular-nums">
+      {centsToEur(estimated)}
+    </div>
+    <div class="text-[13px] text-muted-foreground">
+      geschätzte Steuerlast {reserve.year}, hochgerechnet (Tarif {reserve.projected.income.tarifYear})
+    </div>
+    <div
+      class="my-4 h-2 overflow-hidden rounded-full bg-muted"
+      role="progressbar"
+      aria-label="{centsToEur(reserve.prepaymentsCent)} von {centsToEur(estimated)} vorausgezahlt"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={prepaidPercent}
+    >
+      <span class="block h-full rounded-full bg-status-ok" style="width: {prepaidPercent}%"></span>
+    </div>
+    <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px] tabular-nums">
+      <dt class="text-muted-foreground">Vorausgezahlt</dt>
+      <dd class="text-right font-semibold">{centsToEur(reserve.prepaymentsCent)}</dd>
+      <dt class="text-muted-foreground">Noch zurücklegen</dt>
+      <dd class="text-right font-semibold">{centsToEur(reserve.projected.recommendedReserveCent)}</dd>
+      <dt class="text-muted-foreground">Bisher zurückzulegen</dt>
+      <dd class="text-right font-semibold">{centsToEur(reserve.ytd.recommendedReserveCent)}</dd>
+      {#if reserve.flags.usePauschal}
+        <dt class="text-muted-foreground">Pauschal {reserve.flags.pauschalPercent} %</dt>
+        <dd class="text-right font-semibold">{centsToEur(reserve.pauschalReserveCent)}</dd>
+      {/if}
+    </dl>
+  {/if}
+</Card>
