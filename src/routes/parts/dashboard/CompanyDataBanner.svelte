@@ -1,7 +1,7 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
   import { AlertTriangle, ArrowRight } from "$lib/brand-icons";
-  import { companySettingsRoute } from "$lib/utils/company-completeness";
+  import { companySettingsRoute, missingCompanyDataList } from "$lib/utils/company-completeness";
 
   type Props = { missing: string[] };
   let { missing }: Props = $props();
@@ -13,7 +13,7 @@
     <h2 class="text-sm">Stammdaten unvollständig</h2>
     <p class="text-[13px]">
       Rechnungen, Angebote und Mahnungen lassen sich erst erzeugen, wenn diese Angaben ergänzt sind:
-      {missing.join(", ")}.
+      {missingCompanyDataList(missing)}.
     </p>
   </div>
   <a

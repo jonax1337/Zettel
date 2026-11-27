@@ -84,3 +84,11 @@ describe("companySettingsRoute", () => {
     expect(companySettingsRoute([])).toBe(COMPANY_SETTINGS_ROUTE);
   });
 });
+
+describe("the list of missing data inside a sentence", () => {
+  it("ends with one period even when the last label has its own", () => {
+    const message = companyIncompleteMessage(["Anschrift", "Steuernummer oder USt-IdNr."]);
+    expect(message).toContain("Steuernummer oder USt-IdNr. Bitte");
+    expect(message).not.toContain("..");
+  });
+});
