@@ -121,7 +121,9 @@ Der CLI repliziert bewusst die App-Logik aus `src/lib/db/{invoices,offers,remind
   (`sidecar/tests/test_cli_parity.py`) gemeinsam
 - **Sidecar**: JSON-RPC über stdin/stdout (UTF-8). Gesucht wird in dieser Reihenfolge: `ZETTEL_SIDECAR`,
   installierte App, `sidecar/.venv` im Repo. `ZETTEL_SIDECAR` nimmt das Sidecar-Binary oder einen
-  Python-Interpreter (Dateiname beginnt mit `python`), der dann `sidecar/main.py` ausführt
+  Python-Interpreter (Dateiname beginnt mit `python`), der dann `sidecar/main.py` ausführt. Die installierte
+  `zettel-cli` nimmt nur `ZETTEL_SIDECAR` (als Binary) oder den Sidecar ihrer Installation (`../sidecar/`),
+  nie Repo-Pfade: das onefile-Binary entpackt sich nach `/tmp`, Pfade relativ dazu wären fremd beschreibbar
 
 Bei Änderungen an der App-Logik (Migrationen, Payload-Format) müssen beide
 Stellen angefasst werden.
