@@ -438,7 +438,7 @@
     const unchanged = existing?.vendorId === vendorId && existing.number === number;
     if (unchanged) return null;
     try {
-      return findDuplicateExpense(await listExpenses({ vendorId }), {
+      return findDuplicateExpense(await listExpenses({ vendorId }, { categories: false }), {
         id,
         vendorId,
         number,

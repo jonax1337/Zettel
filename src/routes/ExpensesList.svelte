@@ -78,11 +78,12 @@
 
   const statusItems = statusFilterItems(EXPENSE_STATUS, EXPENSE_STATUS_FILTER_ORDER);
 
-  type SortKey = "internalNumber" | "number" | "issueDate" | "vendor" | "total" | "status" | "dueDate";
+  type SortKey = "internalNumber" | "number" | "issueDate" | "vendor" | "category" | "total" | "status" | "dueDate";
   const sort = createListSort<SortKey>("expenses", { key: "issueDate", dir: "desc" });
   const columns: SortColumn<SortKey>[] = [
     { key: "internalNumber", label: "Interne Nr.", class: "whitespace-nowrap" },
     { key: "vendor", label: "Lieferant", class: "w-full" },
+    { key: "category", label: "Kategorie", class: `${WIDE_ONLY} whitespace-nowrap` },
     { key: "number", label: "Beleg-Nr.", class: `${WIDE_ONLY} whitespace-nowrap` },
     { key: "issueDate", label: "Datum", class: "whitespace-nowrap" },
     { key: "dueDate", label: "Fällig", class: `${WIDE_ONLY} whitespace-nowrap` },
@@ -95,6 +96,7 @@
       number: (r) => r.number,
       issueDate: (r) => r.issueDate,
       vendor: (r) => r.vendorName,
+      category: (r) => r.mainCategory,
       total: (r) => r.total,
       status: (r) => r.status,
       dueDate: (r) => r.dueDate,
@@ -204,6 +206,13 @@
             </a>
           </td>
           <td class="w-full"><span class="line-clamp-2" title={e.vendorName}>{e.vendorName}</span></td>
+          <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap">
+            {#if e.mainCategory}
+              {e.mainCategory}{#if e.extraCategoryCount > 0}<span class="ml-1 tabular-nums">+{e.extraCategoryCount}</span>{/if}
+            {:else}
+              –
+            {/if}
+          </td>
           <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap tabular-nums">{e.number ?? "–"}</td>
           <td class="text-muted-foreground whitespace-nowrap tabular-nums">{formatDate(e.issueDate)}</td>
           <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap tabular-nums">

@@ -137,7 +137,22 @@ export type ExpenseFilter = {
   search?: string;
 };
 
-export type ExpenseListRow = Expense & { vendorName: string };
+export type ExpenseListRow = Expense & {
+  vendorName: string;
+  /** Category of the largest line item (by amount); null while no item has one. */
+  mainCategory: string | null;
+  /** How many further distinct categories the other line items carry. */
+  extraCategoryCount: number;
+};
+
+// An item's category is the curated one when linked, otherwise its free text.
+const ITEM_CATEGORY_SQL = `COALESCE(c.name, NULLIF(i.category, ''))`;
+const ITEM_CATEGORY_FROM = `expense_items i LEFT JOIN expense_categories c ON c.id = i.category_id
+       WHERE i.expense_id = e.id AND ${ITEM_CATEGORY_SQL} IS NOT NULL`;
+
+const CATEGORY_COLUMNS_SQL = `(SELECT ${ITEM_CATEGORY_SQL} FROM ${ITEM_CATEGORY_FROM}
+             ORDER BY ABS(i.line_total) DESC, i.position ASC LIMIT 1) AS main_category,
+            (SELECT COUNT(DISTINCT ${ITEM_CATEGORY_SQL}) FROM ${ITEM_CATEGORY_FROM}) AS category_count`;
 
 function buildExpenseFilter(filter: ExpenseFilter) {
   const { vendorId, ...rest } = filter;
@@ -147,10 +162,17 @@ function buildExpenseFilter(filter: ExpenseFilter) {
   });
 }
 
-export async function listExpenses(filter: ExpenseFilter = {}): Promise<ExpenseListRow[]> {
+/** `categories: false` skips the category subselects for callers that only need the expenses themselves. */
+export async function listExpenses(
+  filter: ExpenseFilter = {},
+  { categories = true }: { categories?: boolean } = {},
+): Promise<ExpenseListRow[]> {
   const { where, binds } = buildExpenseFilter(filter);
-  const rows = await select<ExpenseRow & { vendor_name: string | null }>(
-    `SELECT e.*, v.name AS vendor_name
+  const rows = await select<
+    ExpenseRow & { vendor_name: string | null; main_category: string | null; category_count: number }
+  >(
+    `SELECT e.*, v.name AS vendor_name,
+            ${categories ? CATEGORY_COLUMNS_SQL : "NULL AS main_category, 0 AS category_count"}
      FROM expenses e
      LEFT JOIN vendors v ON v.id = e.vendor_id
      ${where}
@@ -160,6 +182,8 @@ export async function listExpenses(filter: ExpenseFilter = {}): Promise<ExpenseL
   return rows.map((r) => ({
     ...mapExpense(r),
     vendorName: r.vendor_name ?? MISSING_NAME,
+    mainCategory: r.main_category,
+    extraCategoryCount: Math.max(r.category_count - 1, 0),
   }));
 }
 

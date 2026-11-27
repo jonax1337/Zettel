@@ -115,7 +115,7 @@
     {/snippet}
   </PageHeader>
 
-  <CustomerStats {overview} {year} />
+  <CustomerStats {overview} {year} customerId={customer.id} />
 
   <div class="grid items-start gap-7 min-[1321px]:grid-cols-[minmax(0,1fr)_320px]">
     <div class="min-w-0">

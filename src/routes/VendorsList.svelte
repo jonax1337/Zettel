@@ -1,13 +1,18 @@
 <script lang="ts">
   import { link, push } from "svelte-spa-router";
+  import { periodForYear } from "$lib/dashboard/period";
   import { deleteVendor, listVendors } from "$lib/db/queries";
   import type { Vendor } from "$lib/db/schema";
+  import { loadVendorListFigures, type VendorExpenseFigures } from "$lib/db/vendor-overview";
+  import { formatDate } from "$lib/utils/date";
+  import { centsToEur } from "$lib/utils/money";
   import { Button, ConfirmDialog, PageHeader, QueryBoundary } from "$lib/ui";
   import { Plus } from "$lib/brand-icons";
   import { applySort } from "$lib/utils/sort";
   import { WIDE_ONLY } from "./invoice/list-support";
   import RowActionsMenu from "./parts/entity/RowActionsMenu.svelte";
   import SearchInput from "./parts/entity/SearchInput.svelte";
+  import { withFigures } from "./parts/vendor/vendor-list";
   import { createDeleteFlow } from "./parts/entity/delete-flow.svelte";
   import { createListFilters } from "./parts/entity/list-filters.svelte";
   import ListEmptyState from "./parts/entity/ListEmptyState.svelte";
@@ -26,21 +31,46 @@
     vendors.reload();
   });
 
-  type SortKey = "vendorNumber" | "name" | "city" | "email";
+  const year = new Date().getFullYear();
+  const NO_FIGURE = "–";
+
+  // The figures do not depend on the search term, so they load once, not with every keystroke.
+  const figures = createQueryState<ReadonlyMap<number, VendorExpenseFigures>>(new Map(), () =>
+    loadVendorListFigures(periodForYear(year)),
+  );
+  $effect(() => {
+    figures.reload();
+  });
+
+  const listQuery = {
+    get loading() {
+      return vendors.loading || figures.loading;
+    },
+    get error() {
+      return vendors.error ?? figures.error;
+    },
+  };
+  const rows = $derived(withFigures(vendors.data, figures.data));
+
+  type SortKey = "vendorNumber" | "name" | "city" | "email" | "grossInPeriod" | "lastExpenseDate";
   const sort = createListSort<SortKey>("vendors", { key: "name", dir: "asc" });
   const columns: SortColumn<SortKey>[] = [
     { key: "vendorNumber", label: "Nr.", class: "whitespace-nowrap" },
     { key: "name", label: "Name", class: "w-full" },
     { key: "city", label: "Ort", class: "whitespace-nowrap" },
     { key: "email", label: "E-Mail", class: `${WIDE_ONLY} whitespace-nowrap` },
+    { key: "grossInPeriod", label: `Ausgaben ${year} brutto`, align: "right", class: "text-right whitespace-nowrap" },
+    { key: "lastExpenseDate", label: "Letzte Ausgabe", class: `${WIDE_ONLY} whitespace-nowrap` },
   ];
 
   const sortedVendors = $derived(
-    applySort(vendors.data, sort.state, {
+    applySort(rows, sort.state, {
       vendorNumber: (v) => v.vendorNumber,
       name: (v) => v.name,
       city: (v) => v.city,
       email: (v) => v.email,
+      grossInPeriod: (v) => v.grossInPeriod,
+      lastExpenseDate: (v) => v.lastExpenseDate,
     }),
   );
 
@@ -74,7 +104,7 @@
   />
 </ListToolbar>
 
-<QueryBoundary query={vendors} isEmpty={vendors.data.length === 0}>
+<QueryBoundary query={listQuery} isEmpty={vendors.data.length === 0}>
   {#snippet empty()}
     <ListEmptyState
       filtered={filters.isFiltered}
@@ -103,6 +133,12 @@
           </td>
           <td class="text-muted-foreground whitespace-nowrap">{v.city}</td>
           <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap">{v.email ?? ""}</td>
+          <td class="text-right font-semibold whitespace-nowrap tabular-nums">
+            {#if v.grossInPeriod}{centsToEur(v.grossInPeriod)}{:else}<span class="font-normal text-muted-foreground">{NO_FIGURE}</span>{/if}
+          </td>
+          <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap tabular-nums">
+            {v.lastExpenseDate ? formatDate(v.lastExpenseDate) : NO_FIGURE}
+          </td>
           <td class="text-right" onclick={(e) => e.stopPropagation()}>
             <RowActionsMenu onEdit={() => editVendor(v)} onDelete={() => deletion.ask(v)} />
           </td>

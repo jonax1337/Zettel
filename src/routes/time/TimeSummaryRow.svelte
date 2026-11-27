@@ -8,17 +8,19 @@
 
   type Props = {
     period: TimePeriod;
+    /** Replaces the period's own name on the first figure, e.g. when the list spans all periods. */
+    totalLabel?: string;
     summary: TimeSummary;
     /** Why the open entries cannot be billed in one go; null when they can. */
     billingBlocker: string | null;
     canBill: boolean;
     onBillOpen: () => void;
   };
-  let { period, summary, billingBlocker, canBill, onBillOpen }: Props = $props();
+  let { period, totalLabel, summary, billingBlocker, canBill, onBillOpen }: Props = $props();
 </script>
 
 <StatRow>
-  <Stat label={periodTotalLabel(period, new Date())} value="{formatDuration(summary.totalMinutes)} Std" />
+  <Stat label={totalLabel ?? periodTotalLabel(period, new Date())} value="{formatDuration(summary.totalMinutes)} Std" />
   <Stat
     label="Noch nicht abgerechnet"
     value="{formatDuration(summary.openMinutes)} Std"

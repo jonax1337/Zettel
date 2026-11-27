@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import { flip } from "svelte/animate";
   import { Button, CatalogPicker, Input, LinePeriodPopover, Select, Textarea } from "$lib/ui";
   import { ChevronDown, ChevronUp, FileText, GripVertical, Package, Plus, Trash2, X } from "$lib/brand-icons";
@@ -30,6 +30,8 @@
     readOnly?: boolean;
     totalLabel?: string;
     vatNote?: string | null;
+    /** Further quiet actions next to "Position" and "Aus Katalog". */
+    actions?: Snippet;
     /** Messages for the table; the first one found is shown under it. */
     errors?: { items?: string; quantity?: string; linePeriod?: string };
   };
@@ -43,6 +45,7 @@
     totalLabel,
     vatNote = null,
     errors = {},
+    actions,
   }: Props = $props();
 
   /** Below this width of the table the quantity, price and amount move into a second line. */
@@ -309,6 +312,7 @@
     <Package />
     Aus Katalog
   </Button>
+  {@render actions?.()}
 </div>
 {#if hasSavedAmounts}
   <p class="mt-2 text-xs text-muted-foreground">{SAVED_AMOUNTS_HINT}</p>

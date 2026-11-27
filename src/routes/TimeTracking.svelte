@@ -14,6 +14,7 @@
   import { FilePlus2, Plus } from "$lib/brand-icons";
   import { ALL, customerFilterItems, numberOrAll } from "./invoice/list-support";
   import { queryParam } from "./invoice/route-query";
+  import { timeLinkFilters } from "./time/time-link";
   import { createRowSelection } from "./invoice/list-selection.svelte";
   import { pluralize } from "./parts/entity/format";
   import ListSummary from "./parts/list/ListSummary.svelte";
@@ -47,12 +48,14 @@
   const f = filters.values;
 
   let period = $state(periodContaining("week", new Date()));
+  // A link to a customer's open entries has to show them wherever they lie, not only in the current week.
+  let allPeriods = $state(false);
 
   const projects = createQueryState<ProjectListRow[]>([], () => listProjects({ includeArchived: true }));
   const running = createQueryState<TimeEntryListRow | null>(null, getRunningTimer);
   const entries = createQueryState<TimeEntryListRow[]>([], () =>
     listTimeEntries({
-      period: { start: period.start, end: period.end },
+      period: allPeriods ? undefined : { start: period.start, end: period.end },
       customerId: numberOrAll(f.customerId),
       projectId: numberOrAll(f.projectId),
       status: f.status,
@@ -118,6 +121,13 @@
     openBilling(openEntries);
   }
 
+  // The filters and "Alle Zeiträume" (which only a link sets) go back together, to the current week.
+  function resetFilters() {
+    filters.reset();
+    allPeriods = false;
+    period = periodContaining("week", new Date());
+  }
+
   async function afterBilled() {
     selection.clear();
     await reloadAll();
@@ -127,6 +137,21 @@
     remove: (entry) => deleteTimeEntry(entry.id),
     entityLabel: "Zeiteintrag",
     reload: reloadAll,
+  });
+
+  // "?customerId=<id>&status=open" from a link presets the filters; clearing the query keeps them editable afterwards.
+  $effect(() => {
+    const preset = timeLinkFilters(router.querystring);
+    // The customer is checked against the loaded projects: an id without a project would filter invisibly.
+    if (!preset || projects.loading) return;
+    untrack(() => {
+      const known = customerFilterOptions(projects.data).some((c) => String(c.id) === preset.customerId);
+      f.customerId = known && preset.customerId ? preset.customerId : ALL;
+      f.projectId = ALL;
+      if (preset.status) f.status = preset.status;
+      allPeriods = true;
+    });
+    replace("/time");
   });
 
   // The command palette's "Zeit erfassen" arrives as /time?new=1, also while this page is already open.
@@ -162,7 +187,14 @@
 {:else}
   <TimerCard projects={projects.data} running={running.data} onChanged={reloadAll} />
 
-  <PeriodBar bind:period />
+  {#if allPeriods}
+    <div class="mb-3 flex flex-wrap items-center gap-2">
+      <b class="px-1 font-display text-base font-extrabold">Alle Zeiträume</b>
+      <Button size="sm" variant="ghost" onclick={() => (allPeriods = false)}>Nach Zeitraum filtern</Button>
+    </div>
+  {:else}
+    <PeriodBar bind:period />
+  {/if}
 
   <div class="mb-5 flex flex-wrap items-center gap-2">
     <Select class="h-8 w-48 text-[13px]" bind:value={f.customerId} items={customerItems} aria-label="Kunde filtern" />
@@ -170,15 +202,15 @@
     <Select class="h-8 w-40 text-[13px]" bind:value={f.status} items={STATUS_ITEMS} aria-label="Status filtern" />
   </div>
 
-  <TimeSummaryRow {period} {summary} billingBlocker={openBlocker} canBill={openEntries.length > 0} onBillOpen={billOpenEntries} />
+  <TimeSummaryRow {period} totalLabel={allPeriods ? "Gesamt" : undefined} {summary} billingBlocker={openBlocker} canBill={openEntries.length > 0} onBillOpen={billOpenEntries} />
 
   <QueryBoundary query={entries} isEmpty={entries.data.length === 0}>
     {#snippet empty()}
       <ListEmptyState
-        filtered={filters.isFiltered}
-        onResetFilters={filters.reset}
+        filtered={filters.isFiltered || allPeriods}
+        onResetFilters={resetFilters}
         filteredMessage="Keine Einträge für diese Filter."
-        emptyMessage="In diesem Zeitraum sind noch keine Zeiten erfasst."
+        emptyMessage={allPeriods ? "Es sind noch keine Zeiten erfasst." : "In diesem Zeitraum sind noch keine Zeiten erfasst."}
         createLabel="Zeit erfassen"
         onCreate={openCreate}
       />

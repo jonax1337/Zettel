@@ -11,6 +11,7 @@
     type ReverseChargeType,
     type SupplyKind,
   } from "$lib/db/invoices";
+  import { unbilledMinutes } from "$lib/db/customer-overview";
   import { keepsStoredAmounts } from "$lib/db/invoice-lifecycle";
   import type { Customer, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
   import { computeEurTotalCent, formatMoney } from "$lib/utils/currency";
@@ -22,7 +23,9 @@
     normalizeBuyerReference,
     type FollowedLeitweg,
   } from "$lib/xrechnung/buyer-reference";
-  import { DatePicker, Field, Input, PageHeader, Textarea, focusFirstInvalid, toast, Panel } from "$lib/ui";
+  import { Button, DatePicker, Field, Input, PageHeader, Textarea, focusFirstInvalid, toast, Panel } from "$lib/ui";
+  import { Clock } from "$lib/brand-icons";
+  import { unbilledTimeHref } from "./time/time-link";
   import { displayInvoiceNumber } from "$lib/utils/invoice-number";
   import { parseId } from "./parts/entity/edit-target";
   import AddressWindow from "./parts/editor/AddressWindow.svelte";
@@ -346,6 +349,24 @@
     }
   }
 
+  // Time reaches an invoice by billing it on the Zeiten screen, which creates the draft from the entries.
+  // So the pointer to it is only useful while the invoice is still new.
+  let unbilledMinutesOfCustomer = $state(0);
+  $effect(() => {
+    const customerId = parseId(customerIdStr);
+    if (mode !== "new" || isCreditNote || customerId === null) {
+      unbilledMinutesOfCustomer = 0;
+      return;
+    }
+    let stale = false;
+    unbilledMinutes(customerId)
+      .then((minutes) => !stale && (unbilledMinutesOfCustomer = minutes))
+      .catch(() => !stale && (unbilledMinutesOfCustomer = 0));
+    return () => {
+      stale = true;
+    };
+  });
+
   const unsaved = guardUnsavedChanges(formState, () => !loading && reference.loaded);
 
   const documentTitle = $derived(
@@ -424,7 +445,17 @@
             language={pdfLanguage}
             vatNote={vatExemptNote(isKleinunternehmer, reverseChargeType)}
             errors={{ items: errors.items, quantity: errors.quantity, linePeriod: errors.linePeriod }}
-          />
+          >
+            {#snippet actions()}
+              {@const customerId = parseId(customerIdStr)}
+              {#if unbilledMinutesOfCustomer > 0 && customerId !== null}
+                <Button size="sm" variant="ghost" href={unbilledTimeHref(customerId)}>
+                  <Clock />
+                  Aus offenen Zeiten
+                </Button>
+              {/if}
+            {/snippet}
+          </LineItemsSheet>
 
           <div class="mt-6 grid gap-5">
             {#if !isCreditNote}

@@ -26,6 +26,7 @@
     saveDatevExportSettings,
   } from "./parts/reports/export-settings";
   import ReportsShell from "./parts/reports/ReportsShell.svelte";
+  import { rememberDatevExport } from "./parts/reports/last-export";
   import { saveTextFileWithDialog } from "./parts/reports/save-text-file";
 
   const DATEV_ACCOUNT_LENGTH = 4;
@@ -139,6 +140,7 @@
         content: csv,
       });
       if (saved) {
+        await rememberDatevExport(nowUnix());
         toast.success(
           `Export gespeichert (${describeExportCounts(documents.invoices.length, documents.expenses.length)})`,
         );

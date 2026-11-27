@@ -12,6 +12,7 @@
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import { euerFigure, reserveFigure, ustvaFigure, type ReportFigure } from "./parts/reports/hub-figures";
   import Notice from "./parts/reports/Notice.svelte";
+  import { lastExportLabel, loadLastDatevExport } from "./parts/reports/last-export";
   import { REPORT_TABS } from "./parts/reports/report-tabs";
   import ReportsShell from "./parts/reports/ReportsShell.svelte";
   import { DEFAULT_RESERVE_VIEW } from "./parts/reports/reserve-summary";
@@ -32,7 +33,10 @@
   const reserve = createQueryState<TaxRücklageResult | null>(null, () =>
     computeTaxRücklage(taxYearOfPeriod(loadDefaultPeriod())),
   );
+  const DATEV_HREF = "/export";
+  const lastDatevExport = createQueryState<number | null>(null, loadLastDatevExport);
   $effect(() => {
+    lastDatevExport.reload();
     ustva.reload();
     euer.reload();
     reserve.reload();
@@ -43,7 +47,7 @@
     return query.data ? { figure: build(query.data) } : null;
   }
 
-  // Only the three tax reports have a figure that existing functions deliver; DATEV and the validator have none.
+  // Only the three tax reports have a figure that existing functions deliver; DATEV shows when it last ran.
   const figures = $derived<Record<string, FigureState>>({
     "/reports/ustva": figureState(ustva, ({ report, summary }) => ustvaFigure(report, summary, nowUnix())),
     "/reports/euer": figureState(euer, euerFigure),
@@ -80,6 +84,8 @@
             {#if state && "figure" in state}
               <b class="block font-bold tabular-nums">{state.figure.value}</b>
               <span class="block text-[13px] text-muted-foreground">{state.figure.caption}</span>
+            {:else if row.href === DATEV_HREF && lastDatevExport.data}
+              <span class="block text-[13px] text-muted-foreground">{lastExportLabel(lastDatevExport.data)}</span>
             {:else if state && "error" in state}
               <b class="block font-bold">Nicht berechenbar</b>
               <span class="ml-auto block max-w-72 truncate text-[13px] text-muted-foreground" title={state.error}>

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { errorMessage } from "$lib/utils/error-message";
+  import { EMPTY_PROJECT_TIME_FIGURES, loadProjectTimeFigures, type ProjectTimeFigures } from "$lib/db/project-overview";
   import { deleteProject, listProjects, setProjectArchived, type ProjectListRow } from "$lib/db/projects";
+  import { formatDuration } from "$lib/time/duration";
   import { centsToEur } from "$lib/utils/money";
   import { WIDE_ONLY } from "./invoice/list-support";
   import {
@@ -34,6 +36,20 @@
   $effect(() => {
     projects.reload();
   });
+
+  const figures = createQueryState<ReadonlyMap<number, ProjectTimeFigures>>(new Map(), loadProjectTimeFigures);
+  $effect(() => {
+    figures.reload();
+  });
+  const listQuery = {
+    get loading() {
+      return projects.loading || figures.loading;
+    },
+    get error() {
+      return projects.error ?? figures.error;
+    },
+  };
+  const hours = (minutes: number) => (minutes === 0 ? "–" : `${formatDuration(minutes)} Std`);
 
   let dialogOpen = $state(false);
   let editing = $state<ProjectListRow | null>(null);
@@ -75,7 +91,7 @@
   <Label for="projects-archived" class="text-sm">Archivierte anzeigen</Label>
 </div>
 
-<QueryBoundary query={projects} isEmpty={projects.data.length === 0}>
+<QueryBoundary query={listQuery} isEmpty={projects.data.length === 0}>
   {#snippet empty()}
     <ListEmptyState
       filtered={filters.isFiltered}
@@ -92,12 +108,14 @@
         <th>Projekt</th>
         <th class="w-full">Kunde</th>
         <th class="text-right">Stundensatz</th>
-        <th class="{WIDE_ONLY} text-right">Einträge</th>
+        <th class="text-right">Offen</th>
+        <th class="{WIDE_ONLY} text-right">Abgerechnet</th>
         <th><span class="sr-only">Aktionen</span></th>
       </tr>
     </thead>
     <tbody>
       {#each projects.data as project (project.id)}
+        {@const time = figures.data.get(project.id) ?? EMPTY_PROJECT_TIME_FIGURES}
         <tr class={project.archived ? "opacity-60" : ""}>
           <td class="whitespace-nowrap">
             <button
@@ -119,7 +137,10 @@
             {/if}
             {centsToEur(project.hourlyRateCent)}
           </td>
-          <td class="{WIDE_ONLY} text-right tabular-nums text-muted-foreground">{project.entryCount}</td>
+          <td class="text-right whitespace-nowrap tabular-nums">{hours(time.openMinutes)}</td>
+          <td class="{WIDE_ONLY} text-right whitespace-nowrap tabular-nums text-muted-foreground">
+            {hours(time.billedMinutes)}
+          </td>
           <td class="w-12 text-right">
             <DropdownMenu>
               {#snippet trigger()}
@@ -138,11 +159,21 @@
                   Archivieren
                 {/if}
               </DropdownItem>
+              <DropdownSeparator />
               {#if project.entryCount === 0}
-                <DropdownSeparator />
                 <DropdownItem destructive onSelect={() => deletion.ask(project)}>
                   <Trash2 />
                   Löschen
+                </DropdownItem>
+              {:else}
+                <!-- Not `disabled`: Bits UI skips disabled items on the keyboard, and the reason has to be reachable. -->
+                <DropdownItem
+                  class="text-muted-foreground"
+                  onSelect={() => toast.warning("Projekt kann nicht gelöscht werden", "Es hat Zeiteinträge. Archivieren geht immer.")}
+                >
+                  <Trash2 />
+                  Löschen
+                  <span class="ml-auto pl-3 text-xs text-muted-foreground">Hat Zeiteinträge</span>
                 </DropdownItem>
               {/if}
             </DropdownMenu>

@@ -88,7 +88,7 @@ async function averagePaymentDays(customerId: number): Promise<number | null> {
 }
 
 /** Finished time entries of the customer's projects that no invoice has claimed yet. */
-async function unbilledMinutes(customerId: number): Promise<number> {
+export async function unbilledMinutes(customerId: number): Promise<number> {
   const [row] = await select<{ minutes: number }>(
     `SELECT COALESCE(SUM(t.duration_minutes), 0) AS minutes
      FROM time_entries t
