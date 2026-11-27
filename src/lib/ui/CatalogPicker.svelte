@@ -150,7 +150,7 @@
                 {/if}
               </div>
               <div class="text-right text-xs tabular-nums shrink-0">
-                <div class="font-medium">{centsToEur(item.defaultUnitPrice)} € / {item.unit}</div>
+                <div class="font-medium">{centsToEur(item.defaultUnitPrice)} / {item.unit}</div>
                 <div class="text-muted-foreground">{item.defaultVatRate} % USt</div>
               </div>
             </button>
