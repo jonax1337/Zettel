@@ -603,3 +603,23 @@ class TestFrozenSidecarLookup:
         monkeypatch.setattr(cli.sys, "frozen", True, raising=False)
         monkeypatch.setattr(cli.sys, "executable", str(tmp_path / "cli" / "zettel-cli"))
         assert cli.resolve_sidecar() == (str(sidecar), None)
+
+    def test_installed_cli_without_its_sidecar_never_falls_back_to_repo_paths(self, cli, monkeypatch, tmp_path):
+        # In a onefile build the repo paths derive from the unpack dir under /tmp, which others can write to.
+        planted = tmp_path / "sidecar" / ".venv" / "bin" / "python"
+        planted.parent.mkdir(parents=True)
+        planted.touch()
+        (tmp_path / "cli").mkdir()
+        monkeypatch.delenv("ZETTEL_SIDECAR", raising=False)
+        monkeypatch.setattr(cli, "SIDECAR_SEARCH_PATHS", [planted])
+        monkeypatch.setattr(cli.sys, "frozen", True, raising=False)
+        monkeypatch.setattr(cli.sys, "executable", str(tmp_path / "cli" / "zettel-cli"))
+        assert cli.resolve_sidecar() == (None, None)
+
+    def test_installed_cli_rejects_a_python_interpreter_in_zettel_sidecar(self, cli, monkeypatch, tmp_path):
+        interpreter = tmp_path / "python3"
+        interpreter.touch()
+        monkeypatch.setenv("ZETTEL_SIDECAR", str(interpreter))
+        monkeypatch.setattr(cli.sys, "frozen", True, raising=False)
+        with pytest.raises(SystemExit, match="Sidecar-Binary"):
+            cli.resolve_sidecar()

@@ -472,11 +472,12 @@ def resolve_sidecar() -> tuple[str | None, str | None]:
                 return str(p), None
             return str(p), str(_find_main_py())
     if getattr(sys, "frozen", False):
-        # installierte App: <install>/cli/zettel-cli(.exe) neben <install>/sidecar/
+        # Installed CLI: <install>/cli/zettel-cli(.exe) next to <install>/sidecar/, and only there. In a onefile
+        # binary __file__ lies in the unpack dir (/tmp/_MEI…), so the repo paths below would point into a temp
+        # dir other users can write to.
         name = "zettel-sidecar.exe" if sys.platform == "win32" else "zettel-sidecar"
         sibling = Path(sys.executable).resolve().parent.parent / "sidecar" / name
-        if sibling.is_file():
-            return str(sibling), None
+        return (str(sibling), None) if sibling.is_file() else (None, None)
     repo_root = Path(__file__).resolve().parent.parent
     main_py = repo_root / "sidecar" / "main.py"
     for cand in SIDECAR_SEARCH_PATHS:
@@ -491,6 +492,9 @@ def resolve_sidecar() -> tuple[str | None, str | None]:
 
 
 def _find_main_py() -> str:
+    if getattr(sys, "frozen", False):
+        sys.exit("ZETTEL_SIDECAR zeigt auf einen Python-Interpreter; die installierte CLI braucht das "
+                 "Sidecar-Binary (zettel-sidecar).")
     repo_root = Path(__file__).resolve().parent.parent
     main_py = repo_root / "sidecar" / "main.py"
     if not main_py.is_file():
