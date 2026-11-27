@@ -160,7 +160,7 @@
     </div>
     <div class="flex flex-col gap-1.5">
       <Label for="pay-notes">Notiz (optional)</Label>
-      <Input id="pay-notes" bind:value={notes} placeholder="z. B. Banküberweisung von Customer X" />
+      <Input id="pay-notes" bind:value={notes} placeholder="z. B. Überweisung vom 15.03., Verwendungszweck RE-2026-0001" />
     </div>
   </div>
   {#snippet footer()}
