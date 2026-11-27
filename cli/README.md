@@ -60,8 +60,13 @@ python cli/zettel.py --version                       # erwartetes DB-Schema
 Umgeleitete Ausgabe (Pipe, Datei) ist immer UTF-8, mit und ohne `--json` und auch unter Windows; das gilt
 ebenso für Fehlermeldungen auf stderr.
 
-Alle `*:create`-Befehle akzeptieren `--idempotency-key <String>`. Derselbe Schlüssel (pro DB und Typ) legt nichts
-neu an und liefert den vorhandenen Datensatz (`"reused": true`). Die Schlüssel stehen in
+Alle `*:create`-Befehle akzeptieren `--idempotency-key <String>`. Derselbe Schlüssel (pro DB und Typ) mit demselben
+Auftrag legt nichts neu an und liefert den vorhandenen Datensatz (`"reused": true`). Mit anderen Angaben bricht
+der Befehl ab (Exit-Code 1, `{"ok": false, …}`), statt still den alten Datensatz zu liefern. Verglichen wird ein
+Fingerabdruck der übergebenen Argumente ohne `--json`, `--pdf` und `--issue`; der Kunde zählt als aufgelöste id
+(`7`, `K-0007` und der Name sind derselbe Auftrag), Positionen geparst (`2` = `2,0`). Vorgaben wie „heute“ oder
+Werte aus den Einstellungen gehen nicht ein. Einträge einer älteren CLI ohne Fingerabdruck gelten weiter als
+Treffer. Die Schlüssel stehen in
 `<AppData>/cli-idempotency.json` (keine Migration); sie merken sich `created_at` des Datensatzes, ein Schlüssel
 aus einer anderen DB-Generation (Restore, „Daten löschen“) wird ignoriert. Stirbt der Prozess zwischen Anlegen und
 Schreiben der Datei, kann ein Retry ein Duplikat erzeugen. `offer:convert`, `*:send`, `*:accept`, `*:reject`,

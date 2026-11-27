@@ -186,26 +186,50 @@ def _idempotency_id(kind: str, key: str) -> str:
     return f"{resolve_db_path()}|{kind}|{key}"
 
 
-def idempotency_lookup(con, kind: str, table: str, key: str | None) -> int | None:
+# Change what happens after creating or how the result is printed, not what is created: --issue and --pdf
+# also run on a reused record.
+FINGERPRINT_IGNORED_ARGS = frozenset({"func", "cmd", "json_top", "json_sub", "idempotency_key", "issue", "pdf"})
+
+
+def request_fingerprint(args, **normalized) -> str:
+    """Hash über den Auftrag, wie er übergeben wurde. Aufgelöste Vorgaben (heute, Settings) bleiben draußen,
+    sie ändern sich zwischen Aufruf und Retry. `normalized` ersetzt Argumente, die verschieden geschrieben
+    dasselbe meinen (Kunde -> id, --items -> geparste Positionen)."""
+    request = {name: value for name, value in vars(args).items() if name not in FINGERPRINT_IGNORED_ARGS}
+    request.update(normalized)
+    return hashlib.sha256(json.dumps(request, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def idempotency_lookup(con, kind: str, table: str, key: str | None, fingerprint: str) -> int | None:
     """Id des mit diesem Schlüssel angelegten Datensatzes. created_at muss zum gespeicherten Wert passen,
-    sonst stammt der Schlüssel aus einer anderen DB-Generation (Restore, Wipe) und wird ignoriert."""
+    sonst stammt der Schlüssel aus einer anderen DB-Generation (Restore, Wipe) und wird ignoriert.
+    Bricht ab, wenn der Schlüssel zu einem anderen Auftrag gehört; Einträge ohne Fingerabdruck
+    (ältere CLI) gelten als Treffer."""
     if not key:
         return None
     entry = _idempotency_load().get(_idempotency_id(kind, key))
     if not isinstance(entry, dict):
         return None
     row = con.execute(f"SELECT created_at FROM {table} WHERE id = ?", (entry.get("id"),)).fetchone()
-    return entry["id"] if row and row[0] == entry.get("createdAt") else None
+    if not row or row[0] != entry.get("createdAt"):
+        return None
+    stored = entry.get("fingerprint")
+    if stored is not None and stored != fingerprint:
+        sys.exit(
+            f"--idempotency-key '{key}' gehört zu einem anderen Auftrag (id={entry['id']}); nichts angelegt. "
+            "Für einen neuen Datensatz einen neuen Schlüssel wählen."
+        )
+    return entry["id"]
 
 
-def idempotency_store(con, kind: str, table: str, key: str | None, row_id: int) -> None:
+def idempotency_store(con, kind: str, table: str, key: str | None, fingerprint: str, row_id: int) -> None:
     # ponytail: Schlüssel liegen neben der DB, nicht darin (keine Migration). Stirbt der Prozess zwischen COMMIT
     # und diesem Schreiben, entsteht beim Retry ein Duplikat. Echte Garantie = Spalte + Migration.
     if not key:
         return
     created_at = con.execute(f"SELECT created_at FROM {table} WHERE id = ?", (row_id,)).fetchone()[0]
     data = _idempotency_load()
-    data[_idempotency_id(kind, key)] = {"id": row_id, "createdAt": created_at}
+    data[_idempotency_id(kind, key)] = {"id": row_id, "createdAt": created_at, "fingerprint": fingerprint}
     target = idempotency_file()
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(".tmp")
@@ -213,13 +237,13 @@ def idempotency_store(con, kind: str, table: str, key: str | None, row_id: int) 
     tmp.replace(target)
 
 
-def create_once(con, kind: str, table: str, key: str | None, create) -> tuple[int, bool]:
-    """(id, reused): mit Schlüssel legt eine Wiederholung nichts neu an."""
-    existing = idempotency_lookup(con, kind, table, key)
+def create_once(con, kind: str, table: str, key: str | None, fingerprint: str, create) -> tuple[int, bool]:
+    """(id, reused): mit Schlüssel legt eine Wiederholung desselben Auftrags nichts neu an."""
+    existing = idempotency_lookup(con, kind, table, key, fingerprint)
     if existing:
         return existing, True
     row_id = create()
-    idempotency_store(con, kind, table, key, row_id)
+    idempotency_store(con, kind, table, key, fingerprint, row_id)
     return row_id, False
 
 
@@ -921,7 +945,9 @@ def cmd_customer_create(args) -> None:
             con.commit()
             return cur.lastrowid
 
-        customer_id, reused = create_once(con, "customer", "customers", args.idempotency_key, create)
+        customer_id, reused = create_once(
+            con, "customer", "customers", args.idempotency_key, request_fingerprint(args), create,
+        )
         row = con.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
     emit(
         {"customer": customer_dict(row), "reused": reused},
@@ -1482,9 +1508,10 @@ def cmd_invoice_create(args) -> None:
         with connect() as con:
             require_complete_company(dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone()))
     with connect() as con:
+        customer = resolve_customer(con, args.customer)
+
         def create() -> int:
             settings = dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone())
-            customer = resolve_customer(con, args.customer)
             is_reverse_charge = args.reverse_charge != "none"
             totals = compute_totals(items, bool(settings["is_kleinunternehmer"]), is_reverse_charge)
             invoice_id = insert_draft_invoice(
@@ -1495,7 +1522,8 @@ def cmd_invoice_create(args) -> None:
             con.commit()
             return invoice_id
 
-        invoice_id, reused = create_once(con, "invoice", "invoices", args.idempotency_key, create)
+        fingerprint = request_fingerprint(args, customer=customer["id"], items=items)
+        invoice_id, reused = create_once(con, "invoice", "invoices", args.idempotency_key, fingerprint, create)
         inv = fetch_invoice(con, invoice_id)
         lines = [
             f"Draft {'vorhanden' if reused else 'erstellt'}: id={invoice_id}  "
@@ -1707,8 +1735,9 @@ def cmd_offer_create(args) -> None:
     with connect() as con:
         if args.pdf:
             require_complete_company(dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone()))
+        fingerprint = request_fingerprint(args, customer=resolve_customer(con, args.customer)["id"], items=items)
         offer_id, reused = create_once(
-            con, "offer", "offers", args.idempotency_key, lambda: create_offer(con, args, items),
+            con, "offer", "offers", args.idempotency_key, fingerprint, lambda: create_offer(con, args, items),
         )
         lines = [f"Angebot {'vorhanden' if reused else 'erstellt'}: id={offer_id}" + reuse_note(reused, args.idempotency_key)]
         if args.pdf:
@@ -1927,7 +1956,8 @@ def cmd_reminder_create(args) -> None:
         if args.pdf:
             require_complete_company(dict(con.execute("SELECT * FROM settings WHERE id = 1").fetchone()))
         reminder_id, reused = create_once(
-            con, "reminder", "reminders", args.idempotency_key, lambda: create_reminder(con, args),
+            con, "reminder", "reminders", args.idempotency_key, request_fingerprint(args),
+            lambda: create_reminder(con, args),
         )
         lines = [f"Mahnung {'vorhanden' if reused else 'erstellt'}: id={reminder_id}" + reuse_note(reused, args.idempotency_key)]
         if args.pdf:
@@ -2065,9 +2095,11 @@ TYPISCHER ABLAUF
                  --idempotency-key mai-beratung --json
 
 IDEMPOTENZ  (wichtig bei Automatisierung und Wiederholungen)
-  * Alle *:create-Befehle akzeptieren --idempotency-key <String>. Gleicher Schlüssel (pro DB und Typ) legt
-    NICHTS neu an und liefert den bestehenden Datensatz ("reused": true). Immer setzen, wenn ein Aufruf
-    wiederholt werden könnte (Timeout, Retry, Neustart eines Agenten).
+  * Alle *:create-Befehle akzeptieren --idempotency-key <String>. Gleicher Schlüssel (pro DB und Typ) mit
+    gleichem Auftrag legt NICHTS neu an und liefert den bestehenden Datensatz ("reused": true). Immer setzen,
+    wenn ein Aufruf wiederholt werden könnte (Timeout, Retry, Neustart eines Agenten).
+  * Gleicher Schlüssel mit anderen Angaben bricht ab (Exit 1, nichts angelegt). Verglichen werden die
+    übergebenen Argumente ohne --json/--pdf/--issue; Kunde als id, Positionen geparst. Pro Datensatz ein Schlüssel.
   * Ohne Schlüssel legt jeder Aufruf einen neuen Datensatz an (bei Angeboten und Mahnungen verbraucht das eine Nummer).
   * Die Schlüssel liegen in <AppData>/cli-idempotency.json, nicht in der DB. Nach einem Restore oder Wipe
     werden alte Schlüssel erkannt und ignoriert.
