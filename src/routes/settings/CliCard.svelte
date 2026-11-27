@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, toast } from "$lib/ui";
-  import { Copy } from "$lib/brand-icons";
+  import { Copy, MonitorCog } from "$lib/brand-icons";
 
   let cliPath = $state<string | null>(null);
 
@@ -24,7 +24,10 @@
 {#if cliPath}
   <Card>
     <CardHeader>
-      <CardTitle>Kommandozeile</CardTitle>
+      <CardTitle class="flex items-center gap-2">
+        <MonitorCog class="size-5" />
+        Kommandozeile
+      </CardTitle>
       <CardDescription>
         Dieselben Daten per Terminal bedienen (Rechnungen, Angebote, Mahnungen, Kunden; <code>--json</code>
         für Skripte). Hilfe: <code>zettel-cli -h</code>. Nicht parallel zur laufenden App schreiben.
