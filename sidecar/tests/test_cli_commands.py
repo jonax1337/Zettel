@@ -260,6 +260,53 @@ def test_idempotency_key_reuses_and_survives_only_for_same_record(env):
     assert env.query("SELECT COUNT(*) FROM invoices")[0][0] == 2
 
 
+def test_idempotency_key_with_a_different_request_aborts_without_writing(env):
+    env.run("customer:create", "--name", "ACME GmbH")
+    env.run("customer:create", "--name", "Other GmbH")
+    env.run("invoice:create", "--customer", "K-0001", "--items", "Beratung|2|Std|90|19", "--idempotency-key", "mai")
+
+    err = env.run("invoice:create", "--customer", "K-0002", "--items", "Wartung|5|Std|120|19",
+                  "--idempotency-key", "mai", ok=False)["error"]
+
+    assert "'mai'" in err and "anderen Auftrag" in err
+    assert env.query("SELECT COUNT(*) FROM invoices")[0][0] == 1
+
+
+def test_idempotency_key_with_a_different_customer_request_aborts(env):
+    env.run("customer:create", "--name", "ACME GmbH", "--idempotency-key", "c1")
+
+    env.run("customer:create", "--name", "Other GmbH", "--idempotency-key", "c1", ok=False)
+
+    assert env.query("SELECT name FROM customers") == [("ACME GmbH",)]
+
+
+def test_idempotency_fingerprint_normalizes_customer_and_items_and_ignores_follow_up_flags(env):
+    env.run("customer:create", "--name", "ACME GmbH")
+    first = env.run("offer:create", "--customer", "K-0001", "--items", "X|2|Std|100|19", "--idempotency-key", "o1")
+
+    by_name = env.run("offer:create", "--customer", "acme gmbh", "--items", "X|2,0|Std|100,00|19",
+                      "--idempotency-key", "o1")
+    invoice = env.run("invoice:create", "--customer", "1", "--items", "X|1|Std|100|19", "--idempotency-key", "i1")
+    issued = env.run("invoice:create", "--customer", "1", "--items", "X|1|Std|100|19", "--idempotency-key", "i1",
+                     "--issue")
+
+    assert by_name["reused"] is True and by_name["offer"]["id"] == first["offer"]["id"]
+    assert issued["reused"] is True and issued["invoice"]["id"] == invoice["invoice"]["id"]
+
+
+def test_idempotency_entry_without_fingerprint_from_an_older_cli_still_counts_as_a_hit(env):
+    env.run("customer:create", "--name", "ACME GmbH", "--idempotency-key", "c1")
+    keys_file = env.cli.idempotency_file()
+    entries = json.loads(keys_file.read_text(encoding="utf-8"))
+    for entry in entries.values():
+        del entry["fingerprint"]
+    keys_file.write_text(json.dumps(entries), encoding="utf-8")
+
+    again = env.run("customer:create", "--name", "Other GmbH", "--idempotency-key", "c1")
+
+    assert again["reused"] is True and again["customer"]["name"] == "ACME GmbH"
+
+
 def test_json_error_envelope_and_schema_guard(env):
     assert env.run("invoice:show", "99", ok=False)["error"] == "Rechnung 99 nicht gefunden."
     con = sqlite3.connect(env.db)
