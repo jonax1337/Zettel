@@ -6,6 +6,8 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.25.0]
+
 ### Added
 - **CLI im Installer.** Die Kommandozeile wird als `zettel-cli` mitgeliefert (Einstellungen → Daten → „Kommandozeile“ zeigt den Pfad zum Kopieren) und findet den PDF-Sidecar der Installation selbst. Das `.deb` legt zusätzlich `/usr/bin/zettel-cli` an; unter Windows und macOS gibt es keinen PATH-Eintrag, dort gilt der volle Pfad.
 - **CLI: Kunden, Angebote, Mahnungen, `--json`, Idempotenz.** `customer:create`, `offers`/`offer:create|show|send|accept|reject|convert|pdf`, `reminders`/`reminder:create|send|pdf` und `invoices --overdue` spiegeln die App-Logik (Nummern aus dem Belegdatum, Reverse Charge, Währung, Mahnbetrag = offener Rest; `offer:convert` legt einen Rechnungsentwurf an, der beim Ausstellen wie jede Rechnung versiegelt wird). `--json` liefert ein JSON-Objekt (`{"ok": …}`), `--idempotency-key` macht `*:create` wiederholbar; derselbe Schlüssel mit anderen Angaben bricht ab, statt den alten Datensatz zu liefern (#186). Jeder Befehl prüft vorher `PRAGMA user_version` und bricht bei abweichendem Schema ab; `status` zeigt Ist und Soll. PDFs aus der CLI verlangen vollständige Firmendaten wie die App.
