@@ -58,7 +58,7 @@ describe("createDeleteFlow", () => {
     flow.ask(row);
     await flow.confirm();
 
-    expect(toast.error).toHaveBeenCalledWith("Löschen fehlgeschlagen", "Error: FK");
+    expect(toast.error).toHaveBeenCalledWith("Löschen fehlgeschlagen", "FK");
     expect(toast.success).not.toHaveBeenCalled();
     expect(reload).not.toHaveBeenCalled();
     expect(flow.target).toEqual(row);

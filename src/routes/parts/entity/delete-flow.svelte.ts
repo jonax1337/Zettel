@@ -1,4 +1,5 @@
 import { toast } from "$lib/ui/toast.svelte";
+import { errorMessage } from "$lib/utils/error-message";
 
 type DeleteFlowOptions<T> = {
   remove: (item: T) => Promise<unknown>;
@@ -28,7 +29,7 @@ export function createDeleteFlow<T>({ remove, entityLabel, describe, reload }: D
       target = null;
       await reload();
     } catch (e) {
-      toast.error("Löschen fehlgeschlagen", String(e));
+      toast.error("Löschen fehlgeschlagen", errorMessage(e));
     }
   }
 

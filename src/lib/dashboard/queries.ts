@@ -9,12 +9,12 @@ import { monthKey, monthsIn } from "./period";
 import type { OpenInvoiceRow } from "./age-buckets";
 import type { RecurringEstimate } from "./weeks";
 
-const REVENUE_STATUSES = `('sent','partial','paid')`;
+export const REVENUE_STATUSES = `('sent','partial','paid')`;
 export const EXPENSE_STATUSES = `('open','paid')`;
 // Credit notes never get payments and stay 'sent', and an invoice they fully
 // offset is no longer due, so neither counts as an open receivable. A partially
 // credited invoice stays open with its remainder (see OPEN_BALANCE_SQL).
-const OPEN_RECEIVABLE_SQL = `status IN ('sent','partial')
+export const OPEN_RECEIVABLE_SQL = `status IN ('sent','partial')
        AND (is_credit_note IS NULL OR is_credit_note = 0)
        AND ${notSettledByCreditNoteSql("invoices")}`;
 
@@ -37,7 +37,7 @@ const COVERED_SQL = `(COALESCE(amount_paid_cent, 0) + ${creditedCentSql("invoice
 // Rechnungswährung, eur_total_cent ist der eingefrorene EUR-Gegenwert von total:
 // der gedeckte Anteil wird daher proportional umgerechnet (Integer-Rundung
 // half-up, kein Float), statt Fremdwährungs-Cent von EUR-Cent abzuziehen.
-const OPEN_BALANCE_SQL = `(CASE
+export const OPEN_BALANCE_SQL = `(CASE
   WHEN eur_total_cent IS NULL OR total = 0 THEN total - ${COVERED_SQL}
   ELSE eur_total_cent - (2 * eur_total_cent * ${COVERED_SQL} + total) / (2 * total)
 END)`;

@@ -30,7 +30,7 @@ describe("createQueryState", () => {
     await state.reload();
     fail = true;
     await state.reload();
-    expect(state.error).toBe("Error: kaputt");
+    expect(state.error).toBe("kaputt");
     expect(state.data).toEqual(["a"]);
     expect(state.loading).toBe(false);
   });

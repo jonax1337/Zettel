@@ -5,6 +5,7 @@
   import Dashboard from "./routes/Dashboard.svelte";
   import CustomersList from "./routes/CustomersList.svelte";
   import CustomerEdit from "./routes/CustomerEdit.svelte";
+  import CustomerDetail from "./routes/CustomerDetail.svelte";
   import InvoicesList from "./routes/InvoicesList.svelte";
   import InvoiceEdit from "./routes/InvoiceEdit.svelte";
   import InvoiceDetail from "./routes/InvoiceDetail.svelte";
@@ -77,7 +78,8 @@
     "/": Dashboard,
     "/customers": CustomersList,
     "/customers/new": editorRoute(CustomerEdit, "new"),
-    "/customers/:id": editorRoute(CustomerEdit, "edit"),
+    "/customers/:id/edit": editorRoute(CustomerEdit, "edit"),
+    "/customers/:id": CustomerDetail,
     "/invoices": InvoicesList,
     "/invoices/new": editorRoute(InvoiceEdit, "new"),
     "/invoices/:id/edit": editorRoute(InvoiceEdit, "edit"),

@@ -1,5 +1,6 @@
 import { push } from "svelte-spa-router";
 import { toast } from "$lib/ui/toast.svelte";
+import { errorMessage } from "$lib/utils/error-message";
 import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
 import { fetchEditTarget } from "./edit-target";
 
@@ -39,7 +40,7 @@ export function createEntityForm<T>(options: Options<T>) {
         options.onLoaded(target.value);
       }
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       loaded = true;
     }
@@ -71,7 +72,7 @@ export function createEntityForm<T>(options: Options<T>) {
       unsaved.markClean();
       push(nextRoute ? nextRoute(savedId) : options.listRoute);
     } catch (e) {
-      reject("Speichern fehlgeschlagen", String(e));
+      reject("Speichern fehlgeschlagen", errorMessage(e));
     } finally {
       saving = false;
     }
