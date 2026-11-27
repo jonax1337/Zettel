@@ -1,6 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import { Button, Input, Label, Select, toast } from "$lib/ui";
+  import { Button, Field, Input, Select, toast } from "$lib/ui";
   import { SUPPORTED_CURRENCIES, computeEurTotalCent, parseExchangeRateScaled } from "$lib/utils/currency";
   import { centsToEur } from "$lib/utils/money";
 
@@ -10,12 +10,14 @@
     /** Document total in the selected currency, for the EUR equivalent hint. */
     totalCent: number;
     disabled?: boolean;
+    error?: string | null;
   };
   let {
     currency = $bindable(),
     exchangeRate = $bindable(),
     totalCent,
     disabled = false,
+    error = null,
   }: Props = $props();
 
   const currencyItems = SUPPORTED_CURRENCIES.map((c) => ({ value: c.code, label: c.label }));
@@ -25,6 +27,7 @@
   const isForeignCurrency = $derived(currency !== "EUR");
   const rateScaled = $derived(isForeignCurrency ? parseExchangeRateScaled(exchangeRate) : null);
   const eurEquivalentCent = $derived(computeEurTotalCent(currency, totalCent, exchangeRate));
+  const rateError = $derived(error ?? (exchangeRate && !rateScaled ? "Ungültiger Wechselkurs." : null));
 
   async function fetchEcbRate() {
     fetchingRate = true;
@@ -40,35 +43,22 @@
   }
 </script>
 
-<div class="flex flex-col gap-1.5">
-  <Label>Währung</Label>
+<Field label="Währung">
   <Select bind:value={currency} items={currencyItems} {disabled} />
-</div>
+</Field>
 {#if isForeignCurrency}
-  <div class="flex flex-col gap-1.5">
-    <Label>Wechselkurs</Label>
+  <Field label="Wechselkurs" error={rateError}>
+    {#snippet hint()}
+      1 EUR = X {currency}. Acht Nachkommastellen werden berücksichtigt.
+      {#if rateScaled && eurEquivalentCent !== null}
+        <br />Gesamtbetrag in EUR: <span class="tabular-nums">{centsToEur(eurEquivalentCent)}</span>
+      {/if}
+    {/snippet}
     <div class="flex gap-2">
-      <Input
-        type="text"
-        bind:value={exchangeRate}
-        placeholder="z. B. 1,0832"
-        inputmode="decimal"
-        {disabled}
-        class="flex-1"
-      />
+      <Input type="text" bind:value={exchangeRate} placeholder="z. B. 1,0832" inputmode="decimal" {disabled} class="min-w-0 flex-1" />
       <Button type="button" variant="outline" disabled={disabled || fetchingRate} onclick={fetchEcbRate}>
         {fetchingRate ? "Lädt…" : "EZB-Kurs"}
       </Button>
     </div>
-    <p class="text-xs text-muted-foreground">
-      1 EUR = X {currency}. Acht Nachkommastellen werden berücksichtigt.
-    </p>
-    {#if exchangeRate && !rateScaled}
-      <p class="text-xs text-destructive">Ungültiger Wechselkurs.</p>
-    {:else if rateScaled && eurEquivalentCent !== null}
-      <p class="text-xs text-muted-foreground">
-        Gesamtbetrag in EUR: <span class="font-mono">{centsToEur(eurEquivalentCent)}</span>
-      </p>
-    {/if}
-  </div>
+  </Field>
 {/if}

@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { ReverseChargeType, SupplyKind } from "$lib/db/invoices";
   import type { Customer } from "$lib/db/schema";
-  import { Label, Select } from "$lib/ui";
-  import { reverseChargeState, type ReverseChargeSender } from "./form-validation";
-  import SupplyKindField from "./SupplyKindField.svelte";
+  import { Field, Select } from "$lib/ui";
+  import { reverseChargeState, type ReverseChargeSender } from "../../invoice/form-validation";
+  import { SUPPLY_KIND_HINT, SUPPLY_KIND_ITEMS } from "../../invoice/supply-kind";
 
   type Props = {
     type: ReverseChargeType;
@@ -13,6 +13,7 @@
     customer: Customer | null;
     disabled?: boolean;
     note?: string;
+    error?: string | null;
   };
   let {
     type = $bindable(),
@@ -21,6 +22,7 @@
     customer,
     disabled = false,
     note,
+    error = null,
   }: Props = $props();
 
   const HINTS: Record<ReverseChargeType, string> = {
@@ -39,15 +41,22 @@
 
 <!-- A blocked selection stays visible and changeable until the user picks a permitted type. -->
 {#if rc && (!sender?.isKleinunternehmer || rc.selectionBlocked)}
-  <div class="col-span-2 flex flex-col gap-1.5">
-    <Label>Reverse-Charge</Label>
-    <Select bind:value={type} items={typeItems} disabled={disabled || (!rc.canThirdCountry && !rc.selectionBlocked)} />
-    <p class="text-xs text-muted-foreground">{HINTS[type]}{#if note && type !== "none"} {note}{/if}</p>
-    {#if rc.unavailableReason}
-      <p class="text-xs {rc.selectionBlocked ? 'text-warning' : 'text-muted-foreground'}">{rc.unavailableReason}</p>
-    {/if}
-  </div>
+  <Field label="Reverse-Charge" {error}>
+    {#snippet hint()}
+      {HINTS[type]}{#if note && type !== "none"} {note}{/if}
+      {#if rc.unavailableReason}
+        <br /><span class={rc.selectionBlocked ? "text-warning" : undefined}>{rc.unavailableReason}</span>
+      {/if}
+    {/snippet}
+    <Select
+      bind:value={type}
+      items={typeItems}
+      disabled={disabled || (!rc.canThirdCountry && !rc.selectionBlocked)}
+    />
+  </Field>
   {#if type !== "none"}
-    <SupplyKindField bind:value={supplyKind} reverseChargeType={type} {disabled} />
+    <Field label="Art des Umsatzes" hint={SUPPLY_KIND_HINT[type][supplyKind]}>
+      <Select bind:value={supplyKind} items={SUPPLY_KIND_ITEMS} {disabled} />
+    </Field>
   {/if}
 {/if}

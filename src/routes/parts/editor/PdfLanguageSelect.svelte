@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import { Label, Select } from "$lib/ui";
+  import { Field, Select } from "$lib/ui";
 
   type Props = {
     value: "de" | "en";
@@ -15,10 +15,6 @@
   ];
 </script>
 
-<div class="flex flex-col gap-1.5 max-w-xs">
-  <Label>Sprache der PDF</Label>
+<Field label="Sprache der PDF" hint={children}>
   <Select bind:value items={LANGUAGE_ITEMS} {disabled} />
-  {#if children}
-    <p class="text-xs text-muted-foreground">{@render children()}</p>
-  {/if}
-</div>
+</Field>

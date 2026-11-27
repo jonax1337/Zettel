@@ -149,26 +149,50 @@
     {/snippet}
   </DatePicker.Input>
 
-  <DatePicker.Content sideOffset={6} class="z-50">
-    <DatePicker.Calendar
-      class="rounded-xl border bg-popover text-popover-foreground shadow-lg p-3 select-none w-[268px]"
-    >
-      {#snippet children({ months, weekdays })}
-        <div class="flex items-center justify-between mb-2">
-          {#if view === "days"}
-            <DatePicker.PrevButton
-              class={NAV_ARROW_CLASS}
-              aria-label="Vorheriger Monat"
-            >
-              <ChevronLeft class="size-4" />
-            </DatePicker.PrevButton>
-            <div class="flex items-center gap-1">
+  <DatePicker.Portal>
+    <DatePicker.Content sideOffset={6} class="z-50">
+      <DatePicker.Calendar
+        class="rounded-xl border bg-popover text-popover-foreground shadow-lg p-3 select-none w-[268px]"
+      >
+        {#snippet children({ months, weekdays })}
+          <div class="flex items-center justify-between mb-2">
+            {#if view === "days"}
+              <DatePicker.PrevButton
+                class={NAV_ARROW_CLASS}
+                aria-label="Vorheriger Monat"
+              >
+                <ChevronLeft class="size-4" />
+              </DatePicker.PrevButton>
+              <div class="flex items-center gap-1">
+                <button
+                  type="button"
+                  onclick={() => (view = "months")}
+                  class={HEADER_LABEL_CLASS}
+                >
+                  {MONTHS_DE[placeholder.month - 1]}
+                </button>
+                <button
+                  type="button"
+                  onclick={() => (view = "years")}
+                  class={cn(HEADER_LABEL_CLASS, "tabular-nums")}
+                >
+                  {placeholder.year}
+                </button>
+              </div>
+              <DatePicker.NextButton
+                class={NAV_ARROW_CLASS}
+                aria-label="Nächster Monat"
+              >
+                <ChevronRight class="size-4" />
+              </DatePicker.NextButton>
+            {:else if view === "months"}
               <button
                 type="button"
-                onclick={() => (view = "months")}
-                class={HEADER_LABEL_CLASS}
+                onclick={() => shiftYears(-1)}
+                class={NAV_ARROW_CLASS}
+                aria-label="Vorheriges Jahr"
               >
-                {MONTHS_DE[placeholder.month - 1]}
+                <ChevronLeft class="size-4" />
               </button>
               <button
                 type="button"
@@ -177,130 +201,108 @@
               >
                 {placeholder.year}
               </button>
-            </div>
-            <DatePicker.NextButton
-              class={NAV_ARROW_CLASS}
-              aria-label="Nächster Monat"
-            >
-              <ChevronRight class="size-4" />
-            </DatePicker.NextButton>
-          {:else if view === "months"}
-            <button
-              type="button"
-              onclick={() => shiftYears(-1)}
-              class={NAV_ARROW_CLASS}
-              aria-label="Vorheriges Jahr"
-            >
-              <ChevronLeft class="size-4" />
-            </button>
-            <button
-              type="button"
-              onclick={() => (view = "years")}
-              class={cn(HEADER_LABEL_CLASS, "tabular-nums")}
-            >
-              {placeholder.year}
-            </button>
-            <button
-              type="button"
-              onclick={() => shiftYears(1)}
-              class={NAV_ARROW_CLASS}
-              aria-label="Nächstes Jahr"
-            >
-              <ChevronRight class="size-4" />
-            </button>
-          {:else}
-            <button
-              type="button"
-              onclick={() => shiftYears(-YEARS_PER_PAGE)}
-              class={NAV_ARROW_CLASS}
-              aria-label="Vorherige 12 Jahre"
-            >
-              <ChevronLeft class="size-4" />
-            </button>
-            {@const years = yearRange(placeholder.year)}
-            <span class="text-sm font-medium tabular-nums">
-              {years[0]} – {years[years.length - 1]}
-            </span>
-            <button
-              type="button"
-              onclick={() => shiftYears(YEARS_PER_PAGE)}
-              class={NAV_ARROW_CLASS}
-              aria-label="Nächste 12 Jahre"
-            >
-              <ChevronRight class="size-4" />
-            </button>
-          {/if}
-        </div>
+              <button
+                type="button"
+                onclick={() => shiftYears(1)}
+                class={NAV_ARROW_CLASS}
+                aria-label="Nächstes Jahr"
+              >
+                <ChevronRight class="size-4" />
+              </button>
+            {:else}
+              <button
+                type="button"
+                onclick={() => shiftYears(-YEARS_PER_PAGE)}
+                class={NAV_ARROW_CLASS}
+                aria-label="Vorherige 12 Jahre"
+              >
+                <ChevronLeft class="size-4" />
+              </button>
+              {@const years = yearRange(placeholder.year)}
+              <span class="text-sm font-medium tabular-nums">
+                {years[0]} – {years[years.length - 1]}
+              </span>
+              <button
+                type="button"
+                onclick={() => shiftYears(YEARS_PER_PAGE)}
+                class={NAV_ARROW_CLASS}
+                aria-label="Nächste 12 Jahre"
+              >
+                <ChevronRight class="size-4" />
+              </button>
+            {/if}
+          </div>
 
-        {#if view === "days"}
-          {#each months as month (month.value.toString())}
-            <DatePicker.Grid class="w-full border-collapse">
-              <DatePicker.GridHead>
-                <DatePicker.GridRow class="flex">
-                  {#each weekdays as weekday (weekday)}
-                    <DatePicker.HeadCell class="w-9 h-8 text-[11px] font-normal text-muted-foreground flex items-center justify-center">
-                      {weekday.slice(0, 2)}
-                    </DatePicker.HeadCell>
-                  {/each}
-                </DatePicker.GridRow>
-              </DatePicker.GridHead>
-              <DatePicker.GridBody>
-                {#each month.weeks as weekDates, wi (wi)}
-                  <DatePicker.GridRow class="flex w-full mt-1">
-                    {#each weekDates as date (date.toString())}
-                      <DatePicker.Cell {date} month={month.value} class="relative p-0 text-center text-sm">
-                        <DatePicker.Day
-                          class={cn(
-                            "size-9 inline-flex items-center justify-center rounded-md text-sm font-normal cursor-pointer transition-colors tabular-nums",
-                            "hover:bg-muted",
-                            "data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[selected]:font-medium",
-                            "data-[outside-month]:text-muted-foreground/40 data-[outside-month]:pointer-events-none",
-                            "data-[unavailable]:text-muted-foreground/40 data-[unavailable]:line-through data-[unavailable]:pointer-events-none",
-                            "data-[disabled]:opacity-40 data-[disabled]:pointer-events-none",
-                            "data-[today]:font-semibold data-[today]:ring-1 data-[today]:ring-primary/40",
-                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          )}
-                        />
-                      </DatePicker.Cell>
+          {#if view === "days"}
+            {#each months as month (month.value.toString())}
+              <DatePicker.Grid class="w-full border-collapse">
+                <DatePicker.GridHead>
+                  <DatePicker.GridRow class="flex">
+                    {#each weekdays as weekday (weekday)}
+                      <DatePicker.HeadCell class="w-9 h-8 text-[11px] font-normal text-muted-foreground flex items-center justify-center">
+                        {weekday.slice(0, 2)}
+                      </DatePicker.HeadCell>
                     {/each}
                   </DatePicker.GridRow>
-                {/each}
-              </DatePicker.GridBody>
-            </DatePicker.Grid>
-          {/each}
-        {:else if view === "months"}
-          <div class="grid grid-cols-3 gap-1.5 mt-1">
-            {#each MONTHS_DE_SHORT as label, idx (idx)}
-              {@const m = idx + 1}
-              {@const isCurrent = placeholder.month === m && (!dateValue || dateValue.month === m)}
-              {@const isSelected = !!dateValue && dateValue.year === placeholder.year && dateValue.month === m}
-              <button
-                type="button"
-                onclick={() => selectMonth(m)}
-                class={pickCellClass(isSelected, isCurrent)}
-              >
-                {label}
-              </button>
+                </DatePicker.GridHead>
+                <DatePicker.GridBody>
+                  {#each month.weeks as weekDates, wi (wi)}
+                    <DatePicker.GridRow class="flex w-full mt-1">
+                      {#each weekDates as date (date.toString())}
+                        <DatePicker.Cell {date} month={month.value} class="relative p-0 text-center text-sm">
+                          <DatePicker.Day
+                            class={cn(
+                              "size-9 inline-flex items-center justify-center rounded-md text-sm font-normal cursor-pointer transition-colors tabular-nums",
+                              "hover:bg-muted",
+                              "data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[selected]:font-medium",
+                              "data-[outside-month]:text-muted-foreground/40 data-[outside-month]:pointer-events-none",
+                              "data-[unavailable]:text-muted-foreground/40 data-[unavailable]:line-through data-[unavailable]:pointer-events-none",
+                              "data-[disabled]:opacity-40 data-[disabled]:pointer-events-none",
+                              "data-[today]:font-semibold data-[today]:ring-1 data-[today]:ring-primary/40",
+                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            )}
+                          />
+                        </DatePicker.Cell>
+                      {/each}
+                    </DatePicker.GridRow>
+                  {/each}
+                </DatePicker.GridBody>
+              </DatePicker.Grid>
             {/each}
-          </div>
-        {:else}
-          {@const years = yearRange(placeholder.year)}
-          {@const currentYear = new Date().getFullYear()}
-          <div class="grid grid-cols-3 gap-1.5 mt-1">
-            {#each years as y (y)}
-              {@const isSelected = !!dateValue && dateValue.year === y}
-              {@const isCurrent = currentYear === y}
-              <button
-                type="button"
-                onclick={() => selectYear(y)}
-                class={pickCellClass(isSelected, isCurrent, "tabular-nums")}
-              >
-                {y}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      {/snippet}
-    </DatePicker.Calendar>
-  </DatePicker.Content>
+          {:else if view === "months"}
+            <div class="grid grid-cols-3 gap-1.5 mt-1">
+              {#each MONTHS_DE_SHORT as label, idx (idx)}
+                {@const m = idx + 1}
+                {@const isCurrent = placeholder.month === m && (!dateValue || dateValue.month === m)}
+                {@const isSelected = !!dateValue && dateValue.year === placeholder.year && dateValue.month === m}
+                <button
+                  type="button"
+                  onclick={() => selectMonth(m)}
+                  class={pickCellClass(isSelected, isCurrent)}
+                >
+                  {label}
+                </button>
+              {/each}
+            </div>
+          {:else}
+            {@const years = yearRange(placeholder.year)}
+            {@const currentYear = new Date().getFullYear()}
+            <div class="grid grid-cols-3 gap-1.5 mt-1">
+              {#each years as y (y)}
+                {@const isSelected = !!dateValue && dateValue.year === y}
+                {@const isCurrent = currentYear === y}
+                <button
+                  type="button"
+                  onclick={() => selectYear(y)}
+                  class={pickCellClass(isSelected, isCurrent, "tabular-nums")}
+                >
+                  {y}
+                </button>
+              {/each}
+            </div>
+          {/if}
+        {/snippet}
+      </DatePicker.Calendar>
+    </DatePicker.Content>
+  </DatePicker.Portal>
 </DatePicker.Root>
