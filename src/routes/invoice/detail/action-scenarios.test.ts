@@ -86,18 +86,18 @@ function planFor(doc: Invoice, scene: Scene = {}) {
 const OVERDUE = { dueDate: NOW - 24 * DAY };
 
 describe("invoice actions per state, from real invoices through the real predicates", () => {
-  it("never-numbered draft: issue, edit, preview and mail; issuing without PDF, template, discard in the menu", () => {
+  it("never-numbered draft: issue, edit and preview; mail, issuing without PDF, template, discard in the menu", () => {
     const result = planFor(invoice({ status: "draft", number: NEVER_NUMBERED, pdfPath: null, sentAt: null }));
     expect(result.main).toEqual(["issue"]);
-    expect(result.header).toEqual(["edit", "preview-pdf", "send-mail"]);
-    expect(result.menu).toEqual(["mark-sent", "save-recurring", "cancel", "delete"]);
+    expect(result.header).toEqual(["edit", "preview-pdf"]);
+    expect(result.menu).toEqual(["send-mail", "mark-sent", "save-recurring", "cancel", "delete"]);
   });
 
   it("reopened draft with its number and PDF: open the PDF, preview in the menu, no discarding because the number is taken", () => {
     const result = planFor(invoice({ status: "draft", sentAt: null }));
     expect(result.main).toEqual(["issue"]);
-    expect(result.header).toEqual(["open-pdf", "edit", "send-mail"]);
-    expect(result.menu).toEqual(["preview-pdf", "mark-sent", "save-recurring"]);
+    expect(result.header).toEqual(["open-pdf", "edit"]);
+    expect(result.menu).toEqual(["preview-pdf", "send-mail", "mark-sent", "save-recurring"]);
   });
 
   it("sent, not due yet: record the payment; paying, reversing and reopening in the menu", () => {
@@ -180,8 +180,8 @@ describe("invoice actions per state, from real invoices through the real predica
       invoice({ status: "draft", isCreditNote: true, number: NEVER_NUMBERED, pdfPath: null, total: -119_000, correctsInvoiceId: 7 }),
     );
     expect(result.main).toEqual(["issue"]);
-    expect(result.header).toEqual(["edit", "preview-pdf", "send-mail"]);
-    expect(result.menu).toEqual(["mark-sent", "cancel", "delete"]);
+    expect(result.header).toEqual(["edit", "preview-pdf"]);
+    expect(result.menu).toEqual(["send-mail", "mark-sent", "cancel", "delete"]);
   });
 
   it("issued credit note: no main action, no payments, no second credit note", () => {

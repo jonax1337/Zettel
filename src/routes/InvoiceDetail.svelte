@@ -32,7 +32,7 @@
   import { ensureCompanyDataComplete } from "$lib/utils/company-guard";
   import { resolveCustomerEmail, sendDocumentByMail } from "$lib/mail/send";
   import { validatePdf, type ValidationReport } from "$lib/validator";
-  import { Badge, Button, ConfirmDialog, PageHeader, StatusBadge, toast, Panel } from "$lib/ui";
+  import { Button, ConfirmDialog, PageHeader, toast, Panel } from "$lib/ui";
   import DocumentSheet from "$lib/components/DocumentSheet.svelte";
   import ValidationBadge from "$lib/components/ValidationBadge.svelte";
   import { renderInvoiceSheet } from "$lib/sidecar/preview";
@@ -56,7 +56,6 @@
   import { REMINDER_CREATE_LABEL } from "./invoice/reminder-levels";
   import { INVALID_ROUTE_ID_MESSAGE, parseRouteId } from "./invoice/route-id";
   import SkontoCard from "./invoice/SkontoCard.svelte";
-  import { INVOICE_STATUS } from "./invoice/status";
   import TextSection from "./invoice/TextSection.svelte";
   import ValidationFindingsDialog from "./invoice/ValidationFindingsDialog.svelte";
   import { storeInvoiceValidation } from "./invoice/validation-store";
@@ -71,7 +70,7 @@
   import { invoiceMenuEntries } from "./invoice/detail/invoice-menu";
   import { runPdfPreview } from "./invoice/detail/pdf-preview";
   import { PREVIEW_PDF_LABEL, PREVIEWING_LABEL } from "./invoice/detail/preview-menu";
-  import { overdueDays, overdueLabel } from "./invoice/list-support";
+  import InvoiceStatusBadge from "./invoice/InvoiceStatusBadge.svelte";
   import { progressSteps } from "./invoice/detail/progress-steps";
   import ProgressSteps from "./invoice/detail/ProgressSteps.svelte";
   import { invoiceSheetKey } from "./invoice/detail/sheet-key";
@@ -627,24 +626,28 @@
 {#if !loading && invoice && customer}
   {#snippet headerBadges()}
     {#if invoice}
-      <StatusBadge status={invoice.status} table={INVOICE_STATUS} />
-      {#if isOverdue}
-        <Badge variant="late">{overdueLabel(overdueDays(invoice.dueDate, nowUnix()))}</Badge>
+      <InvoiceStatusBadge status={invoice.status} overdue={isOverdue} dueDate={invoice.dueDate} now={nowUnix()} />
+      {#if invoice.lastValidationStatus === "invalid"}
+        {@render validationBadge()}
       {/if}
-      {#if invoice.lastValidationStatus || lastPdfPath}
-        <button
-          type="button"
-          class="inline-flex cursor-pointer rounded-full focus-visible:outline-2 focus-visible:outline-ring"
-          aria-label="Validierungsdetails anzeigen"
-          onclick={openFindingsDialog}
-        >
-          <ValidationBadge
-            compact
-            status={invoice.lastValidationStatus}
-            findingsCount={invoice.lastValidationFindingsCount}
-          />
-        </button>
-      {/if}
+    {/if}
+  {/snippet}
+
+  <!-- A failed check is an alert next to the title; otherwise the check belongs to the file it was run on. -->
+  {#snippet validationBadge()}
+    {#if invoice}
+      <button
+        type="button"
+        class="inline-flex cursor-pointer rounded-full focus-visible:outline-2 focus-visible:outline-ring"
+        aria-label="Validierungsdetails anzeigen"
+        onclick={openFindingsDialog}
+      >
+        <ValidationBadge
+          compact
+          status={invoice.lastValidationStatus}
+          findingsCount={invoice.lastValidationFindingsCount}
+        />
+      </button>
     {/if}
   {/snippet}
 
@@ -830,8 +833,13 @@
 
       {#if showFiles}
         <FilesPanel pdfPath={lastPdfPath} versions={pdfVersions} generating={actions.generating}>
-          {#if invoice.lastValidatedAt}
-            <p class="text-xs text-muted-foreground">Validiert am {formatDateTime(invoice.lastValidatedAt)}</p>
+          {#if invoice.lastValidationStatus || lastPdfPath}
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              {@render validationBadge()}
+              {#if invoice.lastValidatedAt}
+                <span class="whitespace-nowrap">geprüft am {formatDateTime(invoice.lastValidatedAt)}</span>
+              {/if}
+            </div>
           {/if}
           {#if xrechnungExport?.status === "exported"}
             {@const xmlPath = xrechnungExport.xmlPath}

@@ -97,14 +97,16 @@ describe("planInvoiceActions: the main action", () => {
 });
 
 describe("planInvoiceActions: header buttons", () => {
-  it("shows PDF, edit and mail around the main action of a draft", () => {
+  it("shows PDF and edit around the main action of a reopened draft; mail waits in the menu", () => {
     const plan = planInvoiceActions(state({ ...DRAFT, isNumbered: true, hasPdf: true }));
-    expect(actionsAt(plan, "header")).toEqual(["open-pdf", "edit", "send-mail"]);
+    expect(actionsAt(plan, "header")).toEqual(["open-pdf", "edit"]);
+    expect(actionsAt(plan, "menu")).toContain("send-mail");
   });
 
   it("gives a draft without a PDF the preview instead of a PDF button: issuing creates the real one", () => {
     const plan = planInvoiceActions(state(DRAFT));
-    expect(actionsAt(plan, "header")).toEqual(["edit", "preview-pdf", "send-mail"]);
+    expect(actionsAt(plan, "header")).toEqual(["edit", "preview-pdf"]);
+    expect(actionsAt(plan, "menu")).toContain("send-mail");
     expect([...actionsAt(plan, "header"), ...actionsAt(plan, "menu")]).not.toContain("generate-pdf");
   });
 
@@ -174,8 +176,9 @@ describe("planInvoiceActions: header buttons", () => {
 });
 
 describe("planInvoiceActions: the menu", () => {
-  it("offers a draft the issue-without-PDF flow, the recurring template and discarding", () => {
+  it("offers a draft mail, the issue-without-PDF flow, the recurring template and discarding", () => {
     expect(actionsAt(planInvoiceActions(state(DRAFT)), "menu")).toEqual([
+      "send-mail",
       "mark-sent",
       "save-recurring",
       "cancel",

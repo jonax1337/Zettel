@@ -19,7 +19,7 @@
     /** Status badges next to the title; they drop below it when the title leaves no room. */
     badges?: Snippet;
     actions?: Snippet;
-    /** Lets the actions form their own row below the title on narrow widths instead of squeezing it. */
+    /** The actions stay beside the title while the bare title fits; badges and subtitle wrap first. Below that the actions form their own row. */
     wrap?: boolean;
   };
 
@@ -27,7 +27,8 @@
 </script>
 
 <header class={cn("mb-5 flex items-start gap-4", wrap && "flex-wrap gap-y-3")}>
-  <div class="min-w-0">
+  <!-- Wrapping: no min-w-0, so the title's own width is the least this block takes before the actions move down. -->
+  <div class={wrap ? "flex-1" : "min-w-0"}>
     {#if typeof back === "function"}
       {@render back()}
     {:else if back}
@@ -45,7 +46,8 @@
       <h1>{title}</h1>
     {/if}
     {#if subtitle}
-      <p class="mt-1 text-muted-foreground">
+      <!-- In a wrapping header the subtitle takes the width that is left instead of claiming its own: a long customer name must not push the actions down. -->
+      <p class={cn("mt-1 text-muted-foreground", wrap && "w-0 min-w-full")}>
         {#if typeof subtitle === "function"}{@render subtitle()}{:else}{subtitle}{/if}
       </p>
     {/if}

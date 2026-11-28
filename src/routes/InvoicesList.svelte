@@ -24,7 +24,6 @@
     ConfirmDialog,
     PageHeader,
     QueryBoundary,
-    StatusBadge,
   } from "$lib/ui";
   import { Plus, Send, Trash2, CheckCircle2 } from "$lib/brand-icons";
   import { applySort } from "$lib/utils/sort";
@@ -36,8 +35,9 @@
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
-  import { ALL, WIDE_ONLY, numberOrAll, overdueDays, overdueLabel, statusFilterItems } from "./invoice/list-support";
+  import { ALL, WIDE_ONLY, numberOrAll, statusFilterItems } from "./invoice/list-support";
   import { canRecordPayments, isOverdue as isInvoiceOverdue } from "./invoice/invoice-actions";
+  import InvoiceStatusBadge from "./invoice/InvoiceStatusBadge.svelte";
   import { INVOICE_STATUS } from "./invoice/status";
 
   import FilterMenu from "./parts/list/FilterMenu.svelte";
@@ -233,14 +233,7 @@
           </td>
           <td class="whitespace-nowrap">
             <span class="inline-flex items-center gap-2">
-              {#if overdue}
-                <Badge variant="late">{overdueLabel(overdueDays(inv.dueDate, now))}</Badge>
-                {#if inv.status === "partial"}
-                  <span class="text-xs text-muted-foreground">teilbezahlt</span>
-                {/if}
-              {:else}
-                <StatusBadge status={inv.status} table={INVOICE_STATUS} />
-              {/if}
+              <InvoiceStatusBadge status={inv.status} {overdue} dueDate={inv.dueDate} {now} />
             </span>
           </td>
           <td class="text-right font-semibold whitespace-nowrap tabular-nums">

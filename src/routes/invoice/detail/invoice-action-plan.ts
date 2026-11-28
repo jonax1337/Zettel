@@ -61,14 +61,16 @@ export function planInvoiceActions(state: InvoiceActionState): InvoiceActionPlan
   const isDiscardedDraft = state.status === "cancelled" && !state.isNumbered;
   const previewable = isDraft || isDiscardedDraft;
   const main = mainAction(state);
-  // Mailing a paid or cancelled invoice is rare; an overdue one is chased with a reminder instead.
-  const mailInHeader = main !== "create-reminder" && state.status !== "paid" && state.status !== "cancelled";
+  // Mail sits in the header only while it is the usual next step: a draft is issued first, an overdue invoice
+  // is chased with a reminder, and mailing a paid or cancelled one is rare.
+  const mailInHeader =
+    !isDraft && main !== "create-reminder" && state.status !== "paid" && state.status !== "cancelled";
 
   const header: InvoiceActionId[] = [];
   if (state.hasPdf) header.push("open-pdf");
   else if (!previewable) header.push("generate-pdf");
   if (isDraft) header.push("edit");
-  // A reopened draft has its old PDF button next to edit and mail; there the preview moves into the menu.
+  // A reopened draft has its old PDF button next to edit; there the preview moves into the menu.
   if (previewable && !state.hasPdf) header.push("preview-pdf");
   if (mailInHeader) header.push("send-mail");
   if (main === "create-reminder") header.push("record-payment");
