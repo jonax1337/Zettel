@@ -26,6 +26,7 @@
   import { fetchEditTarget } from "../entity/edit-target";
   import { createQueryState } from "../entity/query-state.svelte";
   import ContactPanel from "./ContactPanel.svelte";
+  import { initials } from "./initials";
   import { customerDocuments, type CustomerDocument } from "./customer-documents";
   import CustomerDocuments from "./CustomerDocuments.svelte";
   import CustomerStats from "./CustomerStats.svelte";
@@ -89,6 +90,14 @@
     subtitle={subtitleOf(customer)}
     back={{ href: "/customers", label: "Kunden" }}
   >
+    {#snippet lead()}
+      <span
+        aria-hidden="true"
+        class="grid size-11 shrink-0 place-items-center rounded-xl bg-surface-strong font-display text-base font-extrabold text-muted-foreground"
+      >
+        {initials(customer.name)}
+      </span>
+    {/snippet}
     {#snippet actions()}
       <Button variant="outline" href={`/customers/${customer.id}/edit`}>
         <Pencil />

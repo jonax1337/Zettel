@@ -18,12 +18,14 @@
     back?: Snippet | { href: string; label: string };
     /** Status badges next to the title; they drop below it when the title leaves no room. */
     badges?: Snippet;
+    /** A mark in front of title and subtitle, e.g. an avatar. */
+    lead?: Snippet;
     actions?: Snippet;
     /** The actions stay beside the title while the bare title fits; badges and subtitle wrap first. Below that the actions form their own row. */
     wrap?: boolean;
   };
 
-  let { title, subtitle, back, badges, actions, wrap = false }: Props = $props();
+  let { title, subtitle, back, badges, lead, actions, wrap = false }: Props = $props();
 </script>
 
 <header class={cn("mb-5 flex items-start gap-4", wrap && "flex-wrap gap-y-3")}>
@@ -37,20 +39,25 @@
         {back.label}
       </a>
     {/if}
-    {#if badges}
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <h1 class="whitespace-nowrap">{title}</h1>
-        {@render badges()}
+    <div class={cn(lead && "flex items-center gap-3.5")}>
+      {@render lead?.()}
+      <div class="min-w-0">
+        {#if badges}
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <h1 class="whitespace-nowrap">{title}</h1>
+            {@render badges()}
+          </div>
+        {:else}
+          <h1>{title}</h1>
+        {/if}
+        {#if subtitle}
+          <!-- In a wrapping header the subtitle takes the width that is left instead of claiming its own: a long customer name must not push the actions down. -->
+          <p class={cn("mt-1 text-muted-foreground", wrap && "w-0 min-w-full")}>
+            {#if typeof subtitle === "function"}{@render subtitle()}{:else}{subtitle}{/if}
+          </p>
+        {/if}
       </div>
-    {:else}
-      <h1>{title}</h1>
-    {/if}
-    {#if subtitle}
-      <!-- In a wrapping header the subtitle takes the width that is left instead of claiming its own: a long customer name must not push the actions down. -->
-      <p class={cn("mt-1 text-muted-foreground", wrap && "w-0 min-w-full")}>
-        {#if typeof subtitle === "function"}{@render subtitle()}{:else}{subtitle}{/if}
-      </p>
-    {/if}
+    </div>
   </div>
   {#if actions}
     <div class={cn("ml-auto flex flex-none flex-wrap items-center gap-2", wrap && "max-w-full")}>
