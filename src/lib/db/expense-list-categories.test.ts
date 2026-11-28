@@ -34,6 +34,12 @@ function seedExpense(items: ItemSeed[]): number {
 
 const rowOf = async (id: number) => (await listExpenses()).find((e) => e.id === id)!;
 
+const curatedCategory = () =>
+  sqlite.current!.prepare("SELECT id, name FROM expense_categories ORDER BY id LIMIT 1").all()[0] as {
+    id: number;
+    name: string;
+  };
+
 beforeEach(() => {
   counter = 0;
   sqlite.current = migratedDatabase();
@@ -62,10 +68,7 @@ describe("listExpenses categories", () => {
   });
 
   it("prefers the curated category's name over the free text and ignores items without a category", async () => {
-    const curated = sqlite.current!.prepare("SELECT id, name FROM expense_categories ORDER BY id LIMIT 1").all()[0] as {
-      id: number;
-      name: string;
-    };
+    const curated = curatedCategory();
     const id = seedExpense([
       { category: "altes Label", categoryId: curated.id, lineTotal: 2_000 },
       { category: "", lineTotal: 5_000 },
@@ -93,12 +96,6 @@ describe("listExpenses categories", () => {
 });
 
 describe("listExpenses category filter", () => {
-  const curatedCategory = () =>
-    sqlite.current!.prepare("SELECT id, name FROM expense_categories ORDER BY id LIMIT 1").all()[0] as {
-      id: number;
-      name: string;
-    };
-
   it("finds an expense by any of its items' categories, not only the one the list shows", async () => {
     const mixed = seedExpense([
       { category: "Software / SaaS", lineTotal: 9_000 },
@@ -129,14 +126,28 @@ describe("listExpenses category filter", () => {
     expect((await listExpenses({ category: "Reisekosten", status: "open" })).map((e) => e.id)).toEqual([open]);
     expect(await listExpenses({ category: "all" })).toHaveLength(2);
   });
+
+  it("keeps its bind in place next to search, vendor and year", async () => {
+    const db = sqlite.current!;
+    db.exec("INSERT INTO vendors (id, vendor_number, name) VALUES (2, 'L-0002', 'Cloud AG')");
+    const match = seedExpense([{ category: "Reisekosten", lineTotal: 1_000 }]);
+    const otherVendor = seedExpense([{ category: "Reisekosten", lineTotal: 1_000 }]);
+    const otherYear = seedExpense([{ category: "Reisekosten", lineTotal: 1_000 }]);
+    const otherCategory = seedExpense([{ category: "Bürobedarf", lineTotal: 1_000 }]);
+    const in2026 = Math.floor(new Date(2026, 5, 1).getTime() / 1000);
+    db.prepare("UPDATE expenses SET issue_date = ? WHERE id IN (?, ?, ?)").run(in2026, match, otherVendor, otherCategory);
+    db.prepare("UPDATE expenses SET vendor_id = 2 WHERE id = ?").run(otherVendor);
+    db.prepare("UPDATE expenses SET issue_date = ? WHERE id = ?").run(Math.floor(new Date(2025, 5, 1).getTime() / 1000), otherYear);
+
+    const found = await listExpenses({ category: "Reisekosten", search: "Office", vendorId: 1, year: 2026 });
+
+    expect(found.map((e) => e.id)).toEqual([match]);
+  });
 });
 
 describe("listExpenseListCategories", () => {
-  it("lists each category the list can show once, curated names before free text, without empty ones", async () => {
-    const curated = sqlite.current!.prepare("SELECT id, name FROM expense_categories ORDER BY id LIMIT 1").all()[0] as {
-      id: number;
-      name: string;
-    };
+  it("lists each category once, without regard to case; a curated name replaces the item's free text", async () => {
+    const curated = curatedCategory();
     seedExpense([
       { category: "Zzz frei", lineTotal: 100 },
       { category: "aaa frei", lineTotal: 100 },

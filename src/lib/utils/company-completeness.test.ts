@@ -4,6 +4,7 @@ import {
   TAX_SETTINGS_ROUTE,
   companyIncompleteMessage,
   companySettingsRoute,
+  missingCompanyDataList,
   missingCompanyData,
 } from "./company-completeness";
 
@@ -86,6 +87,13 @@ describe("companySettingsRoute", () => {
 });
 
 describe("the list of missing data inside a sentence", () => {
+  it("is empty for nothing missing and keeps the period of a label that is not last", () => {
+    expect(missingCompanyDataList([])).toBe("");
+    expect(missingCompanyDataList(["Steuernummer oder USt-IdNr.", "Anschrift"])).toBe(
+      "Steuernummer oder USt-IdNr., Anschrift",
+    );
+  });
+
   it("ends with one period even when the last label has its own", () => {
     const message = companyIncompleteMessage(["Anschrift", "Steuernummer oder USt-IdNr."]);
     expect(message).toContain("Steuernummer oder USt-IdNr. Bitte");

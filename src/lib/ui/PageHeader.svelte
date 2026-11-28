@@ -18,7 +18,7 @@
     back?: Snippet | { href: string; label: string };
     /** Status badges next to the title; they drop below it when the title leaves no room. */
     badges?: Snippet;
-    /** A mark in front of title and subtitle, e.g. an avatar. */
+    /** A mark in front of title and subtitle, e.g. an avatar. Not for a wrapping header: there the subtitle would take the title's width. */
     lead?: Snippet;
     actions?: Snippet;
     /** The actions stay beside the title while the bare title fits; badges and subtitle wrap first. Below that the actions form their own row. */
@@ -52,7 +52,7 @@
         {/if}
         {#if subtitle}
           <!-- In a wrapping header the subtitle takes the width that is left instead of claiming its own: a long customer name must not push the actions down. -->
-          <p class={cn("mt-1 text-muted-foreground", wrap && "w-0 min-w-full")}>
+          <p class={cn("mt-1 text-muted-foreground", wrap && "w-0 min-w-full [overflow-wrap:anywhere]")}>
             {#if typeof subtitle === "function"}{@render subtitle()}{:else}{subtitle}{/if}
           </p>
         {/if}

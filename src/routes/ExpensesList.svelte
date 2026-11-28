@@ -68,7 +68,8 @@
   });
   const categoryItems = $derived([
     { value: ALL, label: "Alle Kategorien" },
-    ...categories.map((category) => ({ value: category, label: category })),
+    // A free-text category named like the sentinel could not be told apart from it.
+    ...categories.filter((category) => category !== ALL).map((category) => ({ value: category, label: category })),
   ]);
 
   const expenses = createQueryState<ExpenseListRow[]>([], () => listExpenses(filter));

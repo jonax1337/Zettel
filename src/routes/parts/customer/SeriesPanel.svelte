@@ -10,10 +10,10 @@
 </script>
 
 <Panel title="Serie">
-  <ul class="grid gap-3 text-sm">
+  <ul class="grid grid-cols-1 gap-3 text-sm">
     {#each series as entry (entry.id)}
       <li>
-        <a href={`/recurring/${entry.id}`} use:link class="font-semibold hover:underline focus-visible:underline">
+        <a href={`/recurring/${entry.id}`} use:link class="font-semibold [overflow-wrap:anywhere] hover:underline focus-visible:underline">
           {entry.name}
         </a>
         <p class="text-muted-foreground">

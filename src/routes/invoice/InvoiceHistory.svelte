@@ -80,9 +80,9 @@
     {:else if entries.length === 0 && !error}
       <p class="text-sm text-muted-foreground">Keine Änderungen protokolliert.</p>
     {:else}
-      <ul class="grid gap-2.5 text-[13px]">
+      <ul class="grid grid-cols-1 gap-2.5 text-[13px]">
         {#each entries as entry (entry.id)}
-          <li class="grid grid-cols-[84px_1fr] gap-2">
+          <li class="grid grid-cols-[84px_minmax(0,1fr)] gap-2">
             <time class="text-muted-foreground">{formatDateTime(entry.changedAt)}</time>
             <span class="break-words">{describeAuditEntry(entry, invoice.currency)}</span>
           </li>
