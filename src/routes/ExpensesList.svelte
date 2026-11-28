@@ -187,7 +187,7 @@
   customers={vendors}
   counterparty={VENDOR_COUNTERPARTY}
 >
-  <Select bind:value={f.category} items={categoryItems} aria-label="Kategorie" class="w-[180px]" />
+  <Select bind:value={f.category} items={categoryItems} aria-label="Kategorie" class="w-[160px]" />
 </DocumentListFilters>
 
 <QueryBoundary query={expenses} isEmpty={expenses.data.length === 0}>

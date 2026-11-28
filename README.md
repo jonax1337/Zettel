@@ -47,7 +47,7 @@ ZUGFeRD- / Factur-X-konforme PDF/A-3 mit eingebettetem EN-16931-XML und XRechnun
     <td align="center"><a href="./docs/screenshots/invoices.png"><img src="./docs/screenshots/invoices.png" alt="Rechnungsliste mit Status und Filtern" /></a><br /><sub>Rechnungen</sub></td>
   </tr>
   <tr>
-    <td align="center"><a href="./docs/screenshots/invoice-validated.png"><img src="./docs/screenshots/invoice-validated.png" alt="Rechnung als Blatt mit bestandener KoSIT-Prüfung (ZUGFeRD-konform), Zahlung und PDF-Versionen" /></a><br /><sub>KoSIT-geprüft</sub></td>
+    <td align="center"><a href="./docs/screenshots/invoice-validated.png"><img src="./docs/screenshots/invoice-validated.png" alt="Rechnung als Blatt, daneben Zahlung, PDF-Versionen und die bestandene KoSIT-Prüfung (ZUGFeRD-konform)" /></a><br /><sub>KoSIT-geprüft</sub></td>
     <td align="center"><a href="./docs/screenshots/pdf-preview.png"><img src="./docs/screenshots/pdf-preview.png" alt="Erzeugtes PDF/A-3 mit Girocode, Factur-X-XML eingebettet" /></a><br /><sub>PDF/A-3 + ZUGFeRD</sub></td>
   </tr>
   <tr>
