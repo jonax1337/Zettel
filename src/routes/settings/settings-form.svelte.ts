@@ -1,3 +1,4 @@
+import { errorMessage } from "$lib/utils/error-message";
 import {
   changedNumberCounters,
   loadSettings,
@@ -23,12 +24,19 @@ export class SettingsForm {
     () => !this.loading,
   );
 
+  /** `validate` returns why the current values must not be saved yet, or null. */
+  constructor(private readonly validate: (settings: Settings) => string | null = () => null) {}
+
+  get dirty() {
+    return this.unsaved.dirty;
+  }
+
   async load() {
     try {
       this.settings = await loadSettings();
       this.#loadedCounters = { ...this.settings };
     } catch (e) {
-      this.error = String(e);
+      this.error = errorMessage(e);
     } finally {
       this.loading = false;
     }
@@ -37,8 +45,9 @@ export class SettingsForm {
   async submit(event: SubmitEvent) {
     event.preventDefault();
     if (!this.settings || !this.#loadedCounters) return;
+    this.error = this.validate(this.settings);
+    if (this.error) return;
     this.saving = true;
-    this.error = null;
     try {
       await saveSettings(this.settings);
       await saveNumberCounters(changedNumberCounters(this.#loadedCounters, this.settings));
@@ -46,8 +55,8 @@ export class SettingsForm {
       this.unsaved.markClean();
       toast.success("Einstellungen gespeichert");
     } catch (e) {
-      this.error = String(e);
-      toast.error("Speichern fehlgeschlagen", String(e));
+      this.error = errorMessage(e);
+      toast.error("Speichern fehlgeschlagen", errorMessage(e));
     } finally {
       this.saving = false;
     }

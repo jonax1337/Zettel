@@ -6,7 +6,7 @@ Scripts, Cron). Nur Python-stdlib, keine Abhängigkeiten.
 ## Mit der App installiert
 
 Der Installer liefert die CLI als `zettel-cli` (PyInstaller-Binary, baut `python cli/build.py`) mit; sie findet den
-PDF-Sidecar der Installation selbst. Einstellungen → Daten → „Kommandozeile“ zeigt den Pfad zum Kopieren.
+PDF-Sidecar der Installation selbst. Einstellungen → Daten und Backup → „Kommandozeile“ zeigt den Pfad zum Kopieren.
 
 | Plattform | Aufruf |
 |---|---|

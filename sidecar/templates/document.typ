@@ -197,6 +197,14 @@
   place(top + left, dx: fold-mark-x, dy: mark.y, line(length: mark.length, stroke: fold-mark-stroke))
 }
 
+// Marks a draft preview on every page; sits above the content, faint enough to read through.
+#let watermark-layer() = {
+  let text-of-mark = d.at("watermark", default: none)
+  if text-of-mark != none {
+    place(center + horizon, rotate(-35deg, text(size: 100pt, weight: "bold", fill: rgb(200, 40, 40, 18%), text-of-mark)))
+  }
+}
+
 #let continuation-header() = context {
   if counter(page).get().first() > 1 {
     set text(size: 8pt, fill: th.muted)
@@ -333,6 +341,7 @@
   footer: page-footer(),
   footer-descent: 0pt,
   background: fold-mark-layer(),
+  foreground: watermark-layer(),
 )
 
 #letterhead()

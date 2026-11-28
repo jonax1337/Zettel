@@ -23,7 +23,7 @@ export function parseCustomerSnapshot(json: string): CustomerSnapshot {
   try {
     return JSON.parse(json);
   } catch (cause) {
-    throw new Error("Customer snapshot is corrupt — cannot render PDF.", { cause });
+    throw new Error("Die Kundendaten des Belegs sind beschädigt, das PDF kann nicht erzeugt werden.", { cause });
   }
 }
 

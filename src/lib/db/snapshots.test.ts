@@ -39,7 +39,7 @@ describe("buildCustomerSnapshot", () => {
   it("fails for an unknown customer", async () => {
     getCustomer.mockResolvedValueOnce(null);
 
-    await expect(buildCustomerSnapshot(9)).rejects.toThrow("Customer 9 not found");
+    await expect(buildCustomerSnapshot(9)).rejects.toThrow("Kunde 9 nicht gefunden.");
   });
 });
 
@@ -67,6 +67,6 @@ describe("buildVendorSnapshot", () => {
   it("fails for an unknown vendor", async () => {
     getVendor.mockResolvedValueOnce(null);
 
-    await expect(buildVendorSnapshot(1)).rejects.toThrow("Vendor 1 not found");
+    await expect(buildVendorSnapshot(1)).rejects.toThrow("Lieferant 1 nicht gefunden.");
   });
 });

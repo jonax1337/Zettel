@@ -22,6 +22,11 @@ describe("companyIncompleteResponse", () => {
     expect(response?.error.code).toBe(COMPANY_INCOMPLETE_CODE);
     expect(response?.error.message).toContain("Firmenname");
     expect(response?.error.message).toContain("Steuernummer oder USt-IdNr.");
-    expect(response?.error.message).toContain("Einstellungen");
+    expect(response?.error.message).toContain("Einstellungen → Unternehmen und Steuern");
+  });
+
+  it("points a missing tax identification to the tax page", () => {
+    const response = companyIncompleteResponse({ ...complete, taxNumber: "" });
+    expect(response?.error.message).toContain("Einstellungen → Steuern");
   });
 });

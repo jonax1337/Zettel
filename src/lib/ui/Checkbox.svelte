@@ -22,14 +22,13 @@
   bind:checked
   bind:indeterminate
   class={cn(
-    "peer size-4 shrink-0 rounded-[4px] border border-input shadow-xs transition-[color,box-shadow,background-color] outline-none",
+    "peer size-4 shrink-0 rounded-[4px] border border-input bg-paper transition-[color,box-shadow,background-color] outline-none",
     "data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:border-primary",
     "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground data-[state=indeterminate]:border-primary",
-    "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+    "focus-visible:border-ring focus-visible:ring-ring/20 focus-visible:ring-[3px]",
     "aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
     "disabled:cursor-not-allowed disabled:opacity-50",
     "active:scale-[0.92]",
-    "dark:bg-input/30 dark:data-[state=checked]:bg-primary",
     klass,
   )}
   {...rest}

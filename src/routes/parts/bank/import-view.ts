@@ -1,3 +1,4 @@
+import { errorMessage } from "$lib/utils/error-message";
 import type { MatchCandidate } from "$lib/bank/match";
 import { openBalanceCent } from "$lib/db/invoice-lifecycle";
 import { addPayment, DuplicateBankBookingError, type AddPaymentInput } from "$lib/db/invoice-payments";
@@ -69,7 +70,7 @@ export async function recordBooking(payment: AddPaymentInput, booked: BookedPaym
     return { kind: "applied", ...booked };
   } catch (e) {
     if (e instanceof DuplicateBankBookingError) return { kind: "duplicate", ...booked };
-    return { kind: "failed", ...booked, message: String(e) };
+    return { kind: "failed", ...booked, message: errorMessage(e) };
   }
 }
 

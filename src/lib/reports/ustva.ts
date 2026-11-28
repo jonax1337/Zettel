@@ -52,6 +52,11 @@ export const VAT_ACCOUNTING_LABELS: Record<VatAccounting, string> = {
 const STANDARD_VAT_RATE = 19;
 const REDUCED_VAT_RATE = 7;
 
+/** Kennzahlen the headline figures are derived from. */
+const KZ_BASE_STANDARD = "81";
+const KZ_BASE_REDUCED = "86";
+const KZ_INPUT_VAT = "66";
+
 export type UstvaRow = {
   kz: string;
   label: string;
@@ -300,13 +305,13 @@ export async function buildUstvaReport(
 
   const rows: UstvaRow[] = [
     baseRow(
-      "81",
+      KZ_BASE_STANDARD,
       "Lieferungen und Leistungen zu 19 %",
       domestic.net19,
       domestic.computedFrom(STANDARD_VAT_RATE),
     ),
     baseRow(
-      "86",
+      KZ_BASE_REDUCED,
       "Lieferungen und Leistungen zu 7 %",
       domestic.net7,
       domestic.computedFrom(REDUCED_VAT_RATE),
@@ -348,7 +353,7 @@ export async function buildUstvaReport(
       "Eingangsrechnungen mit Reverse-Charge Drittland (Netto). Steuer in KZ 85 und Vorsteuer in KZ 67 selbst ergänzen.",
     ),
     {
-      kz: "66",
+      kz: KZ_INPUT_VAT,
       label: "Abziehbare Vorsteuer (aus Eingangsrechnungen)",
       amount: inputVat,
       wholeEuros: false,
@@ -357,6 +362,39 @@ export async function buildUstvaReport(
   ];
 
   return { year, quarter, dateFrom: from, dateTo: to, vatAccounting, rows };
+}
+
+export type UstvaSummary =
+  /** Kleinunternehmer owe no Umsatzsteuer and cannot deduct input VAT, so there is no Zahllast. */
+  | { kind: "kleinunternehmer" }
+  | {
+      kind: "computed";
+      outputVatCent: number;
+      inputVatCent: number;
+      /** Positive: Zahllast; negative: Erstattung. */
+      payableCent: number;
+    };
+
+function amountOfKz(report: UstvaReport, kz: string): number {
+  const row = report.rows.find((r) => r.kz === kz);
+  if (!row) throw new Error(`UStVA-Kennzahl ${kz} fehlt im Bericht`);
+  return row.amount;
+}
+
+/**
+ * Umsatzsteuer, Vorsteuer and their difference, the way ELSTER derives them from the entered Kennzahlen.
+ * The § 13b cases are not part of it: their tax and offsetting input VAT (KZ 47, 85, 67) are entered by hand,
+ * as is a Sondervorauszahlung (KZ 39).
+ */
+export function summarizeUstva(report: UstvaReport, isKleinunternehmer: boolean): UstvaSummary {
+  if (isKleinunternehmer) return { kind: "kleinunternehmer" };
+  const outputVatCent = Math.round(
+    (amountOfKz(report, KZ_BASE_STANDARD) * STANDARD_VAT_RATE +
+      amountOfKz(report, KZ_BASE_REDUCED) * REDUCED_VAT_RATE) /
+      CENTS_PER_EURO,
+  );
+  const inputVatCent = amountOfKz(report, KZ_INPUT_VAT);
+  return { kind: "computed", outputVatCent, inputVatCent, payableCent: outputVatCent - inputVatCent };
 }
 
 export function ustvaToCsv(report: UstvaReport): string {

@@ -30,21 +30,25 @@ class TypstRenderError(RuntimeError):
     pass
 
 
-def render_typst_pdf(view: dict[str, Any], logo_path: str | None) -> bytes:
+def render_typst_pdf(
+    view: dict[str, Any],
+    logo_path: str | None,
+    pdf_standards: tuple[str, ...] = (PDF_STANDARD,),
+) -> bytes:
     with tempfile.TemporaryDirectory(prefix="zettel-typst-") as root:
         logo = _stage_logo(logo_path, Path(root))
         try:
-            return _compile(view, root, logo)
+            return _compile(view, root, logo, pdf_standards)
         except TypstRenderError:
             if logo is None:
                 raise
         # The logo is decoration: like the WeasyPrint path, an unreadable one is
         # left out rather than blocking the invoice.
         print(f"Logo nicht lesbar, PDF ohne Logo erzeugt: {logo_path}", file=sys.stderr)
-        return _compile(view, root, None)
+        return _compile(view, root, None, pdf_standards)
 
 
-def _compile(view: dict[str, Any], root: str, logo: str | None) -> bytes:
+def _compile(view: dict[str, Any], root: str, logo: str | None, pdf_standards: tuple[str, ...]) -> bytes:
     import typst  # imported lazily so WeasyPrint-only runs don't load the compiler
 
     template = (templates_dir() / TYPST_TEMPLATE).read_bytes()
@@ -53,7 +57,7 @@ def _compile(view: dict[str, Any], root: str, logo: str | None) -> bytes:
             template,
             root=root,
             sys_inputs={"data": json.dumps({**view, "logo": logo}, ensure_ascii=False)},
-            pdf_standards=[PDF_STANDARD],
+            pdf_standards=list(pdf_standards),
         )
     except typst.TypstError as e:
         raise TypstRenderError(f"Typst konnte das PDF nicht setzen: {e}") from e

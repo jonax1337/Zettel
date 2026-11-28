@@ -21,6 +21,8 @@ import {
   pdfSettingsPayload,
   skontoPayload,
 } from "./payload";
+import { readSettingsForPreview, renderPreviewPdf } from "./pdf-preview";
+import { invoiceAsShown, NO_OUTPUT_PATH } from "./shown-document";
 import { renderDocumentPdf } from "./render-document";
 import { withLiveCustomerFallbacks } from "$lib/xrechnung/export-data";
 import { missingXrechnungFields } from "$lib/xrechnung/preflight";
@@ -32,7 +34,7 @@ export type { SidecarResponse } from "./types";
 type InvoiceWithItems = { invoice: Invoice; items: InvoiceItem[] };
 type CorrectedInvoice = { number: string; issueDate: number };
 
-function buildPayload(opts: {
+export function buildInvoicePayload(opts: {
   invoice: Invoice;
   items: InvoiceItem[];
   customer: CustomerSnapshot;
@@ -94,16 +96,16 @@ function buildPayload(opts: {
  */
 async function loadInvoiceForRendering(invoiceId: number): Promise<InvoiceWithItems> {
   let data = await getInvoice(invoiceId);
-  if (!data) throw new Error(`Invoice ${invoiceId} not found`);
+  if (!data) throw new Error(`Rechnung ${invoiceId} nicht gefunden.`);
   if (data.invoice.status === "draft" && isDraftNumber(data.invoice.number)) {
     await issueInvoice(invoiceId);
     data = await getInvoice(invoiceId);
-    if (!data) throw new Error(`Invoice ${invoiceId} not found after issue`);
+    if (!data) throw new Error(`Rechnung ${invoiceId} nach dem Ausstellen nicht gefunden.`);
   }
   return data;
 }
 
-async function findCorrectedInvoice(invoice: Invoice): Promise<CorrectedInvoice | null> {
+export async function findCorrectedInvoice(invoice: Invoice): Promise<CorrectedInvoice | null> {
   if (!invoice.isCreditNote || !invoice.correctsInvoiceId) return null;
   const original = await getInvoice(invoice.correctsInvoiceId);
   if (!original) return null;
@@ -141,7 +143,7 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
   const customer = parseCustomerSnapshot(invoice.customerSnapshot);
   const outputPath = await documentOutputPath("Rechnungen", invoice.number);
 
-  const payload = buildPayload({
+  const payload = buildInvoicePayload({
     invoice,
     items,
     customer,
@@ -157,6 +159,30 @@ export async function generateInvoicePdf(invoiceId: number): Promise<SidecarResp
   );
 }
 
+/**
+ * The PDF of an invoice as issuing would produce it, marked as a draft. It only reads:
+ * no number is drawn, nothing is sealed, archived, versioned or logged, and the invoice
+ * keeps its status, PDF path and customer snapshot (a draft is shown with the snapshot
+ * issuing would save). For issued invoices the stored PDF is the document.
+ */
+export async function previewInvoicePdf(invoiceId: number): Promise<SidecarResponse> {
+  const company = await readSettingsForPreview();
+  const blocked = companyIncompleteResponse(company);
+  if (blocked) return blocked;
+  const data = await getInvoice(invoiceId);
+  if (!data) throw new Error(`Rechnung ${invoiceId} nicht gefunden.`);
+  const { invoice, customer } = await invoiceAsShown(data.invoice);
+  const payload = buildInvoicePayload({
+    invoice,
+    items: data.items,
+    customer,
+    company,
+    outputPath: NO_OUTPUT_PATH,
+    correctsInvoice: await findCorrectedInvoice(data.invoice),
+  });
+  return renderPreviewPdf("invoice", invoiceId, payload);
+}
+
 export type XrechnungExport =
   | { status: "exported"; xmlPath: string }
   | { status: "incomplete"; missing: string[] };
@@ -168,7 +194,7 @@ export type XrechnungExport =
 export async function exportInvoiceXrechnung(invoiceId: number): Promise<XrechnungExport> {
   const company = await loadSettings();
   const data = await getInvoice(invoiceId);
-  if (!data) throw new Error(`Invoice ${invoiceId} not found`);
+  if (!data) throw new Error(`Rechnung ${invoiceId} nicht gefunden.`);
   const { invoice, items } = data;
   if (isDraftNumber(invoice.number)) {
     throw new Error("Entwürfe können nicht als XRechnung exportiert werden. Bitte die Rechnung erst ausstellen.");
@@ -183,7 +209,7 @@ export async function exportInvoiceXrechnung(invoiceId: number): Promise<Xrechnu
   if (missing.length > 0) return { status: "incomplete", missing };
 
   const outputPath = await documentOutputPath("Rechnungen", invoice.number, "xml");
-  const payload = buildPayload({
+  const payload = buildInvoicePayload({
     invoice: exported,
     items,
     customer,

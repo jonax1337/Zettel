@@ -1,11 +1,9 @@
 <script lang="ts">
-  import { Label, Textarea } from "$lib/ui";
+  import { Field, Textarea } from "$lib/ui";
 
-  let { value = $bindable() }: { value: string | null } = $props();
+  let { value = $bindable(), wide = false }: { value: string | null; wide?: boolean } = $props();
 </script>
 
-<div class="flex flex-col gap-1.5">
-  <Label>Notizen (intern)</Label>
+<Field label="Notizen (intern)" {wide} hint="Nur intern sichtbar, erscheint nicht auf Rechnungen.">
   <Textarea rows={3} bind:value />
-  <p class="text-xs text-muted-foreground">Nur intern sichtbar, erscheint nicht auf Rechnungen.</p>
-</div>
+</Field>

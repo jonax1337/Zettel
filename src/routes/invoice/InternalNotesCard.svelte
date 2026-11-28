@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Button, Card, CardContent, DatePicker, Label, Textarea, toast } from "$lib/ui";
+  import { errorMessage } from "$lib/utils/error-message";
+  import { Button, DatePicker, Label, Textarea, toast, Panel } from "$lib/ui";
   import { updateInvoiceInternalMeta } from "$lib/db/invoices";
   import type { Invoice } from "$lib/db/schema";
   import { fromIsoDate, toIsoDate } from "$lib/utils/date";
@@ -37,39 +38,32 @@
       toast.success("Interne Notizen gespeichert");
       await onSaved();
     } catch (e) {
-      toast.error("Speichern fehlgeschlagen", String(e));
+      toast.error("Speichern fehlgeschlagen", errorMessage(e));
     } finally {
       saving = false;
     }
   }
 </script>
 
-<Card class="mb-6">
-  <CardContent class="space-y-4">
-    <div>
-      <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
-        Interne Notizen & Wiedervorlage
-      </h3>
-      <p class="text-xs text-muted-foreground mt-0.5">Nur intern, erscheint nicht auf der Rechnung.</p>
-    </div>
-    <div class="flex flex-col gap-1.5">
-      <Label for="notes-internal">Notizen (intern)</Label>
-      <Textarea
-        id="notes-internal"
-        rows={3}
-        bind:value={notesDraft}
-        placeholder="z. B. Telefonat am … abgesprochen, Skonto gewährt, etc."
-      />
-    </div>
-    <div class="flex flex-col gap-1.5 max-w-xs">
-      <Label for="follow-up">Wiedervorlage am</Label>
-      <DatePicker id="follow-up" bind:value={followUpIso} />
-    </div>
-    <div class="flex items-center gap-2">
-      <Button onclick={save} disabled={!dirty || saving}>{saving ? "Speichere…" : "Speichern"}</Button>
-      {#if dirty && !saving}
-        <span class="text-xs text-muted-foreground">Ungespeicherte Änderungen.</span>
-      {/if}
-    </div>
-  </CardContent>
-</Card>
+<Panel title="Notiz und Wiedervorlage">
+  <p class="-mt-1 text-xs text-muted-foreground">Nur intern, erscheint nicht auf der Rechnung.</p>
+  <div class="flex flex-col gap-1.5">
+    <Label for="notes-internal">Notiz</Label>
+    <Textarea
+      id="notes-internal"
+      rows={3}
+      bind:value={notesDraft}
+      placeholder="z. B. Telefonat am … abgesprochen, Skonto gewährt, etc."
+    />
+  </div>
+  <div class="flex flex-col gap-1.5">
+    <Label for="follow-up">Wiedervorlage am</Label>
+    <DatePicker id="follow-up" bind:value={followUpIso} />
+  </div>
+  <div class="flex items-center gap-2">
+    <Button variant="outline" size="sm" onclick={save} disabled={!dirty || saving}>{saving ? "Speichere…" : "Speichern"}</Button>
+    {#if dirty && !saving}
+      <span class="text-xs text-muted-foreground">Ungespeicherte Änderungen.</span>
+    {/if}
+  </div>
+</Panel>

@@ -11,9 +11,9 @@
 </script>
 
 {#if loading}
-  <p class="text-sm text-muted-foreground">Lade…</p>
+  <p role="status" class="text-sm text-muted-foreground">Lade…</p>
 {:else if error && !hasDocument}
-  <p class="text-sm text-destructive">{error}</p>
+  <p role="alert" class="text-sm text-destructive">{error}</p>
 {:else if hasDocument && unreadable}
-  <p class="text-sm text-destructive">{unreadableMessage}</p>
+  <p role="alert" class="text-sm text-destructive">{unreadableMessage}</p>
 {/if}

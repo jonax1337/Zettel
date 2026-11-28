@@ -1,23 +1,18 @@
 <script lang="ts">
-  import {
-    Button,
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-    CardDescription,
-    Label,
-    Select,
-    PageHeader,
-    toast,
-  } from "$lib/ui";
+  import { errorMessage } from "$lib/utils/error-message";
+  import { Button, QueryBoundary, Select, Stat, StatRow, toast } from "$lib/ui";
   import { euerToCsv, EUER_SURPLUS_LABEL, type EuerLine, type EuerReport } from "$lib/reports/euer";
   import { EUER_KZ } from "$lib/reports/euer-form";
   import { buildEuerReport } from "$lib/reports/euer-load";
   import { centsToEur } from "$lib/utils/money";
-  import { Download, AlertTriangle, ArrowRight, Info } from "$lib/brand-icons";
-  import BackLink from "./parts/entity/BackLink.svelte";
+  import { ChevronRight, Download } from "$lib/brand-icons";
   import { createQueryState } from "./parts/entity/query-state.svelte";
+  import EmptyLinesToggle from "./parts/reports/EmptyLinesToggle.svelte";
+  import { partitionEmptyLines } from "./parts/reports/empty-lines";
+  import { isEmptyEuerLine, splitEuerSections } from "./parts/reports/euer-sections";
+  import Notice from "./parts/reports/Notice.svelte";
+  import ReportsShell from "./parts/reports/ReportsShell.svelte";
+  import ReportToolbar from "./parts/reports/ReportToolbar.svelte";
   import { saveTextFileWithDialog } from "./parts/reports/save-text-file";
   import { selectableTaxYears } from "./parts/reports/tax-years";
 
@@ -25,6 +20,7 @@
 
   let yearStr = $state(String(currentYear));
   let saving = $state(false);
+  let showEmptyLines = $state(false);
 
   const yearItems = $derived(
     selectableTaxYears(currentYear, Number.parseInt(yearStr, 10)).map((y) => ({
@@ -40,14 +36,17 @@
     report.reload();
   });
 
-  const sections = $derived.by(() => {
-    const lines = report.data?.lines ?? [];
-    const incomeEnd = lines.findIndex((line) => line.kz === EUER_KZ.incomeSum) + 1;
-    return [
-      { title: "Betriebseinnahmen", lines: lines.slice(0, incomeEnd) },
-      { title: "Betriebsausgaben", lines: lines.slice(incomeEnd) },
-    ];
-  });
+  const lines = $derived(partitionEmptyLines(report.data?.lines ?? [], isEmptyEuerLine, showEmptyLines));
+  const sections = $derived(splitEuerSections(lines.lines));
+
+  // The shown report can be the previous year's while a new one loads, or after it failed; never export that.
+  const exportable = $derived(
+    !report.loading && !report.error && report.data?.year === Number.parseInt(yearStr, 10),
+  );
+
+  function lineAmount(kz: string): number {
+    return report.data?.lines.find((line) => line.kz === kz)?.amountCent ?? 0;
+  }
 
   function formatAmount(line: EuerLine): string {
     return line.amountCent === null ? "—" : centsToEur(line.amountCent);
@@ -64,127 +63,109 @@
       });
       if (saved) toast.success("CSV gespeichert");
     } catch (e) {
-      toast.error("Speichern fehlgeschlagen", String(e));
+      toast.error("Speichern fehlgeschlagen", errorMessage(e));
     } finally {
       saving = false;
     }
   }
 </script>
 
-<PageHeader
-  title="Anlage EÜR"
-  subtitle="Betriebseinnahmen und Betriebsausgaben des Jahres nach Zahlungsdatum, sortiert nach den Zeilen des amtlichen Vordrucks. Werte zum Abtippen in ELSTER — kein direkter Upload."
->
-  {#snippet back()}
-    <BackLink href="/">Dashboard</BackLink>
-  {/snippet}
-  {#snippet actions()}
-    <Button href="/settings/documents" variant="outline" size="sm">
-      Zuordnung der Ausgabenkategorien anpassen
-      <ArrowRight class="size-4" />
-    </Button>
-  {/snippet}
-</PageHeader>
+<ReportsShell active="/reports/euer">
+  <ReportToolbar>
+    <Select class="h-8 w-24 text-[13px]" bind:value={yearStr} items={yearItems} aria-label="Jahr" />
+    {#snippet actions()}
+      <Button variant="ghost" size="sm" href="/settings/tax" class="group">
+        Ausgabenkategorien zuordnen
+        <ChevronRight class="transition-transform group-hover:translate-x-0.5" />
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onclick={() => report.data && onSaveCsv(report.data)}
+        disabled={saving || !exportable}
+      >
+        <Download />
+        {saving ? "Speichere…" : "Als CSV speichern"}
+      </Button>
+    {/snippet}
+  </ReportToolbar>
 
-<div class="mb-6 rounded-md border border-warning/40 bg-warning/5 p-3 flex items-start gap-3">
-  <AlertTriangle class="size-5 text-warning shrink-0 mt-0.5" />
-  <div class="text-sm space-y-1">
-    <p class="font-medium">Keine Steuerberatung.</p>
-    <p class="text-muted-foreground">
-      Werte nach Zahlungsdatum (Zufluss/Abfluss) aus den erfassten Belegen, zum Abtippen in ELSTER.
-      AfA, Anlagevermögen, private Nutzung, USt-Zahlungen/-Erstattungen ans Finanzamt und Sonderfälle
-      sind nicht enthalten. Mit dem Steuerberater abstimmen.
-    </p>
-    <p class="text-muted-foreground">
-      Ob Ausgaben brutto (Kleinunternehmer) oder netto mit Vorsteuer gebucht werden, richtet sich nach
-      der aktuellen Einstellung „Kleinunternehmer“, nicht nach dem Rechnungsdatum. Stornorechnungen
-      mindern die Einnahmen erst, wenn die Erstattung als Zahlung auf der Stornorechnung erfasst ist.
-    </p>
-  </div>
-</div>
+  <QueryBoundary query={report}>
+    {#if report.data}
+      {@const current = report.data}
+      {#if !current.formYearExact}
+        <Notice>Zeilennummern für {current.year} nicht hinterlegt, angezeigt nach Formular {current.formYear}.</Notice>
+      {/if}
+      {#each current.warnings as warning (warning)}
+        <Notice tone="warn">{warning}</Notice>
+      {/each}
 
-<div class="mb-6 max-w-40">
-  <div class="flex flex-col gap-1.5">
-    <Label>Jahr</Label>
-    <Select bind:value={yearStr} items={yearItems} />
-  </div>
-</div>
+      <StatRow>
+        <Stat label="Betriebseinnahmen" value={centsToEur(lineAmount(EUER_KZ.incomeSum))} />
+        <Stat label="Betriebsausgaben" value={centsToEur(lineAmount(EUER_KZ.expenseSum))} />
+        <Stat label={current.surplusCent < 0 ? "Fehlbetrag" : "Überschuss"} value={centsToEur(Math.abs(current.surplusCent))} />
+      </StatRow>
 
-{#if report.error}
-  <p class="text-sm text-destructive">Bericht konnte nicht erzeugt werden: {report.error}</p>
-{:else if report.loading}
-  <p class="text-sm text-muted-foreground">Berechne…</p>
-{:else if report.data}
-  {@const current = report.data}
-  {#if !current.formYearExact}
-    <div class="mb-4 rounded-md border border-border bg-muted/40 p-3 flex items-start gap-3">
-      <Info class="size-5 text-muted-foreground shrink-0 mt-0.5" />
-      <p class="text-sm text-muted-foreground">
-        Zeilennummern für {current.year} nicht hinterlegt, angezeigt nach Formular {current.formYear}.
-      </p>
-    </div>
-  {/if}
-  {#each current.warnings as warning (warning)}
-    <div class="mb-4 rounded-md border border-warning/40 bg-warning/5 p-3 flex items-start gap-3">
-      <AlertTriangle class="size-5 text-warning shrink-0 mt-0.5" />
-      <p class="text-sm">{warning}</p>
-    </div>
-  {/each}
+      <div class="mb-2.5 flex flex-wrap items-baseline gap-x-2.5">
+        <h2>Anlage EÜR {current.year}</h2>
+        <span class="text-[13px] text-muted-foreground">Zeilen nach dem Formular {current.formYear}</span>
+      </div>
 
-  <Card>
-    <CardHeader>
-      <CardTitle>Anlage EÜR {current.year}</CardTitle>
-      <CardDescription>
-        Zeilen nach dem Formular {current.formYear}. Leere Zeilen („—“) bleiben im Formular leer.
-      </CardDescription>
-    </CardHeader>
-    <CardContent class="p-0">
-      <table class="w-full text-sm">
-        <thead class="bg-muted/40 text-left">
-          <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-            <th class="px-4 py-3 font-medium w-20">Zeile</th>
-            <th class="px-4 py-3 font-medium w-28">Kz</th>
-            <th class="px-4 py-3 font-medium">Bezeichnung</th>
-            <th class="px-4 py-3 font-medium text-right w-40">Betrag</th>
+      <table class="data-list">
+        <thead>
+          <tr>
+            <th class="w-20">Zeile</th>
+            <th class="w-28">Kennzahl</th>
+            <th>Bezeichnung</th>
+            <th class="text-right">Betrag</th>
           </tr>
         </thead>
         {#each sections as section (section.title)}
           <tbody>
-            <tr class="border-t bg-muted/20">
-              <th colspan="4" class="px-4 py-2 text-left text-xs uppercase tracking-wider font-semibold">
-                {section.title}
-              </th>
+            <tr>
+              <td colspan="4" class="pt-3 font-display font-extrabold">{section.title}</td>
             </tr>
             {#each section.lines as line (line.kz)}
-              <tr class="border-t {line.kind === 'sum' ? 'font-semibold bg-muted/10' : ''}">
-                <td class="px-4 py-3 font-mono">{line.line}</td>
-                <td class="px-4 py-3 font-mono">{line.kz}</td>
-                <td class="px-4 py-3">
+              <tr class={line.kind === "sum" ? "font-bold" : ""}>
+                <td class="py-3 align-top tabular-nums">{line.line}</td>
+                <td class="py-3 align-top text-muted-foreground tabular-nums">{line.kz}</td>
+                <td class="py-3">
                   <div>{line.label}</div>
                   {#if line.hint}
-                    <div class="text-xs text-muted-foreground mt-0.5">{line.hint}</div>
+                    <div class="text-[13px] font-normal text-muted-foreground">{line.hint}</div>
                   {/if}
                 </td>
-                <td class="px-4 py-3 text-right font-mono tabular-nums">{formatAmount(line)}</td>
+                <td class="py-3 text-right align-top font-bold whitespace-nowrap tabular-nums">{formatAmount(line)}</td>
               </tr>
             {/each}
           </tbody>
         {/each}
-        <tfoot>
-          <tr class="border-t-2 font-semibold">
-            <td class="px-4 py-3" colspan="3">{EUER_SURPLUS_LABEL}</td>
-            <td class="px-4 py-3 text-right font-mono tabular-nums">{centsToEur(current.surplusCent)}</td>
+        <tbody>
+          <tr class="font-bold">
+            <td colspan="3" class="py-3">{EUER_SURPLUS_LABEL}</td>
+            <td class="py-3 text-right whitespace-nowrap tabular-nums">{centsToEur(current.surplusCent)}</td>
           </tr>
-        </tfoot>
+        </tbody>
       </table>
-    </CardContent>
-  </Card>
+      <EmptyLinesToggle count={lines.emptyCount} noun={{ singular: "Zeile", plural: "Zeilen" }} bind:open={showEmptyLines} />
 
-  <div class="mt-6 flex flex-wrap items-center gap-3">
-    <Button onclick={() => onSaveCsv(current)} disabled={saving}>
-      <Download class="size-4" />
-      {saving ? "Speichere…" : "CSV exportieren"}
-    </Button>
-    <p class="text-sm text-muted-foreground">Der Export ist nur als CSV verfügbar, ein PDF gibt es nicht.</p>
-  </div>
-{/if}
+      <div class="mt-5 max-w-[78ch] space-y-1.5 text-[13px] text-muted-foreground">
+        <p>
+          Zettel rechnet aus den erfassten Belegen und ersetzt keine Steuerberatung. Die Werte sind zum Abtippen in
+          ELSTER gedacht, einen Upload gibt es nicht. Betriebseinnahmen und -ausgaben zählen nach Zahlungsdatum
+          (Zufluss und Abfluss). Leere Zeilen bleiben im Formular leer.
+        </p>
+        <p>
+          AfA, Anlagevermögen, private Nutzung, Zahlungen und Erstattungen der Umsatzsteuer an das Finanzamt und
+          Sonderfälle sind nicht enthalten. Stimme die Werte mit deiner Steuerberatung ab.
+        </p>
+        <p>
+          Ob Ausgaben brutto (Kleinunternehmer) oder netto mit Vorsteuer gebucht werden, richtet sich nach der
+          aktuellen Einstellung „Kleinunternehmer“, nicht nach dem Rechnungsdatum. Stornorechnungen mindern die
+          Einnahmen erst, wenn die Erstattung als Zahlung auf der Stornorechnung erfasst ist.
+        </p>
+        <p>Der Export ist nur als CSV verfügbar, ein PDF gibt es nicht.</p>
+      </div>
+    {/if}
+  </QueryBoundary>
+</ReportsShell>

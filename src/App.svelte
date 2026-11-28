@@ -5,6 +5,7 @@
   import Dashboard from "./routes/Dashboard.svelte";
   import CustomersList from "./routes/CustomersList.svelte";
   import CustomerEdit from "./routes/CustomerEdit.svelte";
+  import CustomerDetail from "./routes/CustomerDetail.svelte";
   import InvoicesList from "./routes/InvoicesList.svelte";
   import InvoiceEdit from "./routes/InvoiceEdit.svelte";
   import InvoiceDetail from "./routes/InvoiceDetail.svelte";
@@ -30,11 +31,16 @@
   import Validate from "./routes/Validate.svelte";
   import Settings from "./routes/Settings.svelte";
   import SettingsCompany from "./routes/settings/Company.svelte";
+  import SettingsTax from "./routes/settings/Tax.svelte";
   import SettingsDocuments from "./routes/settings/Documents.svelte";
+  import SettingsEInvoice from "./routes/settings/EInvoice.svelte";
+  import SettingsMail from "./routes/settings/Mail.svelte";
   import SettingsAppearance from "./routes/settings/Appearance.svelte";
   import SettingsData from "./routes/settings/Data.svelte";
+  import SettingsUpdates from "./routes/settings/Updates.svelte";
   import SettingsAdvanced from "./routes/settings/Advanced.svelte";
   import Export from "./routes/Export.svelte";
+  import ReportsHub from "./routes/ReportsHub.svelte";
   import NotFound from "./routes/NotFound.svelte";
   import { onMount } from "svelte";
   import { checkForUpdate, isTauri } from "$lib/updater";
@@ -72,7 +78,8 @@
     "/": Dashboard,
     "/customers": CustomersList,
     "/customers/new": editorRoute(CustomerEdit, "new"),
-    "/customers/:id": editorRoute(CustomerEdit, "edit"),
+    "/customers/:id/edit": editorRoute(CustomerEdit, "edit"),
+    "/customers/:id": CustomerDetail,
     "/invoices": InvoicesList,
     "/invoices/new": editorRoute(InvoiceEdit, "new"),
     "/invoices/:id/edit": editorRoute(InvoiceEdit, "edit"),
@@ -100,15 +107,20 @@
     "/reminders/new/:invoiceId": editorRoute(ReminderEdit, "new"),
     "/reminders/:id": editorRoute(ReminderEdit, "edit"),
     "/bank-import": BankImport,
+    "/reports": ReportsHub,
     "/reports/ustva": UstvaReport,
     "/reports/euer": EuerReport,
     "/reports/taxes": TaxReport,
     "/validate": Validate,
     "/settings": Settings,
     "/settings/company": SettingsCompany,
+    "/settings/tax": SettingsTax,
     "/settings/documents": SettingsDocuments,
+    "/settings/einvoice": SettingsEInvoice,
+    "/settings/mail": SettingsMail,
     "/settings/appearance": SettingsAppearance,
     "/settings/data": SettingsData,
+    "/settings/updates": SettingsUpdates,
     "/settings/advanced": SettingsAdvanced,
     "/export": Export,
     "*": NotFound,

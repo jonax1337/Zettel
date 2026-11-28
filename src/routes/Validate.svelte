@@ -1,17 +1,9 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { getCurrentWebview } from "@tauri-apps/api/webview";
-  import {
-    Button,
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-    CardDescription,
-    Badge,
-    toast,
-  } from "$lib/ui";
+  import { Button, toast } from "$lib/ui";
+  import { cn } from "$lib/utils";
   import {
     getValidatorStatus,
     validatePdf,
@@ -19,20 +11,12 @@
     type ValidationReport,
     type ValidatorStatus,
   } from "$lib/validator";
-  import {
-    ShieldCheck,
-    ShieldAlert,
-    FileSearch,
-    Upload,
-    FileUp,
-    AlertCircle,
-  } from "$lib/brand-icons";
-  import BackLink from "./parts/entity/BackLink.svelte";
-  import {
-    firstValidatableFile,
-    validationVerdictLabel,
-    VALIDATOR_UNAVAILABLE_MESSAGE,
-  } from "./parts/reports/validate-files";
+  import { FileSearch, FileUp } from "$lib/brand-icons";
+  import Notice from "./parts/reports/Notice.svelte";
+  import ReportsShell from "./parts/reports/ReportsShell.svelte";
+  import ValidationResult from "./parts/reports/ValidationResult.svelte";
+  import { listenForFileDrop } from "./parts/entity/file-drop";
+  import { firstValidatableFile, VALIDATOR_UNAVAILABLE_MESSAGE } from "./parts/reports/validate-files";
 
   let status = $state<ValidatorStatus | null>(null);
   let report = $state<ValidationReport | null>(null);
@@ -45,36 +29,14 @@
   onMount(() => {
     loadStatus();
 
-    let disposed = false;
-    let stopListening: (() => void) | undefined;
-    getCurrentWebview()
-      .onDragDropEvent(({ payload }) => {
-        if (payload.type === "over") {
-          dropHover = true;
-        } else if (payload.type === "leave") {
-          dropHover = false;
-        } else if (payload.type === "drop") {
-          dropHover = false;
-          handleDrop(payload.paths);
-        }
-      })
-      .then((unlisten) => {
-        if (disposed) unlisten();
-        else stopListening = unlisten;
-      })
-      .catch((e) => toast.warning("Drag & Drop nicht verfügbar", String(e)));
-
-    return () => {
-      disposed = true;
-      stopListening?.();
-    };
+    return listenForFileDrop({ onHover: (over) => (dropHover = over), onDrop: handleDrop });
   });
 
   async function loadStatus() {
     try {
       status = await getValidatorStatus();
     } catch (e) {
-      toast.error("Status konnte nicht geladen werden", String(e));
+      toast.error("Status konnte nicht geladen werden", errorMessage(e));
     }
   }
 
@@ -109,7 +71,7 @@
       const path = await pickFile();
       if (path) await runValidate(path);
     } catch (e) {
-      toast.error("Datei-Dialog fehlgeschlagen", String(e));
+      toast.error("Datei-Dialog fehlgeschlagen", errorMessage(e));
     }
   }
 
@@ -122,136 +84,51 @@
         ? await validateXml(path)
         : await validatePdf(path);
     } catch (e) {
-      toast.error("Validierung fehlgeschlagen", String(e));
+      toast.error("Validierung fehlgeschlagen", errorMessage(e));
     } finally {
       loading = false;
     }
   }
 </script>
 
-<div class="flex flex-col gap-6">
-  <div>
-    <BackLink href="/">Dashboard</BackLink>
-    <h1 class="text-3xl font-semibold tracking-tight mt-2">E-Rechnung validieren</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      Lokale Validierung gegen die offiziellen KoSIT/XRechnung-Schematron-Regeln.
-      Kein Upload — alles bleibt auf diesem Rechner.
-    </p>
-  </div>
+<ReportsShell active="/validate">
+  <div class="max-w-[860px]">
+    {#if status && !canValidate}
+      <Notice tone="warn">
+        <b class="font-bold">Validator nicht einsatzbereit.</b>
+        {VALIDATOR_UNAVAILABLE_MESSAGE}
+      </Notice>
+    {/if}
 
-  {#if status && !canValidate}
-    <Card class="border-warning/40 bg-warning/5">
-      <CardHeader>
-        <CardTitle class="flex items-center gap-2 text-base">
-          <AlertCircle class="size-4 text-warning" />
-          Validator nicht einsatzbereit
-        </CardTitle>
-        <CardDescription>{VALIDATOR_UNAVAILABLE_MESSAGE}</CardDescription>
-      </CardHeader>
-    </Card>
-  {/if}
-
-  <Card>
-    <CardHeader>
-      <CardTitle class="text-base">Datei prüfen</CardTitle>
-      <CardDescription>
-        PDF mit eingebettetem ZUGFeRD/Factur-X-XML oder reine XRechnung-XML.
-      </CardDescription>
-    </CardHeader>
-    <CardContent class="flex flex-col gap-3">
-      <div
-        class="rounded-lg border-2 border-dashed p-6 text-center transition-colors {dropHover
-          ? 'border-primary bg-primary/5'
-          : 'border-muted-foreground/25'}"
-      >
-        <div class="flex flex-col items-center gap-3">
-          <FileUp class="size-8 text-muted-foreground" />
-          <div class="text-sm">
-            <span class="font-medium">PDF oder XML hierher ziehen</span>
-            <span class="text-muted-foreground"> oder </span>
-            <Button
-              variant="link"
-              class="h-auto p-0"
-              onclick={pickAndValidate}
-              disabled={!canValidate || loading}
-            >
-              <Upload class="size-4" />
-              Datei auswählen
-            </Button>
-          </div>
-        </div>
+    <div
+      class={cn(
+        "flex items-center gap-3.5 rounded-xl border-[1.5px] border-dashed px-4.5 py-4 text-muted-foreground transition-colors",
+        dropHover ? "border-primary bg-surface" : "border-line-strong",
+      )}
+    >
+      <FileUp class="size-6 shrink-0" />
+      <div class="min-w-0 flex-1">
+        <b class="text-foreground">PDF oder XML hierher ziehen.</b>
+        Die Prüfung läuft lokal gegen die offiziellen KoSIT- und XRechnung-Regeln, nichts verlässt deinen Rechner.
       </div>
-      {#if !canValidate && status}
-        <p class="text-xs text-muted-foreground">
-          Solange die Prüfung nicht verfügbar ist, kann hier nichts validiert werden.
-        </p>
+      <Button onclick={pickAndValidate} disabled={!canValidate || loading}>Datei prüfen</Button>
+    </div>
+    <p class="mt-2 text-[13px] text-muted-foreground">
+      PDF mit eingebettetem ZUGFeRD- oder Factur-X-XML oder reine XRechnung-XML.
+      {#if status && !canValidate}
+        Solange die Prüfung nicht verfügbar ist, kann hier nichts geprüft werden.
       {/if}
-    </CardContent>
-  </Card>
+    </p>
 
-  {#if loading}
-    <Card>
-      <CardContent class="flex items-center gap-3 py-6">
-        <FileSearch class="size-5 animate-pulse text-muted-foreground" />
-        <span class="text-sm text-muted-foreground">
-          Validiere {activeFile}…
-        </span>
-      </CardContent>
-    </Card>
-  {/if}
+    {#if loading}
+      <div class="mt-8 flex items-center gap-3 text-sm text-muted-foreground">
+        <FileSearch class="size-5 shrink-0 animate-pulse" />
+        <span class="min-w-0 break-all">Prüfe {activeFile}…</span>
+      </div>
+    {/if}
 
-  {#if report}
-    <Card>
-      <CardHeader class="flex flex-row items-start justify-between gap-4">
-        <div>
-          <CardTitle class="flex items-center gap-2 text-base">
-            {#if report.valid}
-              <ShieldCheck class="size-5 text-success" />
-              Validierung bestanden
-            {:else}
-              <ShieldAlert class="size-5 text-destructive" />
-              Validierung fehlgeschlagen
-            {/if}
-          </CardTitle>
-          <CardDescription class="mt-1">
-            {report.scenario ?? "Kein Szenario erkannt"} ·
-            <span class="font-mono text-xs">{activeFile}</span>
-          </CardDescription>
-        </div>
-        <Badge variant={report.valid ? "default" : "destructive"}>
-          {validationVerdictLabel(report.valid)}
-        </Badge>
-      </CardHeader>
-      {#if report.findings.length > 0}
-        <CardContent>
-          <div class="text-xs uppercase font-semibold text-muted-foreground tracking-wider mb-2">
-            {report.findings.length} Findings
-          </div>
-          <ul class="flex flex-col gap-2">
-            <!-- The same rule can fire at several locations, so code and message are no unique key. -->
-            {#each report.findings as finding, idx (idx)}
-              <li class="rounded-md border border-border bg-card/50 p-3 text-sm">
-                <div class="flex items-start gap-2">
-                  <ShieldAlert class="size-4 mt-0.5 shrink-0 text-destructive" />
-                  <div class="flex-1 min-w-0">
-                    <div class="font-medium">
-                      {#if finding.code}
-                        <span class="font-mono text-xs text-muted-foreground mr-2">{finding.code}</span>
-                      {/if}
-                      {finding.message}
-                    </div>
-                    {#if finding.location}
-                      <div class="text-xs text-muted-foreground font-mono mt-1 truncate">
-                        {finding.location}
-                      </div>
-                    {/if}
-                  </div>
-                </div>
-              </li>
-            {/each}
-          </ul>
-        </CardContent>
-      {/if}
-    </Card>
-  {/if}
-</div>
+    {#if report && activeFile}
+      <ValidationResult {report} filePath={activeFile} />
+    {/if}
+  </div>
+</ReportsShell>

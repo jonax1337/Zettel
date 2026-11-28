@@ -22,7 +22,7 @@
 
 | Software | Zweck | Version | Einsatz seit |
 |---|---|---|---|
-| Zettel | Angebote, Rechnungen, Mahnungen, Eingangsrechnungen, Auswertungen | [Versionsnummer, z. B. 0.24.0] | [Datum] |
+| Zettel | Angebote, Rechnungen, Mahnungen, Ausgaben, Auswertungen | [Versionsnummer, z. B. 0.24.0] | [Datum] |
 | [Bank-Software / Online-Banking] | Zahlungseingänge, Kontoauszüge | [–] | [Datum] |
 | [Steuerberater-Schnittstelle, z. B. DATEV] | Übergabe der Buchungsdaten | [–] | [Datum] |
 
@@ -33,7 +33,7 @@ Bei jedem Versionswechsel von Zettel die Tabelle und die Änderungshistorie (Abs
 ### 2.1 Belegfluss Ausgangsrechnungen
 
 1. **Angebot** (`AN-JJJJ-NNNN`): wird als PDF/A-3 erzeugt. Angebote können in eine Rechnung umgewandelt werden.
-2. **Rechnung als Entwurf**: Positionen, Kunde und Konditionen erfassen. Ein Entwurf trägt nur einen Platzhalter (`Entwurf #xxxx`) und noch keine Rechnungsnummer. Entwürfe dürfen frei geändert und gelöscht werden.
+2. **Rechnung als Entwurf**: Positionen, Kunde und Konditionen erfassen. Ein Entwurf trägt nur einen Platzhalter (`Entwurf #xxxx`) und noch keine Rechnungsnummer. Entwürfe dürfen frei geändert und gelöscht werden. „PDF-Vorschau“ zeigt einen Entwurf als PDF mit dem Aufdruck „ENTWURF“; sie ist kein Beleg (siehe 3.2).
 3. **Rechnung ausstellen** (Versand oder PDF-Erzeugung): Erst jetzt wird die fortlaufende Rechnungsnummer (`RE-JJJJ-NNNN`) vergeben, das PDF erzeugt und die Rechnung **versiegelt** (siehe 3.5). Ab hier ist sie nicht mehr änderbar, außer über „Zurück zu Entwurf“ (nur für versendete Rechnungen ohne erfasste Zahlung und ohne Stornorechnung; die Rechnung behält ihre Nummer, der Schritt wird versiegelt und protokolliert, siehe 3.3).
 4. **Versand**: [per E-Mail aus dem Mailprogramm / per Post / Download aus Zettel]. Zettel setzt den Versendet-Zeitpunkt beim Ausstellen, nicht erst, wenn die E-Mail im Mailprogramm tatsächlich abgeschickt wird (Zettel übergibt nur PDF und Empfänger an das Mailprogramm). [Wie du den tatsächlichen Versand nachweist, z. B. gesendete E-Mail im Mail-Archiv.]
 5. **Zahlung**: Zahlungseingänge werden je Rechnung erfasst (Datum, Betrag). Teilzahlungen sind möglich; die Rechnung gilt erst bei vollständiger Zahlung als bezahlt.
@@ -72,10 +72,11 @@ Rechnungsformat: [PDF/A-3 mit eingebettetem ZUGFeRD/Factur-X-XML / XRechnung (CI
 ### 3.2 Belegformate
 
 - Ausgangsrechnungen: PDF/A-3 mit eingebettetem maschinenlesbarem XML (ZUGFeRD/Factur-X, Profil EN 16931) oder XRechnung 3.0 (CII). Bei ZUGFeRD/Factur-X ist das PDF das archivierte Original. Bei XRechnung ist die `.xml` das Original, das PDF nur eine Darstellung; die versendete Datei bleibt aufbewahrt (ein späterer erneuter Export liest Leitweg-ID und E-Mail des Kunden aus den dann aktuellen Kundendaten und kann abweichen).
-- Eingehende reine XML-E-Rechnungen (z. B. XRechnung) kann Zettel prüfen, aber nicht als Eingangsrechnung importieren; sie werden außerhalb von Zettel archiviert: [Ablageort].
+- Eingehende reine XML-E-Rechnungen (z. B. XRechnung) kann Zettel prüfen, aber nicht als Ausgabe importieren; sie werden außerhalb von Zettel archiviert: [Ablageort].
+- Die „PDF-Vorschau“ eines Entwurfs ist kein Beleg: kein XML, kein PDF/A, kein Zahlungs-QR-Code, keine Nummer, nicht archiviert und nicht im Änderungsprotokoll oder in der Siegelkette. Die Datei liegt im Cache-Ordner der App (Windows `%LOCALAPPDATA%\digital.laux.zettel\pdf-preview\`, macOS `~/Library/Caches/digital.laux.zettel/pdf-preview/`, Linux `~/.cache/digital.laux.zettel/pdf-preview/`), wird je Dokument überschrieben und beim Start und Beenden der App sowie bei „Daten löschen“ gelöscht.
 - Beträge werden als ganze Cent gespeichert (keine Rundungsfehler durch Fließkommazahlen).
 - Die Rechnungsnummern sind fortlaufend und lückenlos; Entwürfe verbrauchen keine Nummer.
-- Zettel kann erzeugte E-Rechnungen mit dem KoSIT-Validator prüfen (Sidebar „E-Rechnung validieren“ bzw. „Validieren“ im Rechnungsdetail).
+- Zettel kann erzeugte E-Rechnungen mit dem KoSIT-Validator prüfen (Auswertungen → „E-Rechnung prüfen“ bzw. „Validieren“ im Rechnungsdetail).
 
 ### 3.3 Unveränderbarkeit ausgestellter Rechnungen
 
@@ -101,7 +102,7 @@ Rechnungsformat: [PDF/A-3 mit eingebettetem ZUGFeRD/Factur-X-XML / XRechnung (CI
 
 ### 3.6 Integritätsprüfung
 
-- Einstellungen → Daten → Integritätsprüfung prüft die Siegelkette (Verkettung, Hashes) und vergleicht jede ausgestellte Rechnung mit ihrem Siegel.
+- Einstellungen → Daten und Backup → Integritätsprüfung prüft die Siegelkette (Verkettung, Hashes) und vergleicht jede ausgestellte Rechnung mit ihrem Siegel.
 - Gemeldet werden u. a.: unterbrochene Kette, manipuliertes Siegel, geänderter Rechnungsinhalt, gelöschte Rechnung, nicht versiegelte Rechnung (Warnung).
 - Jede Meldung ist zu klären und das Ergebnis zu dokumentieren (5.1).
 

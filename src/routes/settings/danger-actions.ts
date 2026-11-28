@@ -40,6 +40,11 @@ export function dangerActionDescription(
   }
 }
 
+/** The app says "Ausgaben" wherever the user reads it; the table label from the database layer still says "Eingangsrechnungen". */
+export function displayTableLabels(labels: Record<WipeableTable, string>): Record<WipeableTable, string> {
+  return { ...labels, expenses: labels.expenses.replace("Eingangsrechnungen", "Ausgaben") };
+}
+
 export function joinTableLabels(
   tables: WipeableTable[],
   tableLabels: Record<WipeableTable, string>,

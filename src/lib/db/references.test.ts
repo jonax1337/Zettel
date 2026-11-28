@@ -50,6 +50,6 @@ describe("assertVendorDeletable", () => {
   it("refuses a vendor that still has expenses", async () => {
     select.mockResolvedValueOnce([{ c0: 1 }]);
 
-    await expect(assertVendorDeletable(3)).rejects.toThrow("1 Eingangsrechnung.");
+    await expect(assertVendorDeletable(3)).rejects.toThrow("1 Ausgabe.");
   });
 });

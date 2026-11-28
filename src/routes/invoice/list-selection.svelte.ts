@@ -1,3 +1,5 @@
+import { errorMessage } from "$lib/utils/error-message";
+import { refreshOverdueCount } from "$lib/overdue-count.svelte";
 import { toast } from "$lib/ui";
 
 /** Checkbox selection over the currently visible list rows, plus bulk actions on it. */
@@ -37,10 +39,11 @@ export function createRowSelection<T extends { id: number }>(getRows: () => T[])
       toast.success(`${targets.length} ${doneLabel}`);
       clear();
     } catch (e) {
-      toast.error("Bulk-Aktion fehlgeschlagen", String(e));
+      toast.error("Aktion fehlgeschlagen", errorMessage(e));
     } finally {
       busy = false;
     }
+    void refreshOverdueCount();
     await reload();
   }
 

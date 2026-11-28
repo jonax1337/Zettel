@@ -4,11 +4,13 @@
   type Props = {
     /** Filters hide existing rows: offer to reset them instead of creating a record. */
     filtered: boolean;
-    onResetFilters: () => void;
+    /** Without it the filtered state offers no action; lists without filters leave it out. */
+    onResetFilters?: () => void;
     filteredMessage?: string;
     emptyMessage: string;
-    createLabel: string;
-    onCreate: () => void;
+    /** Call to action of the empty (unfiltered) state; shown together with `onCreate`. */
+    createLabel?: string;
+    onCreate?: () => void;
   };
   let {
     filtered,
@@ -20,13 +22,15 @@
   }: Props = $props();
 </script>
 
+<!-- The page header already carries the one filled button, so the call to action is an outline. -->
 {#if filtered}
   <EmptyState
     variant="no-results"
     message={filteredMessage}
     actionLabel="Filter zurücksetzen"
     onAction={onResetFilters}
+    actionVariant="outline"
   />
 {:else}
-  <EmptyState message={emptyMessage} actionLabel={createLabel} onAction={onCreate} />
+  <EmptyState message={emptyMessage} actionLabel={createLabel} onAction={onCreate} actionVariant="outline" />
 {/if}

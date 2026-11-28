@@ -48,7 +48,7 @@ describe("createDocumentActions", () => {
 
       expect(reload).not.toHaveBeenCalled();
       expect(toast.success).not.toHaveBeenCalled();
-      expect(toast.error).toHaveBeenCalledWith("Aktion fehlgeschlagen", "Error: boom");
+      expect(toast.error).toHaveBeenCalledWith("Aktion fehlgeschlagen", "boom");
       expect(actions.busy).toBe(false);
     });
   });
@@ -67,6 +67,22 @@ describe("createDocumentActions", () => {
 
       expect(second).not.toHaveBeenCalled();
       expect(actions.busy).toBe(false);
+    });
+  });
+
+  describe("previewing", () => {
+    it("is its own task, so it neither looks like PDF generation nor lets another task start", async () => {
+      const actions = createDocumentActions({ reload: vi.fn() });
+      let release!: () => void;
+      const preview = actions.exclusive("preview", () => new Promise<void>((resolve) => (release = resolve)));
+
+      expect(actions.previewing).toBe(true);
+      expect(actions.generating).toBe(false);
+      expect(actions.busy).toBe(true);
+      release();
+      await preview;
+
+      expect(actions.previewing).toBe(false);
     });
   });
 
@@ -90,7 +106,7 @@ describe("createDocumentActions", () => {
       });
 
       expect(push).not.toHaveBeenCalled();
-      expect(toast.error).toHaveBeenCalledWith("Löschen fehlgeschlagen", "Error: fk");
+      expect(toast.error).toHaveBeenCalledWith("Löschen fehlgeschlagen", "fk");
     });
   });
 
@@ -122,7 +138,7 @@ describe("createDocumentActions", () => {
 
       await actions.generatePdf(async () => created, () => Promise.reject(new Error("open failed")));
 
-      expect(actions.pdfError).toBe("Error: open failed");
+      expect(actions.pdfError).toBe("open failed");
       expect(actions.generating).toBe(false);
     });
 
@@ -136,7 +152,7 @@ describe("createDocumentActions", () => {
       });
 
       expect(generate).not.toHaveBeenCalled();
-      expect(toast.error).toHaveBeenCalledWith("Festschreiben fehlgeschlagen", "Error: claimed");
+      expect(toast.error).toHaveBeenCalledWith("Festschreiben fehlgeschlagen", "claimed");
       expect(actions.generating).toBe(false);
     });
 
@@ -147,6 +163,69 @@ describe("createDocumentActions", () => {
       await actions.generatePdf(async () => created, vi.fn().mockResolvedValue(undefined));
 
       expect(actions.pdfError).toBeNull();
+    });
+
+    it("reloads after the preparation even when the PDF then fails: the document was issued", async () => {
+      const order: string[] = [];
+      const actions = createDocumentActions({ reload: async () => void order.push("reload") });
+
+      await actions.generatePdf(
+        async () => {
+          order.push("generate");
+          return failed;
+        },
+        vi.fn(),
+        { run: async () => void order.push("issue"), failureTitle: "Festschreiben fehlgeschlagen" },
+      );
+
+      expect(order).toEqual(["issue", "generate", "reload"]);
+      expect(actions.pdfError).toBe("PDF_FAILED: kaputt");
+    });
+
+    it("reloads when the PDF call throws after the preparation", async () => {
+      const reload = vi.fn().mockResolvedValue(undefined);
+      const actions = createDocumentActions({ reload });
+
+      await actions.generatePdf(() => Promise.reject(new Error("Sidecar weg")), vi.fn(), {
+        run: async () => {},
+        failureTitle: "x",
+      });
+
+      expect(reload).toHaveBeenCalledOnce();
+      expect(actions.pdfError).toBe("Sidecar weg");
+    });
+
+    it("reloads when the preparation itself fails, in case it changed the document before failing", async () => {
+      const reload = vi.fn().mockResolvedValue(undefined);
+      const actions = createDocumentActions({ reload });
+
+      await actions.generatePdf(vi.fn(), vi.fn(), {
+        run: () => Promise.reject(new Error("claimed")),
+        failureTitle: "Festschreiben fehlgeschlagen",
+      });
+
+      expect(reload).toHaveBeenCalledOnce();
+    });
+
+    it("does not reload for a PDF that fails without a preparation: nothing changed", async () => {
+      const reload = vi.fn();
+      const actions = createDocumentActions({ reload });
+
+      await actions.generatePdf(async () => failed, vi.fn());
+
+      expect(reload).not.toHaveBeenCalled();
+    });
+
+    it("leaves the reload to the page when the PDF was created", async () => {
+      const reload = vi.fn();
+      const actions = createDocumentActions({ reload });
+
+      await actions.generatePdf(async () => created, vi.fn().mockResolvedValue(undefined), {
+        run: async () => {},
+        failureTitle: "x",
+      });
+
+      expect(reload).not.toHaveBeenCalled();
     });
   });
 
@@ -169,7 +248,7 @@ describe("createDocumentActions", () => {
       expect(open).toHaveBeenCalledWith("/docs/RE-1.pdf");
       expect(toast.error).toHaveBeenCalledWith(
         "PDF konnte nicht geöffnet werden",
-        "Error: Not allowed to open path",
+        "Not allowed to open path",
       );
       expect(actions.pdfError).toBeNull();
     });

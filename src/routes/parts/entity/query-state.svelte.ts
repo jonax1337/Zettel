@@ -1,3 +1,5 @@
+import { errorMessage } from "$lib/utils/error-message";
+
 /**
  * Loading/error/data state of a list or page query. Only the newest `reload()`
  * may write its outcome, so a slow earlier request (e.g. for a previous search
@@ -22,7 +24,7 @@ export function createQueryState<T>(initial: T, fetch: () => Promise<T>) {
       data = result;
       error = null;
     } catch (e) {
-      if (isLatest()) error = String(e);
+      if (isLatest()) error = errorMessage(e);
     } finally {
       if (isLatest()) loading = false;
     }

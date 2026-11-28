@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { open } from "@tauri-apps/plugin-dialog";
   import { Button, Input, Label, toast } from "$lib/ui";
   import { Image, X } from "$lib/brand-icons";
@@ -14,13 +15,13 @@
       });
       if (typeof picked === "string") path = picked;
     } catch (e) {
-      toast.error("Logo konnte nicht gewählt werden", String(e));
+      toast.error("Logo konnte nicht gewählt werden", errorMessage(e));
     }
   }
 </script>
 
 <div class="flex flex-col gap-1.5">
-  <Label>Logo-Datei</Label>
+  <Label class="font-bold">Logo-Datei</Label>
   <div class="flex items-center gap-2">
     <Input bind:value={path} placeholder="Kein Logo ausgewählt" class="flex-1" />
     <Button type="button" variant="outline" onclick={pickLogo}>
@@ -39,4 +40,5 @@
       </Button>
     {/if}
   </div>
+  <p class="text-[12.5px] text-muted-foreground">PNG, JPG oder SVG.</p>
 </div>

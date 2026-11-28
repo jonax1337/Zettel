@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { link, push } from "svelte-spa-router";
   import {
     deleteOffer,
@@ -17,7 +18,6 @@
   import { formatDate } from "$lib/utils/date";
   import {
     Button,
-    Card,
     Checkbox,
     BulkActionBar,
     ConfirmDialog,
@@ -36,7 +36,9 @@
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
-  import { ALL, numberOrAll, statusFilterItems } from "./invoice/list-support";
+  import { ALL, WIDE_ONLY, numberOrAll, statusFilterItems } from "./invoice/list-support";
+  import ListSummary from "./parts/list/ListSummary.svelte";
+  import { offerSummary } from "./parts/list/list-summary";
   import { createOfferListFetcher } from "./offer/list-fetch";
   import { OFFER_STATUS } from "./offer/status";
 
@@ -70,7 +72,7 @@
     expire: expireDueOffers,
     list: listOffers,
     onExpireError: (e) =>
-      toast.error("Abgelaufene Angebote konnten nicht aktualisiert werden", String(e)),
+      toast.error("Abgelaufene Angebote konnten nicht aktualisiert werden", errorMessage(e)),
   });
 
   // Passing `filter` synchronously lets the surrounding effect track it.
@@ -89,11 +91,11 @@
   const sort = createListSort<SortKey>("offers", { key: "issueDate", dir: "desc" });
   const columns: SortColumn<SortKey>[] = [
     { key: "number", label: "Nummer", class: "whitespace-nowrap" },
-    { key: "issueDate", label: "Datum", class: "whitespace-nowrap" },
-    { key: "customer", label: "Kunde", class: "min-w-32" },
-    { key: "total", label: "Betrag", align: "right", class: "text-right whitespace-nowrap" },
+    { key: "customer", label: "Kunde", class: "w-full" },
+    { key: "issueDate", label: "Datum", class: `${WIDE_ONLY} whitespace-nowrap` },
+    { key: "validUntil", label: "Gültig bis", class: "whitespace-nowrap" },
     { key: "status", label: "Status", class: "whitespace-nowrap" },
-    { key: "validUntil", label: "Gültig bis", class: "hidden @3xl:table-cell whitespace-nowrap" },
+    { key: "total", label: "Betrag", align: "right", class: "text-right whitespace-nowrap" },
   ];
   const sortedOffers = $derived(
     applySort(offers.data, sort.state, {
@@ -105,6 +107,8 @@
       validUntil: (r) => r.validUntil,
     }),
   );
+
+  const summary = $derived(offerSummary(sortedOffers));
 
   const selection = createRowSelection(() => sortedOffers);
   let bulkDeleteConfirmOpen = $state(false);
@@ -137,10 +141,7 @@
   }
 </script>
 
-<PageHeader
-  title="Angebote"
-  subtitle="{offers.data.length} {pluralize(offers.data.length, "Angebot", "Angebote")}"
->
+<PageHeader title="Angebote">
   {#snippet actions()}
     <Button onclick={() => push("/offers/new")}>
       <Plus />
@@ -149,17 +150,15 @@
   {/snippet}
 </PageHeader>
 
-<div class="mb-5">
-  <DocumentListFilters
-    bind:status={f.status}
-    {statusItems}
-    bind:year={f.year}
-    bind:customerId={f.customerId}
-    bind:search={f.search}
-    {years}
-    {customers}
-  />
-</div>
+<DocumentListFilters
+  bind:status={f.status}
+  {statusItems}
+  bind:year={f.year}
+  bind:customerId={f.customerId}
+  bind:search={f.search}
+  {years}
+  {customers}
+/>
 
 <QueryBoundary query={offers} isEmpty={offers.data.length === 0}>
   {#snippet empty()}
@@ -172,44 +171,38 @@
       onCreate={() => push("/offers/new")}
     />
   {/snippet}
-  <Card class="overflow-hidden py-0">
-    <table class="w-full text-sm">
-      <SortableHeaderRow {sort} {columns} cellClass="px-3 @3xl:px-4 py-3" {selection} />
-      <tbody class="stagger">
-        {#each sortedOffers as off (off.id)}
-          <tr
-            class="border-t hover:bg-muted/30 cursor-pointer transition-colors"
-            onclick={() => push(`/offers/${off.id}`)}
-          >
-            <td class="px-3 @3xl:px-4 py-3" onclick={(e) => e.stopPropagation()}>
-              <Checkbox
-                checked={selection.isSelected(off.id)}
-                onCheckedChange={() => selection.toggle(off.id)}
-                aria-label={`Angebot ${off.number} auswählen`}
-              />
-            </td>
-            <td class="px-3 @3xl:px-4 py-3 font-mono text-xs whitespace-nowrap">
-              <a
-                href={`/offers/${off.id}`}
-                use:link
-                onclick={(e) => e.stopPropagation()}
-                class="hover:underline focus-visible:underline"
-              >
-                {off.number}
-              </a>
-            </td>
-            <td class="px-3 @3xl:px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(off.issueDate)}</td>
-            <td class="px-3 @3xl:px-4 py-3 min-w-32"><span class="line-clamp-2" title={off.customerName}>{off.customerName}</span></td>
-            <td class="px-3 @3xl:px-4 py-3 text-right font-mono whitespace-nowrap">{formatMoney(off.total, off.currency)}</td>
-            <td class="px-3 @3xl:px-4 py-3 whitespace-nowrap">
-              <StatusBadge status={off.status} table={OFFER_STATUS} />
-            </td>
-            <td class="hidden @3xl:table-cell px-3 @3xl:px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDate(off.validUntil)}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </Card>
+  <table class="data-list">
+    <SortableHeaderRow {sort} {columns} {selection} />
+    <tbody>
+      {#each sortedOffers as off (off.id)}
+        <tr class="cursor-pointer" onclick={() => push(`/offers/${off.id}`)}>
+          <td onclick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={selection.isSelected(off.id)}
+              onCheckedChange={() => selection.toggle(off.id)}
+              aria-label={`Angebot ${off.number} auswählen`}
+            />
+          </td>
+          <td class="font-semibold whitespace-nowrap tabular-nums">
+            <a
+              href={`/offers/${off.id}`}
+              use:link
+              onclick={(e) => e.stopPropagation()}
+              class="hover:underline focus-visible:underline"
+            >
+              {off.number}
+            </a>
+          </td>
+          <td class="w-full"><span class="line-clamp-2" title={off.customerName}>{off.customerName}</span></td>
+          <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap tabular-nums">{formatDate(off.issueDate)}</td>
+          <td class="text-muted-foreground whitespace-nowrap tabular-nums">{formatDate(off.validUntil)}</td>
+          <td class="whitespace-nowrap"><StatusBadge status={off.status} table={OFFER_STATUS} /></td>
+          <td class="text-right font-semibold whitespace-nowrap tabular-nums">{formatMoney(off.total, off.currency)}</td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+  <ListSummary segments={summary} />
 </QueryBoundary>
 
 <BulkActionBar count={selection.selected.length} label={selectedLabel} onClear={selection.clear}>

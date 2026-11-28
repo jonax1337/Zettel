@@ -67,7 +67,14 @@ def _add_gtk_dll_path() -> None:
 
 _add_gtk_dll_path()
 
-from invoice.pdf import render_invoice_pdf, render_offer_pdf, render_reminder_pdf  # noqa: E402
+from invoice.html_preview import DOCUMENT_KINDS, render_document_html  # noqa: E402
+from invoice.pdf import (  # noqa: E402
+    PREVIEW_KINDS,
+    render_invoice_pdf,
+    render_offer_pdf,
+    render_preview_pdf,
+    render_reminder_pdf,
+)
 from invoice.extract import extract_from_pdf, extract_xml_only  # noqa: E402
 from invoice.zugferd import write_xrechnung_xml  # noqa: E402
 from invoice.text_extract import extract_text_heuristic  # noqa: E402
@@ -99,6 +106,10 @@ def _require(payload: dict, key: str):
 
 
 def _ping(_payload: dict) -> dict:
+    # The PDF path imports WeasyPrint lazily; ping loads it so the build smoke test
+    # (scripts/build-bundled-python.mjs) still fails on a bundle that cannot render.
+    import weasyprint  # noqa: F401
+
     return {"success": True, "pong": True}
 
 
@@ -116,6 +127,26 @@ def _generate_pdf(render: Callable[[dict], Path]) -> Callable[[dict], dict]:
         }
 
     return handler
+
+
+def _render_preview_pdf(payload: dict) -> Path:
+    kind = _require(payload, "kind")
+    if kind not in PREVIEW_KINDS:
+        raise _RequestError("INVALID_KIND", f"payload.kind must be one of {', '.join(PREVIEW_KINDS)}")
+    # An empty path would resolve to the working directory; a preview must never land there by accident.
+    _require(payload, "outputPath")
+    return render_preview_pdf(kind, payload)
+
+
+def _render_document_html(payload: dict) -> dict:
+    kind = _require(payload, "kind")
+    if kind not in DOCUMENT_KINDS:
+        raise _RequestError("INVALID_KIND", f"payload.kind must be one of {', '.join(DOCUMENT_KINDS)}")
+    try:
+        html = render_document_html(kind, payload)
+    except KeyError as e:
+        raise _RequestError("MISSING_FIELD", f"Missing required payload field: {e}") from e
+    return {"success": True, "html": html}
 
 
 def _generate_xrechnung(payload: dict) -> dict:
@@ -173,6 +204,12 @@ _COMMANDS = {
     ),
     "generate_reminder": _Command(
         _generate_pdf(render_reminder_pdf), "RENDER_FAILED", "TEMPLATE_NOT_FOUND"
+    ),
+    "generate_preview": _Command(
+        _generate_pdf(_render_preview_pdf), "RENDER_FAILED", "TEMPLATE_NOT_FOUND"
+    ),
+    "render_document_html": _Command(
+        _render_document_html, "RENDER_FAILED", "TEMPLATE_NOT_FOUND"
     ),
     "generate_xrechnung": _Command(_generate_xrechnung, "RENDER_FAILED", "TEMPLATE_NOT_FOUND"),
     "extract_zugferd": _Command(_extract_zugferd, "EXTRACT_FAILED", "PDF_NOT_FOUND"),

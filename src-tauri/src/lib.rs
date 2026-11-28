@@ -134,6 +134,7 @@ pub fn run() {
         .plugin(sql_plugin())
         .setup(|app| {
             reveal_main_window_after_timeout(app.handle().clone());
+            fs_export::clear_pdf_previews(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -142,6 +143,8 @@ pub fn run() {
             sidecar::extract_zugferd,
             sidecar::extract_text_pdf,
             sidecar::generate_reminder,
+            sidecar::render_document_html,
+            sidecar::generate_pdf_preview,
             sidecar::generate_xrechnung,
             sidecar::parse_bank_statement,
             sidecar::cli_path,
@@ -150,6 +153,8 @@ pub fn run() {
             fs_export::archive_pdf_version,
             fs_export::restore_pdf_version,
             fs_export::list_pdf_versions,
+            fs_export::open_pdf_preview,
+            fs_export::discard_pdf_previews,
             backup::snapshot_db_path,
             backup::auto_backup_target,
             backup::bundle_backup,
@@ -172,8 +177,13 @@ pub fn run() {
             mail::compose_mail,
             updates::check_for_update,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                fs_export::clear_pdf_previews(app);
+            }
+        });
 }
 
 #[cfg(test)]

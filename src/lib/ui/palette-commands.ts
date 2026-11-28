@@ -1,4 +1,4 @@
-import { CREATE_ACTIONS, NAV_GROUPS, SETTINGS_PAGES } from "$lib/navigation";
+import { CREATE_ACTIONS, PALETTE_DESTINATIONS, SETTINGS_PAGES } from "$lib/navigation";
 
 export type PaletteCommandGroup = "create" | "navigate";
 
@@ -24,19 +24,19 @@ export function buildPaletteCommands(): PaletteCommand[] {
     group: "create",
     keywords: a.keywords,
   }));
-  const pages = NAV_GROUPS.flatMap((g) => g.items).map<PaletteCommand>((item) => ({
+  const pages = PALETTE_DESTINATIONS.map<PaletteCommand>((item) => ({
     id: `go:${item.href}`,
     label: item.label,
     route: item.href,
     group: "navigate",
-    keywords: "",
+    keywords: item.keywords ?? "",
   }));
   const settings = SETTINGS_PAGES.map<PaletteCommand>((page) => ({
     id: `go:${page.href}`,
     label: `Einstellungen: ${page.label}`,
     route: page.href,
     group: "navigate",
-    keywords: "",
+    keywords: page.keywords,
   }));
   return [...create, ...pages, ...settings];
 }

@@ -13,6 +13,12 @@ describe("isEdited", () => {
     expect(isEdited(baseline, { name: "Acme", items: [1] })).toBe(true);
   });
 
+  it("reads a cleared text field as untouched, not as an edit", () => {
+    const baseline = snapshotOf({ name: "", bankIban: null, bankBic: undefined });
+    expect(isEdited(baseline, { name: null, bankIban: "", bankBic: "" })).toBe(false);
+    expect(isEdited(baseline, { name: "", bankIban: "DE12", bankBic: null })).toBe(true);
+  });
+
   it("handles bigint values", () => {
     const baseline = snapshotOf({ cents: 100n });
     expect(isEdited(baseline, { cents: 100n })).toBe(false);

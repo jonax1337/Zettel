@@ -1,0 +1,64 @@
+/* ============================================================
+   Screen shim for the HTML preview, inlined after invoice.css.
+   A browser knows neither @page margins, nor running elements
+   (position: running / content: element()), nor page counters, so
+   this recreates the first page of the PDF as one white A4 sheet.
+   The numbers mirror the first-page @page rule of invoice.css.
+   ============================================================ */
+
+:root {
+  --sheet-width: 210mm;
+  --sheet-height: 297mm;
+  --sheet-margin-top: 98.5mm;
+  --sheet-margin-right: 20mm;
+  --sheet-margin-bottom: 40mm;
+  --sheet-margin-left: 25mm;
+  --footer-offset: 8mm;
+}
+
+html {
+  background: #ffffff;
+  overflow: hidden;
+}
+
+/* The page margins become padding. A long document grows the sheet instead
+   of breaking into pages. */
+body {
+  position: relative;
+  width: var(--sheet-width);
+  min-height: var(--sheet-height);
+  padding: var(--sheet-margin-top) var(--sheet-margin-right) var(--sheet-margin-bottom)
+    var(--sheet-margin-left);
+}
+
+/* invoice.css reaches back over the margins with negative offsets; here the
+   padding box already starts at the sheet corner. */
+.sheet-head {
+  top: 0;
+  left: 0;
+}
+
+/* The running header of the following pages has no place on a single sheet. */
+.page-head {
+  display: none;
+}
+
+/* The running footer sits in the bottom margin of the PDF, its last line
+   8 mm above the sheet edge. Reminders use .page-footer for it. */
+.doc-footer,
+.page-footer {
+  position: absolute;
+  left: var(--sheet-margin-left);
+  right: var(--sheet-margin-right);
+  bottom: var(--footer-offset);
+}
+
+/* "Page x of y" needs page counters, which a browser lacks. The line stays as
+   invisible space so that the other footer rows keep their height above the
+   bottom edge. */
+.doc-footer::after,
+.page-footer::after,
+html[lang="en"] .doc-footer::after {
+  content: "\00a0";
+  visibility: hidden;
+}

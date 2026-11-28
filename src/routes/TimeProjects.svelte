@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
+  import { EMPTY_PROJECT_TIME_FIGURES, loadProjectTimeFigures, type ProjectTimeFigures } from "$lib/db/project-overview";
   import { deleteProject, listProjects, setProjectArchived, type ProjectListRow } from "$lib/db/projects";
+  import { formatDuration } from "$lib/time/duration";
   import { centsToEur } from "$lib/utils/money";
+  import { WIDE_ONLY } from "./invoice/list-support";
   import {
     Badge,
     Button,
-    Card,
     Checkbox,
     ConfirmDialog,
     DropdownItem,
@@ -17,12 +20,13 @@
     toast,
   } from "$lib/ui";
   import { Archive, ArchiveRestore, Pencil, Plus, Trash2 } from "$lib/brand-icons";
-  import BackLink from "./parts/entity/BackLink.svelte";
   import { createDeleteFlow } from "./parts/entity/delete-flow.svelte";
   import { createListFilters } from "./parts/entity/list-filters.svelte";
   import ListEmptyState from "./parts/entity/ListEmptyState.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import { pluralize } from "./parts/entity/format";
+  import ListSummary from "./parts/list/ListSummary.svelte";
+  import { countSummary } from "./parts/list/list-summary";
   import ProjectDialog from "./time/ProjectDialog.svelte";
 
   const filters = createListFilters<{ includeArchived: boolean }>("time-projects", { includeArchived: false });
@@ -32,6 +36,20 @@
   $effect(() => {
     projects.reload();
   });
+
+  const figures = createQueryState<ReadonlyMap<number, ProjectTimeFigures>>(new Map(), loadProjectTimeFigures);
+  $effect(() => {
+    figures.reload();
+  });
+  const listQuery = {
+    get loading() {
+      return projects.loading || figures.loading;
+    },
+    get error() {
+      return projects.error ?? figures.error;
+    },
+  };
+  const hours = (minutes: number) => (minutes === 0 ? "–" : `${formatDuration(minutes)} Std`);
 
   let dialogOpen = $state(false);
   let editing = $state<ProjectListRow | null>(null);
@@ -47,7 +65,7 @@
       toast.success(project.archived ? "Projekt reaktiviert" : "Projekt archiviert");
       await projects.reload();
     } catch (e) {
-      toast.error("Aktion fehlgeschlagen", String(e));
+      toast.error("Aktion fehlgeschlagen", errorMessage(e));
     }
   }
 
@@ -59,13 +77,7 @@
   });
 </script>
 
-<PageHeader
-  title="Projekte"
-  subtitle="{projects.data.length} {pluralize(projects.data.length, 'Projekt', 'Projekte')}"
->
-  {#snippet back()}
-    <BackLink href="/time">Zeiterfassung</BackLink>
-  {/snippet}
+<PageHeader title="Projekte" back={{ href: "/time", label: "Zeiten" }}>
   {#snippet actions()}
     <Button onclick={() => openDialog(null)}>
       <Plus />
@@ -79,7 +91,7 @@
   <Label for="projects-archived" class="text-sm">Archivierte anzeigen</Label>
 </div>
 
-<QueryBoundary query={projects} isEmpty={projects.data.length === 0}>
+<QueryBoundary query={listQuery} isEmpty={projects.data.length === 0}>
   {#snippet empty()}
     <ListEmptyState
       filtered={filters.isFiltered}
@@ -90,72 +102,87 @@
       onCreate={() => openDialog(null)}
     />
   {/snippet}
-  <Card class="overflow-hidden py-0">
-    <table class="w-full text-sm">
-      <thead class="bg-muted/40 text-left">
-        <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-          <th class="px-4 py-3 font-medium min-w-32">Projekt</th>
-          <th class="px-4 py-3 font-medium min-w-32">Kunde</th>
-          <th class="px-4 py-3 font-medium text-right whitespace-nowrap">Stundensatz</th>
-          <th class="hidden @3xl:table-cell px-4 py-3 font-medium text-right whitespace-nowrap">Einträge</th>
-          <th class="px-4 py-3 font-medium w-12"></th>
-        </tr>
-      </thead>
-      <tbody class="stagger">
-        {#each projects.data as project (project.id)}
-          <tr class="border-t hover:bg-muted/30 transition-colors {project.archived ? 'opacity-60' : ''}">
-            <td class="px-4 py-3">
-              <button
-                type="button"
-                class="text-left font-medium hover:text-foreground transition-colors"
-                onclick={() => openDialog(project)}
-              >
-                {project.name}
-              </button>
-              {#if project.archived}
-                <Badge variant="secondary" class="ml-2 text-[10px]">archiviert</Badge>
-              {/if}
-            </td>
-            <td class="px-4 py-3 text-muted-foreground">{project.customerName}</td>
-            <td class="px-4 py-3 text-right font-mono whitespace-nowrap">
-              {centsToEur(project.hourlyRateCent)}
-              {#if project.hourlyRateCent === 0}
-                <Badge variant="warning" class="ml-1 text-[10px]">kein Satz</Badge>
-              {/if}
-            </td>
-            <td class="hidden @3xl:table-cell px-4 py-3 text-right tabular-nums text-muted-foreground">{project.entryCount}</td>
-            <td class="px-4 py-3 text-right">
-              <DropdownMenu>
-                {#snippet trigger()}
-                  <MoreActionsTrigger variant="ghost" label="Aktionen" />
-                {/snippet}
-                <DropdownItem onSelect={() => openDialog(project)}>
-                  <Pencil />
-                  Bearbeiten
-                </DropdownItem>
-                <DropdownItem onSelect={() => toggleArchived(project)}>
-                  {#if project.archived}
-                    <ArchiveRestore />
-                    Reaktivieren
-                  {:else}
-                    <Archive />
-                    Archivieren
-                  {/if}
-                </DropdownItem>
-                {#if project.entryCount === 0}
-                  <DropdownSeparator />
-                  <DropdownItem destructive onSelect={() => deletion.ask(project)}>
-                    <Trash2 />
-                    Löschen
-                  </DropdownItem>
+  <table class="data-list">
+    <thead>
+      <tr>
+        <th>Projekt</th>
+        <th class="w-full">Kunde</th>
+        <th class="text-right">Stundensatz</th>
+        <th class="text-right">Offen</th>
+        <th class="{WIDE_ONLY} text-right">Abgerechnet</th>
+        <th><span class="sr-only">Aktionen</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {#each projects.data as project (project.id)}
+        {@const time = figures.data.get(project.id) ?? EMPTY_PROJECT_TIME_FIGURES}
+        <tr class={project.archived ? "opacity-60" : ""}>
+          <td class="whitespace-nowrap">
+            <button
+              type="button"
+              class="text-left font-semibold hover:underline focus-visible:underline"
+              title="{project.entryCount} {pluralize(project.entryCount, 'Eintrag', 'Einträge')}"
+              onclick={() => openDialog(project)}
+            >
+              {project.name}
+            </button>
+            {#if project.archived}
+              <Badge variant="draft" class="ml-2">archiviert</Badge>
+            {/if}
+          </td>
+          <td class="w-full text-muted-foreground"><span class="line-clamp-1">{project.customerName}</span></td>
+          <td class="text-right whitespace-nowrap tabular-nums">
+            {#if project.hourlyRateCent === 0}
+              <Badge variant="open" class="mr-2">kein Satz</Badge>
+            {/if}
+            {centsToEur(project.hourlyRateCent)}
+          </td>
+          <td class="text-right whitespace-nowrap tabular-nums">{hours(time.openMinutes)}</td>
+          <td class="{WIDE_ONLY} text-right whitespace-nowrap tabular-nums text-muted-foreground">
+            {hours(time.billedMinutes)}
+          </td>
+          <td class="w-12 text-right">
+            <DropdownMenu>
+              {#snippet trigger()}
+                <MoreActionsTrigger variant="ghost" label="Aktionen" />
+              {/snippet}
+              <DropdownItem onSelect={() => openDialog(project)}>
+                <Pencil />
+                Bearbeiten
+              </DropdownItem>
+              <DropdownItem onSelect={() => toggleArchived(project)}>
+                {#if project.archived}
+                  <ArchiveRestore />
+                  Reaktivieren
+                {:else}
+                  <Archive />
+                  Archivieren
                 {/if}
-              </DropdownMenu>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </Card>
+              </DropdownItem>
+              <DropdownSeparator />
+              {#if project.entryCount === 0}
+                <DropdownItem destructive onSelect={() => deletion.ask(project)}>
+                  <Trash2 />
+                  Löschen
+                </DropdownItem>
+              {:else}
+                <!-- Not `disabled`: Bits UI skips disabled items on the keyboard, and the reason has to be reachable. -->
+                <DropdownItem
+                  class="text-muted-foreground"
+                  onSelect={() => toast.warning("Projekt kann nicht gelöscht werden", "Es hat Zeiteinträge. Archivieren geht immer.")}
+                >
+                  <Trash2 />
+                  Löschen
+                  <span class="ml-auto pl-3 text-xs text-muted-foreground">Hat Zeiteinträge</span>
+                </DropdownItem>
+              {/if}
+            </DropdownMenu>
+          </td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+  <ListSummary segments={countSummary(projects.data.length, "Projekt", "Projekte")} />
 </QueryBoundary>
 
 <ProjectDialog bind:open={dialogOpen} project={editing} onSaved={projects.reload} />

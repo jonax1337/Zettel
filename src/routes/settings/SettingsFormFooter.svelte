@@ -1,15 +1,28 @@
 <script lang="ts">
-  import { Button } from "$lib/ui";
+  import { Button, SaveBar } from "$lib/ui";
 
-  type Props = { saving: boolean; error: string | null };
-  let { saving, error }: Props = $props();
+  type Props = {
+    formId: string;
+    saving: boolean;
+    dirty: boolean;
+    error: string | null;
+    /** What saving means on this page. */
+    hint: string;
+  };
+  let { formId, saving, dirty, error, hint }: Props = $props();
 </script>
 
-<div class="flex items-center gap-3">
-  <Button type="submit" disabled={saving}>
-    {saving ? "Speichere…" : "Speichern"}
-  </Button>
-  {#if error}
-    <span class="text-sm text-destructive">{error}</span>
-  {/if}
-</div>
+<SaveBar>
+  <!-- On wide windows the content starts where the form column does: sub-navigation (13rem) plus column gap (2.5rem), see SettingsShell. -->
+  <div class="flex min-w-0 items-center gap-2.5 @3xl:pl-[15.5rem]">
+    <!-- Outside the form element, so it carries the form attribute. -->
+    <Button type="submit" form={formId} disabled={saving}>
+      {saving ? "Speichere…" : "Speichern"}
+    </Button>
+    {#if error}
+      <span class="text-sm text-destructive">{error}</span>
+    {:else}
+      <span class="text-[13px] text-muted-foreground">{dirty ? "Ungespeicherte Änderungen." : hint}</span>
+    {/if}
+  </div>
+</SaveBar>

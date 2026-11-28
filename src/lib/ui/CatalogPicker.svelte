@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { Dialog as DialogPrimitive } from "bits-ui";
   import { Search, Package } from "$lib/brand-icons";
   import { cn } from "$lib/utils";
@@ -42,7 +43,7 @@
       results = items;
       activeIndex = 0;
     },
-    onError: (error) => toast.error("Katalog-Suche fehlgeschlagen", String(error)),
+    onError: (error) => toast.error("Katalog-Suche fehlgeschlagen", errorMessage(error)),
     delayMs: SEARCH_DEBOUNCE_MS,
   });
 
@@ -125,7 +126,7 @@
         {#if results.length === 0}
           <div class="py-12 text-center text-sm text-muted-foreground">
             {query.trim() === ""
-              ? "Noch keine Katalog-Einträge. Lege welche unter Stammdaten → Katalog an."
+              ? "Noch keine Katalog-Einträge. Lege welche im Katalog an."
               : "Kein Treffer."}
           </div>
         {:else}
@@ -142,7 +143,7 @@
                 <div class="flex items-center gap-2">
                   <span class="font-medium truncate">{item.name}</span>
                   {#if item.tags}
-                    <span class="text-[10px] uppercase tracking-wider text-muted-foreground">{item.tags}</span>
+                    <span class="text-xs text-muted-foreground">{item.tags}</span>
                   {/if}
                 </div>
                 {#if descriptionFor(item)}
@@ -150,7 +151,7 @@
                 {/if}
               </div>
               <div class="text-right text-xs tabular-nums shrink-0">
-                <div class="font-medium">{centsToEur(item.defaultUnitPrice)} € / {item.unit}</div>
+                <div class="font-medium">{centsToEur(item.defaultUnitPrice)} / {item.unit}</div>
                 <div class="text-muted-foreground">{item.defaultVatRate} % USt</div>
               </div>
             </button>

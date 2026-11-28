@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { untrack } from "svelte";
   import { push } from "svelte-spa-router";
   import type { BillingGrouping, BillingIncrement, BillingPreview } from "$lib/time/billing";
@@ -55,7 +56,7 @@
       (e) => {
         if (request !== latestRequest) return;
         preview = null;
-        previewError = String(e);
+        previewError = errorMessage(e);
       },
     );
   });
@@ -71,7 +72,7 @@
       await onBilled();
       push(`/invoices/${invoiceId}/edit`);
     } catch (e) {
-      toast.error("Rechnungsentwurf konnte nicht angelegt werden", String(e));
+      toast.error("Rechnungsentwurf konnte nicht angelegt werden", errorMessage(e));
     } finally {
       creating = false;
     }
@@ -100,38 +101,38 @@
     {#if previewError}
       <p class="text-sm text-destructive">{previewError}</p>
     {:else if preview}
-      <div class="max-h-72 overflow-auto rounded-md border">
-        <table class="w-full text-sm">
-          <thead class="bg-muted/50 text-xs text-muted-foreground">
+      <div class="max-h-72 overflow-auto">
+        <table class="data-list">
+          <thead>
             <tr>
-              <th class="px-3 py-2 text-left font-medium">Beschreibung</th>
-              <th class="px-3 py-2 text-left font-medium whitespace-nowrap">Zeitraum</th>
-              <th class="px-3 py-2 text-right font-medium whitespace-nowrap">Menge (Std)</th>
-              <th class="px-3 py-2 text-right font-medium whitespace-nowrap">Satz</th>
-              <th class="px-3 py-2 text-right font-medium whitespace-nowrap">Betrag</th>
+              <th>Beschreibung</th>
+              <th>Zeitraum</th>
+              <th class="text-right">Menge (Std)</th>
+              <th class="text-right">Satz</th>
+              <th class="text-right">Betrag</th>
             </tr>
           </thead>
           <tbody>
             {#each preview.lines as line, index (index)}
-              <tr class="border-t">
-                <td class="px-3 py-2">{line.description}</td>
-                <td class="px-3 py-2 whitespace-nowrap text-muted-foreground">{formatLinePeriod(line.linePeriodStart, line.linePeriodEnd)}</td>
-                <td class="px-3 py-2 text-right font-mono whitespace-nowrap">{lineQuantityText(line)}</td>
-                <td class="px-3 py-2 text-right font-mono whitespace-nowrap">{centsToEur(line.unitPrice)}</td>
-                <td class="px-3 py-2 text-right font-mono whitespace-nowrap">{centsToEur(line.lineTotal)}</td>
+              <tr>
+                <td class="py-2">{line.description}</td>
+                <td class="whitespace-nowrap text-muted-foreground">{formatLinePeriod(line.linePeriodStart, line.linePeriodEnd)}</td>
+                <td class="text-right whitespace-nowrap tabular-nums">{lineQuantityText(line)}</td>
+                <td class="text-right whitespace-nowrap tabular-nums">{centsToEur(line.unitPrice)}</td>
+                <td class="text-right whitespace-nowrap tabular-nums">{centsToEur(line.lineTotal)}</td>
               </tr>
             {/each}
           </tbody>
           <tfoot>
-            <tr class="border-t bg-muted/30 font-medium">
-              <td class="px-3 py-2" colspan="4">Netto-Summe</td>
-              <td class="px-3 py-2 text-right font-mono whitespace-nowrap">{centsToEur(preview.subtotalCent)}</td>
+            <tr class="font-bold">
+              <td class="h-11" colspan="4">Netto-Summe</td>
+              <td class="text-right whitespace-nowrap tabular-nums">{centsToEur(preview.subtotalCent)}</td>
             </tr>
           </tfoot>
         </table>
       </div>
       {#if warning}
-        <p class="flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+        <p class="flex items-start gap-1.5 text-xs text-status-warn">
           <AlertTriangle class="mt-0.5 size-3.5 shrink-0" />
           {warning}
         </p>

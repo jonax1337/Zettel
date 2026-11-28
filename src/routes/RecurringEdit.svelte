@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
-  import { link, push, router } from "svelte-spa-router";
+  import { tick, untrack } from "svelte";
+  import { push, router } from "svelte-spa-router";
   import { intQueryParam } from "./invoice/route-query";
   import {
     createRecurring,
@@ -13,27 +15,30 @@
   import type { RecurringInterval, Settings } from "$lib/db/schema";
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { computeTotals } from "$lib/utils/totals";
-  import {
-    Button,
-    Input,
-    Textarea,
-    Label,
-    Card,
-    CardContent,
-    DatePicker,
-    Select,
-    Checkbox,
-    toast,
-  } from "$lib/ui";
-  import BackLink from "./parts/entity/BackLink.svelte";
+  import { CheckField, DatePicker, Field, Input, PageHeader, Select, Textarea, focusFirstInvalid, toast, Panel } from "$lib/ui";
+  import { formatMoney } from "$lib/utils/currency";
   import { fetchEditTarget, parseId } from "./parts/entity/edit-target";
   import { RECURRING_INTERVAL_ITEMS } from "./parts/entity/recurring";
+  import AddressWindow from "./parts/editor/AddressWindow.svelte";
+  import CustomerPanel from "./parts/editor/CustomerPanel.svelte";
+  import EditorLayout from "./parts/editor/EditorLayout.svelte";
+  import EditorSaveBar from "./parts/editor/EditorSaveBar.svelte";
+  import LineItemsSheet from "./parts/editor/LineItemsSheet.svelte";
+  import MetaRow from "./parts/editor/MetaRow.svelte";
+  import MetaText from "./parts/editor/MetaText.svelte";
+  import Paper from "./parts/editor/Paper.svelte";
+  import PaperField from "./parts/editor/PaperField.svelte";
+  import ReverseChargeField from "./parts/editor/ReverseChargeField.svelte";
+  import { senderLine } from "./parts/editor/address-lines";
+  import { documentErrors, firstError } from "./parts/editor/editor-validation";
+  import { commitPendingPrices } from "./parts/editor/prices";
+  import { createSaveError } from "./parts/editor/save-error.svelte";
+  import { QUIET_FIELD } from "./parts/editor/quiet-field";
+  import { vatExemptNote } from "./parts/editor/vat-note";
+  import NoticeCard from "./invoice/NoticeCard.svelte";
   import { vatRateForNewItem } from "$lib/utils/vat";
-  import ReverseChargeField from "./invoice/ReverseChargeField.svelte";
   import { createDocumentFormData } from "./invoice/document-form.svelte";
-  import { quantityError, reverseChargeError } from "./invoice/form-validation";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
-  import LineItemsEditor from "./invoice/LineItemsEditor.svelte";
   import {
     lineItemFromStored,
     lineItemsFromStored,
@@ -59,7 +64,16 @@
   const loading = $derived(mode === "edit" && !loaded);
 
   let saving = $state(false);
-  let error = $state<string | null>(null);
+  /** The template cannot be opened at all (not found, invalid id). */
+  let loadError = $state<string | null>(null);
+  /** Settings or customers did not load; the form stays usable for what is there. */
+  let setupError = $state<string | null>(null);
+  let formElement = $state<HTMLFormElement>();
+  let loadedOnce = false;
+  /** Why the invoice the template was meant to start from cannot be used. */
+  let prefillNotice = $state<string | null>(null);
+  // Problems are shown only after the first attempt to save, and then follow the form while it is fixed.
+  let submitted = $state(false);
 
   let name = $state("");
   let customerIdStr = $state<string>("");
@@ -73,16 +87,46 @@
   let paymentTerms = $state("");
   let items = $state<LineItemForm[]>([newLineItem()]);
 
+  const formState = () => ({
+    name,
+    customerIdStr,
+    interval,
+    startDateIso,
+    paymentTermsDays,
+    reverseChargeType,
+    supplyKind,
+    active,
+    notes,
+    paymentTerms,
+    items,
+  });
+  const saveError = createSaveError(formState);
+
   const isReverseCharge = $derived(reverseChargeType !== "none");
   const reference = createDocumentFormData({
     customerId: () => customerIdStr,
     onLoaded: async (loadedSettings) => {
       if (mode === "new") await prepareNewTemplate(loadedSettings);
     },
-    onError: (message) => (error = message),
+    onError: (message) => (setupError = message),
   });
   const settings = $derived(reference.settings);
   const vatExempt = $derived(!!settings?.isKleinunternehmer || isReverseCharge);
+  const errors = $derived(
+    submitted
+      ? documentErrors({
+          name,
+          customerId: parseId(customerIdStr),
+          customer: reference.selectedCustomer,
+          items,
+          itemsRule: "any",
+          sender: settings,
+          reverseChargeType,
+        })
+      : {},
+  );
+  const shownError = $derived(firstError(errors) ?? saveError.message);
+  const documentTitle = $derived(mode === "new" ? "Neue wiederkehrende Rechnung" : "Wiederkehrende Rechnung bearbeiten");
 
   const totals = $derived(
     settings
@@ -106,7 +150,7 @@
     const { invoice } = source;
     const rejection = templatePrefillRejection(invoice);
     if (rejection) {
-      error = rejection;
+      prefillNotice = rejection;
       return;
     }
     customerIdStr = String(invoice.customerId);
@@ -123,20 +167,45 @@
     startDateIso = "";
   }
 
+  // The router keeps this component mounted when only the id changes, so a second template must not inherit the first one's state.
   $effect(() => {
     if (mode !== "edit") return;
-    fetchEditTarget(params?.id, getRecurring, "Wiederkehrende Rechnung nicht gefunden.")
-      .then((target) => {
+    const routeId = params?.id;
+    let stale = false;
+    untrack(resetForRoute);
+    fetchEditTarget(routeId, getRecurring, "Wiederkehrende Rechnung nicht gefunden.")
+      .then(async (target) => {
+        if (stale) return;
         if ("error" in target) {
-          error = target.error;
+          loadError = target.error;
           return;
         }
         id = target.id;
         applyTemplate(target.value);
+        if (loadedOnce) {
+          await tick();
+          unsaved.markClean();
+        }
       })
-      .catch((e) => (error = String(e)))
-      .finally(() => (loaded = true));
+      .catch((e) => {
+        if (!stale) loadError = errorMessage(e);
+      })
+      .finally(() => {
+        if (stale) return;
+        loaded = true;
+        loadedOnce = true;
+      });
+    return () => {
+      stale = true;
+    };
   });
+
+  function resetForRoute() {
+    loaded = false;
+    loadError = null;
+    submitted = false;
+    saveError.clear();
+  }
 
   function applyTemplate({ recurring, items: storedItems }: NonNullable<Awaited<ReturnType<typeof getRecurring>>>) {
     name = recurring.name;
@@ -182,136 +251,147 @@
 
   async function save(input: RecurringFormInput) {
     saving = true;
-    error = null;
     try {
       await persist(input);
       unsaved.markClean();
       push("/recurring");
     } catch (err) {
-      error = String(err);
-      toast.error("Speichern fehlgeschlagen", String(err));
+      saveError.set(errorMessage(err));
+      toast.error("Speichern fehlgeschlagen", errorMessage(err));
     } finally {
       saving = false;
     }
   }
 
-  function reverseChargeFormError(): string | null {
-    return settings ? reverseChargeError(reverseChargeType, settings, reference.selectedCustomer, items) : null;
-  }
-
-  function onSubmit(e: SubmitEvent) {
+  async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
+    saveError.clear();
+    commitPendingPrices(items);
+    submitted = true;
     const customerId = parseId(customerIdStr);
-    if (!name.trim()) error = "Bitte einen Namen vergeben.";
-    else if (customerId === null) error = "Bitte einen Kunden auswählen.";
-    else if (items.length === 0) error = "Mindestens eine Position erforderlich.";
-    else if (reverseChargeFormError()) error = reverseChargeFormError();
-    else if (quantityError(items)) error = quantityError(items);
-    else void save(buildInput(customerId));
+    if (customerId === null || firstError(errors)) {
+      await tick();
+      if (formElement) focusFirstInvalid(formElement);
+      return;
+    }
+    await save(buildInput(customerId));
   }
 
-  const unsaved = guardUnsavedChanges(
-    () => ({
-      name,
-      customerIdStr,
-      interval,
-      startDateIso,
-      paymentTermsDays,
-      reverseChargeType,
-      supplyKind,
-      active,
-      notes,
-      paymentTerms,
-      items,
-    }),
-    () => !loading && reference.loaded,
-  );
+  const unsaved = guardUnsavedChanges(formState, () => !loading && reference.loaded);
 </script>
 
-<header class="mb-6">
-  <BackLink href="/recurring">Wiederkehrende Rechnungen</BackLink>
-  <h1 class="text-3xl font-semibold tracking-tight mt-2">
-    {mode === "new" ? "Neue wiederkehrende Rechnung" : "Wiederkehrende Rechnung bearbeiten"}
-  </h1>
-</header>
+<PageHeader
+  title={documentTitle}
+  subtitle="Die Vorlage hat dieselbe Form wie die Rechnungen, die daraus entstehen."
+  back={{ href: "/recurring", label: "Wiederkehrende Rechnungen" }}
+/>
 
 {#if loading}
-  <p class="text-sm text-muted-foreground">Lade…</p>
+  <p role="status" class="text-sm text-muted-foreground">Lade…</p>
+{:else if loadError}
+  <NoticeCard tone="destructive" title="Die Vorlage lässt sich nicht bearbeiten">
+    <div class="mt-0.5 text-muted-foreground">{loadError}</div>
+  </NoticeCard>
 {:else}
-  <form onsubmit={onSubmit} class="space-y-6">
-    <Card>
-      <CardContent>
-        <section class="grid grid-cols-2 gap-4">
-          <div class="col-span-2 flex flex-col gap-1.5">
-            <Label>Bezeichnung <span class="text-destructive">*</span></Label>
-            <Input bind:value={name} placeholder="z. B. Monatlicher Retainer Acme" required />
-          </div>
-          <div class="col-span-2 flex flex-col gap-1.5">
-            <Label>Kunde <span class="text-destructive">*</span></Label>
-            <Select bind:value={customerIdStr} items={reference.customerItems} placeholder="— bitte wählen —" />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <Label>Intervall</Label>
-            <Select
-              bind:value={() => interval, (v) => (interval = v as RecurringInterval)}
-              items={RECURRING_INTERVAL_ITEMS}
+  {#if setupError}
+    <NoticeCard tone="warning" title="Nicht alle Daten konnten geladen werden">
+      <div class="mt-0.5 text-muted-foreground">{setupError}</div>
+    </NoticeCard>
+  {/if}
+  {#if prefillNotice}
+    <NoticeCard tone="warning" title="Aus dieser Rechnung lässt sich keine Vorlage machen">
+      <div class="mt-0.5 text-muted-foreground">{prefillNotice}</div>
+    </NoticeCard>
+  {/if}
+
+  <form onsubmit={onSubmit} bind:this={formElement}>
+    <EditorLayout>
+      {#snippet paper()}
+        <Paper label={documentTitle}>
+          <div class="mb-9 flex flex-wrap items-start justify-between gap-x-8 gap-y-6">
+            <AddressWindow
+              senderLine={settings ? senderLine(settings) : ""}
+              customerItems={reference.customerItems}
+              bind:customerIdStr
+              customer={reference.selectedCustomer}
+              error={errors.customer}
             />
+            <div class="flex flex-col items-end gap-2">
+              <MetaText label="Rechnungsnummer">wird bei jeder Rechnung neu vergeben</MetaText>
+              <MetaRow label="Zahlungsfrist (Tage)">
+                <Input type="number" min="0" bind:value={paymentTermsDays} class={QUIET_FIELD} />
+              </MetaRow>
+            </div>
           </div>
-          <div class="flex flex-col gap-1.5">
-            <Label>Erste Fälligkeit</Label>
-            <DatePicker bind:value={startDateIso} required />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <Label>Zahlungsfrist (Tage)</Label>
-            <Input type="number" min="0" bind:value={paymentTermsDays} />
-          </div>
-          <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
-            <Checkbox bind:checked={active} />
-            Aktiv (erscheint im Dashboard)
-          </label>
-          <ReverseChargeField
-            bind:type={reverseChargeType}
-            bind:supplyKind
-            sender={settings}
-            customer={reference.selectedCustomer}
-            note="Wird bei jeder erzeugten Rechnung übernommen."
+
+          <h2 class="mb-3.5 font-display text-xl font-extrabold">Rechnung</h2>
+          <LineItemsSheet
+            bind:items
+            currency="EUR"
+            {vatExempt}
+            {totals}
+            language="de"
+            totalLabel="Betrag je Rechnung"
+            vatNote={vatExemptNote(!!settings?.isKleinunternehmer, reverseChargeType)}
+            errors={{ items: errors.items, quantity: errors.quantity, linePeriod: errors.linePeriod }}
           />
-        </section>
-      </CardContent>
-    </Card>
 
-    <LineItemsEditor
-      bind:items
-      currency="EUR"
-      {vatExempt}
-      {totals}
-      language="de"
-      totalLabel="Voraussichtlicher Gesamtbetrag pro Erzeugung"
+          <div class="mt-6 grid gap-5">
+            <PaperField label="Zahlungsbedingungen">
+              <Textarea rows={2} bind:value={paymentTerms} class={QUIET_FIELD} />
+            </PaperField>
+            <PaperField label="Fußtext" optional>
+              <Textarea rows={2} bind:value={notes} class={QUIET_FIELD} />
+            </PaperField>
+          </div>
+        </Paper>
+      {/snippet}
+
+      {#snippet rail()}
+        <Panel title="Serie">
+          <div class="grid gap-3.5">
+            <Field label="Bezeichnung" required error={errors.name}>
+              <Input bind:value={name} placeholder="z. B. Monatlicher Retainer Acme" />
+            </Field>
+            <Field label="Intervall">
+              <Select
+                bind:value={() => interval, (v) => (interval = v as RecurringInterval)}
+                items={RECURRING_INTERVAL_ITEMS}
+              />
+            </Field>
+            <Field label="Erste Fälligkeit">
+              <DatePicker bind:value={startDateIso} required />
+            </Field>
+            <CheckField bind:checked={active} label="Aktiv (erscheint in der Übersicht)" />
+          </div>
+        </Panel>
+        {#if settings && (!settings.isKleinunternehmer || isReverseCharge)}
+          <Panel title="Optionen">
+            <div class="grid gap-3.5">
+              <ReverseChargeField
+                bind:type={reverseChargeType}
+                bind:supplyKind
+                sender={settings}
+                customer={reference.selectedCustomer}
+                note="Wird bei jeder erzeugten Rechnung übernommen."
+                error={errors.reverseCharge}
+              />
+            </div>
+          </Panel>
+        {/if}
+        {#if reference.selectedCustomer}
+          <CustomerPanel customer={reference.selectedCustomer} />
+        {/if}
+      {/snippet}
+    </EditorLayout>
+
+    <EditorSaveBar
+      submitLabel="Speichern"
+      {saving}
+      error={shownError}
+      onCancel={() => push("/recurring")}
+      total={formatMoney(totals.total, "EUR")}
+      totalLabel="Betrag je Rechnung"
     />
-
-    <Card>
-      <CardContent class="space-y-4">
-        <div class="flex flex-col gap-1.5">
-          <Label>Zahlungsbedingungen</Label>
-          <Textarea rows={2} bind:value={paymentTerms} />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <Label>Notizen / Fußtext</Label>
-          <Textarea rows={3} bind:value={notes} />
-        </div>
-      </CardContent>
-    </Card>
-
-    <div class="flex items-center gap-3">
-      <Button type="submit" disabled={saving}>
-        {saving ? "Speichere…" : mode === "new" ? "Anlegen" : "Speichern"}
-      </Button>
-      <a href="/recurring" use:link>
-        <Button type="button" variant="ghost">Abbrechen</Button>
-      </a>
-      {#if error}
-        <span class="text-sm text-destructive">{error}</span>
-      {/if}
-    </div>
   </form>
 {/if}

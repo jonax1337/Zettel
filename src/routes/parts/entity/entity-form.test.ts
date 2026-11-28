@@ -70,7 +70,7 @@ describe("createEntityForm", () => {
 
     await entity.loadTarget("5");
 
-    expect(entity.error).toBe("Error: db down");
+    expect(entity.error).toBe("db down");
     expect(entity.loading).toBe(false);
   });
 
@@ -121,7 +121,7 @@ describe("createEntityForm", () => {
     await entity.save();
 
     expect(update).not.toHaveBeenCalled();
-    expect(entity.error).toBe("Error: Keine ID");
+    expect(entity.error).toBe("Keine ID");
     expect(push).not.toHaveBeenCalled();
   });
 
@@ -131,8 +131,8 @@ describe("createEntityForm", () => {
 
     await entity.save();
 
-    expect(entity.error).toBe("Error: unique");
-    expect(toast.error).toHaveBeenCalledWith("Speichern fehlgeschlagen", "Error: unique");
+    expect(entity.error).toBe("unique");
+    expect(toast.error).toHaveBeenCalledWith("Speichern fehlgeschlagen", "unique");
     expect(push).not.toHaveBeenCalled();
     expect(markClean).not.toHaveBeenCalled();
     expect(entity.saving).toBe(false);
@@ -140,21 +140,13 @@ describe("createEntityForm", () => {
 
   it("clears an earlier error when saving again", async () => {
     const { entity, create } = build({ mode: "new" });
-    entity.reject("Land ungültig", "Land falsch");
-    expect(entity.error).toBe("Land falsch");
+    create.mockRejectedValueOnce(new Error("unique"));
+    await entity.save();
+    expect(entity.error).toBe("unique");
 
     await entity.save();
 
-    expect(create).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledTimes(2);
     expect(entity.error).toBeNull();
-  });
-
-  it("rejects with a toast and an inline error", () => {
-    const { entity } = build();
-
-    entity.reject("Land ungültig", "Land falsch");
-
-    expect(entity.error).toBe("Land falsch");
-    expect(toast.error).toHaveBeenCalledWith("Land ungültig", "Land falsch");
   });
 });

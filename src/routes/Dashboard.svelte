@@ -1,47 +1,53 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { push } from "svelte-spa-router";
-  import { Button, Card, CardContent, toast } from "$lib/ui";
-  import {
-    Users,
-    Clock,
-    TrendingUp,
-    TrendingDown,
-    Plus,
-    UserPlus,
-    FileSignature,
-    Scale,
-  } from "$lib/brand-icons";
+  import { Button, DropdownItem, DropdownMenu, MoreActionsTrigger, PageHeader, toast } from "$lib/ui";
+  import { Plus, UserPlus } from "$lib/brand-icons";
   import PeriodSwitcher from "$lib/components/PeriodSwitcher.svelte";
-  import BarChart from "$lib/components/BarChart.svelte";
-  import { loadDefaultPeriod, type Period } from "$lib/dashboard/period";
-  import type { Kpis } from "$lib/dashboard/queries";
+  import { overdueOf } from "$lib/dashboard/age-buckets";
+  import { isRunning, loadDefaultPeriod, type Period } from "$lib/dashboard/period";
   import { computeTaxRücklage, type TaxRücklageResult } from "$lib/dashboard/tax";
   import { buildSetupChecklist, isSetupComplete } from "$lib/dashboard/setup-checklist";
   import { isSandboxActive } from "$lib/db/client";
   import { getInvoiceYears } from "$lib/db/invoices";
   import { loadSettings } from "$lib/db/queries";
   import { missingCompanyData } from "$lib/utils/company-completeness";
-  import { saveFilters } from "$lib/utils/list-filters";
-  import { centsToEur } from "$lib/utils/money";
-  import { pluralize } from "./parts/entity/format";
+  import { nowUnix } from "$lib/utils/date";
   import { createQueryState } from "./parts/entity/query-state.svelte";
-  import CashFlowCard from "./parts/dashboard/CashFlowCard.svelte";
   import CompanyDataBanner from "./parts/dashboard/CompanyDataBanner.svelte";
-  import DueTemplatesSection from "./parts/dashboard/DueTemplatesSection.svelte";
-  import FollowUpsCard from "./parts/dashboard/FollowUpsCard.svelte";
-  import KpiCard from "./parts/dashboard/KpiCard.svelte";
+  import ExpectedPaymentsCard from "./parts/dashboard/ExpectedPaymentsCard.svelte";
+  import IncomeExpensesCard from "./parts/dashboard/IncomeExpensesCard.svelte";
+  import OverviewFacts from "./parts/dashboard/OverviewFacts.svelte";
+  import ProfitCard from "./parts/dashboard/ProfitCard.svelte";
   import ReceivablesCard from "./parts/dashboard/ReceivablesCard.svelte";
   import SandboxBanner from "./parts/dashboard/SandboxBanner.svelte";
   import SetupChecklist from "./parts/dashboard/SetupChecklist.svelte";
   import TaxReserveCard from "./parts/dashboard/TaxReserveCard.svelte";
+  import TodoList from "./parts/dashboard/TodoList.svelte";
   import TopCustomersCard from "./parts/dashboard/TopCustomersCard.svelte";
-  import { loadDashboardData, type DashboardData } from "./parts/dashboard/dashboard-data";
+  import { customerShares, expectedColumns, incomeMonths } from "./parts/dashboard/chart-data";
+  import {
+    loadOverviewData,
+    loadPeriodData,
+    type OverviewData,
+    type PeriodData,
+  } from "./parts/dashboard/dashboard-data";
+  import { buildTodoItems } from "./parts/dashboard/todo";
   import { taxYearOfPeriod } from "./parts/reports/tax-years";
 
   let period = $state<Period>(loadDefaultPeriod());
   let sandbox = $state(false);
 
-  const dashboard = createQueryState<DashboardData | null>(null, () => loadDashboardData(period));
+  const today = new Date().toLocaleDateString("de-DE", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  // What needs doing does not depend on the period, so a period switch leaves it alone.
+  const overview = createQueryState<OverviewData | null>(null, loadOverviewData);
+  const periodData = createQueryState<PeriodData | null>(null, () => loadPeriodData(period));
   // Income tax is assessed per year, so month/quarter periods use the year they fall into.
   const taxReserve = createQueryState<TaxRücklageResult | null>(null, () =>
     computeTaxRücklage(taxYearOfPeriod(period)),
@@ -57,53 +63,58 @@
   );
 
   $effect(() => {
-    dashboard.reload();
-    taxReserve.reload();
+    overview.reload();
     setup.reload();
+  });
+
+  $effect(() => {
+    periodData.reload();
+    taxReserve.reload();
   });
 
   $effect(() => {
     isSandboxActive()
       .then((active) => (sandbox = active))
-      .catch((e) => toast.error("Sandbox-Status unbekannt", String(e)));
+      .catch((e) => toast.error("Sandbox-Status unbekannt", errorMessage(e)));
   });
 
-  const data = $derived(dashboard.data);
+  const now = nowUnix();
+  const overviewData = $derived(overview.data);
   // Figures that depend on the period show a placeholder while the next period loads.
-  const settled = $derived(dashboard.loading ? null : data);
-  const kpis = $derived(settled?.kpis ?? null);
-  const monthlyBars = $derived(
-    (data?.monthlyRevenue ?? []).map((m) => ({
-      label: m.label,
-      value: m.total,
-      sublabel: String(m.year),
-    })),
+  const settled = $derived(periodData.loading ? null : periodData.data);
+
+  const todoItems = $derived(
+    overviewData
+      ? buildTodoItems({
+          now,
+          overdue: overdueOf(overviewData.ageBuckets),
+          oldestDaysOverdue: overviewData.receivables.daysOverdue,
+          dueTemplates: overviewData.dueTemplates,
+          expiringOffersCount: overviewData.offerStats.expiringSoonCount,
+          followUps: overviewData.followUps,
+          drafts: overviewData.drafts,
+          unbilled: overviewData.unbilled,
+        })
+      : [],
   );
-  const formatKpi = (pick: (k: Kpis) => number) => (kpis ? centsToEur(pick(kpis)) : null);
+  const months = $derived(
+    settled
+      ? incomeMonths(settled.revenueByMonth, settled.expensesByMonth, settled.lastYearRevenueByMonth, now)
+      : [],
+  );
+  const shares = $derived(settled ? customerShares(settled.topCustomers, settled.kpis.revenueGross) : []);
+  const expected = $derived(overviewData ? expectedColumns(overviewData.expectedPayments) : []);
 
   const setupSteps = $derived(
-    setup.data && settled
+    setup.data && overviewData
       ? buildSetupChecklist({
           missingCompany: setup.data.missingCompany,
-          customerCount: settled.customerCount,
+          customerCount: overviewData.customerCount,
           hasInvoices: setup.data.hasInvoices,
         })
       : null,
   );
 
-  function openUnpaidInvoices() {
-    saveFilters("invoices", { onlyOpen: true });
-    push("/invoices");
-  }
-
-  // Breakpoints follow the content area (@container in Layout), not the window,
-  // because the sidebar eats 240px. Five cards only share one row once each one
-  // fits a six-digit amount; in between they split 3 + 2 on a six-column grid.
-  const KPI_TOP_ROW = "@2xl:col-span-2 @5xl:col-span-1";
-  const KPI_BOTTOM_ROW = "@2xl:col-span-3 @5xl:col-span-1";
-  const balanceClass = $derived(
-    !kpis || kpis.balance === 0 ? "" : kpis.balance < 0 ? "text-destructive" : "text-success",
-  );
 </script>
 
 {#if sandbox}
@@ -118,140 +129,63 @@
   <SetupChecklist steps={setupSteps} />
 {/if}
 
-<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
-  <div>
-    <h1 class="text-3xl font-semibold tracking-tight">Dashboard</h1>
-    <p class="text-sm text-muted-foreground mt-1">
-      Zeitraum: <span class="font-medium text-foreground">{period.label}</span>
-    </p>
-  </div>
-  <div class="flex flex-wrap items-end gap-3">
+<PageHeader title="Übersicht" subtitle={today}>
+  {#snippet actions()}
     <PeriodSwitcher {period} onChange={(p) => (period = p)} />
-    <div class="flex gap-2">
-      <Button onclick={() => push("/invoices/new")}>
-        <Plus />
-        Neue Rechnung
-      </Button>
-      <Button onclick={() => push("/customers/new")} variant="outline">
+    <DropdownMenu>
+      {#snippet trigger()}
+        <MoreActionsTrigger />
+      {/snippet}
+      <DropdownItem onSelect={() => push("/customers/new")}>
         <UserPlus />
         Neuer Kunde
-      </Button>
-    </div>
-  </div>
-</header>
+      </DropdownItem>
+    </DropdownMenu>
+    <Button onclick={() => push("/invoices/new")}>
+      <Plus />
+      Neue Rechnung
+    </Button>
+  {/snippet}
+</PageHeader>
 
-{#if dashboard.error}
-  <p class="mb-6 text-sm text-destructive">Dashboard konnte nicht geladen werden: {dashboard.error}</p>
-{/if}
-
-<div class="grid grid-cols-2 @2xl:grid-cols-6 @5xl:grid-cols-5 gap-4 mb-6 stagger">
-  <KpiCard
-    class={KPI_TOP_ROW}
-    label="Umsatz netto"
-    icon={TrendingUp}
-    value={formatKpi((k) => k.revenueNet)}
+<div class="mb-8 grid grid-cols-1 items-start gap-x-6 gap-y-8 @5xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+  <TodoList items={todoItems} loading={overview.loading && !overviewData} error={overview.error} />
+  <ProfitCard
+    periodLabel={period.label}
+    running={isRunning(period, now)}
+    kpis={settled?.kpis ?? null}
+    previousKpis={settled?.previousKpis ?? null}
+    error={periodData.error}
   />
-  <KpiCard
-    class={KPI_TOP_ROW}
-    label="Umsatz brutto"
-    icon={TrendingUp}
-    value={formatKpi((k) => k.revenueGross)}
-  />
-  <KpiCard
-    class={KPI_TOP_ROW}
-    label="Aufwand netto"
-    icon={TrendingDown}
-    value={formatKpi((k) => k.expenseNet)}
-    onclick={() => push("/expenses")}
-  />
-  <KpiCard
-    class={KPI_BOTTOM_ROW}
-    label="Saldo"
-    icon={Scale}
-    value={formatKpi((k) => k.balance)}
-    valueClass={balanceClass}
-  />
-  <KpiCard
-    class="col-span-2 {KPI_BOTTOM_ROW}"
-    label="Offene Posten"
-    icon={Clock}
-    value={formatKpi((k) => k.openTotal)}
-    iconClass={kpis && kpis.openCount > 0 ? "text-warning" : undefined}
-    onclick={openUnpaidInvoices}
-  >
-    {#snippet caption()}
-      {kpis?.openCount ?? 0} {pluralize(kpis?.openCount ?? 0, "Rechnung", "Rechnungen")}
-    {/snippet}
-  </KpiCard>
 </div>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 stagger">
-  <KpiCard
-    label="Kunden"
-    icon={Users}
-    value={settled ? String(settled.customerCount) : null}
-    onclick={() => push("/customers")}
+<div class="mb-5 grid grid-cols-1 gap-5 @5xl:grid-cols-[minmax(0,8fr)_minmax(0,4fr)]">
+  <IncomeExpensesCard periodLabel={period.label} loading={periodData.loading} error={periodData.error} {months} />
+  <ReceivablesCard
+    loading={overview.loading && !overviewData}
+    error={overview.error}
+    buckets={overviewData?.ageBuckets ?? []}
+    oldest={overviewData?.receivables ?? { daysOverdue: null, openTotal: 0, openCount: 0 }}
   />
-  <KpiCard
-    label="Offene Angebote"
-    icon={FileSignature}
-    value={settled ? centsToEur(settled.offerStats.total) : null}
-    onclick={() => push("/offers")}
-  >
-    {#snippet caption()}
-      {settled?.offerStats.count ?? 0} {pluralize(settled?.offerStats.count ?? 0, "Angebot", "Angebote")}{#if settled && settled.offerStats.expiringSoonCount > 0}
-        <span class="text-warning"> · {settled.offerStats.expiringSoonCount} läuft bald ab</span>
-      {/if}{#if settled && settled.offerStats.unconvertedCount > 0}
-        <span class="text-warning"> · {settled.offerStats.unconvertedCount} ohne Wechselkurs nicht in der Summe</span>
-      {/if}
-    {/snippet}
-  </KpiCard>
 </div>
 
-<div class="grid grid-cols-1 @4xl:grid-cols-3 gap-4 mb-6">
-  <Card class="@4xl:col-span-2">
-    <CardContent>
-      <div class="mb-3">
-        <div class="text-xs text-muted-foreground uppercase tracking-wider">Umsatz pro Monat</div>
-        <div class="text-xs text-muted-foreground mt-0.5">{period.label}</div>
-      </div>
-      {#if dashboard.loading}
-        <div class="h-40 grid place-items-center text-sm text-muted-foreground">Lade…</div>
-      {:else if monthlyBars.length === 0}
-        <div class="h-40 grid place-items-center text-sm text-muted-foreground">Keine Daten im Zeitraum.</div>
-      {:else}
-        <BarChart bars={monthlyBars} ariaLabel="Monatlicher Umsatz im Zeitraum" />
-      {/if}
-    </CardContent>
-  </Card>
-
+<div class="mb-8 grid grid-cols-1 gap-5 @3xl:grid-cols-2 @6xl:grid-cols-3">
+  <ExpectedPaymentsCard
+    loading={overview.loading && !overviewData}
+    error={overview.error}
+    forecast={overviewData?.cashFlow ?? null}
+    columns={expected}
+  />
+  <TaxReserveCard reserve={taxReserve.data} loading={taxReserve.loading} error={taxReserve.error} />
   <TopCustomersCard
     periodLabel={period.label}
-    loading={dashboard.loading}
-    customers={data?.topCustomers ?? []}
+    loading={periodData.loading}
+    error={periodData.error}
+    {shares}
+    customerCount={overviewData?.customerCount ?? null}
   />
 </div>
 
-{#if data && data.cashFlow.total > 0}
-  <CashFlowCard forecast={data.cashFlow} />
-{/if}
-
-{#if taxReserve.error}
-  <p class="mb-6 text-sm text-muted-foreground">
-    Steuer-Rücklage konnte nicht berechnet werden: {taxReserve.error}
-  </p>
-{:else if taxReserve.data}
-  <TaxReserveCard reserve={taxReserve.data} />
-{/if}
-
-<div class="grid grid-cols-1 @4xl:grid-cols-3 gap-4 mb-6">
-  <ReceivablesCard
-    loading={dashboard.loading}
-    receivables={data?.receivables ?? { daysOverdue: null, openTotal: 0, openCount: 0 }}
-  />
-  <FollowUpsCard loading={dashboard.loading} followUps={data?.followUps ?? []} />
-</div>
-
-{#if settled && settled.dueTemplates.length > 0}
-  <DueTemplatesSection templates={settled.dueTemplates} />
+{#if overviewData}
+  <OverviewFacts customerCount={overviewData.customerCount} offerStats={overviewData.offerStats} />
 {/if}

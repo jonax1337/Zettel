@@ -1,18 +1,18 @@
 # DATEV-Export
 
-Zettel exportiert deine **Rechnungen (Erlöse)** und **Eingangsrechnungen (Aufwände)**
+Zettel exportiert deine **Rechnungen (Erlöse)** und **Ausgaben (Aufwände)**
 als **DATEV-Buchungsstapel** (Format 700, Format-Name „Buchungsstapel" = 21).
 Die CSV kannst du deinem Steuerberater geben — DATEV-Unternehmen-Online und
 DATEV Kanzlei-Rechnungswesen importieren das Format direkt.
 
 ## Workflow
 
-1. In der App **Auswertung → DATEV-Export** öffnen
+1. In der App **Auswertungen → DATEV-Export** öffnen
 2. Zeitraum wählen (Standard: Jahresanfang bis heute). Ein Stapel darf nur
    **ein Wirtschaftsjahr** umfassen: das DATEV-Belegdatum hat kein Jahr (`TTMM`),
    Zettel lehnt längere Zeiträume ab. Jedes Jahr einzeln exportieren.
 3. Kontenrahmen wählen (SKR03 oder SKR04)
-4. Festlegen, ob Rechnungen, Eingangsrechnungen und stornierte Eingangsrechnungen
+4. Festlegen, ob Rechnungen, Ausgaben und stornierte Ausgaben
    mit in den Stapel sollen (Standard: alles); die Vorschau zeigt die Anzahl
 5. Datei speichern, dem Steuerberater per Mail/Cloud schicken
 
@@ -27,10 +27,10 @@ BOM, Zeilenenden sind CRLF.
 | Beleg | Aufnahme | Datum |
 |---|---|---|
 | Rechnungen und Stornorechnungen | Status **Versendet**, **Teilbezahlt** oder **Bezahlt** | Rechnungsdatum |
-| Eingangsrechnungen | Status **Offen** oder **Bezahlt**; **Storniert** nur, wenn die Option gesetzt ist | Belegdatum |
+| Ausgaben | Status **Offen** oder **Bezahlt**; **Storniert** nur, wenn die Option gesetzt ist | Belegdatum |
 
 Entwürfe und verworfene Rechnungen bleiben draußen. Exportiert werden nur
-Rechnungen und Eingangsrechnungen — **Zahlungsein- und -ausgänge werden nicht
+Rechnungen und Ausgaben — **Zahlungsein- und -ausgänge werden nicht
 gebucht**.
 
 ## Kontenmapping
@@ -54,7 +54,7 @@ Die vier Reverse-Charge-Konten werden nach Art des Reverse-Charge
 wie ihre Rechnung. Das sind die Konten der DATEV-Standardkontenrahmen — der
 Steuerberater kann sie beim Import problemlos auf eigene Konten umbuchen.
 
-### Aufwände (Eingangsrechnungen)
+### Aufwände (Ausgaben)
 
 | Sachverhalt | SKR03 | SKR04 |
 |---|---|---|
@@ -81,9 +81,9 @@ prüfen und gegebenenfalls leeren, damit Punkt 2 greift.
   passende Erlöskonto Gegenkonto (Haben) — die Rechnung wird als Forderung gegen
   den Kunden gebucht. Beträge sind brutto (inkl. USt). Kleinunternehmer- und
   Reverse-Charge-Rechnungen werden mit Satz 0 gebucht.
-- **Eingangsrechnungen:** eine Zeile pro Kombination aus Aufwandskonto und
+- **Ausgaben:** eine Zeile pro Kombination aus Aufwandskonto und
   USt-Satz. Aufwandskonto ist Konto (Soll), Sammel-Kreditor Gegenkonto (Haben).
-- **Belegfeld 1** = Rechnungsnummer bzw. interne Nummer der Eingangsrechnung
+- **Belegfeld 1** = Rechnungsnummer bzw. interne Nummer der Ausgabe
 - **Buchungstext** = „Rechnung &lt;Kundenname&gt;", „Storno &lt;Kundenname&gt;" bzw.
   „Eingangsrechnung &lt;Lieferant&gt; (&lt;Lieferantennummer&gt;)" (auf 60 Zeichen gekürzt)
 - **EU-Land u. UStID (Bestimmung)** = USt-IdNr. des Kunden bzw. Lieferanten bei
@@ -95,7 +95,7 @@ prüfen und gegebenenfalls leeren, damit Punkt 2 greift.
 
 - **Stornorechnungen** (Gutschriften) werden als Gegenbuchung exportiert: dieselben
   Konten, Soll/Haben gedreht, Buchungstext „Storno …".
-- **Stornierte Eingangsrechnungen** werden (wenn die Option gesetzt ist) ebenfalls
+- **Stornierte Ausgaben** werden (wenn die Option gesetzt ist) ebenfalls
   mit gedrehtem Soll/Haben exportiert, Buchungstext „Storno …".
 - Ein negativer Betrag (z. B. eine Rabattzeile mit eigenem USt-Satz) kehrt die
   Richtung ebenfalls um, denn DATEV-Beträge haben kein Vorzeichen.
@@ -117,7 +117,7 @@ einem Issue, wenn du sie brauchst.
 [`datev-export-sample.csv`](./datev-export-sample.csv) zeigt einen Stapel mit
 vier Rechnungen: eine Standard-Rechnung (19 %), eine gemischte Rechnung
 (7 % + 19 %), eine Kleinunternehmer-Rechnung (0 %, steuerfrei) und eine
-Reverse-Charge-Rechnung an einen niederländischen B2B-Kunden. Eingangsrechnungen
+Reverse-Charge-Rechnung an einen niederländischen B2B-Kunden. Ausgaben
 enthält das Beispiel nicht.
 
 ## Spezifikation

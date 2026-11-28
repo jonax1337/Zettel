@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NAV_GROUPS } from "$lib/navigation";
+import { NAV_GROUPS, SETTINGS_NAV_ITEM, SETTINGS_PAGES } from "$lib/navigation";
 import { buildPaletteCommands, filterCommands } from "./palette-commands";
 
 const commands = buildPaletteCommands();
@@ -19,19 +19,52 @@ describe("palette commands", () => {
     }
   });
 
-  it("reaches validation, tax and every settings category", () => {
+  it("reaches the settings link of the sidebar footer", () => {
+    const routes = commands.filter((c) => c.group === "navigate").map((c) => c.route);
+    expect(routes).toContain(SETTINGS_NAV_ITEM.href);
+  });
+
+  it("still reaches every page that lost its own sidebar entry", () => {
+    const reached = new Map(
+      commands.filter((c) => c.group === "navigate").map((c) => [c.route, c.label]),
+    );
+    expect(Object.fromEntries(reached)).toMatchObject({
+      "/reminders": "Mahnungen",
+      "/recurring": "Wiederkehrende Rechnungen",
+      "/reports/ustva": "UStVA",
+      "/reports/euer": "Anlage EÜR",
+      "/reports/taxes": "Steuer-Rücklage",
+      "/export": "DATEV-Export",
+      "/validate": "E-Rechnung prüfen",
+      "/settings": "Einstellungen",
+    });
+  });
+
+  it("reaches validation, tax and every settings page", () => {
     const routes = commands.map((c) => c.route);
     expect(routes).toEqual(
-      expect.arrayContaining([
-        "/validate",
-        "/reports/taxes",
-        "/settings/company",
-        "/settings/documents",
-        "/settings/appearance",
-        "/settings/data",
-        "/settings/advanced",
-      ]),
+      expect.arrayContaining(["/validate", "/reports/taxes", ...SETTINGS_PAGES.map((p) => p.href)]),
     );
+  });
+
+  it("finds each settings page by the settings on it and by its former names", () => {
+    const found = (query: string) => filterCommands(commands, query).map((c) => c.route);
+    expect(found("backup")).toContain("/settings/data");
+    expect(found("sandbox")).toContain("/settings/data");
+    expect(found("beta")).toContain("/settings/updates");
+    expect(found("kleinunternehmer")).toContain("/settings/tax");
+    expect(found("iban")).toContain("/settings/company");
+    expect(found("nummernkreis")).toContain("/settings/documents");
+    expect(found("logo")).toContain("/settings/company");
+    expect(found("dokumente")).toContain("/settings/documents");
+    expect(found("erweitert")).toContain("/settings/advanced");
+    expect(found("eür")).toContain("/settings/tax");
+  });
+
+  it("names the settings pages after the sub-navigation", () => {
+    expect(labels(filterCommands(commands, "einstellungen steuern"))).toContain("Einstellungen: Steuern");
+    expect(labels(filterCommands(commands, "gefahrenbereich"))).toContain("Einstellungen: Gefahrenbereich");
+    expect(labels(filterCommands(commands, "updates"))).toContain("Einstellungen: Updates");
   });
 
   it("has unique ids", () => {
@@ -54,8 +87,15 @@ describe("filterCommands", () => {
     expect(labels(filterCommands(commands, "eingangsrechnung beleg"))).toContain("Neue Ausgabe");
   });
 
+  it("finds renamed pages under their former names", () => {
+    expect(labels(filterCommands(commands, "dashboard"))).toContain("Übersicht");
+    expect(labels(filterCommands(commands, "zeiterfassung"))).toContain("Zeiten");
+    expect(labels(filterCommands(commands, "bank-import"))).toContain("Bank-Abgleich");
+    expect(labels(filterCommands(commands, "eingangsrechnungen"))).toContain("Ausgaben");
+  });
+
   it("finds the validator", () => {
-    expect(labels(filterCommands(commands, "valid"))).toContain("E-Rechnung validieren");
+    expect(labels(filterCommands(commands, "valid"))).toContain("E-Rechnung prüfen");
   });
 
   it("returns nothing when no command fits", () => {

@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { guardUnsavedChanges } from "$lib/utils/unsaved-guard.svelte";
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { push, router } from "svelte-spa-router";
   import {
     createInvoice,
@@ -10,9 +11,10 @@
     type ReverseChargeType,
     type SupplyKind,
   } from "$lib/db/invoices";
+  import { unbilledMinutes } from "$lib/db/customer-overview";
   import { keepsStoredAmounts } from "$lib/db/invoice-lifecycle";
   import type { Customer, Invoice, InvoiceItem, Settings } from "$lib/db/schema";
-  import { computeEurTotalCent } from "$lib/utils/currency";
+  import { computeEurTotalCent, formatMoney } from "$lib/utils/currency";
   import { fromIsoDate, nowUnix, toIsoDate } from "$lib/utils/date";
   import { defaultPaymentTermsText } from "$lib/utils/payment-terms";
   import { computeTotals } from "$lib/utils/totals";
@@ -21,26 +23,37 @@
     normalizeBuyerReference,
     type FollowedLeitweg,
   } from "$lib/xrechnung/buyer-reference";
-  import { Button, Card, CardContent, DatePicker, Input, Label, Select, Textarea, toast } from "$lib/ui";
-  import { AlertTriangle } from "$lib/brand-icons";
-  import BackLink from "./parts/entity/BackLink.svelte";
-  import CurrencyFields from "./invoice/CurrencyFields.svelte";
-  import LineItemsEditor from "./invoice/LineItemsEditor.svelte";
-  import PdfLanguageSelect from "./invoice/PdfLanguageSelect.svelte";
-  import ReverseChargeField from "./invoice/ReverseChargeField.svelte";
-  import ServicePeriodField from "./invoice/ServicePeriodField.svelte";
-  import SkontoFields from "./invoice/SkontoFields.svelte";
+  import { Button, DatePicker, Field, Input, PageHeader, Textarea, focusFirstInvalid, toast, Panel } from "$lib/ui";
+  import { Clock } from "$lib/brand-icons";
+  import { unbilledTimeHref } from "./time/time-link";
+  import { displayInvoiceNumber } from "$lib/utils/invoice-number";
+  import { parseId } from "./parts/entity/edit-target";
+  import AddressWindow from "./parts/editor/AddressWindow.svelte";
+  import CurrencyFields from "./parts/editor/CurrencyFields.svelte";
+  import CustomerPanel from "./parts/editor/CustomerPanel.svelte";
+  import EditorLayout from "./parts/editor/EditorLayout.svelte";
+  import EditorSaveBar from "./parts/editor/EditorSaveBar.svelte";
+  import LineItemsSheet from "./parts/editor/LineItemsSheet.svelte";
+  import MetaRow from "./parts/editor/MetaRow.svelte";
+  import MetaText from "./parts/editor/MetaText.svelte";
+  import Paper from "./parts/editor/Paper.svelte";
+  import PaperField from "./parts/editor/PaperField.svelte";
+  import PdfLanguageSelect from "./parts/editor/PdfLanguageSelect.svelte";
+  import ReverseChargeField from "./parts/editor/ReverseChargeField.svelte";
+  import ServicePeriodRows from "./parts/editor/ServicePeriodRows.svelte";
+  import SkontoFields from "./parts/editor/SkontoFields.svelte";
+  import { senderLine } from "./parts/editor/address-lines";
+  import { assignedInvoiceNumber } from "./parts/editor/document-number";
+  import { documentErrors, firstError } from "./parts/editor/editor-validation";
+  import { commitPendingPrices } from "./parts/editor/prices";
+  import { createSaveError } from "./parts/editor/save-error.svelte";
+  import { QUIET_FIELD } from "./parts/editor/quiet-field";
+  import { vatExemptNote } from "./parts/editor/vat-note";
+  import NoticeCard from "./invoice/NoticeCard.svelte";
   import { createDocumentFormData } from "./invoice/document-form.svelte";
   import { dueDateFromIssue, followDerivedDueDate } from "./invoice/due-date";
   import { DEFAULT_SUPPLY_KIND } from "./invoice/supply-kind";
   import { vatRateForNewItem } from "$lib/utils/vat";
-  import {
-    exchangeRateError,
-    linePeriodError,
-    quantityError,
-    reverseChargeError,
-    servicePeriodError,
-  } from "./invoice/form-validation";
   import {
     lineItemsFromStored,
     newLineItem,
@@ -70,8 +83,17 @@
   const loading = $derived(mode === "edit" && !loaded);
 
   let saving = $state(false);
-  let error = $state<string | null>(null);
+  /** The invoice cannot be edited at all (not found, not a draft). */
   let loadError = $state<string | null>(null);
+  /** Settings or customers did not load; the form stays usable for what is there. */
+  let setupError = $state<string | null>(null);
+  // Problems are shown only after the first attempt to save, and then follow the form while it is fixed.
+  let submitted = $state(false);
+  let formElement = $state<HTMLFormElement>();
+  let draftLabel = $state<string | null>(null);
+  /** The number a reopened draft already carries; null while it only has the draft placeholder. */
+  let invoiceNumber = $state<string | null>(null);
+  let loadedOnce = false;
 
   let customerIdStr = $state("");
   let issueDateIso = $state(toIsoDate(nowUnix()));
@@ -100,18 +122,55 @@
   let storedKleinunternehmer = $state<boolean | null>(null);
   const vatRateSnapshot: VatRateSnapshot = new Map();
 
+  const formState = () => ({
+    customerIdStr,
+    issueDateIso,
+    serviceMode,
+    deliveryDateIso,
+    servicePeriodStartIso,
+    servicePeriodEndIso,
+    dueDateIso,
+    notes,
+    paymentTerms,
+    reverseChargeType,
+    supplyKind,
+    isCreditNote,
+    items,
+    currency,
+    exchangeRate,
+    skonto,
+    pdfLanguage,
+    buyerReference,
+  });
+  const saveError = createSaveError(formState);
+
   const isReverseCharge = $derived(reverseChargeType !== "none");
   const reference = createDocumentFormData({
     customerId: () => customerIdStr,
     onLoaded: (loadedSettings, loadedCustomers) => {
       if (mode === "new") applyNewInvoiceDefaults(loadedSettings, loadedCustomers);
     },
-    onError: (message) => (error = message),
+    onError: (message) => (setupError = message),
   });
   const settings = $derived(reference.settings);
   const isKleinunternehmer = $derived(storedKleinunternehmer ?? settings?.isKleinunternehmer ?? false);
   const vatExempt = $derived(isKleinunternehmer || isReverseCharge);
   const reverseChargeSender = $derived(settings ? { isKleinunternehmer, vatId: settings.vatId } : null);
+  const errors = $derived(
+    submitted
+      ? documentErrors({
+          customerId: parseId(customerIdStr),
+          customer: reference.selectedCustomer,
+          items,
+          itemsRule: "any",
+          sender: reverseChargeSender,
+          reverseChargeType,
+          currency: { code: currency, exchangeRate },
+          servicePeriod: serviceMode === "period" ? { startIso: servicePeriodStartIso, endIso: servicePeriodEndIso } : undefined,
+        })
+      : {},
+  );
+  const shownError = $derived(firstError(errors) ?? saveError.message);
 
   const totals = $derived(
     settings ? computeTotals(items.map(toTotalsItem), { isKleinunternehmer, isReverseCharge }) : { subtotal: 0, vatAmount: 0, total: 0 },
@@ -142,9 +201,12 @@
     });
   });
 
+  // The router keeps this component mounted when only the id changes, so a second invoice must not inherit the first one's state.
   $effect(() => {
     if (mode !== "edit") return;
     const invoiceId = parseRouteId(params?.id);
+    let stale = false;
+    untrack(resetForRoute);
     if (invoiceId === null) {
       loadError = INVALID_ROUTE_ID_MESSAGE;
       loaded = true;
@@ -152,14 +214,48 @@
     }
     id = invoiceId;
     getInvoice(invoiceId)
-      .then((res) => {
+      .then(async (res) => {
+        if (stale) return;
         if (!res) loadError = "Rechnung nicht gefunden.";
         else if (res.invoice.status !== "draft") loadError = "Nur Entwürfe können bearbeitet werden.";
-        else applyStoredInvoice(res.invoice, res.items);
+        else {
+          draftLabel = displayInvoiceNumber(res.invoice);
+          invoiceNumber = assignedInvoiceNumber(res.invoice.number);
+          applyStoredInvoice(res.invoice, res.items);
+          if (loadedOnce) {
+            await tick();
+            unsaved.markClean();
+          }
+        }
       })
-      .catch((e) => (loadError = String(e)))
-      .finally(() => (loaded = true));
+      .catch((e) => {
+        if (!stale) loadError = errorMessage(e);
+      })
+      .finally(() => {
+        if (stale) return;
+        loaded = true;
+        loadedOnce = true;
+      });
+    return () => {
+      stale = true;
+    };
   });
+
+  function resetForRoute() {
+    loaded = false;
+    loadError = null;
+    submitted = false;
+    saveError.clear();
+    draftLabel = null;
+    invoiceNumber = null;
+    storedKleinunternehmer = null;
+    isCreditNote = false;
+    serviceMode = "single";
+    deliveryDateIso = "";
+    servicePeriodStartIso = "";
+    servicePeriodEndIso = "";
+    vatRateSnapshot.clear();
+  }
 
   function applyNewInvoiceDefaults(s: Settings, availableCustomers: Customer[]) {
     customerIdStr = preselectedCustomerId(router.querystring, availableCustomers);
@@ -192,19 +288,6 @@
     buyerReference = invoice.buyerReference ?? "";
     followedLeitweg = { customerId: invoice.customerId, leitwegId: buyerReference };
     items = lineItemsFromStored(storedItems, keepsStoredAmounts(invoice));
-  }
-
-  function formError(): string | null {
-    if (items.length === 0) return "Mindestens eine Position erforderlich.";
-    return (
-      (reverseChargeSender
-        ? reverseChargeError(reverseChargeType, reverseChargeSender, reference.selectedCustomer, items)
-        : null) ??
-      exchangeRateError(currency, exchangeRate) ??
-      (serviceMode === "period" ? servicePeriodError(servicePeriodStartIso, servicePeriodEndIso) : null) ??
-      linePeriodError(items) ??
-      quantityError(items)
-    );
   }
 
   function buildInput(customerId: number): InvoiceFormInput {
@@ -244,182 +327,204 @@
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
-    const customerId = Number.parseInt(customerIdStr, 10);
-    if (Number.isNaN(customerId)) {
-      error = "Bitte einen Kunden auswählen.";
-      return;
-    }
-    const validationError = formError();
-    if (validationError) {
-      error = validationError;
+    saveError.clear();
+    commitPendingPrices(items);
+    submitted = true;
+    const customerId = parseId(customerIdStr);
+    if (customerId === null || firstError(errors)) {
+      await tick();
+      if (formElement) focusFirstInvalid(formElement);
       return;
     }
     saving = true;
-    error = null;
     try {
       const savedId = await persist(buildInput(customerId));
       unsaved.markClean();
       push(`/invoices/${savedId}`);
     } catch (err) {
-      error = String(err);
-      toast.error("Speichern fehlgeschlagen", String(err));
+      saveError.set(errorMessage(err));
+      toast.error("Speichern fehlgeschlagen", errorMessage(err));
     } finally {
       saving = false;
     }
   }
 
-  const unsaved = guardUnsavedChanges(
-    () => ({
-      customerIdStr,
-      issueDateIso,
-      serviceMode,
-      deliveryDateIso,
-      servicePeriodStartIso,
-      servicePeriodEndIso,
-      dueDateIso,
-      notes,
-      paymentTerms,
-      reverseChargeType,
-      supplyKind,
-      isCreditNote,
-      items,
-      currency,
-      exchangeRate,
-      skonto,
-      pdfLanguage,
-      buyerReference,
-    }),
-    () => !loading && reference.loaded,
+  // Time reaches an invoice by billing it on the Zeiten screen, which creates the draft from the entries.
+  // So the pointer to it is only useful while the invoice is still new.
+  let unbilledMinutesOfCustomer = $state(0);
+  $effect(() => {
+    const customerId = parseId(customerIdStr);
+    if (mode !== "new" || isCreditNote || customerId === null) {
+      unbilledMinutesOfCustomer = 0;
+      return;
+    }
+    let stale = false;
+    unbilledMinutes(customerId)
+      .then((minutes) => !stale && (unbilledMinutesOfCustomer = minutes))
+      .catch(() => !stale && (unbilledMinutesOfCustomer = 0));
+    return () => {
+      stale = true;
+    };
+  });
+
+  const unsaved = guardUnsavedChanges(formState, () => !loading && reference.loaded);
+
+  const documentTitle = $derived(
+    isCreditNote ? "Stornorechnung bearbeiten" : mode === "new" ? "Neue Rechnung" : "Rechnung bearbeiten",
   );
 </script>
 
-<header class="mb-6">
-  <BackLink href="/invoices">Rechnungen</BackLink>
-  <h1 class="text-3xl font-semibold tracking-tight mt-2">
-    {#if isCreditNote}
-      Stornorechnung bearbeiten
-    {:else if mode === "new"}
-      Neue Rechnung
-    {:else}
-      Rechnung bearbeiten
-    {/if}
-  </h1>
-</header>
+<PageHeader
+  title={documentTitle}
+  subtitle={draftLabel ? `${draftLabel} · Du schreibst direkt auf dem Blatt.` : "Du schreibst direkt auf dem Blatt. Es ist an das spätere PDF angelehnt."}
+  back={{ href: "/invoices", label: "Rechnungen" }}
+/>
 
 {#if loading}
-  <p class="text-sm text-muted-foreground">Lade…</p>
+  <p role="status" class="text-sm text-muted-foreground">Lade…</p>
 {:else if loadError}
-  <p class="text-sm text-destructive">{loadError}</p>
+  <NoticeCard tone="destructive" title="Die Rechnung lässt sich nicht bearbeiten">
+    <div class="mt-0.5 text-muted-foreground">{loadError}</div>
+  </NoticeCard>
 {:else}
+  {#if setupError}
+    <NoticeCard tone="warning" title="Nicht alle Daten konnten geladen werden">
+      <div class="mt-0.5 text-muted-foreground">{setupError}</div>
+    </NoticeCard>
+  {/if}
   {#if isCreditNote}
-    <Card class="border-warning/40 bg-warning/10 mb-4">
-      <CardContent>
-        <div class="flex items-start gap-3">
-          <AlertTriangle class="size-5 text-warning shrink-0 mt-0.5" />
-          <div class="flex-1 text-sm">
-            <div class="font-medium text-warning">Stornorechnung</div>
-            <div class="mt-0.5 text-muted-foreground">
-              Mengen anpassen für Teilstorno. Positionen entfernen für Teilrückerstattung.
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <NoticeCard tone="warning" title="Stornorechnung">
+      <div class="mt-0.5 text-muted-foreground">
+        Passe die Mengen für einen Teilstorno an. Entferne Positionen für eine Teilrückerstattung.
+      </div>
+    </NoticeCard>
   {/if}
 
-  <form onsubmit={onSubmit} class="space-y-6">
-    <Card>
-      <CardContent>
-        <section class="grid grid-cols-2 gap-4">
-          <div class="col-span-2 flex flex-col gap-1.5">
-            <Label>Kunde <span class="text-destructive">*</span></Label>
-            <Select
-              bind:value={customerIdStr}
-              items={reference.customerItems}
-              placeholder="— bitte wählen —"
+  <form onsubmit={onSubmit} bind:this={formElement}>
+    <EditorLayout>
+      {#snippet paper()}
+        <Paper label={documentTitle}>
+          <div class="mb-9 flex flex-wrap items-start justify-between gap-x-8 gap-y-6">
+            <AddressWindow
+              senderLine={settings ? senderLine(settings) : ""}
+              customerItems={reference.customerItems}
+              bind:customerIdStr
+              customer={reference.selectedCustomer}
               disabled={isCreditNote}
+              error={errors.customer}
+              lockedNote={isCreditNote ? "Der Kunde ist an die Originalrechnung gebunden." : undefined}
             />
-            {#if isCreditNote}
-              <p class="text-xs text-muted-foreground">
-                Kunde ist an die Originalrechnung gebunden und kann nicht geändert werden.
-              </p>
+            <div class="flex flex-col items-end gap-2">
+              <MetaText label="Rechnungsnummer" assigned={invoiceNumber !== null}>
+                {invoiceNumber ?? "wird beim Ausstellen vergeben"}
+              </MetaText>
+              <MetaRow label={isCreditNote ? "Stornodatum" : "Rechnungsdatum"}>
+                <DatePicker bind:value={issueDateIso} required class={QUIET_FIELD} />
+              </MetaRow>
+              <ServicePeriodRows
+                bind:mode={serviceMode}
+                bind:deliveryDateIso
+                bind:startIso={servicePeriodStartIso}
+                bind:endIso={servicePeriodEndIso}
+                error={errors.servicePeriod}
+              />
+              {#if !isCreditNote}
+                <MetaRow label="Fällig am">
+                  <DatePicker bind:value={dueDateIso} required class={QUIET_FIELD} />
+                </MetaRow>
+              {/if}
+            </div>
+          </div>
+
+          <h2 class="mb-3.5 font-display text-xl font-extrabold">{isCreditNote ? "Stornorechnung" : "Rechnung"}</h2>
+          <LineItemsSheet
+            bind:items
+            {currency}
+            {vatExempt}
+            {totals}
+            language={pdfLanguage}
+            vatNote={vatExemptNote(isKleinunternehmer, reverseChargeType)}
+            errors={{ items: errors.items, quantity: errors.quantity, linePeriod: errors.linePeriod }}
+          >
+            {#snippet actions()}
+              {@const customerId = parseId(customerIdStr)}
+              {#if unbilledMinutesOfCustomer > 0 && customerId !== null}
+                <Button size="sm" variant="ghost" href={unbilledTimeHref(customerId)}>
+                  <Clock />
+                  Aus offenen Zeiten
+                </Button>
+              {/if}
+            {/snippet}
+          </LineItemsSheet>
+
+          <div class="mt-6 grid gap-5">
+            {#if !isCreditNote}
+              <PaperField label="Zahlungsbedingungen">
+                <Textarea rows={2} bind:value={paymentTerms} class={QUIET_FIELD} />
+              </PaperField>
+            {/if}
+            <PaperField label="Fußtext" optional>
+              <Textarea
+                rows={2}
+                bind:value={notes}
+                placeholder="Zum Beispiel ein Dank oder ein Hinweis zur Leistung"
+                class={QUIET_FIELD}
+              />
+            </PaperField>
+          </div>
+        </Paper>
+      {/snippet}
+
+      {#snippet rail()}
+        <Panel title="Optionen">
+          <div class="grid gap-3.5">
+            <CurrencyFields
+              bind:currency
+              bind:exchangeRate
+              totalCent={totals.total}
+              disabled={isCreditNote}
+              error={errors.exchangeRate}
+            />
+            <PdfLanguageSelect bind:value={pdfLanguage}>
+              Labels und Hinweistexte auf der PDF. Das eingebettete ZUGFeRD-XML ist sprachneutral und bleibt unverändert.
+            </PdfLanguageSelect>
+            <!-- A Storno keeps the reverse-charge type of the invoice it corrects. -->
+            {#if !isCreditNote}
+              <ReverseChargeField
+                bind:type={reverseChargeType}
+                bind:supplyKind
+                sender={reverseChargeSender}
+                customer={reference.selectedCustomer}
+                error={errors.reverseCharge}
+              />
+              <SkontoFields bind:skonto>
+                {#snippet hint()}
+                  Wird strukturiert im ZUGFeRD-XML (BT-20) und als Textzeile auf der PDF ausgewiesen.
+                {/snippet}
+              </SkontoFields>
+            {/if}
+            {#if reference.selectedCustomer?.receivesXrechnung || buyerReference}
+              <Field
+                label="Leitweg-ID / Käuferreferenz"
+                hint="Pflicht für XRechnungen. Kommt vom Kunden und kann pro Rechnung überschrieben werden."
+              >
+                <Input bind:value={buyerReference} placeholder="z. B. 04011000-1234512345-35" />
+              </Field>
             {/if}
           </div>
-          <div class="flex flex-col gap-1.5">
-            <Label>{isCreditNote ? "Stornodatum" : "Rechnungsdatum"}</Label>
-            <DatePicker bind:value={issueDateIso} required />
-          </div>
-          {#if !isCreditNote}
-            <div class="flex flex-col gap-1.5">
-              <Label>Fällig am</Label>
-              <DatePicker bind:value={dueDateIso} required />
-            </div>
-          {/if}
-          <ServicePeriodField
-            bind:mode={serviceMode}
-            bind:deliveryDateIso
-            bind:startIso={servicePeriodStartIso}
-            bind:endIso={servicePeriodEndIso}
-          />
-          <CurrencyFields bind:currency bind:exchangeRate totalCent={totals.total} disabled={isCreditNote} />
-          {#if reference.selectedCustomer?.receivesXrechnung || buyerReference}
-            <div class="col-span-2 flex flex-col gap-1.5">
-              <Label>Leitweg-ID / Käuferreferenz</Label>
-              <Input bind:value={buyerReference} placeholder="z. B. 04011000-1234512345-35" />
-              <p class="text-xs text-muted-foreground">
-                Pflicht für XRechnungen. Kommt vom Kunden und kann pro Rechnung überschrieben werden.
-              </p>
-            </div>
-          {/if}
-          <!-- A Storno keeps the reverse-charge type of the invoice it corrects. -->
-          {#if !isCreditNote}
-            <ReverseChargeField
-              bind:type={reverseChargeType}
-              bind:supplyKind
-              sender={reverseChargeSender}
-              customer={reference.selectedCustomer}
-            />
-          {/if}
-        </section>
-      </CardContent>
-    </Card>
-
-    <LineItemsEditor bind:items {currency} {vatExempt} {totals} language={pdfLanguage} />
-
-    <Card>
-      <CardContent class="space-y-4">
-        <PdfLanguageSelect bind:value={pdfLanguage}>
-          Labels und Hinweistexte auf der PDF. Das eingebettete ZUGFeRD-XML
-          ist sprach-neutral und bleibt unverändert.
-        </PdfLanguageSelect>
-
-        {#if !isCreditNote}
-          <div class="flex flex-col gap-1.5">
-            <Label>Zahlungsbedingungen</Label>
-            <Textarea rows={2} bind:value={paymentTerms} />
-          </div>
-
-          <SkontoFields bind:skonto>
-            {#snippet hint()}
-              Wird strukturiert im ZUGFeRD-XML (BT-20) und als Textzeile auf der PDF ausgewiesen.
-            {/snippet}
-          </SkontoFields>
+        </Panel>
+        {#if reference.selectedCustomer}
+          <CustomerPanel customer={reference.selectedCustomer} />
         {/if}
-        <div class="flex flex-col gap-1.5">
-          <Label>Notizen / Fußtext</Label>
-          <Textarea rows={3} bind:value={notes} />
-        </div>
-      </CardContent>
-    </Card>
+      {/snippet}
+    </EditorLayout>
 
-    <div class="flex items-center gap-3">
-      <Button type="submit" disabled={saving}>
-        {saving ? "Speichere…" : mode === "new" ? "Anlegen" : "Speichern"}
-      </Button>
-      <Button type="button" onclick={() => push("/invoices")} variant="ghost">Abbrechen</Button>
-      {#if error}
-        <span class="text-sm text-destructive">{error}</span>
-      {/if}
-    </div>
+    <EditorSaveBar
+      submitLabel="Entwurf speichern"
+      {saving}
+      error={shownError}
+      onCancel={() => push(mode === "edit" && id !== null ? `/invoices/${id}` : "/invoices")}
+      total={formatMoney(totals.total, currency)}
+    />
   </form>
 {/if}

@@ -9,6 +9,7 @@
  * `lastAutoBackupAt` aus Settings dient als Throttle — wenn das Intervall noch
  * nicht abgelaufen ist, passiert nichts.
  */
+import { errorMessage } from "$lib/utils/error-message";
 import { invoke } from "@tauri-apps/api/core";
 import { loadSettings, saveLastAutoBackupAt } from "$lib/db/queries";
 import type { Settings } from "$lib/db/schema";
@@ -51,7 +52,7 @@ export async function maybeRunAutoBackup(): Promise<AutoBackupOutcome> {
   try {
     settings = await loadSettings();
   } catch (e) {
-    return failed(`Einstellungen nicht lesbar: ${e}`);
+    return failed(`Einstellungen nicht lesbar: ${errorMessage(e)}`);
   }
 
   const now = nowUnix();
@@ -64,7 +65,7 @@ export async function maybeRunAutoBackup(): Promise<AutoBackupOutcome> {
     forgetFailure();
     return { status: "ran", message: `Backup gespeichert: ${targetPath}` };
   } catch (e) {
-    return failed(String(e));
+    return failed(errorMessage(e));
   }
 }
 

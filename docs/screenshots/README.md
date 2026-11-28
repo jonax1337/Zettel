@@ -17,23 +17,23 @@ Das README bindet 3–6 starke Bilder ein. Vorhanden sind:
 
 | Datei | Motiv |
 |---|---|
-| `dashboard.png` | `/` mit gefülltem Period-Switcher, KPIs, Top-Kunden, Steuer-Rücklage |
+| `dashboard.png` | Übersicht (`/`) mit „Zu erledigen“, Gewinn, Einnahmen und Ausgaben, offenen Forderungen |
 | `invoices.png` | `/invoices` — Rechnungsliste mit Status und Filtern |
-| `invoice-validated.png` | Rechnung mit bestandener KoSIT-Prüfung |
+| `invoice-validated.png` | Rechnungsseite mit dem Beleg als Blatt; in der Seitenspalte Zahlung, PDF-Versionen und die bestandene KoSIT-Prüfung |
 | `pdf-preview.png` | generiertes PDF in einem Viewer mit sichtbaren ZUGFeRD-XML-Attachments |
-| `expenses.png` | `/expenses` — Eingangsrechnungen mit Lieferanten und Status |
-| `ustva.png` | UStVA-Vorbereitung (Auswertung → UStVA) |
-| `zettel-demo.gif` | Rundgang durch die App (Dashboard, Rechnungen, Validierung, PDF, Eingangsrechnungen, UStVA) |
+| `expenses.png` | `/expenses` — Ausgaben mit Lieferanten, Kategorie und Status |
+| `ustva.png` | UStVA-Vorbereitung (Auswertungen → UStVA) |
+| `zettel-demo.gif` | Rundgang durch die App (Übersicht, Rechnungen, geprüfte Rechnung als Blatt, Ausgaben, UStVA), 960×600 |
 
 Gewünscht und noch nicht vorhanden (neu seit v0.24):
 
-- `time-tracking.png` — `/time` (Zeiterfassung) mit Timer, Periodenliste und dem Abrechnen-Dialog
-- `euer.png` — Auswertung → Anlage EÜR mit den Zeilen des Vordrucks
-- `validate.png` — Sidebar „E-Rechnung validieren“ mit einem Prüfbericht
-- `integrity.png` — Einstellungen → Daten mit Integritätsprüfung (GoBD) und Export des Änderungsprotokolls
+- `time-tracking.png` — `/time` (Zeiten) mit Timer, Tagesliste und „Offene Zeiten abrechnen“
+- `euer.png` — Auswertungen → Anlage EÜR mit den Zeilen des Vordrucks
+- `validate.png` — Auswertungen → „E-Rechnung prüfen“ mit einem Prüfbericht
+- `integrity.png` — Einstellungen → Daten und Backup mit Integritätsprüfung (GoBD) und Export des Änderungsprotokolls
 
-Weitere optionale Motive: `invoice-edit.png` (`/invoices/new` mit mehreren Positionen, Service-Period, Multi-Currency), `settings.png` (`/settings` Hub), `command-palette.png` (`Cmd/Ctrl+K`-Overlay), `backup-restore.png` (Settings → Daten mit Backup-Optionen).
+Weitere optionale Motive: `invoice-edit.png` (`/invoices/new` mit mehreren Positionen, Service-Period, Multi-Currency), `settings.png` (`/settings/company` mit Unternavigation), `command-palette.png` (`Cmd/Ctrl+K`-Overlay), `backup-restore.png` (Einstellungen → Daten und Backup mit Backup-Optionen).
 
 ## Beitragen
 
-Wenn du gute Screenshots erzeugen kannst und mitmachen willst: PR mit den Bildern in diesem Ordner + Anpassung des `Screenshots`-Abschnitts im Root-`README.md`. Bitte vorher in den **Sandbox-Modus** wechseln (Settings → Daten → Sandbox), Testdaten anlegen, dann Screenshots erstellen — so kann nichts versehentlich aus den Echtdaten leaken.
+Wenn du gute Screenshots erzeugen kannst und mitmachen willst: PR mit den Bildern in diesem Ordner + Anpassung des `Screenshots`-Abschnitts im Root-`README.md`. Bitte vorher in den **Sandbox-Modus** wechseln (Einstellungen → Daten und Backup → Sandbox), Testdaten anlegen, dann Screenshots erstellen — so kann nichts versehentlich aus den Echtdaten leaken.

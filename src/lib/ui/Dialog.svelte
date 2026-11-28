@@ -45,14 +45,14 @@
       interactOutsideBehavior={dismissible ? "close" : "ignore"}
       class={cn(
         DIALOG_CONTENT_ANIMATION_CLASS,
-        "bg-background fixed top-[50%] left-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg outline-none",
+        "bg-popover fixed top-[50%] left-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 rounded-xl border p-6 shadow-xl outline-none",
         klass,
       )}
     >
       {#if title || description}
         <div class="flex flex-col gap-1.5 text-left">
           {#if title}
-            <DialogPrimitive.Title class="text-lg leading-none font-semibold tracking-tight">
+            <DialogPrimitive.Title class="font-display text-lg leading-none font-extrabold tracking-tight">
               {title}
             </DialogPrimitive.Title>
           {/if}
@@ -74,7 +74,7 @@
 
       {#if dismissible}
         <DialogPrimitive.Close
-          class="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+          class="ring-offset-popover focus:ring-ring data-[state=open]:bg-muted data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
         >
           <X class="size-4" />
           <span class="sr-only">Schließen</span>

@@ -259,7 +259,7 @@ export async function updateOffer(
 ): Promise<void> {
   assertQuantities(input.items);
   const existing = await getOffer(id);
-  if (!existing) throw new Error(`Offer ${id} not found`);
+  if (!existing) throw new Error(`Angebot ${id} nicht gefunden.`);
   if (existing.offer.status !== "draft") {
     throw new Error("Nur Entwürfe können bearbeitet werden.");
   }
@@ -421,7 +421,7 @@ export async function convertToInvoice(
   opts: { paymentTermsDays?: number } = {},
 ): Promise<number> {
   const data = await getOffer(offerId);
-  if (!data) throw new Error(`Offer ${offerId} not found`);
+  if (!data) throw new Error(`Angebot ${offerId} nicht gefunden.`);
   if (data.offer.convertedInvoiceId) {
     throw new Error("Angebot wurde bereits in eine Rechnung umgewandelt.");
   }

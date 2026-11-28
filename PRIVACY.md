@@ -18,7 +18,17 @@ Die **generierten PDFs und Backups** liegen unter einem Dokumente-Root im Ordner
 - Sandbox: `<Dokumente>/Zettel-Sandbox`
 - Eigener Mandant: `<Dokumente>/Zettel/Mandanten/<Mandanten-ID>`
 
-Darunter liegen `Rechnungen/`, `Angebote/`, `Mahnungen/`, `Eingangsrechnungen/<Lieferant>/` (eingelesene Lieferanten-PDFs) und `Backups/`.
+Darunter liegen `Rechnungen/`, `Angebote/`, `Mahnungen/`, `Eingangsrechnungen/<Lieferant>/` (eingelesene Lieferanten-PDFs, der Ordnername ist unverändert) und `Backups/`.
+
+Die **PDF-Vorschau** von Entwürfen („PDF-Vorschau“ bei Rechnungs-, Stornorechnungs- und Angebotsentwürfen) schreibt ihre Dateien nicht dorthin, sondern in den Cache-Ordner der App unter `pdf-preview/`:
+
+| System | Pfad |
+|---|---|
+| Windows | `%LOCALAPPDATA%\digital.laux.zettel\pdf-preview\` |
+| macOS | `~/Library/Caches/digital.laux.zettel/pdf-preview/` |
+| Linux | `~/.cache/digital.laux.zettel/pdf-preview/` |
+
+Die Vorschau ist kein Beleg: sie trägt auf jeder Seite „ENTWURF“, enthält kein ZUGFeRD-/XRechnung-XML, keinen PDF/A-Anspruch und keinen Zahlungs-QR-Code, vergibt keine Nummer und wird weder archiviert noch versioniert noch im Änderungsprotokoll oder in der Siegelkette vermerkt. Sie kann Kundendaten des Entwurfs enthalten. Pro Dokument gibt es eine Datei (`Vorschau-Rechnung-<id>.pdf` bzw. `Vorschau-Angebot-<id>.pdf`), die bei der nächsten Vorschau überschrieben wird; beim Start und beim Beenden der App löscht Zettel alle Vorschauen, ebenso „Daten löschen“. Eine Datei, die ein PDF-Programm noch geöffnet hält, bleibt bis zum nächsten Start liegen. Liegt der Cache-Ordner innerhalb des Dokumente-Roots, legt Zettel keine Vorschau an. Backups enthalten den Cache-Ordner nicht.
 
 Im App-Daten-Verzeichnis liegen:
 
@@ -44,7 +54,7 @@ Für die GoBD-Nachvollziehbarkeit protokolliert Zettel Änderungen in der Datenb
 
 ## Änderungsprotokoll und Löschung
 
-Das Änderungsprotokoll überlebt die Funktion „Daten löschen“ (Einstellungen → Erweitert → Gefahrenbereich); auch ein gelöschter Kunde bleibt dort mit seinen früheren Werten sichtbar. Aus der App heraus lässt sich das Protokoll nicht bearbeiten, und auch nach Ablauf der Aufbewahrungsfristen lassen sich einzelne Einträge nicht selektiv bereinigen. Es verschwindet nur, wenn die Datenbank-Datei selbst gelöscht oder durch eine Vollwiederherstellung ersetzt wird.
+Das Änderungsprotokoll überlebt die Funktion „Daten löschen“ (Einstellungen → Gefahrenbereich); auch ein gelöschter Kunde bleibt dort mit seinen früheren Werten sichtbar. Aus der App heraus lässt sich das Protokoll nicht bearbeiten, und auch nach Ablauf der Aufbewahrungsfristen lassen sich einzelne Einträge nicht selektiv bereinigen. Es verschwindet nur, wenn die Datenbank-Datei selbst gelöscht oder durch eine Vollwiederherstellung ersetzt wird.
 
 „Daten löschen“ entfernt außerdem nur Datensätze in der Datenbank. Nicht berührt werden:
 
@@ -68,7 +78,7 @@ Wie du im Einzelfall vorgehst, klärst du mit deinem Steuerberater oder deiner D
 
 Zettel rendert seine UI in einem System-WebView (WebView2 auf Windows, WKWebView auf macOS, WebKitGTK auf Linux). Der WebView speichert intern:
 
-- `localStorage` — UI-Präferenzen und Merker: Theme (`zettel.theme`), Sortierung der Listen (`zettel.sort.*`), Standard-Zeitraum des Dashboards, Update-Kanal (`zettel.update_channel`), „Onboarding nicht mehr anzeigen“ pro Datenbank, die zuletzt eingegebene Berater-/Mandantennummer und Stapelbezeichnung des DATEV-Exports (`zettel.datev-export`) und ein Merker zum letzten fehlgeschlagenen Auto-Backup. Dazu kommt die Liste „Zuletzt geöffnet“ der globalen Suche (`zettel.search.recents`, bis zu 5 Treffer): Sie speichert Belegnummer und Anzeigetexte (z. B. Kunden- oder Lieferantenname) der zuletzt geöffneten Treffer, also **personenbezogene Daten**.
+- `localStorage` — UI-Präferenzen und Merker: Theme (`zettel.theme`), Sortierung der Listen (`zettel.sort.*`), Standard-Zeitraum der Übersicht, Update-Kanal (`zettel.update_channel`), „Onboarding nicht mehr anzeigen“ pro Datenbank, die zuletzt eingegebene Berater-/Mandantennummer und Stapelbezeichnung des DATEV-Exports (`zettel.datev-export`), das Datum des letzten DATEV-Exports (`zettel.datev-last-export:<Datenbank-URL>`, je Datenbank) und ein Merker zum letzten fehlgeschlagenen Auto-Backup. Dazu kommt die Liste „Zuletzt geöffnet“ der globalen Suche (`zettel.search.recents:<Datenbank-URL>`, je Datenbank, also getrennt für jeden Mandanten und die Sandbox, bis zu 5 Treffer): Sie speichert Belegnummer und Anzeigetexte (z. B. Kunden- oder Lieferantenname) der zuletzt geöffneten Treffer, also **personenbezogene Daten**.
 - `sessionStorage` — die Listenfilter (`zettel.filters.*`); sie enden mit dem Schließen der App
 - Caches für Schriftarten und gebundelte Assets
 
@@ -81,8 +91,8 @@ Zettel hat exakt zwei Code-Pfade, die das Internet kontaktieren — beide mit kl
 1. **GitHub Updater** (`@tauri-apps/plugin-updater`, Kanal-Logik in `src-tauri/src/updates.rs`)
    - Endpunkt stabiler Kanal: `https://github.com/jonax1337/zettel/releases/latest/download/latest.json`; Endpunkt Beta-Kanal: `https://github.com/jonax1337/zettel/releases/download/beta-feed/latest.json`; die Ed25519-Signatur steht in der `latest.json`. Der Installer wird erst heruntergeladen, wenn du bei der Update-Meldung auf „Installieren“ klickst (GitHub leitet den Download auf `*.githubusercontent.com` um)
    - Inhalt: ein HTTPS-Abruf einer statischen Datei; der Versionsvergleich passiert lokal in der App. Wie bei jedem Abruf sieht GitHub technisch bedingt deine IP-Adresse
-   - Frequenz: automatisch kurz (etwa 10 Sekunden) nach dem App-Start und manuell über „Nach Updates suchen“ in den Einstellungen
-   - Die Wahl **stabil/beta** triffst du in den Einstellungen („Beta-Updates“); sie wird im `localStorage` unter `zettel.update_channel` gespeichert
+   - Frequenz: automatisch kurz (etwa 10 Sekunden) nach dem App-Start und manuell über „Nach Updates suchen“ unter Einstellungen → Updates
+   - Die Wahl **stabil/beta** triffst du unter Einstellungen → Updates („Beta-Updates erhalten“); sie wird im `localStorage` unter `zettel.update_channel` gespeichert
    - **Nicht abschaltbar:** Es gibt keinen Schalter, der die Prüfung deaktiviert. Offline schlägt sie still fehl; wer keine Prüfung will, betreibt die App offline bzw. sperrt den Zugriff auf GitHub (`github.com` und `*.githubusercontent.com`) in seiner Firewall
 
 2. **EZB-Wechselkurs** (`src-tauri/src/exchange.rs`)

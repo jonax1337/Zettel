@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Badge, Card, CardContent } from "$lib/ui";
+  import { Badge, Panel } from "$lib/ui";
   import type { Invoice } from "$lib/db/schema";
   import { formatMoney } from "$lib/utils/currency";
   import { formatDate } from "$lib/utils/date";
@@ -26,18 +26,14 @@
 </script>
 
 {#if skonto}
-  <Card class="mb-6 border-primary/30">
-    <CardContent class="flex items-center justify-between gap-3">
-      <div>
-        <h3 class="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Skonto</h3>
-        <p class="text-sm mt-1">
-          {skonto.percent} % bei Zahlung bis
-          <strong>{formatDate(skonto.deadlineUnix)}</strong>
-          — Rabatt
-          <strong>{formatMoney(skonto.discountCent, invoice.currency)}</strong>
-        </p>
-      </div>
-      <Badge variant={stillValid ? "success" : "outline"} class="shrink-0">{badgeLabel}</Badge>
-    </CardContent>
-  </Card>
+  <Panel title="Skonto">
+    <div class="flex items-start justify-between gap-3">
+      <p class="text-sm">
+        {skonto.percent} % bei Zahlung bis
+        <strong>{formatDate(skonto.deadlineUnix)}</strong>, Rabatt
+        <strong>{formatMoney(skonto.discountCent, invoice.currency)}</strong>
+      </p>
+      <Badge variant={stillValid ? "paid" : "calm"} class="shrink-0">{badgeLabel}</Badge>
+    </div>
+  </Panel>
 {/if}

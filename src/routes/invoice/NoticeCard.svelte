@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import { Card, CardContent } from "$lib/ui";
+  import { Card } from "$lib/ui";
   import { AlertTriangle } from "$lib/brand-icons";
 
   type Props = {
@@ -11,20 +11,16 @@
   let { tone, title, children }: Props = $props();
 
   const TONE_CLASSES = {
-    warning: { card: "border-warning/40 bg-warning/10", text: "text-warning" },
-    destructive: { card: "border-destructive/40 bg-destructive/5", text: "text-destructive" },
+    warning: { card: "border-status-warn/40", text: "text-status-warn" },
+    destructive: { card: "border-status-bad/40", text: "text-status-bad" },
   };
   const classes = $derived(TONE_CLASSES[tone]);
 </script>
 
-<Card class="{classes.card} mb-4">
-  <CardContent>
-    <div class="flex items-start gap-3">
-      <AlertTriangle class="size-5 {classes.text} shrink-0 mt-0.5" />
-      <div class="flex-1 text-sm">
-        <div class="font-medium {classes.text}">{title}</div>
-        {@render children()}
-      </div>
-    </div>
-  </CardContent>
+<Card class="mb-4 flex-row items-start gap-3 border px-4 py-3.5 {classes.card}">
+  <AlertTriangle class="mt-0.5 size-5 shrink-0 {classes.text}" />
+  <div class="min-w-0 flex-1 text-sm">
+    <div class="font-bold {classes.text}">{title}</div>
+    {@render children()}
+  </div>
 </Card>

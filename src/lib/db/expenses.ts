@@ -134,23 +134,53 @@ export type ExpenseFilter = {
   status?: ExpenseStatus | "all";
   year?: number | "all";
   vendorId?: number | "all";
+  /** Category as the list shows it; an expense matches when any of its items carries it. */
+  category?: string | "all";
   search?: string;
 };
 
-export type ExpenseListRow = Expense & { vendorName: string };
+export type ExpenseListRow = Expense & {
+  vendorName: string;
+  /** Category of the largest line item (by amount); null while no item has one. */
+  mainCategory: string | null;
+  /** How many further distinct categories the other line items carry. */
+  extraCategoryCount: number;
+};
+
+// An item's category is the curated one when linked, otherwise its free text.
+const ITEM_CATEGORY_SQL = `COALESCE(c.name, NULLIF(i.category, ''))`;
+const ITEM_CATEGORY_FROM = `expense_items i LEFT JOIN expense_categories c ON c.id = i.category_id
+       WHERE i.expense_id = e.id AND ${ITEM_CATEGORY_SQL} IS NOT NULL`;
+
+const CATEGORY_COLUMNS_SQL = `(SELECT ${ITEM_CATEGORY_SQL} FROM ${ITEM_CATEGORY_FROM}
+             ORDER BY ABS(i.line_total) DESC, i.position ASC LIMIT 1) AS main_category,
+            (SELECT COUNT(DISTINCT ${ITEM_CATEGORY_SQL}) FROM ${ITEM_CATEGORY_FROM}) AS category_count`;
 
 function buildExpenseFilter(filter: ExpenseFilter) {
-  const { vendorId, ...rest } = filter;
-  return buildDocumentFilter("e", "vendor_id", ["e.internal_number", "e.number", "v.name"], {
+  const { vendorId, category, ...rest } = filter;
+  const base = buildDocumentFilter("e", "vendor_id", ["e.internal_number", "e.number", "v.name"], {
     ...rest,
     partyId: vendorId,
   });
+  if (!category || category === "all") return base;
+  const hasCategory = `EXISTS (SELECT 1 FROM ${ITEM_CATEGORY_FROM} AND ${ITEM_CATEGORY_SQL} = ?)`;
+  return {
+    where: base.where ? `${base.where} AND ${hasCategory}` : `WHERE ${hasCategory}`,
+    binds: [...base.binds, category],
+  };
 }
 
-export async function listExpenses(filter: ExpenseFilter = {}): Promise<ExpenseListRow[]> {
+/** `categories: false` skips the category subselects for callers that only need the expenses themselves. */
+export async function listExpenses(
+  filter: ExpenseFilter = {},
+  { categories = true }: { categories?: boolean } = {},
+): Promise<ExpenseListRow[]> {
   const { where, binds } = buildExpenseFilter(filter);
-  const rows = await select<ExpenseRow & { vendor_name: string | null }>(
-    `SELECT e.*, v.name AS vendor_name
+  const rows = await select<
+    ExpenseRow & { vendor_name: string | null; main_category: string | null; category_count: number }
+  >(
+    `SELECT e.*, v.name AS vendor_name,
+            ${categories ? CATEGORY_COLUMNS_SQL : "NULL AS main_category, 0 AS category_count"}
      FROM expenses e
      LEFT JOIN vendors v ON v.id = e.vendor_id
      ${where}
@@ -160,6 +190,8 @@ export async function listExpenses(filter: ExpenseFilter = {}): Promise<ExpenseL
   return rows.map((r) => ({
     ...mapExpense(r),
     vendorName: r.vendor_name ?? MISSING_NAME,
+    mainCategory: r.main_category,
+    extraCategoryCount: Math.max(r.category_count - 1, 0),
   }));
 }
 
@@ -176,6 +208,17 @@ export async function getExpense(
 }
 
 export const getExpenseYears = () => listYears("expenses");
+
+/** The categories the expense list can show, for its filter: curated names and the free text of unlinked items. */
+export async function listExpenseListCategories(): Promise<string[]> {
+  const rows = await select<{ category: string }>(
+    `SELECT DISTINCT ${ITEM_CATEGORY_SQL} AS category
+     FROM expense_items i LEFT JOIN expense_categories c ON c.id = i.category_id
+     WHERE ${ITEM_CATEGORY_SQL} IS NOT NULL
+     ORDER BY category COLLATE NOCASE ASC`,
+  );
+  return rows.map((r) => r.category);
+}
 
 export async function listCategories(): Promise<string[]> {
   const rows = await select<{ category: string }>(
@@ -238,9 +281,9 @@ export async function createExpense(
 export async function updateExpense(id: number, input: ExpenseFormInput): Promise<void> {
   assertQuantities(input.items);
   const existing = await getExpense(id);
-  if (!existing) throw new Error(`Eingangsrechnung ${id} nicht gefunden.`);
+  if (!existing) throw new Error(`Ausgabe ${id} nicht gefunden.`);
   if (existing.expense.status === "paid" || existing.expense.status === "cancelled") {
-    throw new Error("Bezahlte oder stornierte Eingangsrechnungen sind unveränderlich.");
+    throw new Error("Bezahlte oder stornierte Ausgaben sind unveränderlich.");
   }
   const isReverseCharge = input.reverseChargeType !== "none";
   const totals = computeTotals(input.items, { isReverseCharge });
@@ -281,7 +324,7 @@ export async function deleteExpense(id: number): Promise<void> {
   const existing = await getExpense(id);
   if (!existing) return;
   if (existing.expense.status === "paid") {
-    throw new Error("Bezahlte Eingangsrechnungen können nicht gelöscht werden — bitte stornieren.");
+    throw new Error("Bezahlte Ausgaben können nicht gelöscht werden — bitte stornieren.");
   }
   // expense_items has no FK cascade to expenses.
   await execute("DELETE FROM expense_items WHERE expense_id = ?", [id]);

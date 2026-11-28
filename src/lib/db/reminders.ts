@@ -160,6 +160,19 @@ async function loadReminderLevelsByInvoice(
   return levelsByInvoice;
 }
 
+/** Sent or partly paid invoices past their due date that no issued credit note settles; `?` is "now". */
+const OVERDUE_INVOICE_WHERE = `i.status IN ('sent','partial') AND i.due_date < ? AND (i.is_credit_note IS NULL OR i.is_credit_note = 0)
+       AND ${notSettledByCreditNoteSql("i")}`;
+
+/** What the "Überfällig" tab counts, without loading the invoices. */
+export async function countOverdueInvoices(): Promise<number> {
+  const [row] = await select<{ overdue_count: number }>(
+    `SELECT COUNT(*) AS overdue_count FROM invoices i WHERE ${OVERDUE_INVOICE_WHERE}`,
+    [nowUnix()],
+  );
+  return row?.overdue_count ?? 0;
+}
+
 export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
   const now = nowUnix();
   const rows = await select<OverdueInvoiceRow>(
@@ -167,8 +180,7 @@ export async function listOverdueInvoices(): Promise<OverdueInvoice[]> {
             ${creditedCentSql("i")} AS credited_cent
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
-     WHERE i.status IN ('sent','partial') AND i.due_date < ? AND (i.is_credit_note IS NULL OR i.is_credit_note = 0)
-       AND ${notSettledByCreditNoteSql("i")}
+     WHERE ${OVERDUE_INVOICE_WHERE}
      ORDER BY i.due_date ASC`,
     [now],
   );

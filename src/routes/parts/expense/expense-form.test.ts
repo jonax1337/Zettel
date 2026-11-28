@@ -8,6 +8,7 @@ import {
   applyCategory,
   applyInvoiceExtract,
   applyTextExtract,
+  commitPendingPrices,
   emptyExpenseForm,
   emptyItemRow,
   isReverseCharge,
@@ -205,6 +206,15 @@ describe("applyInvoiceExtract", () => {
   });
 });
 
+describe("commitPendingPrices", () => {
+  it("parses typed price text that never saw a blur", () => {
+    const row = emptyItemRow({ priceText: "12,5", unitPrice: 0 });
+    commitPendingPrices([row]);
+    expect(row.unitPrice).toBe(1250);
+    expect(row.priceText).toBe("12,50");
+  });
+});
+
 describe("applyTextExtract", () => {
   it("turns the gross total into one net lump-sum position", () => {
     const form = emptyExpenseForm();
@@ -212,7 +222,7 @@ describe("applyTextExtract", () => {
 
     expect(form.vendorId).toBe("7");
     expect(form.items[0]).toMatchObject({
-      description: "Eingangsrechnung T-9",
+      description: "Rechnung T-9",
       unit: "Pauschal",
       quantity: 1,
       vatRate: 19,

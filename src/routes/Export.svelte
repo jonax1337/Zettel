@@ -1,21 +1,7 @@
 <script lang="ts">
-  import { Download, FileSpreadsheet } from "$lib/brand-icons";
-  import BackLink from "./parts/entity/BackLink.svelte";
-  import {
-    Button,
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-    CardDescription,
-    Input,
-    Label,
-    Select,
-    Checkbox,
-    DatePicker,
-    PageHeader,
-    toast,
-  } from "$lib/ui";
+  import { errorMessage } from "$lib/utils/error-message";
+  import { Download } from "$lib/brand-icons";
+  import { Button, Input, Label, Select, Checkbox, DatePicker, toast } from "$lib/ui";
   import { loadInvoicesForExport } from "$lib/db/invoices";
   import { loadExpensesForExport } from "$lib/db/expenses";
   import { listCategories as listCuratedCategories } from "$lib/db/expense-categories";
@@ -39,6 +25,8 @@
     loadDatevExportSettings,
     saveDatevExportSettings,
   } from "./parts/reports/export-settings";
+  import ReportsShell from "./parts/reports/ReportsShell.svelte";
+  import { rememberDatevExport } from "./parts/reports/last-export";
   import { saveTextFileWithDialog } from "./parts/reports/save-text-file";
 
   const DATEV_ACCOUNT_LENGTH = 4;
@@ -110,7 +98,7 @@
     if (!includeInvoices && !includeExpenses) {
       toast.error(
         "Nichts ausgewählt",
-        'Mindestens „Rechnungen" oder „Eingangsrechnungen" aktivieren.',
+        'Mindestens „Rechnungen" oder „Ausgaben" aktivieren.',
       );
       return;
     }
@@ -131,7 +119,7 @@
       if (documents.invoices.length + documents.expenses.length === 0) {
         toast.error(
           "Keine Belege im Zeitraum",
-          "Rechnungen müssen 'Versendet', 'Teilbezahlt' oder 'Bezahlt' sein. Eingangsrechnungen 'Offen' oder 'Bezahlt'.",
+          "Rechnungen müssen 'Versendet', 'Teilbezahlt' oder 'Bezahlt' sein. Ausgaben 'Offen' oder 'Bezahlt'.",
         );
         return;
       }
@@ -152,114 +140,108 @@
         content: csv,
       });
       if (saved) {
+        await rememberDatevExport(nowUnix());
         toast.success(
           `Export gespeichert (${describeExportCounts(documents.invoices.length, documents.expenses.length)})`,
         );
       }
     } catch (e) {
-      toast.error("Export fehlgeschlagen", String(e));
+      toast.error("Export fehlgeschlagen", errorMessage(e));
     } finally {
       busy = false;
     }
   }
 </script>
 
-<PageHeader
-  title="DATEV-Export"
-  subtitle="DATEV-konformer Buchungsstapel für deinen Steuerberater. Exportiert Rechnungen (Erlöse) und/oder Eingangsrechnungen (Aufwände) inklusive Stornos."
->
-  {#snippet back()}
-    <BackLink href="/">Dashboard</BackLink>
-  {/snippet}
-</PageHeader>
+<ReportsShell active="/export">
+  <div class="max-w-[720px]">
+    <p class="mb-5 text-muted-foreground">
+      DATEV-konformer Buchungsstapel für deine Steuerberatung, im Format 700 mit einer Buchungszeile pro Umsatzsteuersatz.
+      Exportiert werden Rechnungen (Erlöse) und Ausgaben (Aufwände), jeweils mit Stornos.
+    </p>
 
-<div class="space-y-6">
-  <Card>
-    <CardHeader>
-      <CardTitle class="flex items-center gap-2">
-        <FileSpreadsheet class="size-4" />
-        DATEV-Buchungsstapel (CSV)
-      </CardTitle>
-      <CardDescription>
-        Format 700, eine Buchungszeile pro USt-Rate. Soll = Sammel-Debitor,
-        Haben = Erlöskonto nach Kontenrahmen. Kleinunternehmer- und
-        Reverse-Charge-Rechnungen werden auf die jeweiligen Sonderkonten gebucht.
-      </CardDescription>
-    </CardHeader>
-    <CardContent class="space-y-4">
-      <div class="grid grid-cols-2 gap-4">
-        <div class="flex flex-col gap-1.5">
-          <Label>Zeitraum von</Label>
-          <DatePicker bind:value={dateFromIso} />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <Label>Zeitraum bis</Label>
-          <DatePicker bind:value={dateToIso} />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <Label>Kontenrahmen</Label>
-          <Select bind:value={() => skr, (v) => (skr = v as Skr)} items={skrItems} />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <Label>Bezeichnung (max. {DATEV_LABEL_MAX_LENGTH})</Label>
-          <Input bind:value={bezeichnung} maxlength={DATEV_LABEL_MAX_LENGTH} />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <Label>Beraternr. (Platzhalter)</Label>
-          <Input type="number" bind:value={beraternr} />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <Label>Mandantennr. (Platzhalter)</Label>
-          <Input type="number" bind:value={mandantennr} />
-        </div>
+    <div class="grid grid-cols-2 items-start gap-x-4 gap-y-3.5">
+      <div class="flex flex-col gap-1.5">
+        <Label class="text-[13px] font-bold">Zeitraum von</Label>
+        <DatePicker bind:value={dateFromIso} />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label class="text-[13px] font-bold">Zeitraum bis</Label>
+        <DatePicker bind:value={dateToIso} />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label class="text-[13px] font-bold">Kontenrahmen</Label>
+        <Select bind:value={() => skr, (v) => (skr = v as Skr)} items={skrItems} />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label class="text-[13px] font-bold">Bezeichnung (max. {DATEV_LABEL_MAX_LENGTH} Zeichen)</Label>
+        <Input bind:value={bezeichnung} maxlength={DATEV_LABEL_MAX_LENGTH} />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label class="text-[13px] font-bold">Beraternummer</Label>
+        <Input type="number" bind:value={beraternr} />
+        <small class="text-[12.5px] text-muted-foreground">Nur ein Platzhalter im Kopf der Datei.</small>
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label class="text-[13px] font-bold">Mandantennummer</Label>
+        <Input type="number" bind:value={mandantennr} />
+        <small class="text-[12.5px] text-muted-foreground">Ebenfalls ein Platzhalter.</small>
       </div>
 
-      <div class="grid grid-cols-1 gap-2 rounded-md border border-border bg-muted/20 p-3">
-        <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+      <div class="col-span-2 grid gap-2.5">
+        <label class="flex cursor-pointer items-center gap-2.5 font-semibold select-none">
           <Checkbox bind:checked={includeInvoices} />
-          Rechnungen (Erlöse — Status „Versendet", „Teilbezahlt" oder „Bezahlt")
+          <span>
+            Rechnungen als Erlöse
+            <span class="font-normal text-muted-foreground">(Status „Versendet“, „Teilbezahlt“ oder „Bezahlt“)</span>
+          </span>
         </label>
-        <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+        <label class="flex cursor-pointer items-center gap-2.5 font-semibold select-none">
           <Checkbox bind:checked={includeExpenses} />
-          Eingangsrechnungen (Aufwände — Status „Offen" oder „Bezahlt")
+          <span>
+            Ausgaben als Aufwand
+            <span class="font-normal text-muted-foreground">(Status „Offen“ oder „Bezahlt“)</span>
+          </span>
         </label>
-        <label class="flex items-center gap-2 text-sm cursor-pointer select-none pl-6 text-muted-foreground">
+        <label
+          class="flex cursor-pointer items-center gap-2.5 pl-6.5 font-semibold select-none {includeExpenses
+            ? ''
+            : 'text-muted-foreground'}"
+        >
           <Checkbox bind:checked={includeCancelled} disabled={!includeExpenses} />
-          Stornierte Eingangsrechnungen mit aufnehmen
+          Stornierte Ausgaben mit aufnehmen
         </label>
       </div>
+    </div>
 
+    <div class="mt-6 flex flex-wrap items-center gap-4 border-t pt-4">
+      <Button onclick={onExport} disabled={busy}>
+        <Download />
+        {busy ? "Exportiere…" : "Exportieren"}
+      </Button>
       {#if preview}
-        <p class="text-sm" aria-live="polite">
+        <p class="text-[13px] text-muted-foreground" aria-live="polite">
           {#if preview.invoices + preview.expenses === 0}
-            <span class="text-muted-foreground">Keine exportierbaren Belege im gewählten Zeitraum.</span>
+            Keine exportierbaren Belege im gewählten Zeitraum.
           {:else}
-            Im Zeitraum: <strong>{describeExportCounts(preview.invoices, preview.expenses)}</strong>
+            Im Zeitraum: <strong class="text-foreground">{describeExportCounts(preview.invoices, preview.expenses)}</strong>
           {/if}
         </p>
       {/if}
+    </div>
 
-      <div class="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
-        <p>
-          <strong>Kontenmapping ({skr}):</strong>
-          Debitor {accounts.debitor} · Kreditor {accounts.kreditor} ·
-          Erlöse 19 % {accounts.revenue19}, 7 % {accounts.revenue7} ·
-          Aufwand 19 % {accounts.expense19}, 7 % {accounts.expense7} ·
-          §13b Aufwand {accounts.expenseReverseCharge}.
-        </p>
-        <p>
-          Stornorechnungen werden mit Soll/Haben-Drehung als Storno-Buchung exportiert.
-          Berater- und Mandantennummer trägt dein Steuerberater beim Import um —
-          die hier eingegebenen Werte sind nur Platzhalter im Header.
-        </p>
-      </div>
-
-      <div class="flex items-center gap-3">
-        <Button onclick={onExport} disabled={busy}>
-          <Download class="size-4" />
-          {busy ? "Exportiere…" : "DATEV-CSV speichern"}
-        </Button>
-      </div>
-    </CardContent>
-  </Card>
-</div>
+    <div class="mt-5 max-w-[78ch] space-y-1.5 text-[13px] text-muted-foreground">
+      <p>
+        Soll ist der Sammel-Debitor, Haben das Erlöskonto nach Kontenrahmen. Kleinunternehmer- und
+        Reverse-Charge-Rechnungen werden auf die jeweiligen Sonderkonten gebucht. Stornorechnungen gehen mit gedrehtem
+        Soll und Haben als Storno-Buchung in die Datei.
+      </p>
+      <p>
+        Kontenmapping {skr}: Debitor {accounts.debitor}, Kreditor {accounts.kreditor}, Erlöse 19 % {accounts.revenue19}
+        und 7 % {accounts.revenue7}, Aufwand 19 % {accounts.expense19} und 7 % {accounts.expense7}, § 13b-Aufwand
+        {accounts.expenseReverseCharge}.
+      </p>
+      <p>Berater- und Mandantennummer trägt deine Steuerberatung beim Import um.</p>
+    </div>
+  </div>
+</ReportsShell>

@@ -48,7 +48,7 @@ export function describeExportCounts(invoiceCount: number, expenseCount: number)
   const parts: string[] = [];
   if (invoiceCount) parts.push(`${invoiceCount} ${pluralize(invoiceCount, "Rechnung", "Rechnungen")}`);
   if (expenseCount) {
-    parts.push(`${expenseCount} ${pluralize(expenseCount, "Eingangsrechnung", "Eingangsrechnungen")}`);
+    parts.push(`${expenseCount} ${pluralize(expenseCount, "Ausgabe", "Ausgaben")}`);
   }
   return parts.join(" + ");
 }

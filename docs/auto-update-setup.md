@@ -73,7 +73,7 @@ If a tag build fails during setup with a message like `configuration … not sup
 
 - 10 seconds after the app mounts, `src/App.svelte` calls `checkForUpdate()` (no-op outside Tauri).
 - If a newer version is found, a toast with an "Installieren" action appears. Click → `downloadAndInstall()` + `relaunch()`.
-- Settings hub → "Nach Updates suchen" triggers the same check on demand.
+- Einstellungen → Updates → "Nach Updates suchen" triggers the same check on demand.
 - All other failure modes (offline, no key, malformed feed) are silently swallowed on startup — only the manual button surfaces errors.
 
 ## Channels (stable / beta)
@@ -83,7 +83,7 @@ The check runs through the Rust command `check_for_update(channel)` (`src-tauri/
 | Channel | Feed | Contains |
 |---|---|---|
 | `stable` (default) | `releases/latest/download/latest.json` (from `tauri.conf.json`) | newest non-pre-release only |
-| `beta` (Settings → "Beta-Updates") | `releases/download/beta-feed/latest.json` | newest published release, pre-releases included |
+| `beta` (Einstellungen → Updates → "Beta-Updates erhalten") | `releases/download/beta-feed/latest.json` | newest published release, pre-releases included |
 
 The choice lives in `localStorage` (`zettel.update_channel`). Without a stored choice, a pre-release install (`-rc.N`) defaults to beta. Leaving beta never downgrades: the app stays on the installed RC until a newer stable version exists (`0.23.0` > `0.23.0-rc.2`).
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDaysUnix, formatDate, formatDateTime, fromIsoDate, nowUnix, startOfDayUnix, toIsoDate, toUnix } from "./date";
+import { addDaysUnix, formatDate, formatDateTime, fromIsoDate, isoWeekNumber, nowUnix, startOfDayUnix, toIsoDate, toUnix } from "./date";
 
 describe("toIsoDate / fromIsoDate", () => {
   it("roundtrips at local midnight", () => {
@@ -84,5 +84,26 @@ describe("formatDateTime", () => {
   });
   it("zero-pads day, month and time", () => {
     expect(formatDateTime(toUnix(new Date(2026, 0, 5, 9, 5)))).toBe("05.01.2026, 09:05");
+  });
+});
+
+describe("isoWeekNumber", () => {
+  it.each([
+    [[2026, 11, 23], 48],
+    [[2026, 1, 1], 1],
+    [[2026, 12, 28], 53],
+    [[2027, 1, 3], 53],
+    [[2025, 12, 29], 1],
+    [[2027, 1, 4], 1],
+    [[2024, 12, 30], 1],
+    [[2021, 1, 1], 53],
+    [[2026, 3, 29], 13],
+  ])("numbers %j as week %i", ([year, month, day], week) => {
+    expect(isoWeekNumber(new Date(year, month - 1, day))).toBe(week);
+  });
+
+  it("gives every day of a week the same number, Sunday included", () => {
+    const week = [23, 24, 25, 26, 27, 28, 29].map((day) => isoWeekNumber(new Date(2026, 10, day)));
+    expect(new Set(week)).toEqual(new Set([48]));
   });
 });

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { push, router } from "svelte-spa-router";
   import { onMount, type Snippet } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -20,6 +21,13 @@
   let paletteOpen = $state(false);
   let onboardingOpen = $state(false);
   let windowTitle = $state("Zettel");
+  let mainEl = $state<HTMLElement | null>(null);
+
+  // Each page starts at the top; the scroll container outlives the route.
+  $effect(() => {
+    void router.location;
+    mainEl?.scrollTo({ top: 0 });
+  });
 
   // An empty company name is the most reliable sign of a fresh installation
   // (the default is an empty string, not NULL).
@@ -45,7 +53,7 @@
       }
     } catch (e) {
       console.error("Sealing issued invoices failed", e);
-      toast.error("Rechnungen konnten nicht versiegelt werden", String(e));
+      toast.error("Rechnungen konnten nicht versiegelt werden", errorMessage(e));
     }
   }
 
@@ -90,8 +98,8 @@
       <button
         type="button"
         onclick={() => push("/settings/data")}
-        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-warning/20 text-warning border border-warning/40 hover:bg-warning/30 transition-colors cursor-pointer"
-        title="Sandbox aktiv – zu Einstellungen → Daten"
+        class="inline-flex h-5 items-center gap-1.5 rounded-full bg-[rgb(230_181_102/16%)] px-2 text-[11px] font-bold text-[#e6b566] transition-colors hover:bg-[rgb(230_181_102/26%)] cursor-pointer"
+        title="Sandbox aktiv – öffnet Daten und Backup"
         style="-webkit-app-region: no-drag"
       >
         <FlaskConical class="size-3" />
@@ -103,8 +111,8 @@
   <div class="flex flex-1 min-h-0">
     <Sidebar onOpenSearch={() => (paletteOpen = true)} />
 
-    <main class="flex-1 overflow-auto">
-      <div class="@container mx-auto max-w-6xl px-8 py-8">
+    <main bind:this={mainEl} class="min-w-0 flex-1 overflow-auto [scrollbar-gutter:stable]">
+      <div class="@container mx-auto max-w-[1360px] px-7 pt-7 pb-24 min-[1181px]:px-10">
         {#key router.location}
           <div class="animate-route">
             {@render children?.()}

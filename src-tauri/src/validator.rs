@@ -29,6 +29,8 @@ const VALIDATOR_JAR: &str = "validator.jar";
 const SCENARIOS_FILE: &str = "scenarios.xml";
 const REPORT_SUFFIX: &str = "-report.xml";
 const SEVERITY_ERROR: &str = "error";
+const SEVERITY_WARNING: &str = "warning";
+const SEVERITY_INFO: &str = "info";
 const WORK_ROOT_DIR: &str = "zettel-validator";
 const EXTRACTED_XML_FILE: &str = "rechnung.xml";
 /// The JVM start plus the Schematron run take a few seconds; far longer
@@ -364,11 +366,21 @@ fn parse_failed_assert(chunk: &str) -> Option<ValidationFinding> {
         .or_else(|| attribute(tag, "test"))
         .filter(|m| !m.is_empty())?;
     Some(ValidationFinding {
-        severity: SEVERITY_ERROR.into(),
+        severity: severity_of(attribute(tag, "flag").as_deref()).into(),
         code: attribute(tag, "id"),
         message,
         location: attribute(tag, "location"),
     })
+}
+
+/// The rule sets flag a failed assert as `fatal`, `warning` or `information`.
+/// Anything else, and a missing flag, counts as an error so nothing is played down.
+fn severity_of(flag: Option<&str>) -> &'static str {
+    match flag {
+        Some("warning") => SEVERITY_WARNING,
+        Some("information") => SEVERITY_INFO,
+        _ => SEVERITY_ERROR,
+    }
 }
 
 /// The opening tag starting at the first `tag_prefix`, up to its closing `>`.
@@ -480,6 +492,21 @@ mod tests {
             simplify(PathBuf::from(r"C:\Users\x\validator.jar")),
             PathBuf::from(r"C:\Users\x\validator.jar")
         );
+    }
+
+    #[test]
+    fn finding_severity_follows_the_schematron_flag() {
+        let severity_for = |flag_attribute: &str| {
+            let xml = format!(
+                r#"<rep:report valid="true"><svrl:failed-assert id="BR-X" {flag_attribute}><svrl:text>m</svrl:text></svrl:failed-assert></rep:report>"#
+            );
+            parse_report(&xml).findings[0].severity.clone()
+        };
+        assert_eq!(severity_for(r#"flag="fatal""#), "error");
+        assert_eq!(severity_for(r#"flag="warning""#), "warning");
+        assert_eq!(severity_for(r#"flag="information""#), "info");
+        assert_eq!(severity_for(r#"flag="something-new""#), "error");
+        assert_eq!(severity_for(""), "error");
     }
 
     #[test]

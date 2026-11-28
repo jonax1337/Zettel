@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { open, save } from "@tauri-apps/plugin-dialog";
@@ -49,6 +50,7 @@
   let newPath = $state("");
 
   const current = $derived(tenants.find((t) => t.current) ?? null);
+  const currentName = $derived(current ? tenantDisplayName(current) : "Standard");
 
   function slugify(s: string): string {
     const map: Record<string, string> = { ä: "ae", ö: "oe", ü: "ue", ß: "ss" };
@@ -66,7 +68,7 @@
       tenants = await invoke<TenantEntry[]>("list_tenants");
     } catch (e) {
       tenants = [];
-      toast.error("Mandanten konnten nicht geladen werden", String(e));
+      toast.error("Mandanten konnten nicht geladen werden", errorMessage(e));
     }
   }
 
@@ -91,7 +93,7 @@
       await change();
       await relaunchApp();
     } catch (e) {
-      toast.error(failureTitle, String(e));
+      toast.error(failureTitle, errorMessage(e));
       busy = false;
     }
   }
@@ -160,7 +162,7 @@
       await loadTenants();
       toast.success("Mandant entfernt", "Die DB-Datei selbst bleibt erhalten.");
     } catch (e) {
-      toast.error("Entfernen fehlgeschlagen", String(e));
+      toast.error("Entfernen fehlgeschlagen", errorMessage(e));
     }
   }
 
@@ -171,40 +173,43 @@
   }
 </script>
 
-<div class="p-2">
-  <DropdownMenu
-    align="start"
-    side="top"
-    class="w-56"
-    triggerClass="flex w-full min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left hover:bg-accent transition-colors"
-  >
-    {#snippet trigger()}
-      <span class="min-w-0 flex-1 truncate text-sm font-medium" title={current?.path || "Lokale Datenbank"}>
-        {current?.label ?? "Standard"}
-      </span>
-      <ChevronsUpDown class="size-4 shrink-0 text-muted-foreground" />
-    {/snippet}
+<DropdownMenu
+  align="start"
+  side="top"
+  class="w-56"
+  triggerClass="flex min-h-10 w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sidebar-foreground transition-colors hover:bg-sidebar-hover"
+>
+  {#snippet trigger()}
+    <span
+      class="grid size-6 shrink-0 place-items-center rounded-[7px] bg-coral font-display text-[11px] font-extrabold text-[#241f23]"
+      aria-hidden="true"
+    >
+      {currentName.charAt(0).toUpperCase()}
+    </span>
+    <span class="min-w-0 flex-1" title={current?.path || "Lokale Datenbank"}>
+      <b class="line-clamp-2 block text-[13px] leading-tight font-bold break-words">{currentName}</b>
+      <small class="block text-[11px] leading-tight text-sidebar-muted">Mandant</small>
+    </span>
+    <ChevronsUpDown class="size-4 shrink-0 text-sidebar-muted" />
+  {/snippet}
 
-    <div class="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-      Mandanten
-    </div>
-    {#each tenants as t (t.id)}
-      <DropdownItem onSelect={() => switchTenant(t.id)} disabled={sandbox && !t.current}>
-        <span class="min-w-0 flex-1 truncate">{t.label}</span>
-        {#if t.current}
-          <Check class="ml-auto size-4 shrink-0 text-primary" />
-        {/if}
-      </DropdownItem>
-    {/each}
-    <DropdownItem onSelect={openManage}>
-      <Plus class="size-4" />
-      <span>Mandanten verwalten…</span>
+  <div class="px-2 py-1.5 text-[11.5px] font-bold text-muted-foreground">Mandanten</div>
+  {#each tenants as t (t.id)}
+    <DropdownItem onSelect={() => switchTenant(t.id)} disabled={sandbox && !t.current}>
+      <span class="min-w-0 flex-1 truncate">{t.label}</span>
+      {#if t.current}
+        <Check class="ml-auto size-4 shrink-0 text-primary" />
+      {/if}
     </DropdownItem>
+  {/each}
+  <DropdownItem onSelect={openManage}>
+    <Plus class="size-4" />
+    <span>Mandanten verwalten…</span>
+  </DropdownItem>
 
-    <DropdownSeparator />
-    <div class="px-2 py-1 text-[10px] text-muted-foreground">v{appVersion} · MIT</div>
-  </DropdownMenu>
-</div>
+  <DropdownSeparator />
+  <div class="px-2 py-1 text-xs text-muted-foreground">v{appVersion} · MIT</div>
+</DropdownMenu>
 
 <Dialog
   bind:open={manageOpen}
@@ -213,23 +218,23 @@
 >
   <div class="min-w-0 space-y-4">
     {#if sandbox}
-      <p class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+      <p class="rounded-lg bg-status-warn-bg px-3 py-2 text-sm text-status-warn">
         Die Sandbox ist aktiv. Mandanten lassen sich erst wieder wechseln, verschieben, anlegen oder
-        entfernen, wenn du die Sandbox verlassen hast (Einstellungen → Daten).
+        entfernen, wenn du die Sandbox verlassen hast (Einstellungen → Daten und Backup).
       </p>
     {/if}
     <div class="space-y-1">
       {#each tenants as t (t.id)}
-        <div class="flex items-center gap-2 rounded-md border px-3 py-2">
+        <div class="flex items-center gap-2 rounded-lg bg-surface px-3 py-2">
           <div class="min-w-0 flex-1">
             <div class="truncate text-sm font-medium">
               {t.label}
               {#if t.current}
-                <span class="ml-1 text-[10px] font-normal text-primary">· aktiv</span>
+                <span class="ml-1 text-xs font-normal text-muted-foreground">· aktiv</span>
               {/if}
             </div>
             <div
-              class="truncate text-[10px] text-muted-foreground font-mono"
+              class="truncate text-xs text-muted-foreground font-mono"
               title={t.path || "Lokale Standard-Datenbank"}
             >
               {t.path || "Lokale Standard-Datenbank"}
@@ -249,7 +254,7 @@
               type="button"
               onclick={() => removeTenant(t.id)}
               disabled={actionsLocked}
-              class="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:pointer-events-none disabled:opacity-50"
+              class="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:pointer-events-none disabled:opacity-50"
               title="Mandant entfernen (Datei bleibt erhalten)"
               aria-label="Mandant entfernen"
             >
@@ -260,12 +265,12 @@
       {/each}
     </div>
 
-    <p class="text-[11px] text-muted-foreground">
+    <p class="text-xs text-muted-foreground">
       Beim Verschieben bleibt die bisherige lokale Datei als Sicherung erhalten.
     </p>
 
-    <div class="space-y-3 rounded-md border border-dashed p-3">
-      <div class="flex items-center gap-2 text-sm font-medium">
+    <div class="space-y-3 rounded-lg bg-surface p-4">
+      <div class="flex items-center gap-2 text-sm font-bold">
         <Database class="size-4" /> Neuen Mandanten hinzufügen
       </div>
       <div class="space-y-1.5">
@@ -285,7 +290,7 @@
             <FolderOpen class="size-4" /> Vorhandene wählen…
           </Button>
         </div>
-        <p class="text-[11px] text-muted-foreground">
+        <p class="text-xs text-muted-foreground">
           Der Dateiname wird aus der Bezeichnung vorgeschlagen.
         </p>
       </div>

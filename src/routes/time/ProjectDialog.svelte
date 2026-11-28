@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from "$lib/utils/error-message";
   import { untrack } from "svelte";
   import { listCustomers } from "$lib/db/queries";
   import { createProject, updateProject, type ProjectListRow } from "$lib/db/projects";
@@ -32,7 +33,7 @@
     });
     listCustomers()
       .then((customers) => (customerItems = customers.map((c) => ({ value: String(c.id), label: c.name }))))
-      .catch((e) => toast.error("Kunden konnten nicht geladen werden", String(e)));
+      .catch((e) => toast.error("Kunden konnten nicht geladen werden", errorMessage(e)));
   });
 
   async function save() {
@@ -48,7 +49,7 @@
       open = false;
       await onSaved();
     } catch (e) {
-      toast.error("Speichern fehlgeschlagen", String(e));
+      toast.error("Speichern fehlgeschlagen", errorMessage(e));
     } finally {
       saving = false;
     }

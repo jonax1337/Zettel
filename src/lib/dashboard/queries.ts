@@ -5,13 +5,16 @@ import { nowUnix, SECONDS_PER_DAY } from "$lib/utils/date";
 import { displayInvoiceNumber } from "$lib/utils/invoice-number";
 import { classifyFollowUp, followUpWindow, type FollowUpGroup } from "./follow-up";
 import type { Period } from "./period";
-import { monthsIn } from "./period";
+import { monthKey, monthsIn } from "./period";
+import type { OpenInvoiceRow } from "./age-buckets";
+import type { RecurringEstimate } from "./weeks";
 
-const REVENUE_STATUSES = `('sent','partial','paid')`;
+export const REVENUE_STATUSES = `('sent','partial','paid')`;
+export const EXPENSE_STATUSES = `('open','paid')`;
 // Credit notes never get payments and stay 'sent', and an invoice they fully
 // offset is no longer due, so neither counts as an open receivable. A partially
 // credited invoice stays open with its remainder (see OPEN_BALANCE_SQL).
-const OPEN_RECEIVABLE_SQL = `status IN ('sent','partial')
+export const OPEN_RECEIVABLE_SQL = `status IN ('sent','partial')
        AND (is_credit_note IS NULL OR is_credit_note = 0)
        AND ${notSettledByCreditNoteSql("invoices")}`;
 
@@ -34,7 +37,7 @@ const COVERED_SQL = `(COALESCE(amount_paid_cent, 0) + ${creditedCentSql("invoice
 // Rechnungswährung, eur_total_cent ist der eingefrorene EUR-Gegenwert von total:
 // der gedeckte Anteil wird daher proportional umgerechnet (Integer-Rundung
 // half-up, kein Float), statt Fremdwährungs-Cent von EUR-Cent abzuziehen.
-const OPEN_BALANCE_SQL = `(CASE
+export const OPEN_BALANCE_SQL = `(CASE
   WHEN eur_total_cent IS NULL OR total = 0 THEN total - ${COVERED_SQL}
   ELSE eur_total_cent - (2 * eur_total_cent * ${COVERED_SQL} + total) / (2 * total)
 END)`;
@@ -50,8 +53,6 @@ export type Kpis = {
   revenueGross: number;
   expenseNet: number;
   balance: number;
-  openCount: number;
-  openTotal: number;
 };
 
 async function loadRevenue(p: Period): Promise<{ net: number; gross: number }> {
@@ -71,61 +72,57 @@ async function loadExpenseNet(p: Period): Promise<number> {
   const [row] = await select<{ net: number }>(
     `SELECT COALESCE(SUM(subtotal), 0) AS net
      FROM expenses
-     WHERE status IN ('open','paid')
+     WHERE status IN ${EXPENSE_STATUSES}
        AND issue_date >= ? AND issue_date < ?`,
     [p.start, p.end],
   );
   return Math.round(row?.net ?? 0);
 }
 
-async function loadOpenReceivables(p: Period): Promise<CountAndTotal> {
-  const [row] = await select<{ c: number; t: number }>(
-    `SELECT COUNT(*) AS c, COALESCE(SUM(${OPEN_BALANCE_SQL}), 0) AS t
-     FROM invoices
-     WHERE ${OPEN_RECEIVABLE_SQL}
-       AND issue_date >= ? AND issue_date < ?`,
-    [p.start, p.end],
-  );
-  return { count: row?.c ?? 0, total: row?.t ?? 0 };
-}
-
 export async function loadKpis(p: Period): Promise<Kpis> {
-  const [revenue, expenseNet, open] = await Promise.all([
-    loadRevenue(p),
-    loadExpenseNet(p),
-    loadOpenReceivables(p),
-  ]);
+  const [revenue, expenseNet] = await Promise.all([loadRevenue(p), loadExpenseNet(p)]);
   return {
     revenueNet: revenue.net,
     revenueGross: revenue.gross,
     expenseNet,
     balance: revenue.net - expenseNet,
-    openCount: open.count,
-    openTotal: open.total,
   };
 }
 
 // --- Monthly revenue within period ---
 
-export type MonthPoint = { year: number; month: number; label: string; total: number };
+export type MonthPoint = {
+  year: number;
+  month: number;
+  label: string;
+  /** Gross revenue in EUR cents. */
+  total: number;
+  /** Net revenue in EUR cents, as the KPIs count it. */
+  net: number;
+};
 
 export async function monthlyRevenueInPeriod(p: Period): Promise<MonthPoint[]> {
-  const rows = await select<{ ym: string; t: number }>(
+  const rows = await select<{ ym: string; t: number; n: number }>(
     `SELECT strftime('%Y-%m', issue_date, 'unixepoch', 'localtime') AS ym,
-            COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS t
+            COALESCE(SUM(${REVENUE_AMOUNT_SQL}), 0) AS t,
+            COALESCE(SUM(${REVENUE_NET_SQL}), 0) AS n
      FROM invoices
      WHERE status IN ${REVENUE_STATUSES}
        AND issue_date >= ? AND issue_date < ?
      GROUP BY ym`,
     [p.start, p.end],
   );
-  const totalByMonthKey = new Map(rows.map((r) => [r.ym, r.t]));
-  return monthsIn(p).map((m) => ({
-    year: m.year,
-    month: m.month,
-    label: m.label,
-    total: totalByMonthKey.get(`${m.year}-${String(m.month).padStart(2, "0")}`) ?? 0,
-  }));
+  const amountsByMonthKey = new Map(rows.map((r) => [r.ym, r]));
+  return monthsIn(p).map((m) => {
+    const amounts = amountsByMonthKey.get(monthKey(m));
+    return {
+      year: m.year,
+      month: m.month,
+      label: m.label,
+      total: Math.round(amounts?.t ?? 0),
+      net: Math.round(amounts?.n ?? 0),
+    };
+  });
 }
 
 // --- Top customers within period ---
@@ -181,25 +178,28 @@ export type OldestOverdue = {
   openCount: number;
 };
 
-/**
- * Single-line summary of open receivables — bucketed charts overkill at
- * freelancer scale.
- */
-export async function oldestOverdue(): Promise<OldestOverdue> {
+/** Summary of all open receivables: how many, how much, and how long the oldest one has been due. */
+export async function oldestOverdue(openInvoices?: OpenInvoiceRow[]): Promise<OldestOverdue> {
+  const rows = openInvoices ?? (await openInvoiceRows());
+  if (rows.length === 0) {
+    return { daysOverdue: null, openTotal: 0, openCount: 0 };
+  }
+  const oldestDue = rows.reduce((oldest, r) => Math.min(oldest, r.dueDate), rows[0].dueDate);
+  return {
+    daysOverdue: Math.floor((nowUnix() - oldestDue) / SECONDS_PER_DAY),
+    openTotal: rows.reduce((total, r) => total + r.balance, 0),
+    openCount: rows.length,
+  };
+}
+
+/** Every open receivable with its due date and what is still owed, in EUR cents. */
+export async function openInvoiceRows(): Promise<OpenInvoiceRow[]> {
   const rows = await select<{ due_date: number; t: number }>(
     `SELECT due_date, ${OPEN_BALANCE_SQL} AS t
      FROM invoices
      WHERE ${OPEN_RECEIVABLE_SQL}`,
   );
-  if (rows.length === 0) {
-    return { daysOverdue: null, openTotal: 0, openCount: 0 };
-  }
-  const oldestDue = rows.reduce((oldest, r) => Math.min(oldest, r.due_date), rows[0].due_date);
-  return {
-    daysOverdue: Math.floor((nowUnix() - oldestDue) / SECONDS_PER_DAY),
-    openTotal: rows.reduce((total, r) => total + r.t, 0),
-    openCount: rows.length,
-  };
+  return rows.map((r) => ({ dueDate: r.due_date, balance: r.t }));
 }
 
 // --- Wiedervorlage (follow-ups) ---
@@ -269,7 +269,7 @@ export async function loadFollowUps(): Promise<FollowUpItem[]> {
 
 // --- Cash-Flow-Forecast (next 30 days) ---
 
-const FORECAST_HORIZON_DAYS = 30;
+export const FORECAST_HORIZON_DAYS = 30;
 
 export type CashFlowForecast = {
   /** Open `sent` invoices with due_date in [now, now + 30d]. EUR-Cent. */
@@ -297,12 +297,13 @@ async function sumOpenBalanceWhere(dueDateCondition: string, params: number[]): 
 }
 
 /**
- * For each active template due within the horizon, sums line totals gross.
+ * For each active template due within the horizon, its line totals gross.
  * Reverse-charge templates emit 0 VAT, others get the items' VAT rate.
  */
-async function estimateRecurringWithin(horizon: number): Promise<CountAndTotal> {
-  const rows = await select<{ line_net: number; line_vat: number }>(
-    `SELECT COALESCE(SUM(ri.quantity * ri.unit_price), 0) AS line_net,
+export async function recurringEstimates(horizon: number): Promise<RecurringEstimate[]> {
+  const rows = await select<{ due_date: number; line_net: number; line_vat: number }>(
+    `SELECT r.next_due_date AS due_date,
+            COALESCE(SUM(ri.quantity * ri.unit_price), 0) AS line_net,
             COALESCE(SUM(
               CASE WHEN r.is_reverse_charge = 1 THEN 0
                    ELSE ROUND(ri.quantity * ri.unit_price * ri.vat_rate / 100.0)
@@ -315,8 +316,12 @@ async function estimateRecurringWithin(horizon: number): Promise<CountAndTotal> 
      GROUP BY r.id`,
     [horizon],
   );
-  const total = rows.reduce((sum, row) => sum + Math.round(row.line_net + row.line_vat), 0);
-  return { count: rows.length, total };
+  return rows.map((row) => ({ dueDate: row.due_date, grossCent: Math.round(row.line_net + row.line_vat) }));
+}
+
+async function estimateRecurringWithin(horizon: number): Promise<CountAndTotal> {
+  const estimates = await recurringEstimates(horizon);
+  return { count: estimates.length, total: estimates.reduce((sum, e) => sum + e.grossCent, 0) };
 }
 
 export async function cashFlowForecast30d(): Promise<CashFlowForecast> {

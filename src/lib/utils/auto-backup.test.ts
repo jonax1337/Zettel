@@ -56,9 +56,9 @@ describe("maybeRunAutoBackup", () => {
 
     const failed = await maybeRunAutoBackup();
 
-    expect(failed).toEqual({ status: "failed", message: "Error: Datenträger voll" });
+    expect(failed).toEqual({ status: "failed", message: "Datenträger voll" });
     expect(mocks.saveLastAutoBackupAt).not.toHaveBeenCalled();
-    expect(lastAutoBackupFailure()?.message).toBe("Error: Datenträger voll");
+    expect(lastAutoBackupFailure()?.message).toBe("Datenträger voll");
 
     await maybeRunAutoBackup();
 

@@ -1,5 +1,7 @@
+import { errorMessage } from "$lib/utils/error-message";
 import { push } from "svelte-spa-router";
 import type { SidecarResponse, SidecarSuccess } from "$lib/sidecar/types";
+import { refreshOverdueCount } from "$lib/overdue-count.svelte";
 import { toast } from "$lib/ui/toast.svelte";
 
 type DeleteOptions = {
@@ -8,7 +10,7 @@ type DeleteOptions = {
   redirectTo: string;
 };
 
-export type DocumentTask = "action" | "pdf" | "validate" | "convert" | "credit-note";
+export type DocumentTask = "action" | "pdf" | "preview" | "validate" | "convert" | "credit-note";
 
 /** A step that must succeed before the PDF is generated, e.g. issuing a draft invoice. */
 export type PdfPreparation = {
@@ -37,10 +39,11 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
     await exclusive("action", async () => {
       try {
         await action();
+        void refreshOverdueCount();
         await reload();
         toast.success(label);
       } catch (e) {
-        toast.error("Aktion fehlgeschlagen", String(e));
+        toast.error("Aktion fehlgeschlagen", errorMessage(e));
       }
     });
   }
@@ -48,13 +51,19 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
   async function remove({ remove: deleteDocument, deletedLabel, redirectTo }: DeleteOptions) {
     try {
       await deleteDocument();
+      void refreshOverdueCount();
       toast.success(deletedLabel);
       push(redirectTo);
     } catch (e) {
-      toast.error("Löschen fehlgeschlagen", String(e));
+      toast.error("Löschen fehlgeschlagen", errorMessage(e));
     }
   }
 
+  /**
+   * Runs the preparation, then the PDF. The preparation changes the document (it issues
+   * it), so the page reloads once it ran, however the PDF turns out: a failed PDF must
+   * not leave a numbered, sealed invoice looking like a draft.
+   */
   async function generatePdf(
     generate: () => Promise<SidecarResponse>,
     onCreated: (created: SidecarSuccess) => Promise<void>,
@@ -65,8 +74,10 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
       if (prepare) {
         try {
           await prepare.run();
+          void refreshOverdueCount();
         } catch (e) {
-          toast.error(prepare.failureTitle, String(e));
+          toast.error(prepare.failureTitle, errorMessage(e));
+          await reload();
           return;
         }
       }
@@ -75,14 +86,18 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
         if (res.success) {
           await onCreated(res);
         } else {
-          pdfError = `${res.error.code}: ${res.error.message}`;
-          toast.error("PDF-Generierung fehlgeschlagen", res.error.message);
+          await failPdf(`${res.error.code}: ${res.error.message}`, res.error.message, !!prepare);
         }
       } catch (e) {
-        pdfError = String(e);
-        toast.error("PDF-Generierung fehlgeschlagen", String(e));
+        await failPdf(errorMessage(e), errorMessage(e), !!prepare);
       }
     });
+  }
+
+  async function failPdf(shown: string, toastText: string, reloadFirst: boolean) {
+    pdfError = shown;
+    toast.error("PDF-Generierung fehlgeschlagen", toastText);
+    if (reloadFirst) await reload();
   }
 
   async function usePdfFile(path: string | null, open: (path: string) => Promise<void>) {
@@ -90,7 +105,7 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
     try {
       await open(path);
     } catch (e) {
-      toast.error("PDF konnte nicht geöffnet werden", String(e));
+      toast.error("PDF konnte nicht geöffnet werden", errorMessage(e));
     }
   }
 
@@ -108,6 +123,9 @@ export function createDocumentActions({ reload }: { reload: () => Promise<void> 
     },
     get generating() {
       return task === "pdf";
+    },
+    get previewing() {
+      return task === "preview";
     },
     get pdfError() {
       return pdfError;

@@ -14,6 +14,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use crate::fs_export::{preview_pdf_path, PreviewKind};
 use crate::process::{background_command, output_within, run_blocking};
 
 /// Rendering a large invoice takes seconds; a frozen bundle's first start
@@ -203,6 +204,34 @@ pub async fn generate_offer(app: AppHandle, payload: Value) -> Result<Value, Str
 #[tauri::command]
 pub async fn generate_reminder(app: AppHandle, payload: Value) -> Result<Value, String> {
     call_off_runtime(app, "generate_reminder", Some(payload)).await
+}
+
+/// Draft PDF of an invoice or offer, marked as a draft and without e-invoice XML. The file is
+/// written to the app's cache folder at a path chosen here, never to the documents root: the
+/// webview names the document, not the path.
+#[tauri::command]
+pub async fn generate_pdf_preview(
+    app: AppHandle,
+    kind: PreviewKind,
+    id: i64,
+    mut payload: Value,
+) -> Result<Value, String> {
+    run_blocking(move || {
+        let fields = payload
+            .as_object_mut()
+            .ok_or("The preview payload must be an object.")?;
+        let output_path = preview_pdf_path(&app, kind, id)?;
+        fields.insert("kind".into(), json!(kind.as_str()));
+        fields.insert("outputPath".into(), json!(output_path));
+        call(&app, "generate_preview", Some(payload))
+    })
+    .await
+}
+
+/// The document as one HTML sheet for the on-screen preview; nothing is written to disk.
+#[tauri::command]
+pub async fn render_document_html(app: AppHandle, payload: Value) -> Result<Value, String> {
+    call_off_runtime(app, "render_document_html", Some(payload)).await
 }
 
 #[tauri::command]

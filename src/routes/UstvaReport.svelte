@@ -1,30 +1,29 @@
 <script lang="ts">
-  import {
-    Button,
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-    CardDescription,
-    Label,
-    Select,
-    PageHeader,
-    toast,
-  } from "$lib/ui";
+  import { errorMessage } from "$lib/utils/error-message";
+  import { Button, QueryBoundary, Select, Stat, StatRow, toast } from "$lib/ui";
   import {
     buildUstvaReport,
     formatUstvaAmount,
+    summarizeUstva,
     ustvaToCsv,
     VAT_ACCOUNTING_LABELS,
     type Quarter,
     type UstvaReport,
+    type UstvaSummary,
   } from "$lib/reports/ustva";
   import { loadSettings } from "$lib/db/queries";
-  import { formatDate } from "$lib/utils/date";
-  import { Download, AlertTriangle, ArrowRight } from "$lib/brand-icons";
-  import BackLink from "./parts/entity/BackLink.svelte";
+  import { formatDate, nowUnix } from "$lib/utils/date";
+  import { centsToEur } from "$lib/utils/money";
+  import { Download } from "$lib/brand-icons";
+  import { link } from "svelte-spa-router";
   import { createQueryState } from "./parts/entity/query-state.svelte";
+  import EmptyLinesToggle from "./parts/reports/EmptyLinesToggle.svelte";
+  import { partitionEmptyLines } from "./parts/reports/empty-lines";
+  import Notice from "./parts/reports/Notice.svelte";
+  import ReportsShell from "./parts/reports/ReportsShell.svelte";
+  import ReportToolbar from "./parts/reports/ReportToolbar.svelte";
   import { saveTextFileWithDialog } from "./parts/reports/save-text-file";
+  import { isEmptyUstvaRow, isUstvaQuarterRunning, payableLabel } from "./parts/reports/ustva-view";
 
   const SELECTABLE_YEARS = 3;
 
@@ -35,6 +34,7 @@
   let yearStr = $state(String(currentYear));
   let quarterStr = $state(String(currentQuarter));
   let saving = $state(false);
+  let showEmptyRows = $state(false);
 
   const yearItems = Array.from({ length: SELECTABLE_YEARS }, (_, i) => {
     const year = String(currentYear - i);
@@ -47,15 +47,26 @@
     { value: "4", label: "Q4 (Okt–Dez)" },
   ];
 
-  const report = createQueryState<UstvaReport | null>(null, async () => {
+  const ustva = createQueryState<{ report: UstvaReport; summary: UstvaSummary } | null>(null, async () => {
     const year = Number.parseInt(yearStr, 10);
     const quarter = Number.parseInt(quarterStr, 10) as Quarter;
-    const { vatAccounting } = await loadSettings();
-    return buildUstvaReport(year, quarter, vatAccounting);
+    const { vatAccounting, isKleinunternehmer } = await loadSettings();
+    const report = await buildUstvaReport(year, quarter, vatAccounting);
+    return { report, summary: summarizeUstva(report, isKleinunternehmer) };
   });
   $effect(() => {
-    report.reload();
+    ustva.reload();
   });
+
+  const rows = $derived(partitionEmptyLines(ustva.data?.report.rows ?? [], isEmptyUstvaRow, showEmptyRows));
+
+  // The shown report can be the previous period's while a new one loads, or after it failed; never export that.
+  const exportable = $derived(
+    !ustva.loading &&
+      !ustva.error &&
+      ustva.data?.report.year === Number.parseInt(yearStr, 10) &&
+      ustva.data.report.quarter === Number.parseInt(quarterStr, 10),
+  );
 
   async function onSaveCsv(current: UstvaReport) {
     saving = true;
@@ -68,97 +79,101 @@
       });
       if (saved) toast.success("CSV gespeichert");
     } catch (e) {
-      toast.error("Speichern fehlgeschlagen", String(e));
+      toast.error("Speichern fehlgeschlagen", errorMessage(e));
     } finally {
       saving = false;
     }
   }
 </script>
 
-<PageHeader
-  title="UStVA-Vorbereitung"
-  subtitle="Quartalsweise Aggregation der wichtigsten Kennzahlen für die Umsatzsteuer-Voranmeldung. Werte zum Abtippen in ELSTER — kein direkter Upload. Bemessungsgrundlagen sind wie in ELSTER auf volle Euro abgeschnitten, Steuerbeträge mit Cent."
->
-  {#snippet back()}
-    <BackLink href="/">Dashboard</BackLink>
-  {/snippet}
-  {#snippet actions()}
-    <Button href="/reports/taxes" variant="outline" size="sm">
-      Steuer-Rücklage ansehen
-      <ArrowRight class="size-4" />
-    </Button>
-  {/snippet}
-</PageHeader>
+<ReportsShell active="/reports/ustva">
+  <ReportToolbar>
+    <Select class="h-8 w-24 text-[13px]" bind:value={yearStr} items={yearItems} aria-label="Jahr" />
+    <Select class="h-8 w-44 text-[13px]" bind:value={quarterStr} items={quarterItems} aria-label="Quartal" />
+    {#snippet actions()}
+      <Button
+        variant="outline"
+        size="sm"
+        onclick={() => ustva.data && onSaveCsv(ustva.data.report)}
+        disabled={saving || !exportable}
+      >
+        <Download />
+        {saving ? "Speichere…" : "Als CSV speichern"}
+      </Button>
+    {/snippet}
+  </ReportToolbar>
 
-<div class="mb-6 rounded-md border border-warning/40 bg-warning/5 p-3 flex items-start gap-3">
-  <AlertTriangle class="size-5 text-warning shrink-0 mt-0.5" />
-  <div class="text-sm space-y-1">
-    <p class="font-medium">Keine Steuerberatung.</p>
-    <p class="text-muted-foreground">
-      Die Werte basieren auf den erfassten Belegen. AfA, Privatentnahmen, Sonderfälle
-      und Korrekturen aus Vorquartalen sind nicht enthalten. Vor ELSTER-Abgabe immer
-      vom Steuerberater prüfen lassen.
-    </p>
-  </div>
-</div>
+  <QueryBoundary query={ustva}>
+    {#if ustva.data}
+      {@const { report, summary } = ustva.data}
+      {@const running = isUstvaQuarterRunning(report, nowUnix())}
+      {#if summary.kind === "computed"}
+        <StatRow>
+          <Stat label="Umsatzsteuer" value={centsToEur(summary.outputVatCent)} hint="aus KZ 81 und 86" />
+          <Stat label="Abziehbare Vorsteuer" value={centsToEur(summary.inputVatCent)} hint="KZ 66" />
+          <Stat
+            label={payableLabel(summary.payableCent, running)}
+            value={centsToEur(Math.abs(summary.payableCent))}
+            hint="ohne § 13b-Fälle"
+          />
+        </StatRow>
+      {:else}
+        <Notice>
+          Als Kleinunternehmer (§ 19 UStG) schuldest du keine Umsatzsteuer und kannst keine Vorsteuer abziehen.
+          Umsatzsteuer, Vorsteuer und Zahllast entfallen deshalb.
+        </Notice>
+      {/if}
 
-<div class="grid grid-cols-2 gap-4 mb-6 max-w-md">
-  <div class="flex flex-col gap-1.5">
-    <Label>Jahr</Label>
-    <Select bind:value={yearStr} items={yearItems} />
-  </div>
-  <div class="flex flex-col gap-1.5">
-    <Label>Quartal</Label>
-    <Select bind:value={quarterStr} items={quarterItems} />
-  </div>
-</div>
+      <div class="mb-2.5 flex flex-wrap items-baseline gap-x-2.5">
+        <h2>Q{report.quarter}/{report.year}</h2>
+        <span class="text-[13px] text-muted-foreground">
+          Zeitraum {formatDate(report.dateFrom)} – {formatDate(report.dateTo)}
+          · {VAT_ACCOUNTING_LABELS[report.vatAccounting]}
+        </span>
+      </div>
 
-{#if report.error}
-  <p class="text-sm text-destructive">Bericht konnte nicht erzeugt werden: {report.error}</p>
-{:else if report.loading}
-  <p class="text-sm text-muted-foreground">Berechne…</p>
-{:else if report.data}
-  <Card>
-    <CardHeader>
-      <CardTitle>
-        Q{report.data.quarter}/{report.data.year}
-      </CardTitle>
-      <CardDescription>
-        Zeitraum {formatDate(report.data.dateFrom)} – {formatDate(report.data.dateTo)}
-        · {VAT_ACCOUNTING_LABELS[report.data.vatAccounting]}
-      </CardDescription>
-    </CardHeader>
-    <CardContent class="p-0">
-      <table class="w-full text-sm">
-        <thead class="bg-muted/40 text-left">
-          <tr class="text-xs uppercase tracking-wider text-muted-foreground">
-            <th class="px-4 py-3 font-medium w-20">Kennzahl</th>
-            <th class="px-4 py-3 font-medium">Beschreibung</th>
-            <th class="px-4 py-3 font-medium text-right w-40">Betrag</th>
+      <table class="data-list">
+        <thead>
+          <tr>
+            <th class="w-24">Kennzahl</th>
+            <th>Beschreibung</th>
+            <th class="text-right">Betrag</th>
           </tr>
         </thead>
         <tbody>
-          {#each report.data.rows as row (row.kz)}
-            <tr class="border-t">
-              <td class="px-4 py-3 font-mono font-medium">{row.kz}</td>
-              <td class="px-4 py-3">
+          {#each rows.lines as row (row.kz)}
+            <tr>
+              <td class="py-3 align-top font-bold tabular-nums">{row.kz}</td>
+              <td class="py-3">
                 <div>{row.label}</div>
-                <div class="text-xs text-muted-foreground mt-0.5">{row.computedFrom}</div>
+                <div class="text-[13px] text-muted-foreground">{row.computedFrom}</div>
               </td>
-              <td class="px-4 py-3 text-right font-mono tabular-nums">
-                {formatUstvaAmount(row)}
-              </td>
+              <td class="py-3 text-right align-top font-bold whitespace-nowrap tabular-nums">{formatUstvaAmount(row)}</td>
+            </tr>
+          {:else}
+            <tr>
+              <td colspan="3" class="text-muted-foreground">Für diesen Zeitraum gibt es keine Beträge.</td>
             </tr>
           {/each}
         </tbody>
       </table>
-    </CardContent>
-  </Card>
+      <EmptyLinesToggle count={rows.emptyCount} noun={{ singular: "Kennzahl", plural: "Kennzahlen" }} bind:open={showEmptyRows} />
 
-  <div class="mt-6">
-    <Button onclick={() => onSaveCsv(report.data!)} disabled={saving}>
-      <Download class="size-4" />
-      {saving ? "Speichere…" : "CSV exportieren"}
-    </Button>
-  </div>
-{/if}
+      <div class="mt-5 max-w-[78ch] space-y-1.5 text-[13px] text-muted-foreground">
+        <p>
+          Zettel rechnet aus den erfassten Belegen und ersetzt keine Steuerberatung. Die Werte sind zum Abtippen in
+          ELSTER gedacht, einen Upload gibt es nicht. Bemessungsgrundlagen sind wie in ELSTER auf volle Euro
+          abgeschnitten, Steuerbeträge mit Cent.
+        </p>
+        <p>
+          AfA, Privatentnahmen, Sonderfälle und Korrekturen aus Vorquartalen sind nicht enthalten, ebenso eine
+          Sondervorauszahlung (Kennzahl 39). Lass die Werte vor der Abgabe in ELSTER von deiner Steuerberatung prüfen.
+        </p>
+        <p>
+          Was du für die Steuer beiseitelegen solltest, siehst du unter
+          <a href="/reports/taxes" use:link class="underline underline-offset-2 hover:text-foreground">Steuer-Rücklage</a>.
+        </p>
+      </div>
+    {/if}
+  </QueryBoundary>
+</ReportsShell>

@@ -1,7 +1,14 @@
-/** Stable string form of a form's state, used to tell edited from untouched. */
+/**
+ * Stable string form of a form's state, used to tell edited from untouched. An empty
+ * string and a missing value read the same: a text field the user typed into and cleared
+ * again holds "" where the untouched form holds null.
+ */
 export function snapshotOf(value: unknown): string | null {
   try {
-    return JSON.stringify(value, (_key, v) => (typeof v === "bigint" ? v.toString() : v));
+    return JSON.stringify(value, (_key, v) => {
+      if (typeof v === "bigint") return v.toString();
+      return v === "" || v === undefined ? null : v;
+    });
   } catch {
     // An unserialisable form can't be compared; treating it as clean beats blocking navigation forever.
     return null;
