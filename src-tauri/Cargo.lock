@@ -6776,7 +6776,7 @@ dependencies = [
 
 [[package]]
 name = "zettel"
-version = "0.25.0-rc.2"
+version = "0.25.0"
 dependencies = [
  "aes-gcm",
  "argon2",

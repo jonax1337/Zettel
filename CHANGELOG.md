@@ -4,9 +4,7 @@ Alle nennenswerten Änderungen an Zettel werden hier dokumentiert.
 Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 
-## [0.26.0] – in Arbeit
-
-Erscheint nach 0.25; die Einträge von 0.25 stehen darunter unter „Unreleased“.
+## [Unreleased]
 
 ### Added
 - **Neue Navigation und Gestaltung.** Die Seitenleiste ist in beiden Themes dunkel und ordnet die Einträge nach Geldfluss: Übersicht, Verkauf (Angebote, Rechnungen, Zeiten, Katalog), Einkauf (Ausgaben), Kontakte (Kunden, Lieferanten) und Finanzen (Auswertungen, Bank-Abgleich); Einstellungen und der Mandant sitzen im Fuß. Pro Ansicht gibt es eine gefüllte Hauptschaltfläche, Statusabzeichen tragen feste Töne (Entwurf, offen, überfällig, bezahlt), und der Inhalt springt beim Seitenwechsel an den Anfang. Die Befehlspalette (`Cmd/Ctrl+K`) erreicht weiterhin jedes frühere Ziel, auch über die alten Namen („Dashboard“, „Eingangsrechnungen“, „E-Rechnung validieren“), und findet Einstellungsseiten über Stichwörter.
@@ -48,7 +46,7 @@ Erscheint nach 0.25; die Einträge von 0.25 stehen darunter unter „Unreleased�
 - **Rechnungsseite lud sich in einer Schleife neu**, zeigt nach einem fehlgeschlagenen PDF beim Ausstellen den neuen Zustand und kann nicht mehr auf eine ältere Darstellung zurückfallen.
 - **`saveSettings` nimmt den ganzen Datensatz.** Der Typ erlaubte einen Teildatensatz, geschrieben werden aber alle Spalten; ein Aufrufer mit wenigen Feldern hätte den Rest der Einstellungen geleert. Beide bestehenden Aufrufer übergeben den vollen Datensatz.
 
-## [Unreleased]
+## [0.25.0]
 
 ### Added
 - **CLI im Installer.** Die Kommandozeile wird als `zettel-cli` mitgeliefert (Einstellungen → Daten → „Kommandozeile“ zeigt den Pfad zum Kopieren) und findet den PDF-Sidecar der Installation selbst. Das `.deb` legt zusätzlich `/usr/bin/zettel-cli` an; unter Windows und macOS gibt es keinen PATH-Eintrag, dort gilt der volle Pfad.
