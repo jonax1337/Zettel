@@ -623,3 +623,46 @@ class TestFrozenSidecarLookup:
         monkeypatch.setattr(cli.sys, "frozen", True, raising=False)
         with pytest.raises(SystemExit, match="Sidecar-Binary"):
             cli.resolve_sidecar()
+
+
+class TestCompanyIncompleteMessage:
+    """Mirror of companyIncompleteMessage() in src/lib/utils/company-completeness.ts."""
+
+    @pytest.mark.parametrize(
+        "missing, expected",
+        [
+            (
+                ["Firmenname"],
+                "Firmendaten unvollständig: Firmenname. "
+                "Bitte in der App unter Einstellungen → Unternehmen ergänzen.",
+            ),
+            (
+                ["Steuernummer oder USt-IdNr."],
+                "Firmendaten unvollständig: Steuernummer oder USt-IdNr. "
+                "Bitte in der App unter Einstellungen → Steuern ergänzen.",
+            ),
+            (
+                ["Anschrift", "Steuernummer oder USt-IdNr."],
+                "Firmendaten unvollständig: Anschrift, Steuernummer oder USt-IdNr. "
+                "Bitte in der App unter Einstellungen → Unternehmen und Steuern ergänzen.",
+            ),
+        ],
+        ids=["company page", "tax page", "both pages"],
+    )
+    def test_ends_the_list_with_one_period_and_names_the_page_that_holds_the_fields(self, cli, missing, expected):
+        assert cli.company_incomplete_message(missing) == expected
+
+    def test_stops_a_command_with_that_message(self, cli):
+        company = {
+            "company_name": "",
+            "street": "Beispielweg 1",
+            "postal_code": "10115",
+            "city": "Berlin",
+            "tax_number": "",
+            "vat_id": None,
+        }
+
+        with pytest.raises(SystemExit) as stop:
+            cli.require_complete_company(company)
+
+        assert stop.value.code == cli.company_incomplete_message(["Firmenname", "Steuernummer oder USt-IdNr."])

@@ -45,6 +45,7 @@ Versionen folgen [Semantic Versioning](https://semver.org/lang/de/).
 - **Leerer USt-Satz im Katalog** wurde stillschweigend zu 19 %; er wird jetzt abgelehnt.
 - **Rechnungsseite lud sich in einer Schleife neu**, zeigt nach einem fehlgeschlagenen PDF beim Ausstellen den neuen Zustand und kann nicht mehr auf eine ältere Darstellung zurückfallen.
 - **`saveSettings` nimmt den ganzen Datensatz.** Der Typ erlaubte einen Teildatensatz, geschrieben werden aber alle Spalten; ein Aufrufer mit wenigen Feldern hätte den Rest der Einstellungen geleert. Beide bestehenden Aufrufer übergeben den vollen Datensatz.
+- **Doppelter Punkt nach „USt-IdNr.“** in der Meldung zu unvollständigen Firmendaten und im Hinweis auf der Übersicht, in der App und in der CLI. Die CLI nennt wie die App die Einstellungsseite, auf der die fehlende Angabe steht (Unternehmen, Steuern oder beide), statt immer „Unternehmen“.
 
 ## [0.25.0]
 

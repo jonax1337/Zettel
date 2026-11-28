@@ -627,6 +627,9 @@ def skonto_payload(skonto: dict | None) -> dict:
     }
 
 
+TAX_ID_LABEL = "Steuernummer oder USt-IdNr."
+
+
 def missing_company_data(company: dict) -> list[str]:
     """Spiegel von missingCompanyData() in src/lib/utils/company-completeness.ts (§ 14 UStG)."""
     missing = []
@@ -635,17 +638,32 @@ def missing_company_data(company: dict) -> list[str]:
     if not _has_address(company["street"], company["postal_code"], company["city"]):
         missing.append("Anschrift")
     if _blank(company["tax_number"]) and _blank(company["vat_id"]):
-        missing.append("Steuernummer oder USt-IdNr.")
+        missing.append(TAX_ID_LABEL)
     return missing
+
+
+def company_settings_pages(missing: list[str]) -> str:
+    """Spiegel von settingsPagesFor(): Steuernummer und USt-IdNr. stehen auf der Seite „Steuern“."""
+    needs_tax_page = TAX_ID_LABEL in missing
+    needs_company_page = any(label != TAX_ID_LABEL for label in missing)
+    if needs_tax_page and needs_company_page:
+        return "Unternehmen und Steuern"
+    return "Steuern" if needs_tax_page else "Unternehmen"
+
+
+def company_incomplete_message(missing: list[str]) -> str:
+    """Spiegel von companyIncompleteMessage(); das letzte Label kann selbst auf einen Punkt enden."""
+    listed = ", ".join(missing).removesuffix(".")
+    return (
+        f"Firmendaten unvollständig: {listed}. "
+        f"Bitte in der App unter Einstellungen → {company_settings_pages(missing)} ergänzen."
+    )
 
 
 def require_complete_company(company: dict) -> None:
     missing = missing_company_data(company)
     if missing:
-        sys.exit(
-            f"Firmendaten unvollständig: {', '.join(missing)}. "
-            "Bitte in der App unter Einstellungen → Unternehmen ergänzen."
-        )
+        sys.exit(company_incomplete_message(missing))
 
 
 def build_offer_payload(offer: dict, items: list[dict], customer: dict, company: dict, output_path: str) -> dict:
