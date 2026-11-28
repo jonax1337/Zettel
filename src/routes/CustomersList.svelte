@@ -9,7 +9,7 @@
   import { Button, ConfirmDialog, DropdownItem, PageHeader, QueryBoundary } from "$lib/ui";
   import { FilePlus2, Plus } from "$lib/brand-icons";
   import { applySort } from "$lib/utils/sort";
-  import { WIDE_ONLY } from "./invoice/list-support";
+  import { EXTRA_WIDE_ONLY, WIDE_ONLY } from "./invoice/list-support";
   import RowActionsMenu from "./parts/entity/RowActionsMenu.svelte";
   import SearchInput from "./parts/entity/SearchInput.svelte";
   import { createDeleteFlow } from "./parts/entity/delete-flow.svelte";
@@ -64,7 +64,7 @@
     { key: "customerNumber", label: "Nr.", class: "whitespace-nowrap" },
     { key: "name", label: "Name", class: "w-full" },
     { key: "city", label: "Ort", class: "whitespace-nowrap" },
-    { key: "email", label: "E-Mail", class: `${WIDE_ONLY} whitespace-nowrap` },
+    { key: "email", label: "E-Mail", class: `${EXTRA_WIDE_ONLY} whitespace-nowrap` },
     { key: "revenueNet", label: `Umsatz ${year}`, align: "right", class: "text-right whitespace-nowrap" },
     { key: "openBalance", label: "Offen", align: "right", class: "text-right whitespace-nowrap" },
     { key: "lastInvoiceDate", label: "Letzte Rechnung", class: `${WIDE_ONLY} whitespace-nowrap` },
@@ -141,7 +141,7 @@
             </a>
           </td>
           <td class="text-muted-foreground whitespace-nowrap">{c.city}</td>
-          <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap">{c.email ?? ""}</td>
+          <td class="{EXTRA_WIDE_ONLY} text-muted-foreground whitespace-nowrap">{c.email ?? ""}</td>
           <td class="text-right whitespace-nowrap tabular-nums">
             {#if c.revenueNet}{centsToEur(c.revenueNet)}{:else}<span class="text-muted-foreground">{NO_FIGURE}</span>{/if}
           </td>

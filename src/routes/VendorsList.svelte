@@ -9,7 +9,7 @@
   import { Button, ConfirmDialog, PageHeader, QueryBoundary } from "$lib/ui";
   import { Plus } from "$lib/brand-icons";
   import { applySort } from "$lib/utils/sort";
-  import { WIDE_ONLY } from "./invoice/list-support";
+  import { EXTRA_WIDE_ONLY, WIDE_ONLY } from "./invoice/list-support";
   import RowActionsMenu from "./parts/entity/RowActionsMenu.svelte";
   import SearchInput from "./parts/entity/SearchInput.svelte";
   import { withFigures } from "./parts/vendor/vendor-list";
@@ -58,7 +58,7 @@
     { key: "vendorNumber", label: "Nr.", class: "whitespace-nowrap" },
     { key: "name", label: "Name", class: "w-full" },
     { key: "city", label: "Ort", class: "whitespace-nowrap" },
-    { key: "email", label: "E-Mail", class: `${WIDE_ONLY} whitespace-nowrap` },
+    { key: "email", label: "E-Mail", class: `${EXTRA_WIDE_ONLY} whitespace-nowrap` },
     { key: "grossInPeriod", label: `Ausgaben ${year} brutto`, align: "right", class: "text-right whitespace-nowrap" },
     { key: "lastExpenseDate", label: "Letzte Ausgabe", class: `${WIDE_ONLY} whitespace-nowrap` },
   ];
@@ -132,7 +132,7 @@
             </a>
           </td>
           <td class="text-muted-foreground whitespace-nowrap">{v.city}</td>
-          <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap">{v.email ?? ""}</td>
+          <td class="{EXTRA_WIDE_ONLY} text-muted-foreground whitespace-nowrap">{v.email ?? ""}</td>
           <td class="text-right font-semibold whitespace-nowrap tabular-nums">
             {#if v.grossInPeriod}{centsToEur(v.grossInPeriod)}{:else}<span class="font-normal text-muted-foreground">{NO_FIGURE}</span>{/if}
           </td>

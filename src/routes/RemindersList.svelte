@@ -15,7 +15,7 @@
   import { Button, Badge, PageHeader, QueryBoundary, StatusBadge } from "$lib/ui";
   import { Plus } from "$lib/brand-icons";
   import { pluralize } from "./parts/entity/format";
-  import { WIDE_ONLY, overdueSinceLabel } from "./invoice/list-support";
+  import { EXTRA_WIDE_ONLY, WIDE_ONLY, overdueSinceLabel } from "./invoice/list-support";
   import { createListSort } from "./parts/entity/list-sort.svelte";
   import { createQueryState } from "./parts/entity/query-state.svelte";
   import SortableHeaderRow, { type SortColumn } from "./parts/entity/SortableHeaderRow.svelte";
@@ -99,7 +99,7 @@
             <th class="w-full">Kunde</th>
             <th class={WIDE_ONLY}>Fällig</th>
             <th>Überfällig seit</th>
-            <th class={WIDE_ONLY}>Bisher</th>
+            <th class={EXTRA_WIDE_ONLY}>Bisher</th>
             <th class="text-right">Offen</th>
             <th><span class="sr-only">Aktion</span></th>
           </tr>
@@ -125,7 +125,7 @@
                   {overdueSinceLabel(o.daysOverdue)}
                 </Badge>
               </td>
-              <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap">
+              <td class="{EXTRA_WIDE_ONLY} text-muted-foreground whitespace-nowrap">
                 {#if o.existingReminderLevels.length === 0}–
                 {:else}{o.existingReminderLevels.map(levelLabel).join(", ")}
                 {/if}
