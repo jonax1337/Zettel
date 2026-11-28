@@ -18,7 +18,7 @@
   let { items, ariaLabel }: Props = $props();
 </script>
 
-<ul class="grid gap-3 text-[13px] tabular-nums" aria-label={ariaLabel}>
+<ul class="grid grid-cols-1 gap-3 text-[13px] tabular-nums" aria-label={ariaLabel}>
   {#each items as item (item.key)}
     <li>
       <a

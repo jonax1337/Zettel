@@ -17,14 +17,14 @@
 {#if hasHistory}
   <p class="text-xs text-muted-foreground">{versions.length} PDF-Versionen</p>
 {/if}
-<ul class="grid gap-2.5">
+<ul class="grid grid-cols-1 gap-2.5">
   {#each versions as v (v.path)}
     <li class="flex items-center gap-2.5">
       <FileText class="size-5 shrink-0 text-muted-foreground" />
       <div class="min-w-0 flex-1">
         <div class="truncate text-sm font-bold" title={v.path}>{fileName(v.path)}</div>
-        <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
-          Stand {formatDateTime(v.modifiedUnix)}
+        <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+          <span class="whitespace-nowrap">Stand {formatDateTime(v.modifiedUnix)}</span>
           {#if v.current && hasHistory}
             <Badge variant="calm" class="h-[18px] px-2 text-[11px]">Aktuell</Badge>
           {/if}

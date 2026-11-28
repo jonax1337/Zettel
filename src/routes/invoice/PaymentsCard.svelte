@@ -126,7 +126,7 @@
   {/if}
 
   {#if payments.length > 0}
-    <ul class="grid gap-2 border-t border-border pt-3">
+    <ul class="grid grid-cols-1 gap-2 border-t border-border pt-3">
       {#each payments as p (p.id)}
         <li class="flex items-center justify-between gap-3 text-sm">
           <div class="flex min-w-0 items-center gap-2.5">
