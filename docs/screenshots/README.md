@@ -17,13 +17,13 @@ Das README bindet 3–6 starke Bilder ein. Vorhanden sind:
 
 | Datei | Motiv |
 |---|---|
-| `dashboard.png` | Übersicht (`/`) mit gefülltem Period-Switcher, KPIs, Top-Kunden, Steuer-Rücklage |
+| `dashboard.png` | Übersicht (`/`) mit „Zu erledigen“, Gewinn, Einnahmen und Ausgaben, offenen Forderungen |
 | `invoices.png` | `/invoices` — Rechnungsliste mit Status und Filtern |
-| `invoice-validated.png` | Rechnung mit bestandener KoSIT-Prüfung |
+| `invoice-validated.png` | Rechnungsseite mit dem Beleg als Blatt, bestandener KoSIT-Prüfung, Zahlung und PDF-Versionen |
 | `pdf-preview.png` | generiertes PDF in einem Viewer mit sichtbaren ZUGFeRD-XML-Attachments |
 | `expenses.png` | `/expenses` — Ausgaben mit Lieferanten und Status |
 | `ustva.png` | UStVA-Vorbereitung (Auswertungen → UStVA) |
-| `zettel-demo.gif` | Rundgang durch die App (Übersicht, Rechnungen, Validierung, PDF, Ausgaben, UStVA) |
+| `zettel-demo.gif` | Rundgang durch die App (Übersicht, Rechnungen, geprüfte Rechnung als Blatt, Ausgaben, UStVA), 960×600 |
 
 Gewünscht und noch nicht vorhanden (neu seit v0.24):
 

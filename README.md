@@ -38,16 +38,16 @@ ZUGFeRD- / Factur-X-konforme PDF/A-3 mit eingebettetem EN-16931-XML und XRechnun
 -->
 
 <p align="center">
-  <img src="./docs/screenshots/zettel-demo.gif" alt="Rundgang durch Zettel: Übersicht, Rechnungen, ZUGFeRD-Validierung, PDF, Ausgaben und UStVA" width="960" />
+  <img src="./docs/screenshots/zettel-demo.gif" alt="Rundgang durch Zettel: Übersicht, Rechnungen, eine geprüfte Rechnung als Blatt, Ausgaben und UStVA" width="960" />
 </p>
 
 <table>
   <tr>
-    <td align="center"><a href="./docs/screenshots/dashboard.png"><img src="./docs/screenshots/dashboard.png" alt="Übersicht mit Umsatz, Aufwand, offenen Posten und Top-Kunden" /></a><br /><sub>Übersicht</sub></td>
+    <td align="center"><a href="./docs/screenshots/dashboard.png"><img src="./docs/screenshots/dashboard.png" alt="Übersicht mit offenen Aufgaben, Gewinn, Einnahmen und Ausgaben und offenen Forderungen" /></a><br /><sub>Übersicht</sub></td>
     <td align="center"><a href="./docs/screenshots/invoices.png"><img src="./docs/screenshots/invoices.png" alt="Rechnungsliste mit Status und Filtern" /></a><br /><sub>Rechnungen</sub></td>
   </tr>
   <tr>
-    <td align="center"><a href="./docs/screenshots/invoice-validated.png"><img src="./docs/screenshots/invoice-validated.png" alt="Rechnung mit bestandener KoSIT-Prüfung (ZUGFeRD-konform)" /></a><br /><sub>KoSIT-geprüft</sub></td>
+    <td align="center"><a href="./docs/screenshots/invoice-validated.png"><img src="./docs/screenshots/invoice-validated.png" alt="Rechnung als Blatt mit bestandener KoSIT-Prüfung (ZUGFeRD-konform), Zahlung und PDF-Versionen" /></a><br /><sub>KoSIT-geprüft</sub></td>
     <td align="center"><a href="./docs/screenshots/pdf-preview.png"><img src="./docs/screenshots/pdf-preview.png" alt="Erzeugtes PDF/A-3 mit Girocode, Factur-X-XML eingebettet" /></a><br /><sub>PDF/A-3 + ZUGFeRD</sub></td>
   </tr>
   <tr>
