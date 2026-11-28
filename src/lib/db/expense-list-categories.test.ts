@@ -7,7 +7,7 @@ vi.mock("./client", async (importOriginal) => ({
   ...(await import("./sqlite-test-db")).sqliteClient(sqlite),
 }));
 
-import { listExpenses } from "./expenses";
+import { listExpenseListCategories, listExpenses } from "./expenses";
 
 type ItemSeed = { category?: string | null; categoryId?: number | null; lineTotal: number };
 
@@ -89,5 +89,64 @@ describe("listExpenses categories", () => {
 
     expect(await rowOf(empty)).toMatchObject({ mainCategory: null, extraCategoryCount: 0 });
     expect(await rowOf(uncategorised)).toMatchObject({ mainCategory: null, extraCategoryCount: 0 });
+  });
+});
+
+describe("listExpenses category filter", () => {
+  const curatedCategory = () =>
+    sqlite.current!.prepare("SELECT id, name FROM expense_categories ORDER BY id LIMIT 1").all()[0] as {
+      id: number;
+      name: string;
+    };
+
+  it("finds an expense by any of its items' categories, not only the one the list shows", async () => {
+    const mixed = seedExpense([
+      { category: "Software / SaaS", lineTotal: 9_000 },
+      { category: "Reisekosten", lineTotal: 700 },
+    ]);
+    const travel = seedExpense([{ category: "Reisekosten", lineTotal: 1_000 }]);
+    seedExpense([{ category: "Bürobedarf", lineTotal: 1_000 }]);
+    seedExpense([]);
+
+    const found = await listExpenses({ category: "Reisekosten" });
+
+    expect(found.map((e) => e.id).sort()).toEqual([mixed, travel].sort());
+  });
+
+  it("matches the curated category's name, as the list shows it, instead of an item's old free text", async () => {
+    const curated = curatedCategory();
+    const id = seedExpense([{ category: "altes Label", categoryId: curated.id, lineTotal: 2_000 }]);
+
+    expect((await listExpenses({ category: curated.name })).map((e) => e.id)).toEqual([id]);
+    expect(await listExpenses({ category: "altes Label" })).toEqual([]);
+  });
+
+  it("combines with the other filters and leaves the list alone for 'all'", async () => {
+    const open = seedExpense([{ category: "Reisekosten", lineTotal: 1_000 }]);
+    const paid = seedExpense([{ category: "Reisekosten", lineTotal: 1_000 }]);
+    sqlite.current!.prepare("UPDATE expenses SET status = 'paid' WHERE id = ?").run(paid);
+
+    expect((await listExpenses({ category: "Reisekosten", status: "open" })).map((e) => e.id)).toEqual([open]);
+    expect(await listExpenses({ category: "all" })).toHaveLength(2);
+  });
+});
+
+describe("listExpenseListCategories", () => {
+  it("lists each category the list can show once, curated names before free text, without empty ones", async () => {
+    const curated = sqlite.current!.prepare("SELECT id, name FROM expense_categories ORDER BY id LIMIT 1").all()[0] as {
+      id: number;
+      name: string;
+    };
+    seedExpense([
+      { category: "Zzz frei", lineTotal: 100 },
+      { category: "aaa frei", lineTotal: 100 },
+      { category: "altes Label", categoryId: curated.id, lineTotal: 100 },
+    ]);
+    seedExpense([{ category: "Zzz frei", lineTotal: 100 }, { category: "", lineTotal: 100 }, { lineTotal: 100 }]);
+
+    const listed = await listExpenseListCategories();
+
+    expect([...listed].sort()).toEqual(["Zzz frei", "aaa frei", curated.name].sort());
+    expect(listed.indexOf("aaa frei")).toBeLessThan(listed.indexOf("Zzz frei"));
   });
 });

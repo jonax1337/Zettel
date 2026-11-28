@@ -10,6 +10,9 @@ export const ALL = "all";
  */
 export const WIDE_ONLY = "max-[1180px]:hidden";
 
+/** For the columns a list can do without until the window is wide enough that they do not squeeze the name column. */
+export const EXTRA_WIDE_ONLY = "max-[1399px]:hidden";
+
 type FilterItem<V extends string> = { value: V; label: string };
 
 /** A status filter with more options than this does not fit beside the search field as a segmented control. */

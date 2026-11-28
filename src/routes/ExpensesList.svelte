@@ -4,6 +4,7 @@
   import {
     deleteExpense,
     getExpenseYears,
+    listExpenseListCategories,
     listExpenses,
     markExpensePaid,
     type ExpenseFilter,
@@ -22,6 +23,7 @@
     toast,
     PageHeader,
     QueryBoundary,
+    Select,
     StatusBadge,
   } from "$lib/ui";
   import { Plus, CheckCircle2, Trash2 } from "$lib/brand-icons";
@@ -29,7 +31,7 @@
   import { paidDateWarning } from "./invoice/date-warnings";
   import DocumentListFilters from "./invoice/DocumentListFilters.svelte";
   import { createRowSelection } from "./invoice/list-selection.svelte";
-  import { ALL, WIDE_ONLY, numberOrAll, statusFilterItems } from "./invoice/list-support";
+  import { ALL, EXTRA_WIDE_ONLY, WIDE_ONLY, numberOrAll, statusFilterItems } from "./invoice/list-support";
   import { pluralize } from "./parts/entity/format";
   import { createListFilters } from "./parts/entity/list-filters.svelte";
   import ListEmptyState from "./parts/entity/ListEmptyState.svelte";
@@ -46,21 +48,28 @@
 
   let vendors = $state<Vendor[]>([]);
   let years = $state<number[]>([]);
+  let categories = $state<string[]>([]);
 
   const filters = createListFilters<{
     status: ExpenseStatus | typeof ALL;
     year: string;
     vendorId: string;
+    category: string;
     search: string;
-  }>("expenses", { status: ALL, year: ALL, vendorId: ALL, search: "" });
+  }>("expenses", { status: ALL, year: ALL, vendorId: ALL, category: ALL, search: "" });
   const f = filters.values;
 
   const filter = $derived<ExpenseFilter>({
     status: f.status,
     year: numberOrAll(f.year),
     vendorId: numberOrAll(f.vendorId),
+    category: f.category,
     search: f.search,
   });
+  const categoryItems = $derived([
+    { value: ALL, label: "Alle Kategorien" },
+    ...categories.map((category) => ({ value: category, label: category })),
+  ]);
 
   const expenses = createQueryState<ExpenseListRow[]>([], () => listExpenses(filter));
   $effect(() => {
@@ -74,6 +83,13 @@
     getExpenseYears()
       .then((y) => (years = y))
       .catch((e) => toast.error("Jahre konnten nicht geladen werden", errorMessage(e)));
+    listExpenseListCategories()
+      .then((listed) => {
+        categories = listed;
+        // A remembered category may be gone by now; it would filter the list to nothing without a way to see why.
+        if (f.category !== ALL && !listed.includes(f.category)) f.category = ALL;
+      })
+      .catch((e) => toast.error("Kategorien konnten nicht geladen werden", errorMessage(e)));
   });
 
   const statusItems = statusFilterItems(EXPENSE_STATUS, EXPENSE_STATUS_FILTER_ORDER);
@@ -84,9 +100,9 @@
     { key: "internalNumber", label: "Interne Nr.", class: "whitespace-nowrap" },
     { key: "vendor", label: "Lieferant", class: "w-full" },
     { key: "category", label: "Kategorie", class: `${WIDE_ONLY} whitespace-nowrap` },
-    { key: "number", label: "Beleg-Nr.", class: `${WIDE_ONLY} whitespace-nowrap` },
+    { key: "number", label: "Beleg-Nr.", class: `${EXTRA_WIDE_ONLY} whitespace-nowrap` },
     { key: "issueDate", label: "Datum", class: "whitespace-nowrap" },
-    { key: "dueDate", label: "Fällig", class: `${WIDE_ONLY} whitespace-nowrap` },
+    { key: "dueDate", label: "Fällig", class: `${EXTRA_WIDE_ONLY} whitespace-nowrap` },
     { key: "status", label: "Status", class: "whitespace-nowrap" },
     { key: "total", label: "Brutto", align: "right", class: "text-right whitespace-nowrap" },
   ];
@@ -170,7 +186,9 @@
   {years}
   customers={vendors}
   counterparty={VENDOR_COUNTERPARTY}
-/>
+>
+  <Select bind:value={f.category} items={categoryItems} aria-label="Kategorie" class="w-[180px]" />
+</DocumentListFilters>
 
 <QueryBoundary query={expenses} isEmpty={expenses.data.length === 0}>
   {#snippet empty()}
@@ -213,9 +231,9 @@
               –
             {/if}
           </td>
-          <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap tabular-nums">{e.number ?? "–"}</td>
+          <td class="{EXTRA_WIDE_ONLY} text-muted-foreground whitespace-nowrap tabular-nums">{e.number ?? "–"}</td>
           <td class="text-muted-foreground whitespace-nowrap tabular-nums">{formatDate(e.issueDate)}</td>
-          <td class="{WIDE_ONLY} text-muted-foreground whitespace-nowrap tabular-nums">
+          <td class="{EXTRA_WIDE_ONLY} text-muted-foreground whitespace-nowrap tabular-nums">
             {e.dueDate ? formatDate(e.dueDate) : "–"}
           </td>
           <td class="whitespace-nowrap"><StatusBadge status={e.status} table={EXPENSE_STATUS} /></td>

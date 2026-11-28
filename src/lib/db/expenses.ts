@@ -134,6 +134,8 @@ export type ExpenseFilter = {
   status?: ExpenseStatus | "all";
   year?: number | "all";
   vendorId?: number | "all";
+  /** Category as the list shows it; an expense matches when any of its items carries it. */
+  category?: string | "all";
   search?: string;
 };
 
@@ -155,11 +157,17 @@ const CATEGORY_COLUMNS_SQL = `(SELECT ${ITEM_CATEGORY_SQL} FROM ${ITEM_CATEGORY_
             (SELECT COUNT(DISTINCT ${ITEM_CATEGORY_SQL}) FROM ${ITEM_CATEGORY_FROM}) AS category_count`;
 
 function buildExpenseFilter(filter: ExpenseFilter) {
-  const { vendorId, ...rest } = filter;
-  return buildDocumentFilter("e", "vendor_id", ["e.internal_number", "e.number", "v.name"], {
+  const { vendorId, category, ...rest } = filter;
+  const base = buildDocumentFilter("e", "vendor_id", ["e.internal_number", "e.number", "v.name"], {
     ...rest,
     partyId: vendorId,
   });
+  if (!category || category === "all") return base;
+  const hasCategory = `EXISTS (SELECT 1 FROM ${ITEM_CATEGORY_FROM} AND ${ITEM_CATEGORY_SQL} = ?)`;
+  return {
+    where: base.where ? `${base.where} AND ${hasCategory}` : `WHERE ${hasCategory}`,
+    binds: [...base.binds, category],
+  };
 }
 
 /** `categories: false` skips the category subselects for callers that only need the expenses themselves. */
@@ -200,6 +208,17 @@ export async function getExpense(
 }
 
 export const getExpenseYears = () => listYears("expenses");
+
+/** The categories the expense list can show, for its filter: curated names and the free text of unlinked items. */
+export async function listExpenseListCategories(): Promise<string[]> {
+  const rows = await select<{ category: string }>(
+    `SELECT DISTINCT ${ITEM_CATEGORY_SQL} AS category
+     FROM expense_items i LEFT JOIN expense_categories c ON c.id = i.category_id
+     WHERE ${ITEM_CATEGORY_SQL} IS NOT NULL
+     ORDER BY category COLLATE NOCASE ASC`,
+  );
+  return rows.map((r) => r.category);
+}
 
 export async function listCategories(): Promise<string[]> {
   const rows = await select<{ category: string }>(

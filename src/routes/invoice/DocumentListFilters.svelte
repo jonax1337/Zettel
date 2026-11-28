@@ -56,6 +56,9 @@
     <Select bind:value={status} items={statusItems} aria-label="Status" class="w-[150px]" />
   {/if}
   <Select bind:value={year} items={yearItems} aria-label="Jahr" class="w-[120px]" />
-  <Select bind:value={customerId} items={counterpartyItems} aria-label={counterparty.label} class="w-[190px]" />
-  {@render children?.()}
+  <!-- One group, so a narrow toolbar moves these controls to the next row together instead of leaving one behind. -->
+  <div class="flex flex-wrap items-center gap-2">
+    <Select bind:value={customerId} items={counterpartyItems} aria-label={counterparty.label} class="w-[190px]" />
+    {@render children?.()}
+  </div>
 </ListToolbar>
