@@ -22,8 +22,8 @@ describe("validationVerdictLabel", () => {
 
 describe("baseName", () => {
   it("strips Windows and POSIX folders", () => {
-    expect(baseName("C:\\Users\\Jonas\\RE-2026-0013.pdf")).toBe("RE-2026-0013.pdf");
-    expect(baseName("/home/jonas/rechnung.xml")).toBe("rechnung.xml");
+    expect(baseName("C:\\Users\\Alex\\RE-2026-0013.pdf")).toBe("RE-2026-0013.pdf");
+    expect(baseName("/home/alex/rechnung.xml")).toBe("rechnung.xml");
   });
 
   it("keeps a bare file name", () => {
